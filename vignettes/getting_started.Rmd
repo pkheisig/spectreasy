@@ -1,18 +1,18 @@
 ---
-title: "Getting Started with spectrQC"
+title: "Getting Started with spectreasy"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Getting Started with spectrQC}
+  %\VignetteIndexEntry{Getting Started with spectreasy}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-# spectrQC: Spectral Unmixing Quality Control
+# spectreasy: Spectral Unmixing Quality Control
 
-This tutorial walks you through the complete spectrQC workflow for reviewing single-color controls, building a spectral reference matrix, and unmixing experimental samples.
+This tutorial walks you through the complete spectreasy workflow for reviewing single-color controls, building a spectral reference matrix, and unmixing experimental samples.
 
 ```{r}
-library(spectrQC)
+library(spectreasy)
 
 # Minimal runnable demo used for vignette checks
 M_demo <- diag(3)
@@ -25,8 +25,8 @@ stopifnot(all(dim(W_demo) == dim(M_demo)))
 ## Installation
 
 
-    devtools::install_github("pkheisig/spectrQC")
-    library(spectrQC)
+    devtools::install_github("pkheisig/spectreasy")
+    library(spectreasy)
 
 
 ## Project Setup
@@ -95,7 +95,7 @@ The report includes per-control FSC/SSC gating, histogram gating, spectrum plots
 Extract spectral signatures from single-color controls:
 
 
-    library(spectrQC)
+    library(spectreasy)
     
     # Load control file (optional but recommended)
     control_df <- read.csv("fcs_control_file.csv", stringsAsFactors = FALSE, check.names = FALSE)
@@ -139,7 +139,7 @@ Generate the saved reference and unmixing matrices, plus the SCC unmixing scatte
       scc_dir = "scc",
       control_file = "fcs_control_file.csv",
       cytometer = "Aurora",
-      output_dir = "spectrQC_outputs/autounmix_controls"
+      output_dir = "spectreasy_outputs/autounmix_controls"
     )
 
 
@@ -151,7 +151,7 @@ For manual matrix adjustment:
 
 
     launch_gui(
-      matrix_dir = "spectrQC_outputs/autounmix_controls",
+      matrix_dir = "spectreasy_outputs/autounmix_controls",
       samples_dir = "samples"
     )
 
@@ -167,7 +167,7 @@ Apply the reference or unmixing matrix to your experimental data:
       sample_dir = "samples",
       M = M,
       method = "WLS",
-      output_dir = "spectrQC_outputs/unmix_samples"
+      output_dir = "spectreasy_outputs/unmix_samples"
     )
 
 

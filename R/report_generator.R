@@ -18,11 +18,11 @@
 #' generate_qc_report(
 #'   results_df = results_df,
 #'   M = M,
-#'   output_file = file.path("spectrQC_outputs", "Sample_QC_Report.pdf")
+#'   output_file = file.path("spectreasy_outputs", "Sample_QC_Report.pdf")
 #' )
 #' }
-generate_qc_report <- function(results_df, M, output_file = file.path("spectrQC_outputs", "Sample_QC_Report.pdf"), res_list = NULL, png_dir = NULL, pd = NULL) {
-    message("Generating spectrQC Summary Report...")
+generate_qc_report <- function(results_df, M, output_file = file.path("spectreasy_outputs", "Sample_QC_Report.pdf"), res_list = NULL, png_dir = NULL, pd = NULL) {
+    message("Generating spectreasy Summary Report...")
     if (!is.null(png_dir)) {
         warning("png_dir is deprecated and ignored; report output is PDF-only.")
     }
@@ -45,7 +45,7 @@ generate_qc_report <- function(results_df, M, output_file = file.path("spectrQC_
         "NA"
     }
     summary_txt <- paste0(
-        "spectrQC: Spectral Unmixing Quality Control Report\n",
+        "spectreasy: Spectral Unmixing Quality Control Report\n",
         "Generated on: ", Sys.time(), "\n\n",
         "Files Processed: ", length(unique(results_df$File)), "\n",
         "Total Markers: ", nrow(M), "\n",
@@ -91,7 +91,7 @@ generate_qc_report <- function(results_df, M, output_file = file.path("spectrQC_
         "- Negative-population spread could not be ranked from the provided data."
     }
     wrap_lines <- function(x, width = 80) paste(strwrap(x, width = width), collapse = "\n")
-    rec_txt <- paste0("spectrQC: Conclusions & Recommendations\n\n", "Spectral Spread Analysis:\n", wrap_lines(paste(spread_msgs, collapse = "\n")), "\n\n", "Negative Population Spread:\n", wrap_lines(nps_msgs), "\n\n", "General Recommendations:\n", "1. Review SCC gating and histogram selection for controls that retain unusually few events.\n", "2. Markers with high spread should not be used to resolve dim co-expressed populations.\n", "3. If detector residuals show laser-specific patterns, check instrument calibration or missing fluorophores.")
+    rec_txt <- paste0("spectreasy: Conclusions & Recommendations\n\n", "Spectral Spread Analysis:\n", wrap_lines(paste(spread_msgs, collapse = "\n")), "\n\n", "Negative Population Spread:\n", wrap_lines(nps_msgs), "\n\n", "General Recommendations:\n", "1. Review SCC gating and histogram selection for controls that retain unusually few events.\n", "2. Markers with high spread should not be used to resolve dim co-expressed populations.\n", "3. If detector residuals show laser-specific patterns, check instrument calibration or missing fluorophores.")
     grid::grid.text(rec_txt, x = 0.1, y = 0.9, just = c("left", "top"), gp = grid::gpar(fontsize = 11, lineheight = 1.2))
     
     grDevices::dev.off()

@@ -87,7 +87,7 @@ This is the core matrix-construction step used before unmixing.
 # Build matrix from SCC folder and control CSV
 M <- build_reference_matrix(
   input_folder = "scc",
-  output_folder = "spectrQC_outputs/build_reference_plots",
+  output_folder = "spectreasy_outputs/build_reference_plots",
   control_df = "fcs_control_file.csv",
   cytometer = "Aurora"
 )

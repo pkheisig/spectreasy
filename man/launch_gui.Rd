@@ -2,7 +2,7 @@
 % Please edit documentation in R/launch_gui.R
 \name{launch_gui}
 \alias{launch_gui}
-\title{Launch SpectrQC Interactive Adjustment GUI}
+\title{Launch spectreasy Interactive Adjustment GUI}
 \usage{
 launch_gui(
   matrix_dir = getwd(),

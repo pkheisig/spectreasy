@@ -20,7 +20,7 @@ gating_and_spectrum_plots/
 samples_unmixed/
 samples_unmixed_qc/
 scc_unmixed/
-spectrQC_outputs/
+spectreasy_outputs/
 samples/
 scc/
 inst/gui/node_modules/
@@ -34,4 +34,4 @@ inst/gui/node_modules/
 # Local package build/check artifacts
 *.tar.gz
 *.Rcheck/
-spectrQC.BiocCheck/
+spectreasy.BiocCheck/

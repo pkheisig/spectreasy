@@ -33,7 +33,7 @@
 #'   control_file = "fcs_control_file.csv",
 #'   auto_create_control = TRUE,
 #'   cytometer = "Aurora",
-#'   output_dir = "spectrQC_outputs/autounmix_controls"
+#'   output_dir = "spectreasy_outputs/autounmix_controls"
 #' )
 #' ctrl$unmixing_matrix_file
 #' }
@@ -45,7 +45,7 @@ autounmix_controls <- function(
     cytometer = "Aurora",
     auto_default_control_type = "beads",
     auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
-    output_dir = "spectrQC_outputs/autounmix_controls",
+    output_dir = "spectreasy_outputs/autounmix_controls",
     unmix_method = "WLS",
     build_qc_plots = FALSE,
     unmix_scatter_panel_size_mm = 30,

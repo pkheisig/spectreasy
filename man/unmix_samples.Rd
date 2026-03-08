@@ -8,11 +8,11 @@ unmix_samples(
   sample_dir = "samples",
   M = NULL,
   W = NULL,
-  unmixing_matrix_file = file.path("spectrQC_outputs", "autounmix_controls",
+  unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls",
     "scc_unmixing_matrix.csv"),
   method = "WLS",
   cytometer = "Aurora",
-  output_dir = file.path("spectrQC_outputs", "unmix_samples"),
+  output_dir = file.path("spectreasy_outputs", "unmix_samples"),
   write_fcs = TRUE
 )
 }
@@ -49,8 +49,8 @@ Unmix Experimental Samples
 \dontrun{
 unmixed <- unmix_samples(
   sample_dir = "samples",
-  unmixing_matrix_file = "spectrQC_outputs/autounmix_controls/scc_unmixing_matrix.csv",
-  output_dir = "spectrQC_outputs/unmix_samples"
+  unmixing_matrix_file = "spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv",
+  output_dir = "spectreasy_outputs/unmix_samples"
 )
 names(unmixed)
 }

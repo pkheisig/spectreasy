@@ -7,7 +7,7 @@
 generate_qc_report(
   results_df,
   M,
-  output_file = file.path("spectrQC_outputs", "Sample_QC_Report.pdf"),
+  output_file = file.path("spectreasy_outputs", "Sample_QC_Report.pdf"),
   res_list = NULL,
   png_dir = NULL,
   pd = NULL
@@ -39,7 +39,7 @@ detector residuals, spread matrix, and NPS.
 generate_qc_report(
   results_df = results_df,
   M = M,
-  output_file = file.path("spectrQC_outputs", "Sample_QC_Report.pdf")
+  output_file = file.path("spectreasy_outputs", "Sample_QC_Report.pdf")
 )
 }
 }

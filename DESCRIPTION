@@ -1,10 +1,11 @@
-Package: spectrQC
-Title: Full Spectrum Flow Cytometry QC & Unmixing
+Package: spectreasy
+Title: Single-Color Review and Spectral Unmixing Made Easier
 Version: 0.99.0
 Authors@R: person("Paul Heisig", email = "pkheisig@gmail.com", role = c("aut", "cre"))
-Description: Validate spectral flow cytometry data by calculating unmixing residuals.
-URL: https://github.com/pkheisig/spectrQC
-BugReports: https://github.com/pkheisig/spectrQC/issues
+Description: Review single-color controls, build spectral reference matrices,
+    and unmix experimental spectral flow cytometry data.
+URL: https://github.com/pkheisig/spectreasy
+BugReports: https://github.com/pkheisig/spectreasy/issues
 License: MIT + file LICENSE
 Depends: R (>= 4.1.0)
 Imports:

@@ -1,4 +1,4 @@
 library(testthat)
-library(spectrQC)
+library(spectreasy)
 
-test_check("spectrQC")
+test_check("spectreasy")

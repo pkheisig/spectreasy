@@ -77,7 +77,7 @@ create_autospectral_control_file <- function(input_folder = "scc",
     }
 
     extdata_file <- function(filename) {
-        p <- system.file("extdata", filename, package = "spectrQC")
+        p <- system.file("extdata", filename, package = "spectreasy")
         if (nzchar(p) && file.exists(p)) return(p)
         local_p <- file.path("inst", "extdata", filename)
         if (file.exists(local_p)) return(local_p)

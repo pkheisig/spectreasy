@@ -7,11 +7,11 @@
 generate_scc_report(
   M = NULL,
   scc_dir = "scc",
-  output_file = file.path("spectrQC_outputs", "SCC_QC_Report.pdf"),
+  output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf"),
   control_df = NULL,
   control_file = "fcs_control_file.csv",
   cytometer = "Aurora",
-  qc_plot_dir = file.path("spectrQC_outputs", "scc_report_plots"),
+  qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   include_multi_af = FALSE,
   af_dir = "af",
   include_ssm = TRUE,
@@ -54,7 +54,7 @@ control, and assembles a PDF report for pre-unmix review.
 generate_scc_report(
   scc_dir = "scc",
   control_file = "fcs_control_file.csv",
-  output_file = file.path("spectrQC_outputs", "SCC_QC_Report.pdf")
+  output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf")
 )
 }
 }

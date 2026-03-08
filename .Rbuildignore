@@ -17,6 +17,6 @@
 ^samples_unmixed_final$
 ^scc$
 ^scc_unmixed$
-^spectrQC_outputs$
+^spectreasy_outputs$
 ^gating_and_spectrum_plots$
-^spectrQC\.BiocCheck$
+^spectreasy\.BiocCheck$

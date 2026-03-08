@@ -1,5 +1,5 @@
 test_that("gating_options returns named list", {
-    opts <- spectrQC::gating_options(histogram_pct_beads = 0.9, histogram_pct_cells = 0.3)
+    opts <- spectreasy::gating_options(histogram_pct_beads = 0.9, histogram_pct_cells = 0.3)
     expect_type(opts, "list")
     expect_true(all(c(
         "histogram_pct_beads",
@@ -19,7 +19,7 @@ test_that("derive_unmixing_matrix returns finite matrix with expected dims", {
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B2-A", "YG1-A", "R1-A")
 
-    W <- spectrQC::derive_unmixing_matrix(M, method = "OLS")
+    W <- spectreasy::derive_unmixing_matrix(M, method = "OLS")
     expect_equal(dim(W), dim(M))
     expect_true(all(is.finite(W)))
 })
@@ -40,7 +40,7 @@ test_that("calc_residuals retains Time and all FSC/SSC parameters but not raw de
     colnames(exprs) <- c("B1-A", "YG1-A", "Time", "FSC-A", "FSC-H", "SSC-A", "SSC-W")
 
     ff <- flowCore::flowFrame(exprs)
-    res <- spectrQC::calc_residuals(ff, M, method = "OLS")
+    res <- spectreasy::calc_residuals(ff, M, method = "OLS")
 
     expect_setequal(colnames(res), c("FITC", "PE", "Time", "FSC-A", "FSC-H", "SSC-A", "SSC-W"))
     expect_false(any(c("B1-A", "YG1-A") %in% colnames(res)))
@@ -62,14 +62,14 @@ test_that("unmix_samples writes unmixed FCS with passthrough acquisition paramet
     colnames(exprs) <- c("B1-A", "YG1-A", "Time", "FSC-A", "FSC-H", "SSC-A", "SSC-W")
 
     ff <- flowCore::flowFrame(exprs)
-    sample_dir <- tempfile("spectrqc_test_samples_")
-    output_dir <- tempfile("spectrqc_test_unmixed_")
+    sample_dir <- tempfile("spectreasy_test_samples_")
+    output_dir <- tempfile("spectreasy_test_unmixed_")
     dir.create(sample_dir, showWarnings = FALSE, recursive = TRUE)
     dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
     sample_file <- file.path(sample_dir, "sample1.fcs")
     flowCore::write.FCS(ff, sample_file)
 
-    unmixed <- spectrQC::unmix_samples(
+    unmixed <- spectreasy::unmix_samples(
         sample_dir = sample_dir,
         M = M,
         method = "OLS",

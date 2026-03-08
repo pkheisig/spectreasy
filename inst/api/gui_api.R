@@ -1,13 +1,13 @@
 # gui_api_adjust.R
-# API for the spectrQC Interactive Tuner (Adjustment/Crosstalk Correction)
+# API for the spectreasy Interactive Tuner (Adjustment/Crosstalk Correction)
 
 get_matrix_dir <- function() {
-    normalizePath(getOption("spectrqc.matrix_dir", getwd()), mustWork = FALSE)
+    normalizePath(getOption("spectreasy.matrix_dir", getwd()), mustWork = FALSE)
 }
 
 get_samples_dir <- function() {
     default_samples <- file.path(get_matrix_dir(), "samples")
-    normalizePath(getOption("spectrqc.samples_dir", default_samples), mustWork = FALSE)
+    normalizePath(getOption("spectreasy.samples_dir", default_samples), mustWork = FALSE)
 }
 
 get_config_dir <- function() {
@@ -170,7 +170,7 @@ function(filename) {
     # Check if it's a spillover/reference matrix (M) or unmixing matrix (W)
     # Reference/Spillover usually has Markers as rows, Detectors as cols
     # Unmixing usually has Detectors as rows, Markers as cols (or vice versa depending on convention)
-    # spectrQC convention:
+    # spectreasy convention:
     # M (Reference): Rows=Markers, Cols=Detectors
     # W (Unmixing): Rows=Markers, Cols=Detectors (so Unmixed = Raw %*% t(W))
 
@@ -277,11 +277,11 @@ function(sample_name = NULL) {
     }
 
     pd <- flowCore::pData(flowCore::parameters(ff))
-    # Helper to get sorted detectors (copying logic from spectrQC if not exported)
-    # Assuming spectrQC is loaded or we implement basic logic
+    # Helper to get sorted detectors (copying logic from spectreasy if not exported)
+    # Assuming spectreasy is loaded or we implement basic logic
     det_info <- tryCatch(
         {
-            spectrQC::get_sorted_detectors(pd)
+            spectreasy::get_sorted_detectors(pd)
         },
         error = function(e) {
             # Fallback if function not accessible
@@ -351,7 +351,7 @@ function(matrix_json, raw_data_json, type = "reference") {
 
         W <- tryCatch(
             {
-                spectrQC::derive_unmixing_matrix(mat_sub, method = "OLS")
+                spectreasy::derive_unmixing_matrix(mat_sub, method = "OLS")
             },
             error = function(e) {
                 # Fallback OLS

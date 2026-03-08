@@ -1,4 +1,4 @@
-#' Launch SpectrQC Interactive Adjustment GUI
+#' Launch spectreasy Interactive Adjustment GUI
 #'
 #' Starts the backend Plumber API for the interactive matrix adjustment interface.
 #' By default, the frontend is served from bundled package assets.
@@ -24,8 +24,8 @@
 #' launch_gui(dev_mode = TRUE)
 #' }
 launch_gui <- function(matrix_dir = getwd(), samples_dir = NULL, port = 8000, open_browser = TRUE, dev_mode = FALSE) {
-    api_path <- system.file("api/gui_api.R", package = "spectrQC")
-    gui_path <- system.file("gui", package = "spectrQC")
+    api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    gui_path <- system.file("gui", package = "spectreasy")
 
     if (api_path == "") {
         api_path <- file.path(getwd(), "inst", "api", "gui_api.R")
@@ -47,8 +47,8 @@ launch_gui <- function(matrix_dir = getwd(), samples_dir = NULL, port = 8000, op
     samples_dir <- normalizePath(samples_dir, mustWork = FALSE)
 
     options(
-        spectrqc.matrix_dir = matrix_dir,
-        spectrqc.samples_dir = samples_dir
+        spectreasy.matrix_dir = matrix_dir,
+        spectreasy.samples_dir = samples_dir
     )
 
     frontend_url <- paste0("http://localhost:", port)
@@ -75,13 +75,13 @@ launch_gui <- function(matrix_dir = getwd(), samples_dir = NULL, port = 8000, op
         if (!dir.exists(dist_path) || !file.exists(file.path(dist_path, "index.html"))) {
             stop(
                 "Bundled GUI assets not found at: ", dist_path, "\n",
-                "Reinstall spectrQC from a build that includes inst/gui/dist."
+                "Reinstall spectreasy from a build that includes inst/gui/dist."
             )
         }
         message("Using bundled GUI assets from: ", dist_path)
     }
 
-    message("Starting spectrQC API on port ", port)
+    message("Starting spectreasy API on port ", port)
     message("Matrix directory: ", matrix_dir)
     message("Samples directory: ", samples_dir)
     message("Frontend: ", frontend_url)

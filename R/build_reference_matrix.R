@@ -35,7 +35,7 @@
 #' # Build matrix from SCC folder and control CSV
 #' M <- build_reference_matrix(
 #'   input_folder = "scc",
-#'   output_folder = "spectrQC_outputs/build_reference_plots",
+#'   output_folder = "spectreasy_outputs/build_reference_plots",
 #'   control_df = "fcs_control_file.csv",
 #'   cytometer = "Aurora"
 #' )
@@ -618,7 +618,7 @@ build_reference_matrix <- function(
     colnames(M) <- detector_names
     M_df <- as.data.frame(M)
     M_df$file <- rownames(M_df)
-    output_root <- file.path("spectrQC_outputs")
+    output_root <- file.path("spectreasy_outputs")
     dir.create(output_root, showWarnings = FALSE, recursive = TRUE)
     reference_matrix_file <- file.path(output_root, "reference_matrix.csv")
     utils::write.csv(M_df[, c("file", colnames(M)), drop = FALSE], reference_matrix_file, row.names = FALSE, quote = TRUE)

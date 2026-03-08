@@ -1,6 +1,6 @@
-# spectrQC: Full Spectrum Flow Cytometry Quality Control
+# spectreasy: Full Spectrum Flow Cytometry Quality Control
 
-`spectrQC` is an R package for reviewing single-color controls, building spectral reference matrices, and unmixing experimental samples.
+`spectreasy` is an R package for reviewing single-color controls, building spectral reference matrices, and unmixing experimental samples.
 
 ## Key Features
 
@@ -17,7 +17,7 @@
 
 ```r
 # Install from GitHub
-devtools::install_github("pkheisig/spectrQC")
+devtools::install_github("pkheisig/spectreasy")
 ```
 
 ---
@@ -52,7 +52,7 @@ create.control.file("scc", asp)
 
 Or create manually with columns: `filename`, `fluorophore`, `channel` (`universal.negative` is optional).
 
-For auto-generation, `spectrQC` uses shipped dictionaries:
+For auto-generation, `spectreasy` uses shipped dictionaries:
 - `inst/extdata/fluorophore_dictionary.csv`
 - `inst/extdata/marker_dictionary.csv`
 
@@ -71,13 +71,13 @@ Logic:
 #### Step 1: Generate the SCC review report with `generate_scc_report()`:
 
 ```r
-library(spectrQC)
+library(spectreasy)
 
 generate_scc_report(
   scc_dir = "scc",
   control_file = "fcs_control_file.csv",
   cytometer = "Aurora",
-  output_file = file.path("spectrQC_outputs", "SCC_QC_Report.pdf")
+  output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf")
 )
 ```
 
@@ -88,7 +88,7 @@ Use this report to inspect each SCC before unmixing. The PDF includes:
 - global reference spectra overlay
 - spectral spread matrix
 
-The report also writes the underlying PNG QC assets to `spectrQC_outputs/scc_report_plots/`.
+The report also writes the underlying PNG QC assets to `spectreasy_outputs/scc_report_plots/`.
 
 #### Step 2: Run controls with `autounmix_controls()`:
 
@@ -99,7 +99,7 @@ ctrl <- autounmix_controls(
   auto_create_control = TRUE,
   cytometer = "Aurora",
   auto_unknown_fluor_policy = "by_channel",
-  output_dir = "spectrQC_outputs/autounmix_controls",
+  output_dir = "spectreasy_outputs/autounmix_controls",
   unmix_method = "WLS",
   build_qc_plots = TRUE,
   unmix_scatter_panel_size_mm = 30
@@ -133,7 +133,7 @@ Set `unmix_scatter_panel_size_mm` higher (for example `40`) if you want larger p
 
 ```r
 launch_gui(
-  matrix_dir = "spectrQC_outputs/autounmix_controls",
+  matrix_dir = "spectreasy_outputs/autounmix_controls",
   samples_dir = "samples"
 )
 ```
@@ -146,8 +146,8 @@ This starts both the backend API and bundled frontend on one port (default `http
 # Uses saved unmixing matrix by filepath (default points to autounmix_controls output)
 unmixed <- unmix_samples(
   sample_dir = "samples",
-  unmixing_matrix_file = "spectrQC_outputs/autounmix_controls/scc_unmixing_matrix.csv",
-  output_dir = "spectrQC_outputs/unmix_samples"
+  unmixing_matrix_file = "spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv",
+  output_dir = "spectreasy_outputs/unmix_samples"
 )
 ```
 
@@ -158,7 +158,7 @@ unmixed <- unmix_samples(
 Extract spectral signatures from single-color controls:
 
 ```r
-library(spectrQC)
+library(spectreasy)
 
 # Load control file (optional but recommended)
 control_df <- read.csv("fcs_control_file.csv", stringsAsFactors = FALSE, check.names = FALSE)
@@ -173,7 +173,7 @@ M <- build_reference_matrix(
 )
 ```
 
-This saves gating/spectrum plots to `gating_plots/` and exports the matrix to `spectrQC_outputs/reference_matrix.csv`.
+This saves gating/spectrum plots to `gating_plots/` and exports the matrix to `spectreasy_outputs/reference_matrix.csv`.
 
 ---
 
@@ -204,14 +204,14 @@ unmixed <- unmix_samples(
   M = M,
   method = "WLS",                     # "OLS", "WLS", or "NNLS"
   cytometer = "Aurora",
-  output_dir = "spectrQC_outputs/unmix_samples"
+  output_dir = "spectreasy_outputs/unmix_samples"
 )
 
 # Option 2: static unmixing from saved unmixing matrix (W)
 unmixed_w <- unmix_samples(
   sample_dir = "samples",
-  unmixing_matrix_file = "spectrQC_outputs/autounmix_controls/scc_unmixing_matrix.csv",
-  output_dir = "spectrQC_outputs/unmix_samples_w"
+  unmixing_matrix_file = "spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv",
+  output_dir = "spectreasy_outputs/unmix_samples_w"
 )
 ```
 
@@ -256,10 +256,10 @@ launch_gui(
 
 ### Output Directories
 
-- `spectrQC_outputs/reference_matrix.csv`: Reference matrix written by `build_reference_matrix(...)`
-- `spectrQC_outputs/autounmix_controls/`: SCC control-stage outputs (`scc_reference_matrix.csv`, `scc_unmixing_matrix.csv/.png`, `scc_spectra.png`, `scc_unmixing_scatter_matrix.png`)
-- `spectrQC_outputs/autounmix_controls/scc_unmixed/`: Unmixed SCC control files (FCS format)
-- `spectrQC_outputs/unmix_samples/`: Unmixed experimental data (FCS format)
+- `spectreasy_outputs/reference_matrix.csv`: Reference matrix written by `build_reference_matrix(...)`
+- `spectreasy_outputs/autounmix_controls/`: SCC control-stage outputs (`scc_reference_matrix.csv`, `scc_unmixing_matrix.csv/.png`, `scc_spectra.png`, `scc_unmixing_scatter_matrix.png`)
+- `spectreasy_outputs/autounmix_controls/scc_unmixed/`: Unmixed SCC control files (FCS format)
+- `spectreasy_outputs/unmix_samples/`: Unmixed experimental data (FCS format)
 
 If you run the manual path with `build_reference_matrix(...)`, `output_folder` (for example `gating_plots/`) is used for build-stage QC plots.
 
@@ -272,14 +272,14 @@ If you run the manual path with `build_reference_matrix(...)`, `output_folder` (
 generate_scc_report(
   scc_dir = "scc",
   control_file = "fcs_control_file.csv",
-  output_file = file.path("spectrQC_outputs", "SCC_QC_Report.pdf")
+  output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf")
 )
 
 # Full sample-level report
 r$> generate_qc_report(
       results_df = do.call(rbind, lapply(unmixed, `[[`, "data")),
       M = ctrl$M,  # matrix used for unmixing context
-      output_file = file.path("spectrQC_outputs", "Sample_QC_Report.pdf")
+      output_file = file.path("spectreasy_outputs", "Sample_QC_Report.pdf")
     )
 ```
 

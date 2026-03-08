@@ -459,7 +459,7 @@ const App = () => {
                         <Activity color="white" size={22} />
                     </div>
                     <div>
-                        <h1 style={{ fontWeight: 700, fontSize: 18, margin: 0, letterSpacing: '-0.02em' }}>spectrQC</h1>
+                        <h1 style={{ fontWeight: 700, fontSize: 18, margin: 0, letterSpacing: '-0.02em' }}>spectreasy</h1>
                         <p style={{ fontSize: 10, color: g.textMuted, margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Interactive Spectral Tuner</p>
                     </div>
                 </div>

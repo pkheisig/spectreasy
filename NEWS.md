@@ -1,4 +1,4 @@
-# spectrQC 0.99.0
+# spectreasy 0.99.0
 
 ## New
 
