@@ -326,8 +326,6 @@ build_reference_matrix <- function(
         fluor_name <- if (nrow(row_info) > 0 && !is.na(row_info$fluorophore[1])) row_info$fluorophore[1] else sample_info$pattern
         marker_name <- if (nrow(row_info) > 0 && "marker" %in% colnames(row_info) && !is.na(row_info$marker[1])) {
             trimws(as.character(row_info$marker[1]))
-        } else if (nrow(row_info) > 0 && "secondary" %in% colnames(row_info) && !is.na(row_info$secondary[1])) {
-            trimws(as.character(row_info$secondary[1]))
         } else {
             ""
         }

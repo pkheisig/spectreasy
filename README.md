@@ -53,7 +53,6 @@ create_control_file(
 ```
 
 Or create manually with columns: `filename`, `fluorophore`, `marker`, `channel` (`universal.negative` is optional).
-`primary` and `secondary` are generated aliases of `fluorophore` and `marker`.
 
 For auto-generation, `spectreasy` uses shipped dictionaries:
 - `inst/extdata/fluorophore_dictionary.csv`

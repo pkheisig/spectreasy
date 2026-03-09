@@ -40,7 +40,6 @@ A data frame containing the control file information.
 The generated file intentionally leaves `universal.negative` empty by default.
 It sets `control.type = "cells"` only for AF rows and leaves non-AF rows empty
 for manual completion.
-It also includes `primary` (`fluorophore`) and `secondary` (`marker`) aliases.
 }
 \description{
 Generates a spectreasy-compatible control CSV.

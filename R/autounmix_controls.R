@@ -252,9 +252,7 @@ autounmix_controls <- function(
     if (is.data.frame(control_df) && all(c("filename", "fluorophore") %in% colnames(control_df))) {
         sample_keys <- tools::file_path_sans_ext(basename(as.character(control_df$filename)))
         primary_vals <- trimws(as.character(control_df$fluorophore))
-        secondary_vals <- if ("secondary" %in% colnames(control_df)) {
-            trimws(as.character(control_df$secondary))
-        } else if ("marker" %in% colnames(control_df)) {
+        secondary_vals <- if ("marker" %in% colnames(control_df)) {
             trimws(as.character(control_df$marker))
         } else {
             rep("", length(primary_vals))
