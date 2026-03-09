@@ -19,7 +19,7 @@
 #' @param auto_unknown_fluor_policy Auto-fill policy for unresolved fluorophores
 #'   when creating controls (`"by_channel"`, `"empty"`, `"filename"`).
 #' @param output_dir Output directory for SCC workflow artifacts.
-#' @param unmix_method SCC unmixing method (`"WLS"`, `"OLS"`, `"NNLS"`, `"AutoSpectral"`).
+#' @param unmix_method SCC unmixing method (`"WLS"`, `"OLS"`, `"NNLS"`).
 #' @param build_qc_plots Logical; keep detailed build_reference_matrix plots.
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
@@ -30,7 +30,7 @@
 #' \dontrun{
 #' ctrl <- autounmix_controls(
 #'   scc_dir = "scc",
-#'   control_file = "fcs_control_file.csv",
+#'   control_file = "fcs_mapping.csv",
 #'   auto_create_control = TRUE,
 #'   cytometer = "Aurora",
 #'   output_dir = "spectreasy_outputs/autounmix_controls"
@@ -40,7 +40,7 @@
 autounmix_controls <- function(
     scc_dir = "scc",
     control_df = NULL,
-    control_file = "fcs_control_file.csv",
+    control_file = "fcs_mapping.csv",
     auto_create_control = TRUE,
     cytometer = "Aurora",
     auto_default_control_type = "beads",
@@ -54,6 +54,7 @@ autounmix_controls <- function(
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
     user_supplied_control_df <- !is.null(control_df)
     created_control_file <- FALSE
+    control_file <- .resolve_control_file_path(control_file)
 
     dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
     if (!dir.exists(scc_dir)) stop("scc_dir not found: ", scc_dir)
@@ -77,7 +78,7 @@ autounmix_controls <- function(
             }
             message("Control file not found: ", control_file)
             message("Auto-generating control file from SCC filenames and peak channels...")
-            create_autospectral_control_file(
+            create_control_file(
                 input_folder = scc_dir,
                 include_af_folder = FALSE,
                 cytometer = cytometer,
@@ -162,7 +163,7 @@ autounmix_controls <- function(
     preflight <- run_preflight(control_df)
     if (!preflight$ok && isTRUE(auto_create_control) && !user_supplied_control_df) {
         message("Control preflight failed; attempting automatic control-file regeneration...")
-        create_autospectral_control_file(
+        create_control_file(
             input_folder = scc_dir,
             include_af_folder = FALSE,
             cytometer = cytometer,

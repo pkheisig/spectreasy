@@ -15,7 +15,7 @@
 #' @return A list with `ok`, `errors`, and `warnings`.
 #' @examples
 #' \dontrun{
-#' control_df <- read.csv("fcs_control_file.csv", stringsAsFactors = FALSE)
+#' control_df <- read.csv("fcs_mapping.csv", stringsAsFactors = FALSE)
 #' preflight <- validate_control_file_mapping(control_df, scc_dir = "scc")
 #' preflight$ok
 #' }
@@ -46,11 +46,17 @@ validate_control_file_mapping <- function(
         out
     }
 
-    channel_in_detectors <- function(channel_value, detector_names) {
+    channel_in_detectors <- function(channel_value, detector_names, alias_map = character()) {
         key <- normalize_channel(channel_value)
         if (!nzchar(key)) return(TRUE)
         det_norm <- normalize_channel(detector_names)
-        candidates <- unique(c(key, gsub("-A$", "", key), paste0(key, "-A")))
+        alias_targets <- character()
+        if (length(alias_map) > 0) {
+            hits <- alias_map[c(key, gsub("-A$", "", key), paste0(key, "-A"))]
+            hits <- hits[!is.na(hits) & nzchar(hits)]
+            alias_targets <- normalize_channel(unname(hits))
+        }
+        candidates <- unique(c(key, gsub("-A$", "", key), paste0(key, "-A"), alias_targets))
         any(candidates %in% det_norm)
     }
 
@@ -163,8 +169,15 @@ validate_control_file_mapping <- function(
             }
             pd <- flowCore::pData(flowCore::parameters(ff))
             det_names <- as_chr(pd$name)
+            alias_map <- .build_channel_alias_map_from_pd(pd)
             ch_vals <- unique(df$channel[df$filename == fn])
-            missing_channels <- ch_vals[!vapply(ch_vals, channel_in_detectors, logical(1), detector_names = det_names)]
+            missing_channels <- ch_vals[!vapply(
+                ch_vals,
+                channel_in_detectors,
+                logical(1),
+                detector_names = det_names,
+                alias_map = alias_map
+            )]
             if (length(missing_channels) > 0) {
                 errors <- c(errors, paste0("Invalid channel in ", fn, ": ", paste(missing_channels, collapse = ", ")))
             }

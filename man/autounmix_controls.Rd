@@ -7,7 +7,7 @@
 autounmix_controls(
   scc_dir = "scc",
   control_df = NULL,
-  control_file = "fcs_control_file.csv",
+  control_file = "fcs_mapping.csv",
   auto_create_control = TRUE,
   cytometer = "Aurora",
   auto_default_control_type = "beads",
@@ -37,7 +37,7 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 
 \item{output_dir}{Output directory for SCC workflow artifacts.}
 
-\item{unmix_method}{SCC unmixing method (`"WLS"`, `"OLS"`, `"NNLS"`, `"AutoSpectral"`).}
+\item{unmix_method}{SCC unmixing method (`"WLS"`, `"OLS"`, `"NNLS"`).}
 
 \item{build_qc_plots}{Logical; keep detailed build_reference_matrix plots.}
 
@@ -64,7 +64,7 @@ and downstream sample unmixing.
 \dontrun{
 ctrl <- autounmix_controls(
   scc_dir = "scc",
-  control_file = "fcs_control_file.csv",
+  control_file = "fcs_mapping.csv",
   auto_create_control = TRUE,
   cytometer = "Aurora",
   output_dir = "spectreasy_outputs/autounmix_controls"

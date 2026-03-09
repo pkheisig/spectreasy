@@ -6,6 +6,7 @@
 ^test\.R$
 ^Rplots\.pdf$
 ^quick_unmix\.R$
+^fcs_mapping.*\.csv$
 ^fcs_control_file.*\.csv$
 ^reference_matrix.*\.csv$
 ^refined_reference_matrix.*\.csv$

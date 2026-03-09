@@ -21,7 +21,6 @@ Imports:
     sp,
     tidyr
 Suggests:
-    AutoSpectral,
     knitr,
     rmarkdown,
     testthat (>= 3.0.0)

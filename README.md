@@ -34,7 +34,7 @@ my_project/
 │   └── Unstained.fcs             # Autofluorescence control
 ├── samples/                      # Experimental FCS files
 │   └── Sample1.fcs
-└── fcs_control_file.csv          # Control file mapping (optional)
+└── fcs_mapping.csv          # Control file mapping (optional)
 ```
 
 ### Control File
@@ -42,12 +42,14 @@ my_project/
 <img width="1102" height="201" alt="Screenshot 2026-02-20 at 11 00 23" src="https://github.com/user-attachments/assets/a8c5e253-e1c8-4592-8ea2-e0f404932a54" />
 
 
-The control file maps FCS filenames to fluorophores. Generate it using the [AutoSpectral](https://github.com/DrCytometer/AutoSpectral) package:
+The control file maps FCS filenames to fluorophores. Generate it with `spectreasy`:
 
 ```r
-library(AutoSpectral)
-asp <- get.autospectral.param(cytometer = "aurora")
-create.control.file("scc", asp)
+create_control_file(
+  input_folder = "scc",
+  cytometer = "Aurora",
+  output_file = "fcs_mapping.csv"
+)
 ```
 
 Or create manually with columns: `filename`, `fluorophore`, `channel` (`universal.negative` is optional).
@@ -75,7 +77,7 @@ library(spectreasy)
 
 generate_scc_report(
   scc_dir = "scc",
-  control_file = "fcs_control_file.csv",
+  control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
   output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf")
 )
@@ -95,7 +97,7 @@ The report also writes the underlying PNG QC assets to `spectreasy_outputs/scc_r
 ```r
 ctrl <- autounmix_controls(
   scc_dir = "scc",
-  control_file = "fcs_control_file.csv",
+  control_file = "fcs_mapping.csv",
   auto_create_control = TRUE,
   cytometer = "Aurora",
   auto_unknown_fluor_policy = "by_channel",
@@ -106,8 +108,8 @@ ctrl <- autounmix_controls(
 )
 ```
 
-If `fcs_control_file.csv` is missing and `auto_create_control = TRUE`, `autounmix_controls()` auto-generates a control file (filename, marker, fluorophore, and detected peak channel), then asks for confirmation before continuing.
-`cytometer` is used for channel-aware fluorophore inference via the AutoSpectral fluorophore database.
+If `fcs_mapping.csv` is missing and `auto_create_control = TRUE`, `autounmix_controls()` auto-generates a control file (filename, marker, fluorophore, and detected peak channel), then asks for confirmation before continuing.
+`cytometer` is used for channel-aware fluorophore inference via spectreasy's shipped dictionaries and detector metadata.
 
 For newly auto-created files:
 - `control.type` is set to `cells` only for AF rows; all non-AF rows are left empty on purpose
@@ -126,7 +128,7 @@ Note: `scc_unmixing_matrix.csv` is exported as a static OLS matrix for determini
 Set `unmix_scatter_panel_size_mm` higher (for example `40`) if you want larger per-panel scatter plots.
 
 `autounmix_controls()` also runs a strict preflight check before processing:
-- every SCC file must be mapped in `fcs_control_file.csv`
+- every SCC file must be mapped in `fcs_mapping.csv`
 - non-AF rows must define a valid `channel`
 - if `universal.negative` is present, values for active SCC rows must be empty/keyword or reference a file present in your selected SCC/AF directories
 
@@ -164,7 +166,7 @@ Extract spectral signatures from single-color controls:
 library(spectreasy)
 
 # Load control file (optional but recommended)
-control_df <- read.csv("fcs_control_file.csv", stringsAsFactors = FALSE, check.names = FALSE)
+control_df <- read.csv("fcs_mapping.csv", stringsAsFactors = FALSE, check.names = FALSE)
 
 # Build reference matrix from SCC files
 M <- build_reference_matrix(
@@ -274,7 +276,7 @@ If you run the manual path with `build_reference_matrix(...)`, `output_folder` (
 # SCC review report (recommended before autounmix_controls)
 generate_scc_report(
   scc_dir = "scc",
-  control_file = "fcs_control_file.csv",
+  control_file = "fcs_mapping.csv",
   output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf")
 )
 

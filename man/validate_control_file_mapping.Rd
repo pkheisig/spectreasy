@@ -40,7 +40,7 @@ malformed universal negatives, incomplete mappings).
 }
 \examples{
 \dontrun{
-control_df <- read.csv("fcs_control_file.csv", stringsAsFactors = FALSE)
+control_df <- read.csv("fcs_mapping.csv", stringsAsFactors = FALSE)
 preflight <- validate_control_file_mapping(control_df, scc_dir = "scc")
 preflight$ok
 }

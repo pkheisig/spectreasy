@@ -41,26 +41,23 @@ my_project/
 │   └── Unstained.fcs             # Autofluorescence control
 ├── samples/                      # Experimental FCS files
 │   └── Sample1.fcs
-└── fcs_control_file.csv          # Control file (optional)
+└── fcs_mapping.csv          # Control file (optional)
 ```
 
 ## Control File
 
-The control file maps FCS filenames to fluorophore names and peak channels. Generate it using [AutoSpectral](https://github.com/DrCytometer/AutoSpectral):
+The control file maps FCS filenames to fluorophore names and peak channels. Generate it with `spectreasy`:
 
 
-    # Install AutoSpectral
-    if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
-    BiocManager::install(c("flowWorkspace", "flowCore", "PeacoQC"))
-    devtools::install_github("DrCytometer/AutoSpectral")
-    
     # Generate control file
-    library(AutoSpectral)
-    asp <- get.autospectral.param()
-    create.control.file("scc", asp)
+    create_control_file(
+      input_folder = "scc",
+      cytometer = "Aurora",
+      output_file = "fcs_mapping.csv"
+    )
 
 
-Review and edit the generated `fcs_control_file.csv` to ensure correct fluorophore names.
+Review and edit the generated `fcs_mapping.csv` to ensure correct fluorophore names.
 
 **Manual format:**
 
@@ -80,7 +77,7 @@ Review the SCC files before unmixing:
 
     generate_scc_report(
       scc_dir = "scc",
-      control_file = "fcs_control_file.csv",
+      control_file = "fcs_mapping.csv",
       cytometer = "Aurora",
       output_file = "SCC_QC_Report.pdf"
     )
@@ -98,7 +95,7 @@ Extract spectral signatures from single-color controls:
     library(spectreasy)
     
     # Load control file (optional but recommended)
-    control_df <- read.csv("fcs_control_file.csv", stringsAsFactors = FALSE, check.names = FALSE)
+    control_df <- read.csv("fcs_mapping.csv", stringsAsFactors = FALSE, check.names = FALSE)
     
     # Build reference matrix
     M <- build_reference_matrix(
@@ -137,7 +134,7 @@ Generate the saved reference and unmixing matrices, plus the SCC unmixing scatte
 
     ctrl <- autounmix_controls(
       scc_dir = "scc",
-      control_file = "fcs_control_file.csv",
+      control_file = "fcs_mapping.csv",
       cytometer = "Aurora",
       output_dir = "spectreasy_outputs/autounmix_controls"
     )

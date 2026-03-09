@@ -20,7 +20,7 @@ unmix_samples(
 \item{sample_dir}{Directory containing experimental FCS files.}
 
 \item{M}{Optional reference matrix (Markers x Detectors). Required for
-dynamic unmixing methods (`"WLS"`, `"OLS"`, `"NNLS"`, `"AutoSpectral"`).}
+dynamic unmixing methods (`"WLS"`, `"OLS"`, `"NNLS"`).}
 
 \item{W}{Optional static unmixing matrix (Markers x Detectors). If supplied,
 unmixing is performed using matrix multiplication with the transposed W.}
@@ -29,9 +29,9 @@ unmixing is performed using matrix multiplication with the transposed W.}
 Used when `W` is not supplied. By default this points to the matrix produced
 by [autounmix_controls()].}
 
-\item{method}{Unmixing method ("WLS", "OLS", "NNLS", or "AutoSpectral").}
+\item{method}{Unmixing method ("WLS", "OLS", or "NNLS").}
 
-\item{cytometer}{Cytometer name used when `method = "AutoSpectral"` (for example `"Aurora"`).}
+\item{cytometer}{Reserved for compatibility with older workflows.}
 
 \item{output_dir}{Directory to save unmixed FCS files.}
 

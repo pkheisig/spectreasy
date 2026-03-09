@@ -65,6 +65,103 @@
     stop(arg_name, " must be a numeric matrix or a data.frame with detector columns.")
 }
 
+.normalize_channel_token <- function(x) {
+    out <- toupper(gsub("\\s+", "", trimws(as.character(x))))
+    out[is.na(out)] <- ""
+    out
+}
+
+.build_channel_alias_map_from_pd <- function(pd) {
+    if (is.null(pd) || !is.data.frame(pd) || !all(c("name", "desc") %in% colnames(pd))) {
+        return(character())
+    }
+
+    det_info <- tryCatch(get_sorted_detectors(pd), error = function(e) NULL)
+    if (is.null(det_info) || length(det_info$names) == 0) {
+        return(character())
+    }
+    detector_names <- as.character(det_info$names)
+    if (length(detector_names) == 0) {
+        return(character())
+    }
+
+    alias_map <- character()
+    add_alias <- function(alias, target) {
+        key <- .normalize_channel_token(alias)
+        if (!nzchar(key) || is.na(target) || !nzchar(target)) return(invisible(NULL))
+        if (!key %in% names(alias_map)) alias_map[[key]] <<- target
+        invisible(NULL)
+    }
+
+    # Direct aliases from detector names.
+    for (det in detector_names) {
+        det_key <- .normalize_channel_token(det)
+        add_alias(det_key, det)
+        add_alias(gsub("-A$", "", det_key), det)
+        add_alias(paste0(gsub("-A$", "", det_key), "-A"), det)
+    }
+
+    # Build code-style aliases (UV1, V7, B2, YG1, R4) from detector metadata.
+    idx <- match(detector_names, as.character(pd$name))
+    desc <- trimws(as.character(pd$desc[idx]))
+    desc[is.na(desc)] <- ""
+
+    parse_laser_nm <- function(x) {
+        if (!nzchar(x)) return(NA_real_)
+        m <- regexec("([0-9]{3})\\s*NM", toupper(x))
+        g <- regmatches(toupper(x), m)[[1]]
+        if (length(g) < 2) return(NA_real_)
+        as.numeric(g[2])
+    }
+
+    parse_center_nm <- function(x) {
+        if (!nzchar(x)) return(NA_real_)
+        m <- regexec("-\\s*([0-9]{3})\\s*/", toupper(x))
+        g <- regmatches(toupper(x), m)[[1]]
+        if (length(g) < 2) return(NA_real_)
+        as.numeric(g[2])
+    }
+
+    laser_nm <- vapply(desc, parse_laser_nm, numeric(1))
+    center_nm <- vapply(desc, parse_center_nm, numeric(1))
+
+    laser_prefix <- vapply(laser_nm, function(v) {
+        if (!is.finite(v)) return(NA_character_)
+        if (v < 380) return("UV")
+        if (v < 460) return("V")
+        if (v < 530) return("B")
+        if (v < 600) return("YG")
+        "R"
+    }, character(1))
+
+    code_df <- data.frame(
+        detector = detector_names,
+        prefix = laser_prefix,
+        center = center_nm,
+        stringsAsFactors = FALSE
+    )
+    code_df <- code_df[!is.na(code_df$prefix) & nzchar(code_df$prefix), , drop = FALSE]
+    if (nrow(code_df) > 0) {
+        split_idx <- split(seq_len(nrow(code_df)), code_df$prefix)
+        for (prefix in names(split_idx)) {
+            rows <- split_idx[[prefix]]
+            block <- code_df[rows, , drop = FALSE]
+            ord <- order(
+                ifelse(is.finite(block$center), block$center, Inf),
+                block$detector
+            )
+            block <- block[ord, , drop = FALSE]
+            for (i in seq_len(nrow(block))) {
+                alias_base <- paste0(prefix, i)
+                add_alias(alias_base, block$detector[i])
+                add_alias(paste0(alias_base, "-A"), block$detector[i])
+            }
+        }
+    }
+
+    alias_map
+}
+
 .is_passthrough_parameter <- function(param_names) {
     if (length(param_names) == 0) {
         return(logical(0))
@@ -126,4 +223,21 @@
         fsc = pick_primary("FSC"),
         ssc = pick_primary("SSC")
     )
+}
+
+.resolve_control_file_path <- function(control_file = "fcs_mapping.csv") {
+    path <- as.character(control_file)[1]
+    if (is.na(path) || !nzchar(trimws(path))) {
+        return(path)
+    }
+
+    # Backward compatibility for older projects.
+    if (identical(path, "fcs_mapping.csv") &&
+        !file.exists(path) &&
+        file.exists("fcs_control_file.csv")) {
+        message("Default control file 'fcs_mapping.csv' not found. Using legacy 'fcs_control_file.csv'.")
+        return("fcs_control_file.csv")
+    }
+
+    path
 }

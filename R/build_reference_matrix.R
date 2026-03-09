@@ -36,7 +36,7 @@
 #' M <- build_reference_matrix(
 #'   input_folder = "scc",
 #'   output_folder = "spectreasy_outputs/build_reference_plots",
-#'   control_df = "fcs_control_file.csv",
+#'   control_df = "fcs_mapping.csv",
 #'   cytometer = "Aurora"
 #' )
 #'
@@ -129,7 +129,8 @@ build_reference_matrix <- function(
 
     # 1. Establish Detector Sorting and Labels
     ff_meta <- flowCore::read.FCS(fcs_files[1], transformation = FALSE, truncate_max_range = FALSE)
-    det_info <- get_sorted_detectors(flowCore::pData(flowCore::parameters(ff_meta)))
+    pd_meta <- flowCore::pData(flowCore::parameters(ff_meta))
+    det_info <- get_sorted_detectors(pd_meta)
     detector_names <- det_info$names
     detector_labels <- det_info$labels
 
@@ -139,33 +140,11 @@ build_reference_matrix <- function(
         out
     }
 
-    load_cytometer_alias_map <- function(cytometer_name) {
-        if (!requireNamespace("AutoSpectral", quietly = TRUE)) return(character())
-        cdb <- system.file("extdata/cytometer_database.csv", package = "AutoSpectral")
-        if (!file.exists(cdb)) return(character())
-        cyto_db <- tryCatch(
-            utils::read.csv(cdb, stringsAsFactors = FALSE, check.names = FALSE),
-            error = function(e) NULL
-        )
-        if (is.null(cyto_db) || nrow(cyto_db) == 0) return(character())
-        target_col <- colnames(cyto_db)[tolower(colnames(cyto_db)) == tolower(cytometer_name)]
-        if (length(target_col) == 0) return(character())
-
-        alias_map <- character()
-        targets <- normalize_channel(cyto_db[[target_col[1]]])
-        for (i in seq_len(nrow(cyto_db))) {
-            target <- targets[i]
-            if (!nzchar(target)) next
-            aliases <- normalize_channel(unlist(cyto_db[i, , drop = FALSE]))
-            aliases <- aliases[nzchar(aliases)]
-            for (alias in aliases) {
-                if (!alias %in% names(alias_map)) alias_map[alias] <- target
-            }
-        }
-        alias_map
+    load_cytometer_alias_map <- function(pd_tbl) {
+        .build_channel_alias_map_from_pd(pd_tbl)
     }
 
-    channel_alias_map <- load_cytometer_alias_map(cytometer)
+    channel_alias_map <- load_cytometer_alias_map(pd_meta)
 
     resolve_control_channel <- function(channel_value, det_names) {
         if (is.null(channel_value) || is.na(channel_value) || trimws(channel_value) == "") return("")

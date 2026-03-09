@@ -2,14 +2,14 @@
 #' 
 #' @param sample_dir Directory containing experimental FCS files.
 #' @param M Optional reference matrix (Markers x Detectors). Required for
-#'   dynamic unmixing methods (`"WLS"`, `"OLS"`, `"NNLS"`, `"AutoSpectral"`).
+#'   dynamic unmixing methods (`"WLS"`, `"OLS"`, `"NNLS"`).
 #' @param W Optional static unmixing matrix (Markers x Detectors). If supplied,
 #'   unmixing is performed using matrix multiplication with the transposed W.
 #' @param unmixing_matrix_file Optional CSV path to a saved unmixing matrix.
 #'   Used when `W` is not supplied. By default this points to the matrix produced
 #'   by [autounmix_controls()].
-#' @param method Unmixing method ("WLS", "OLS", "NNLS", or "AutoSpectral").
-#' @param cytometer Cytometer name used when `method = "AutoSpectral"` (for example `"Aurora"`).
+#' @param method Unmixing method ("WLS", "OLS", or "NNLS").
+#' @param cytometer Reserved for compatibility with older workflows.
 #' @param output_dir Directory to save unmixed FCS files.
 #' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 #' @return A named list with one element per sample. Each element contains
@@ -88,21 +88,9 @@ unmix_samples <- function(sample_dir = "samples",
     }
 
     method_upper <- toupper(method)
-    allowed_methods <- c("WLS", "OLS", "NNLS", "AUTOSPECTRAL")
+    allowed_methods <- c("WLS", "OLS", "NNLS")
     if (!using_static_W && !(method_upper %in% allowed_methods)) {
         stop("method must be one of: ", paste(allowed_methods, collapse = ", "))
-    }
-    if (!using_static_W && method_upper == "AUTOSPECTRAL" && requireNamespace("AutoSpectral", quietly = TRUE)) {
-        cytometer_candidates <- unique(c(cytometer, tolower(cytometer), toupper(cytometer)))
-        ok <- FALSE
-        for (cand in cytometer_candidates) {
-            ok <- tryCatch({
-                AutoSpectral::get.autospectral.param(cytometer = cand, figures = FALSE)
-                TRUE
-            }, error = function(e) FALSE)
-            if (ok) break
-        }
-        if (!ok) stop("Unsupported cytometer for AutoSpectral: ", cytometer)
     }
 
     build_result_from_unmixed <- function(flow_frame, M_sub, abundances, file_name) {
@@ -151,31 +139,7 @@ unmix_samples <- function(sample_dir = "samples",
             }
             res_obj <- build_result_from_static_unmix(ff, W_use, sn)
         } else {
-            # Select unmixing math engine
-            if (method_upper == "AUTOSPECTRAL") {
-                if (!requireNamespace("AutoSpectral", quietly = TRUE)) {
-                    warning("AutoSpectral package not found. Falling back to internal WLS.")
-                    res_obj <- calc_residuals(ff, M, method = "WLS", file_name = sn, return_residuals = TRUE)
-                } else {
-                    # Use AutoSpectral WLS math engine directly with our refined matrix M
-                    raw_data <- flowCore::exprs(ff)
-                    detectors <- colnames(M)
-                    missing <- setdiff(detectors, colnames(raw_data))
-                    if (length(missing) > 0) {
-                        stop("Detectors in reference matrix not found in sample '", sn, "': ", paste(missing, collapse = ", "))
-                    }
-                    Y <- raw_data[, detectors, drop = FALSE]
-                    signatures <- M[, detectors, drop = FALSE]
-                    
-                    # AutoSpectral unmix.wls
-                    unmixed_data <- AutoSpectral::unmix.wls(Y, signatures)
-                    abundances <- as.matrix(unmixed_data)
-                    colnames(abundances) <- rownames(signatures)
-                    res_obj <- build_result_from_unmixed(ff, signatures, abundances, sn)
-                }
-            } else {
-                res_obj <- calc_residuals(ff, M, method = method_upper, file_name = sn, return_residuals = TRUE)
-            }
+            res_obj <- calc_residuals(ff, M, method = method_upper, file_name = sn, return_residuals = TRUE)
         }
         
         if (isTRUE(write_fcs)) {

@@ -1,6 +1,6 @@
-#' Create AutoSpectral Control File
+#' Create spectreasy Control File
 #' 
-#' Generates the CSV file required by the AutoSpectral package.
+#' Generates a spectreasy-compatible control CSV.
 #' 
 #' @param input_folder Directory containing single-stained control FCS files.
 #' @param af_folder Optional AF folder.
@@ -10,7 +10,7 @@
 #' @param default_control_type Deprecated. Kept for backward compatibility and ignored.
 #' @param unknown_fluor_policy How to fill unresolved fluorophores:
 #'   `"empty"` (recommended), `"by_channel"` (best-effort guess), `"filename"`.
-#' @param output_file Path where the CSV will be saved (default: "fcs_control_file.csv").
+#' @param output_file Path where the CSV will be saved (default: "fcs_mapping.csv").
 #' @param custom_fluorophores Optional named vector to map filenames to fluorophore names.
 #' @return A data frame containing the control file information.
 #'
@@ -20,21 +20,21 @@
 #' @export
 #' @examples
 #' \dontrun{
-#' control_df <- create_autospectral_control_file(
+#' control_df <- create_control_file(
 #'   input_folder = "scc",
 #'   cytometer = "Aurora",
-#'   output_file = "fcs_control_file.csv"
+#'   output_file = "fcs_mapping.csv"
 #' )
 #' head(control_df)
 #' }
-create_autospectral_control_file <- function(input_folder = "scc", 
-                                          af_folder = "af",
-                                          include_af_folder = TRUE,
-                                          cytometer = "Aurora",
-                                          default_control_type = "cells",
-                                          unknown_fluor_policy = c("empty", "by_channel", "filename"),
-                                          output_file = "fcs_control_file.csv",
-                                          custom_fluorophores = NULL) {
+create_control_file <- function(input_folder = "scc",
+                                af_folder = "af",
+                                include_af_folder = TRUE,
+                                cytometer = "Aurora",
+                                default_control_type = "cells",
+                                unknown_fluor_policy = c("empty", "by_channel", "filename"),
+                                output_file = "fcs_mapping.csv",
+                                custom_fluorophores = NULL) {
     unknown_fluor_policy <- match.arg(unknown_fluor_policy)
     scc_files <- list.files(input_folder, pattern = "\\.fcs$", full.names = FALSE, ignore.case = TRUE)
     af_files <- if (include_af_folder && dir.exists(af_folder)) {
@@ -160,87 +160,17 @@ create_autospectral_control_file <- function(input_folder = "scc",
         out
     }
 
-    load_autospectral_reference <- function(cytometer_name) {
-        if (!requireNamespace("AutoSpectral", quietly = TRUE)) return(NULL)
-        fdb <- system.file("extdata/fluorophore_database.csv", package = "AutoSpectral")
-        cdb <- system.file("extdata/cytometer_database.csv", package = "AutoSpectral")
-        if (!file.exists(fdb)) return(NULL)
-
-        fluor_db <- tryCatch(
-            utils::read.csv(fdb, stringsAsFactors = FALSE, check.names = FALSE),
-            error = function(e) NULL
-        )
-        if (is.null(fluor_db) || nrow(fluor_db) == 0 || !("fluorophore" %in% colnames(fluor_db))) {
-            return(NULL)
-        }
-
-        out <- list(name_map = character(), channel_map = character(), alias_map = character())
-        synonym_cols <- intersect(c("fluorophore", "synonym1", "synonym2", "synonym3"), colnames(fluor_db))
-        for (i in seq_len(nrow(fluor_db))) {
-            canonical <- trimws(as.character(fluor_db$fluorophore[i]))
-            if (!nzchar(canonical)) next
-            vals <- unique(trimws(as.character(unlist(fluor_db[i, synonym_cols, drop = FALSE]))))
-            keys <- normalize_token(vals)
-            keys <- keys[nzchar(keys)]
-            for (k in keys) {
-                if (!k %in% names(out$name_map)) out$name_map[k] <- canonical
-            }
-        }
-
-        channel_col <- colnames(fluor_db)[tolower(colnames(fluor_db)) == tolower(paste0("channel.", cytometer_name))]
-        if (length(channel_col) == 0) {
-            channel_col <- colnames(fluor_db)[tolower(colnames(fluor_db)) == "channel.aurora"]
-        }
-        if (length(channel_col) > 0) {
-            ch <- canonicalize_channel(fluor_db[[channel_col[1]]])
-            for (cc in unique(ch[nzchar(ch)])) {
-                candidates <- fluor_db$fluorophore[ch == cc]
-                out$channel_map[cc] <- choose_preferred_fluor(candidates)
-            }
-        }
-
-        if (file.exists(cdb)) {
-            cyto_db <- tryCatch(
-                utils::read.csv(cdb, stringsAsFactors = FALSE, check.names = FALSE),
-                error = function(e) NULL
-            )
-            if (!is.null(cyto_db) && nrow(cyto_db) > 0) {
-                target_col <- colnames(cyto_db)[tolower(colnames(cyto_db)) == tolower(cytometer_name)]
-                if (length(target_col) > 0) {
-                    target_vals <- canonicalize_channel(cyto_db[[target_col[1]]])
-                    for (i in seq_len(nrow(cyto_db))) {
-                        tv <- target_vals[i]
-                        if (!nzchar(tv)) next
-                        aliases <- canonicalize_channel(unlist(cyto_db[i, , drop = FALSE]))
-                        aliases <- aliases[nzchar(aliases)]
-                        for (alias in aliases) {
-                            if (!alias %in% names(out$alias_map)) out$alias_map[alias] <- tv
-                        }
-                    }
-                }
-            }
-        }
-
-        out
-    }
-
-    merge_named_maps <- function(primary, fallback) {
-        out <- primary
-        add <- fallback[!(names(fallback) %in% names(out))]
-        c(out, add)
-    }
-
     shipped_ref <- load_shipped_reference(cytometer)
-    autospectral_ref <- load_autospectral_reference(cytometer)
     fluor_name_map <- shipped_ref$name_map
     fluor_channel_map <- shipped_ref$channel_map
     marker_name_map <- shipped_ref$marker_map
     channel_alias_map <- character()
 
-    if (!is.null(autospectral_ref)) {
-        fluor_name_map <- merge_named_maps(fluor_name_map, autospectral_ref$name_map)
-        fluor_channel_map <- merge_named_maps(fluor_channel_map, autospectral_ref$channel_map)
-        channel_alias_map <- autospectral_ref$alias_map
+    merge_alias_map <- function(existing, incoming) {
+        if (length(incoming) == 0) return(existing)
+        incoming <- incoming[!is.na(names(incoming)) & nzchar(names(incoming))]
+        incoming <- incoming[!(names(incoming) %in% names(existing))]
+        c(existing, incoming)
     }
 
     detect_alias <- function(stem, alias_map, min_substring_n = 4) {
@@ -350,23 +280,13 @@ create_autospectral_control_file <- function(input_folder = "scc",
     }
 
     get_expected_af_channel <- function(cytometer_name) {
-        if (!requireNamespace("AutoSpectral", quietly = TRUE)) return("")
-        candidates <- unique(c(cytometer_name, tolower(cytometer_name), toupper(cytometer_name)))
-        af_ch <- tryCatch({
-            for (cand in candidates) {
-                asp <- tryCatch(
-                    AutoSpectral::get.autospectral.param(cytometer = cand, figures = FALSE),
-                    error = function(e) NULL
-                )
-                if (!is.null(asp) && "af.channel" %in% names(asp)) {
-                    ch <- as.character(asp$af.channel[1])
-                    if (!is.na(ch) && nzchar(ch)) return(ch)
-                }
-            }
-            ""
-        }, error = function(e) "")
-        if (is.na(af_ch) || !nzchar(af_ch)) return("")
-        af_ch
+        # Internal default AF-channel hints by cytometer family.
+        # These hints are only used for optional AF-like auto-tagging heuristics.
+        cy <- tolower(trimws(as.character(cytometer_name)))
+        if (!nzchar(cy)) return("")
+        if (grepl("aurora", cy, fixed = TRUE)) return("B1-A")
+        if (grepl("northern lights", cy, fixed = TRUE)) return("B1-A")
+        ""
     }
 
     next_af_tag <- function(existing_vals) {
@@ -494,6 +414,7 @@ create_autospectral_control_file <- function(input_folder = "scc",
         tryCatch({
             ff <- flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE)
             pd <- flowCore::pData(flowCore::parameters(ff))
+            channel_alias_map <<- merge_alias_map(channel_alias_map, .build_channel_alias_map_from_pd(pd))
             fl_pd <- get_sorted_detectors(pd)
             if (length(fl_pd$names) > 0) {
                 expr <- flowCore::exprs(ff)[, fl_pd$names, drop = FALSE]
@@ -619,18 +540,18 @@ create_autospectral_control_file <- function(input_folder = "scc",
         df$control.type[df$filename == primary_af_file] <- "cells"
     }
 
-    # Use base write.csv for compatibility with AutoSpectral's reader
+    # Use base write.csv for compatibility with legacy control-file parsers.
     utils::write.csv(df, output_file, row.names = FALSE, quote = TRUE)
     return(df)
 }
 
-#' Get Spectra via AutoSpectral (Robust Multi-AF)
+#' Get Spectra via Internal Backend (Robust Multi-AF)
 #'
 #' Extracts SCC signatures using internal logic and optional AF signatures from
 #' the `af/` folder, then combines them for downstream unmixing.
 #'
 #' @param flow_frame A `flowFrame` used to determine detector ordering.
-#' @param control_file Path to AutoSpectral-style control CSV.
+#' @param control_file Path to spectreasy-compatible control CSV.
 #' @param control_dir Directory containing SCC FCS files.
 #' @param af_dir Directory containing optional AF FCS files.
 #' @param method Reserved for future method selection.
@@ -640,44 +561,27 @@ create_autospectral_control_file <- function(input_folder = "scc",
 #' @examples
 #' \dontrun{
 #' ff <- flowCore::read.FCS("samples/Sample1.fcs", transformation = FALSE)
-#' M_auto <- get_autospectral_spectra(
+#' M_ctrl <- get_control_spectra(
 #'   flow_frame = ff,
-#'   control_file = "fcs_control_file.csv",
+#'   control_file = "fcs_mapping.csv",
 #'   control_dir = "scc",
 #'   cytometer = "Aurora"
 #' )
 #' }
-get_autospectral_spectra <- function(flow_frame, 
-                                   control_file = "fcs_control_file.csv", 
-                                   control_dir = "scc",
-                                   af_dir = "af",
-                                   method = "WLS",
-                                   cytometer = "Aurora") {
-    if (!requireNamespace("AutoSpectral", quietly = TRUE)) {
-        stop("Package 'AutoSpectral' required. Install from GitHub.")
-    }
-    
-    # Validate cytometer against AutoSpectral parameters (accept user-friendly case)
-    cytometer_candidates <- unique(c(cytometer, tolower(cytometer), toupper(cytometer)))
-    cytometer_resolved <- NULL
-    for (cand in cytometer_candidates) {
-        ok <- tryCatch({
-            AutoSpectral::get.autospectral.param(cytometer = cand, figures = FALSE)
-            TRUE
-        }, error = function(e) FALSE)
-        if (ok) {
-            cytometer_resolved <- cand
-            break
-        }
-    }
-    if (is.null(cytometer_resolved)) {
-        stop("Unsupported cytometer for AutoSpectral: ", cytometer)
-    }
+get_control_spectra <- function(flow_frame,
+                                control_file = "fcs_mapping.csv",
+                                control_dir = "scc",
+                                af_dir = "af",
+                                method = "WLS",
+                                cytometer = "Aurora") {
+    cytometer_resolved <- cytometer
 
     # 1. Get detector info
     pd <- flowCore::pData(flowCore::parameters(flow_frame))
     det_info <- get_sorted_detectors(pd)
     detector_names <- det_info$names
+
+    control_file <- .resolve_control_file_path(control_file)
 
     # 2. Extract SCC signatures
     message("  - Extracting reference signatures from single-color controls...")
