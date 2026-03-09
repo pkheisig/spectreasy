@@ -42,7 +42,7 @@ my_project/
 <img width="1102" height="201" alt="Screenshot 2026-02-20 at 11 00 23" src="https://github.com/user-attachments/assets/a8c5e253-e1c8-4592-8ea2-e0f404932a54" />
 
 
-The control file maps FCS filenames to fluorophores. Generate it with `spectreasy`:
+The control file maps FCS filenames to fluorophores and markers. Generate it with `spectreasy`:
 
 ```r
 create_control_file(
@@ -62,6 +62,7 @@ Logic:
 - detect `fluorophore` and `marker` from filename aliases first
 - if no fluorophore is detected, fallback to peak-channel mapping (for example `YG1 -> PE`, `UV2 -> BUV395`)
 - if a file is unlabeled (no marker/fluor match) but matches cytometer AF-channel behavior, it is auto-tagged as `AF`
+- if filename contains viability cues (`live`, `dead`, `viability`), `is.viability` is auto-set to `TRUE`
 - if no marker is detected, marker is left empty
 
 ---
@@ -113,6 +114,7 @@ If `fcs_mapping.csv` is missing and `auto_create_control = TRUE`, `autounmix_con
 
 For newly auto-created files:
 - `control.type` is auto-detected from filename tokens (`beads`/`cells`) when possible; AF rows are always `cells`
+- `is.viability` is auto-detected from filename cues (`live`/`dead`/`viability`) when possible
 - `universal.negative` is left empty by default for all rows
 - `autounmix_controls()` pauses and asks for `y/n` confirmation so you can review/edit the file first
 
@@ -155,6 +157,9 @@ unmixed <- unmix_samples(
   output_dir = "spectreasy_outputs/unmix_samples"
 )
 ```
+
+When writing unmixed FCS files, primary feature names come from matrix row names (fluorophores).  
+Secondary feature names are taken from `fcs_mapping.csv` (`marker` column) when available.
 
 ### Path B: Step-wise manual workflow
 
