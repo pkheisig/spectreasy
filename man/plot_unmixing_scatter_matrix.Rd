@@ -8,6 +8,7 @@ plot_unmixing_scatter_matrix(
   unmixed_list,
   sample_to_marker = NULL,
   markers = NULL,
+  marker_display = NULL,
   output_file = "unmixing_scatter_matrix.png",
   max_points_per_sample = 3000,
   transform = c("none", "asinh"),
@@ -22,6 +23,9 @@ plot_unmixing_scatter_matrix(
 without extension) to fluorophore/marker names.}
 
 \item{markers}{Optional character vector of marker columns to include.}
+
+\item{marker_display}{Optional named character vector mapping primary marker
+names to display labels (for example `"BUV395 / CD45RA"`).}
 
 \item{output_file}{Path to PNG output.}
 

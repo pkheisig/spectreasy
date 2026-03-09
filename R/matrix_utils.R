@@ -230,14 +230,5 @@
     if (is.na(path) || !nzchar(trimws(path))) {
         return(path)
     }
-
-    # Backward compatibility for older projects.
-    if (identical(path, "fcs_mapping.csv") &&
-        !file.exists(path) &&
-        file.exists("fcs_control_file.csv")) {
-        message("Default control file 'fcs_mapping.csv' not found. Using legacy 'fcs_control_file.csv'.")
-        return("fcs_control_file.csv")
-    }
-
     path
 }

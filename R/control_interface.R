@@ -17,6 +17,7 @@
 #' The generated file intentionally leaves `universal.negative` empty by default.
 #' It sets `control.type = "cells"` only for AF rows and leaves non-AF rows empty
 #' for manual completion.
+#' It also includes `primary` (`fluorophore`) and `secondary` (`marker`) aliases.
 #' @export
 #' @examples
 #' \dontrun{
@@ -364,6 +365,8 @@ create_control_file <- function(input_folder = "scc",
             filename = fn,
             fluorophore = fluor,
             marker = marker,
+            primary = fluor,
+            secondary = marker,
             channel = "",
             control.type = "",
             universal.negative = "",
@@ -382,6 +385,8 @@ create_control_file <- function(input_folder = "scc",
             filename = fn,
             fluorophore = tag,
             marker = "Autofluorescence",
+            primary = tag,
+            secondary = "Autofluorescence",
             channel = "",
             control.type = "cells",
             universal.negative = "",
@@ -540,7 +545,29 @@ create_control_file <- function(input_folder = "scc",
         df$control.type[df$filename == primary_af_file] <- "cells"
     }
 
-    # Use base write.csv for compatibility with legacy control-file parsers.
+    # Keep explicit primary/secondary aliases for downstream UI/reporting.
+    df$primary <- trimws(as.character(df$fluorophore))
+    df$secondary <- trimws(as.character(df$marker))
+    df$primary[is.na(df$primary)] <- ""
+    df$secondary[is.na(df$secondary)] <- ""
+
+    # Put primary/secondary next to fluorophore/marker for readability.
+    preferred_order <- c(
+        "filename",
+        "fluorophore",
+        "marker",
+        "primary",
+        "secondary",
+        "channel",
+        "control.type",
+        "universal.negative",
+        "large.gate",
+        "is.viability"
+    )
+    keep <- intersect(preferred_order, colnames(df))
+    df <- df[, c(keep, setdiff(colnames(df), keep)), drop = FALSE]
+
+    # Use base write.csv for broad control-file parser compatibility.
     utils::write.csv(df, output_file, row.names = FALSE, quote = TRUE)
     return(df)
 }

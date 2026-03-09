@@ -248,13 +248,31 @@ autounmix_controls <- function(
     ggplot2::ggsave(unmixing_matrix_png, p_unmix, width = 200, height = 150, units = "mm")
 
     sample_to_marker <- NULL
+    marker_display <- NULL
     if (is.data.frame(control_df) && all(c("filename", "fluorophore") %in% colnames(control_df))) {
         sample_keys <- tools::file_path_sans_ext(basename(as.character(control_df$filename)))
-        sample_vals <- trimws(as.character(control_df$fluorophore))
-        keep <- !is.na(sample_keys) & sample_keys != "" & !is.na(sample_vals) & sample_vals != ""
+        primary_vals <- trimws(as.character(control_df$fluorophore))
+        secondary_vals <- if ("secondary" %in% colnames(control_df)) {
+            trimws(as.character(control_df$secondary))
+        } else if ("marker" %in% colnames(control_df)) {
+            trimws(as.character(control_df$marker))
+        } else {
+            rep("", length(primary_vals))
+        }
+        secondary_vals[is.na(secondary_vals)] <- ""
+        keep <- !is.na(sample_keys) & sample_keys != "" & !is.na(primary_vals) & primary_vals != ""
         if (any(keep)) {
-            sample_to_marker <- stats::setNames(sample_vals[keep], sample_keys[keep])
+            sample_to_marker <- stats::setNames(primary_vals[keep], sample_keys[keep])
             sample_to_marker <- sample_to_marker[!duplicated(names(sample_to_marker))]
+
+            display_vals <- primary_vals
+            show_secondary <- secondary_vals != "" &
+                toupper(secondary_vals) != "AUTOFLUORESCENCE" &
+                tolower(secondary_vals) != tolower(primary_vals)
+            display_vals[show_secondary] <- paste0(primary_vals[show_secondary], " / ", secondary_vals[show_secondary])
+            marker_display <- stats::setNames(display_vals[keep], primary_vals[keep])
+            marker_display <- marker_display[names(marker_display) != ""]
+            marker_display <- marker_display[!duplicated(names(marker_display))]
         }
     }
 
@@ -262,6 +280,7 @@ autounmix_controls <- function(
         unmixed_list = unmixed_list,
         sample_to_marker = sample_to_marker,
         markers = rownames(M),
+        marker_display = marker_display,
         output_file = unmixing_scatter_png,
         transform = "none",
         panel_size_mm = unmix_scatter_panel_size_mm

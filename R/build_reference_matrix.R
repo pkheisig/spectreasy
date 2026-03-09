@@ -324,6 +324,13 @@ build_reference_matrix <- function(
         sample_info <- get_sample_type(sn, sample_patterns, default_sample_type)
 
         fluor_name <- if (nrow(row_info) > 0 && !is.na(row_info$fluorophore[1])) row_info$fluorophore[1] else sample_info$pattern
+        marker_name <- if (nrow(row_info) > 0 && "marker" %in% colnames(row_info) && !is.na(row_info$marker[1])) {
+            trimws(as.character(row_info$marker[1]))
+        } else if (nrow(row_info) > 0 && "secondary" %in% colnames(row_info) && !is.na(row_info$secondary[1])) {
+            trimws(as.character(row_info$secondary[1]))
+        } else {
+            ""
+        }
 
         if (is_extra_af) {
             # Assign a unique AF name if not in control_df
@@ -577,6 +584,7 @@ build_reference_matrix <- function(
         qc_summary_list[[sn]] <- data.table::data.table(
             sample = sn,
             fluorophore = fluor_name,
+            marker = marker_name,
             type = sample_info$type,
             peak_channel = peak_channel,
             fsc_channel = fsc,

@@ -123,8 +123,12 @@ generate_scc_report <- function(
         if (nrow(df) == 0) {
             return("No SCC summary rows available.")
         }
+        if (!("marker" %in% colnames(df))) {
+            df$marker <- ""
+        }
         df <- df[, c(
             "fluorophore",
+            "marker",
             "sample",
             "type",
             "peak_channel",
@@ -136,6 +140,7 @@ generate_scc_report <- function(
         ), drop = FALSE]
         colnames(df) <- c(
             "Fluor",
+            "Marker",
             "Sample",
             "Type",
             "Peak",
@@ -197,7 +202,12 @@ generate_scc_report <- function(
             row <- qc_summary[i, , drop = FALSE]
             sample_id <- row$sample[[1]]
             fluor <- row$fluorophore[[1]]
-            title <- paste0(fluor, " (", sample_id, ")")
+            marker <- if ("marker" %in% colnames(row)) trimws(as.character(row$marker[[1]])) else ""
+            title <- if (!is.na(marker) && nzchar(marker) && tolower(marker) != tolower(fluor)) {
+                paste0(fluor, " / ", marker, " (", sample_id, ")")
+            } else {
+                paste0(fluor, " (", sample_id, ")")
+            }
             subtitle <- paste0(
                 "Type: ", row$type[[1]],
                 " | Peak channel: ", row$peak_channel[[1]],

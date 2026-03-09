@@ -65,6 +65,9 @@ Review and edit the generated `fcs_mapping.csv` to ensure correct fluorophore na
 |--------|-------------|
 | `filename` | FCS filename |
 | `fluorophore` | Fluorophore name (becomes row name in matrix) |
+| `marker` | Biological marker name (for example `CD45RA`) |
+| `primary` | Alias of `fluorophore` (auto-generated) |
+| `secondary` | Alias of `marker` (auto-generated) |
 | `channel` | Peak detector for histogram gating |
 | `universal.negative` | TRUE to use as background reference |
 

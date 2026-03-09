@@ -95,6 +95,8 @@ plot_spectra <- function(ref_matrix,
 #' @param sample_to_marker Named character vector mapping sample IDs (basename
 #'   without extension) to fluorophore/marker names.
 #' @param markers Optional character vector of marker columns to include.
+#' @param marker_display Optional named character vector mapping primary marker
+#'   names to display labels (for example `"BUV395 / CD45RA"`).
 #' @param output_file Path to PNG output.
 #' @param max_points_per_sample Maximum events sampled per sample for plotting.
 #' @param transform One of `"asinh"` or `"none"`.
@@ -114,6 +116,7 @@ plot_unmixing_scatter_matrix <- function(
     unmixed_list,
     sample_to_marker = NULL,
     markers = NULL,
+    marker_display = NULL,
     output_file = "unmixing_scatter_matrix.png",
     max_points_per_sample = 3000,
     transform = c("none", "asinh"),
@@ -165,6 +168,16 @@ plot_unmixing_scatter_matrix <- function(
     }
     markers <- markers[!is.na(markers) & markers != ""]
     if (length(markers) < 2) stop("Need at least two marker names for scatter matrix.")
+    marker_labels <- stats::setNames(markers, markers)
+    if (!is.null(marker_display)) {
+        md <- as.character(marker_display)
+        names(md) <- names(marker_display)
+        md <- md[!is.na(names(md)) & names(md) != ""]
+        hits <- intersect(names(md), markers)
+        if (length(hits) > 0) {
+            marker_labels[hits] <- md[hits]
+        }
+    }
 
     panel_data <- list()
     panel_limits <- list()
@@ -290,7 +303,16 @@ plot_unmixing_scatter_matrix <- function(
             size = 0.25,
             stroke = 0
         ) +
-        ggplot2::facet_grid(panel_row ~ panel_col, drop = FALSE, switch = "y", scales = "free") +
+        ggplot2::facet_grid(
+            panel_row ~ panel_col,
+            drop = FALSE,
+            switch = "y",
+            scales = "free",
+            labeller = ggplot2::labeller(
+                panel_row = marker_labels,
+                panel_col = marker_labels
+            )
+        ) +
         ggplot2::labs(
             title = "Unmixing Scatter Matrix",
             subtitle = "Good: row-stain events are high on Y and near zero on X (other markers). Bad: large off-axis clouds indicate cross-talk, control mislabeling, or unstable unmixing."
