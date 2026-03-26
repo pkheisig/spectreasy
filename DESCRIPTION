@@ -15,7 +15,6 @@ Imports:
     ggplot2,
     mclust,
     nnls,
-    plumber,
     png,
     scales,
     sp,
@@ -23,7 +22,8 @@ Imports:
 Suggests:
     knitr,
     rmarkdown,
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    plumber
 VignetteBuilder: knitr
 biocViews: FlowCytometry, QualityControl, Visualization, GUI, WorkflowStep
 Config/testthat/edition: 3

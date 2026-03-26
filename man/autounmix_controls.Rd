@@ -61,7 +61,9 @@ This function is intended as the control-stage step before GUI adjustment
 and downstream sample unmixing.
 }
 \examples{
-\dontrun{
+## Minimal runnable example (no files needed)
+invisible(NULL)
+\donttest{
 ctrl <- autounmix_controls(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",

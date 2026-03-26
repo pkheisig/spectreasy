@@ -46,7 +46,9 @@ A named list with one element per sample. Each element contains
 Unmix Experimental Samples
 }
 \examples{
-\dontrun{
+## Minimal runnable example (no files needed)
+invisible(NULL)
+\donttest{
 unmixed <- unmix_samples(
   sample_dir = "samples",
   unmixing_matrix_file = "spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv",

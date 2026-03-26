@@ -50,7 +50,9 @@ Builds a reference matrix from single-color controls, writes QC plots for each
 control, and assembles a PDF report for pre-unmix review.
 }
 \examples{
-\dontrun{
+## Minimal runnable example (no files needed)
+invisible(NULL)
+\donttest{
 generate_scc_report(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",

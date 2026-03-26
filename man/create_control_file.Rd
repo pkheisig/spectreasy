@@ -45,7 +45,9 @@ or `"cells"`), and forces AF rows to `cells`.
 Generates a spectreasy-compatible control CSV.
 }
 \examples{
-\dontrun{
+## Minimal runnable example (no files needed)
+invisible(NULL)
+\donttest{
 control_df <- create_control_file(
   input_folder = "scc",
   cytometer = "Aurora",

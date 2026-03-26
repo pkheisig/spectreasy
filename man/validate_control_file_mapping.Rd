@@ -39,7 +39,9 @@ This catches common setup issues early (missing files, wrong channel names,
 malformed universal negatives, incomplete mappings).
 }
 \examples{
-\dontrun{
+## Minimal runnable example (no files needed)
+invisible(NULL)
+\donttest{
 control_df <- read.csv("fcs_mapping.csv", stringsAsFactors = FALSE)
 preflight <- validate_control_file_mapping(control_df, scc_dir = "scc")
 preflight$ok

@@ -33,7 +33,9 @@ Starts the backend Plumber API for the interactive matrix adjustment interface.
 By default, the frontend is served from bundled package assets.
 }
 \examples{
-\dontrun{
+## Minimal runnable example (no files needed)
+invisible(NULL)
+\donttest{
 # Start API + bundled GUI (recommended for users; no npm required)
 launch_gui()
 

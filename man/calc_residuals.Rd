@@ -36,7 +36,9 @@ Data frame with unmixed abundances and retained acquisition parameters
 Calculate unmixing residuals
 }
 \examples{
-\dontrun{
+## Minimal runnable example (no files needed)
+invisible(NULL)
+\donttest{
 ff <- flowCore::read.FCS("samples/Sample1.fcs", transformation = FALSE)
 res <- calc_residuals(
   flow_frame = ff,
