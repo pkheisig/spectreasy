@@ -1,3 +1,11 @@
+# Local agent/python session artifacts
+.py_sessions/
+**/.py_sessions/
+.py_session/
+**/.py_session/
+pi-session-*.html
+pi-sessions-*.html
+
 # Data files
 *.fcs
 *.csv
