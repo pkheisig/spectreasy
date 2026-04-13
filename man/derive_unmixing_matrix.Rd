@@ -4,20 +4,29 @@
 \alias{derive_unmixing_matrix}
 \title{Derive Unmixing Matrix from Reference Matrix}
 \usage{
-derive_unmixing_matrix(M, method = "OLS", global_weights = NULL)
+derive_unmixing_matrix(
+  M,
+  method = "OLS",
+  global_weights = NULL,
+  background_noise = 25
+)
 }
 \arguments{
 \item{M}{Reference matrix (Markers x Detectors)}
 
-\item{method}{Unmixing method ("OLS" or "WLS")}
+\item{method}{Unmixing method ("OLS", "WLS", or "NNLS")}
 
-\item{global_weights}{Optional vector of weights for WLS (one per detector)}
+\item{global_weights}{Optional detector weights for WLS (one per detector).
+These are interpreted as inverse variances.}
+
+\item{background_noise}{Fallback noise floor used when `method = "WLS"`
+and `global_weights` is not supplied.}
 }
 \value{
 A matrix of unmixing coefficients (Markers x Detectors)
 }
 \description{
-Calculates the analytical unmixing matrix from a reference spectral matrix (M).
+Calculates a static unmixing matrix from a reference spectral matrix (M).
 The output matrix (W) has the same dimensions as M (Markers x Detectors).
 To unmix data manually: Unmixed_Data = Raw_Data %*% t(W)
 }

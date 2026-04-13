@@ -22,7 +22,7 @@ Plot Negative Population Spread
 \examples{
 ## Minimal runnable example (no files needed)
 invisible(NULL)
-\donttest{
+\dontrun{
 nps <- calculate_nps(results_df)
 p <- plot_nps(nps, output_file = "nps_plot.png")
 print(p)

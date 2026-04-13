@@ -63,7 +63,7 @@ and downstream sample unmixing.
 \examples{
 ## Minimal runnable example (no files needed)
 invisible(NULL)
-\donttest{
+\dontrun{
 ctrl <- autounmix_controls(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",

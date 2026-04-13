@@ -24,6 +24,30 @@ test_that("derive_unmixing_matrix returns finite matrix with expected dims", {
     expect_true(all(is.finite(W)))
 })
 
+test_that("derive_unmixing_matrix supports WLS fallback and NNLS proxy", {
+    M <- matrix(c(
+        1, 0.2, 0.1,
+        0.1, 1, 0.3
+    ), nrow = 2, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE")
+    colnames(M) <- c("B2-A", "YG1-A", "R1-A")
+
+    expect_warning(
+        W_wls <- spectreasy::derive_unmixing_matrix(M, method = "WLS"),
+        regexp = "global_weights"
+    )
+    expect_equal(dim(W_wls), dim(M))
+    expect_true(all(is.finite(W_wls)))
+
+    expect_warning(
+        W_nnls <- spectreasy::derive_unmixing_matrix(M, method = "NNLS"),
+        regexp = "linear proxy"
+    )
+    expect_equal(dim(W_nnls), dim(M))
+    expect_true(all(is.finite(W_nnls)))
+    expect_true(all(W_nnls >= -1e-12))
+})
+
 test_that("calc_residuals retains Time and all FSC/SSC parameters but not raw detectors", {
     M <- matrix(c(
         1, 0.2,

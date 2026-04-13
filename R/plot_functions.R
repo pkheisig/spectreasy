@@ -51,9 +51,22 @@ plot_spectra <- function(ref_matrix,
             labels <- det_info$labels[match(common, det_info$names)]
         }
     } else {
-        # Fallback to numerical sort
-        nums <- as.numeric(gsub("[^0-9]", "", detectors))
-        ord <- order(nums)
+        # Fallback: sort by laser group first, then detector number.
+        # Desired order: UV, V, B, YG, R.
+        detector_key <- toupper(gsub("\\s+", "", gsub("-A$", "", detectors)))
+        laser_group <- vapply(detector_key, function(k) {
+            if (grepl("^UV", k)) return(1L)
+            if (grepl("^V", k)) return(2L)
+            if (grepl("^B", k)) return(3L)
+            if (grepl("^YG", k) || grepl("^Y", k) || grepl("^G", k)) return(4L)
+            if (grepl("^R", k)) return(5L)
+            return(99L)
+        }, integer(1))
+
+        det_num <- suppressWarnings(as.integer(sub("^[A-Z]+([0-9]+).*$", "\\1", detector_key)))
+        det_num[!is.finite(det_num)] <- 999L
+
+        ord <- order(laser_group, det_num, detectors)
         ref_matrix <- ref_matrix[, ord, drop = FALSE]
         detectors <- colnames(ref_matrix)
         labels <- detectors

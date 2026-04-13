@@ -52,7 +52,7 @@ control, and assembles a PDF report for pre-unmix review.
 \examples{
 ## Minimal runnable example (no files needed)
 invisible(NULL)
-\donttest{
+\dontrun{
 generate_scc_report(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",

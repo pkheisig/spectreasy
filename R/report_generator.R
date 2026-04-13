@@ -53,47 +53,37 @@ generate_qc_report <- function(results_df, M, output_file = file.path("spectreas
     )
     grid::grid.text(summary_txt, x = 0.5, y = 0.6, just = "center", gp = grid::gpar(fontsize = 15))
     
+    keep_non_af <- !grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
+    M_no_af <- M[keep_non_af, , drop = FALSE]
+
     message("  - Adding spectra overlay...")
-    p_spectra <- plot_spectra(M, pd = pd, output_file = NULL)
-    if (!is.null(p_spectra)) print(p_spectra)
-    
+    if (nrow(M_no_af) > 0) {
+        p_spectra <- plot_spectra(M_no_af, pd = pd, output_file = NULL)
+        if (!is.null(p_spectra)) print(p_spectra)
+    }
+
     if (!is.null(res_list)) {
         message("  - Adding detector-level residual diagnostics...")
         rep_res <- if (!is.null(res_list$residuals)) res_list else res_list[[1]]
-        p_det <- plot_detector_residuals(rep_res, M = M, top_n = 50, output_file = NULL)
+        p_det <- plot_detector_residuals(rep_res, M = if (nrow(M_no_af) > 0) M_no_af else M, top_n = 50, output_file = NULL)
         if (!is.null(p_det)) print(p_det)
     }
-    
+
     message("  - Adding Spread Matrix...")
-    ssm <- calculate_ssm(M)
-    p_ssm <- plot_ssm(ssm, output_file = NULL)
-    if (!is.null(p_ssm)) print(p_ssm)
-    
+    if (nrow(M_no_af) > 1) {
+        ssm <- calculate_ssm(M_no_af)
+        p_ssm <- plot_ssm(ssm, output_file = NULL)
+        if (!is.null(p_ssm)) print(p_ssm)
+    }
+
     message("  - Adding NPS diagnostics...")
     nps_scores <- calculate_nps(results_df)
-    p_nps <- plot_nps(nps_scores, output_file = NULL)
-    if (!is.null(p_nps)) print(p_nps)
-    
-    message("  - Adding Recommendations page...")
-    grid::grid.newpage()
-    high_spread <- which(ssm > 10, arr.ind = TRUE)
-    spread_msgs <- if(nrow(high_spread) > 0) sapply(1:nrow(high_spread), function(i) paste0("- ", rownames(ssm)[high_spread[i,1]], " spreads noise heavily into ", colnames(ssm)[high_spread[i,2]])) else "- No extreme noise spread detected between markers."
-    nps_summary <- nps_scores |>
-        dplyr::group_by(Marker) |>
-        dplyr::summarise(Max_NPS = max(NPS, na.rm = TRUE), .groups = "drop")
-    nps_summary <- nps_summary[is.finite(nps_summary$Max_NPS), , drop = FALSE]
-    high_nps <- nps_summary |>
-        dplyr::arrange(dplyr::desc(Max_NPS)) |>
-        dplyr::slice_head(n = min(5, nrow(nps_summary)))
-    nps_msgs <- if (nrow(high_nps) > 0) {
-        paste0("- Highest negative-population spread observed in: ", paste(high_nps$Marker, collapse = ", "))
-    } else {
-        "- Negative-population spread could not be ranked from the provided data."
+    nps_scores <- nps_scores[!grepl("^AF($|_)", nps_scores$Marker, ignore.case = TRUE), , drop = FALSE]
+    if (nrow(nps_scores) > 0) {
+        p_nps <- plot_nps(nps_scores, output_file = NULL)
+        if (!is.null(p_nps)) print(p_nps)
     }
-    wrap_lines <- function(x, width = 80) paste(strwrap(x, width = width), collapse = "\n")
-    rec_txt <- paste0("spectreasy: Conclusions & Recommendations\n\n", "Spectral Spread Analysis:\n", wrap_lines(paste(spread_msgs, collapse = "\n")), "\n\n", "Negative Population Spread:\n", wrap_lines(nps_msgs), "\n\n", "General Recommendations:\n", "1. Review SCC gating and histogram selection for controls that retain unusually few events.\n", "2. Markers with high spread should not be used to resolve dim co-expressed populations.\n", "3. If detector residuals show laser-specific patterns, check instrument calibration or missing fluorophores.")
-    grid::grid.text(rec_txt, x = 0.1, y = 0.9, just = c("left", "top"), gp = grid::gpar(fontsize = 11, lineheight = 1.2))
-    
+
     grDevices::dev.off()
     message("Report saved to: ", output_file)
 }

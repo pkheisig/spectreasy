@@ -79,21 +79,35 @@ plot_ssm <- function(SSM, output_file = "spectral_spread_matrix.png", width = 20
     long <- as.data.frame(SSM)
     long$Spilling_Marker <- rownames(SSM)
     long <- tidyr::pivot_longer(long, cols = -Spilling_Marker, names_to = "Receiving_Marker", values_to = "Spread")
-    
+
+    fmt_spread <- function(x) {
+        if (!is.finite(x)) return("")
+        ax <- abs(x)
+        if (ax >= 1000) return(formatC(x, format = "e", digits = 1))
+        if (ax >= 100) return(formatC(x, format = "f", digits = 0))
+        if (ax >= 10) return(formatC(x, format = "f", digits = 1))
+        formatC(x, format = "f", digits = 2)
+    }
+
+    n_markers <- max(nrow(SSM), ncol(SSM))
+    text_size <- max(1.6, min(3.2, 24 / max(1, n_markers)))
+    spread_cut <- stats::quantile(long$Spread, 0.7, na.rm = TRUE)
+
     p <- ggplot2::ggplot(long, ggplot2::aes(Receiving_Marker, Spilling_Marker, fill = Spread)) +
         ggplot2::geom_tile() +
         ggplot2::scale_fill_viridis_c(option = "magma", name = "Spread Factor") +
-        # Dynamic text color for contrast: black on light (yellow/orange), white on dark
-        ggplot2::geom_text(ggplot2::aes(label = round(Spread, 2), 
-                                       color = Spread > quantile(Spread, 0.7, na.rm=TRUE)), 
-                           size = 4, show.legend = FALSE) +
+        ggplot2::geom_text(
+            ggplot2::aes(label = vapply(Spread, fmt_spread, character(1)), color = Spread > spread_cut),
+            size = text_size,
+            show.legend = FALSE
+        ) +
         ggplot2::scale_color_manual(values = c("TRUE" = "black", "FALSE" = "white")) +
         ggplot2::labs(title = "Spectral Spread Matrix",
                       subtitle = "Rows = noise source, columns = noise destination. Good: low off-diagonal spread (darker cells). Bad: bright off-diagonal cells mark problematic marker pairs for dim co-expression.",
                       x = "Receiving Marker (Noise Destination)", y = "Spilling Marker (Noise Source)") +
         ggplot2::theme_minimal() +
         ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
-    
+
     if (!is.null(output_file)) {
         ggplot2::ggsave(output_file, p, width = width, height = height, units = "mm", dpi = 300)
     }

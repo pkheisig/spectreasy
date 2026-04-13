@@ -104,6 +104,7 @@ ctrl <- autounmix_controls(
   auto_unknown_fluor_policy = "by_channel",
   output_dir = "spectreasy_outputs/autounmix_controls",
   unmix_method = "WLS",
+  af_n_bands = 5,                     # optional: derive multiple AF basis signatures
   build_qc_plots = TRUE,
   unmix_scatter_panel_size_mm = 30
 )
@@ -124,8 +125,8 @@ For newly auto-created files:
 - `scc_unmixing_matrix.png` and `scc_unmixing_matrix.csv`
 - `scc_unmixing_scatter_matrix.png` (lower-triangle scatter matrix, one single-stain file per row, with x=0/y=0 guides)
 
-Note: `scc_unmixing_matrix.csv` is exported as a static OLS matrix for deterministic downstream reuse.  
-`unmix_method` controls the actual control/sample unmixing engine during execution.
+Note: `scc_unmixing_matrix.csv` is now exported using the selected `unmix_method` (`OLS`, `WLS`, or `NNLS`).  
+For `NNLS`, the exported static matrix is a deterministic linear proxy; exact NNLS behavior remains available via dynamic unmixing (`unmix_samples(..., M = ..., method = "NNLS")`).
 
 Set `unmix_scatter_panel_size_mm` higher (for example `40`) if you want larger per-panel scatter plots.
 
@@ -185,6 +186,8 @@ M <- build_reference_matrix(
 
 This saves gating/spectrum plots to `gating_plots/` and exports the matrix to `spectreasy_outputs/reference_matrix.csv`.
 
+For per-cell AF extraction with multiple AF basis signatures, increase `af_n_bands` (for example `af_n_bands = 10`).
+
 ---
 
 Play around with gating parameters if auto-gating fails:
@@ -228,7 +231,7 @@ unmixed_w <- unmix_samples(
 **Methods:**
 - **OLS**: Ordinary least squares — fast, suitable for most panels
 - **WLS**: Weighted least squares — accounts for photon-counting noise, best accuracy
-- **NNLS**: Non-negative least squares — forces positive abundances
+- **NNLS**: Non-negative least squares — forces positive abundances (dynamic mode). Static NNLS matrix export is a linear proxy.
 
 ---
 

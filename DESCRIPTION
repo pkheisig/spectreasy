@@ -14,6 +14,7 @@ Imports:
     flowCore,
     ggplot2,
     mclust,
+    methods,
     nnls,
     png,
     scales,

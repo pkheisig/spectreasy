@@ -138,19 +138,49 @@ generate_scc_report <- function(
             "scatter_gate_pct",
             "histogram_gate_pct"
         ), drop = FALSE]
-        colnames(df) <- c(
-            "Fluor",
-            "Marker",
-            "Sample",
-            "Type",
-            "Peak",
-            "Events",
-            "ScatterGate",
-            "Final",
-            "Scatter%",
-            "Hist%"
+
+        headers <- c("Fluor", "Marker", "Sample", "Type", "Peak", "Events", "Scatter", "Final", "Scatter%", "Hist%")
+        widths <- c(14, 14, 24, 8, 8, 9, 9, 7, 9, 7)
+
+        trim_to <- function(x, w) {
+            x <- as.character(x)
+            x[is.na(x)] <- ""
+            vapply(x, function(s) {
+                if (nchar(s, type = "width") > w) {
+                    paste0(substr(s, 1, max(1, w - 1)), "…")
+                } else {
+                    s
+                }
+            }, character(1))
+        }
+
+        fmt_num <- function(x, digits = 1) {
+            out <- ifelse(is.na(x), "", format(round(as.numeric(x), digits), nsmall = digits, trim = TRUE))
+            as.character(out)
+        }
+
+        vals <- list(
+            trim_to(df$fluorophore, widths[1]),
+            trim_to(df$marker, widths[2]),
+            trim_to(df$sample, widths[3]),
+            trim_to(df$type, widths[4]),
+            trim_to(df$peak_channel, widths[5]),
+            trim_to(df$n_total, widths[6]),
+            trim_to(df$n_scatter_gated, widths[7]),
+            trim_to(df$n_final, widths[8]),
+            trim_to(fmt_num(df$scatter_gate_pct, 1), widths[9]),
+            trim_to(fmt_num(df$histogram_gate_pct, 1), widths[10])
         )
-        capture.output(print(df, row.names = FALSE, right = FALSE))
+
+        make_line <- function(parts) {
+            paste(vapply(seq_along(parts), function(i) sprintf(paste0("%-", widths[i], "s"), parts[[i]]), character(1)), collapse = " ")
+        }
+
+        header_line <- make_line(as.list(headers))
+        sep_line <- paste(vapply(widths, function(w) paste(rep("-", w), collapse = ""), character(1)), collapse = " ")
+        row_lines <- vapply(seq_len(nrow(df)), function(i) make_line(lapply(vals, `[[`, i)), character(1))
+
+        c(header_line, sep_line, row_lines)
     }
 
     grDevices::pdf(output_file, width = 11, height = 8.5)
@@ -189,12 +219,15 @@ generate_scc_report <- function(
         }
     }
 
-    grid::grid.newpage()
-    print(plot_spectra(M_report, pd = pd, output_file = NULL))
+    keep_non_af <- !grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
+    M_no_af <- M_report[keep_non_af, , drop = FALSE]
 
-    if (isTRUE(include_ssm) && nrow(M_report) > 1) {
-        grid::grid.newpage()
-        print(plot_ssm(calculate_ssm(M_report), output_file = NULL))
+    if (nrow(M_no_af) > 0) {
+        print(plot_spectra(M_no_af, pd = pd, output_file = NULL))
+    }
+
+    if (isTRUE(include_ssm) && nrow(M_no_af) > 1) {
+        print(plot_ssm(calculate_ssm(M_no_af), output_file = NULL))
     }
 
     if (nrow(qc_summary) > 0) {

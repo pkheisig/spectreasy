@@ -48,7 +48,7 @@ while the column stain is permuted across the lower triangle.
 \examples{
 ## Minimal runnable example (no files needed)
 invisible(NULL)
-\donttest{
+\dontrun{
 plot_unmixing_scatter_matrix(
   unmixed_list = unmixed_list,
   markers = rownames(M),

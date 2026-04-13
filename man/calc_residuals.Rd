@@ -38,7 +38,7 @@ Calculate unmixing residuals
 \examples{
 ## Minimal runnable example (no files needed)
 invisible(NULL)
-\donttest{
+\dontrun{
 ff <- flowCore::read.FCS("samples/Sample1.fcs", transformation = FALSE)
 res <- calc_residuals(
   flow_frame = ff,

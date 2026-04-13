@@ -36,7 +36,7 @@ detector residuals, spread matrix, and NPS.
 \examples{
 ## Minimal runnable example (no files needed)
 invisible(NULL)
-\donttest{
+\dontrun{
 # results_df <- data.table::rbindlist(lapply(unmixed_list, `[[`, "data"))
 generate_qc_report(
   results_df = results_df,

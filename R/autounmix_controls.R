@@ -235,14 +235,41 @@ autounmix_controls <- function(
         output_dir = unmixed_dir
     )
 
-    static_unmixing_matrix_method <- "OLS"
-    if (toupper(unmix_method) != "OLS") {
-        warning(
-            "unmix_method = '", unmix_method, "' is used for SCC/sample unmixing, ",
-            "but the exported static matrix 'scc_unmixing_matrix.csv' is derived with OLS."
-        )
+    estimate_wls_global_weights <- function(files, detector_names, background_noise = 25, max_events_per_file = 50000) {
+        sums <- rep(0, length(detector_names))
+        counts <- rep(0, length(detector_names))
+
+        for (fp in files) {
+            ff <- flowCore::read.FCS(fp, transformation = FALSE, truncate_max_range = FALSE)
+            raw <- flowCore::exprs(ff)
+            common <- intersect(detector_names, colnames(raw))
+            if (length(common) == 0) next
+
+            y <- raw[, common, drop = FALSE]
+            if (nrow(y) > max_events_per_file) {
+                y <- y[sample.int(nrow(y), max_events_per_file), , drop = FALSE]
+            }
+
+            sig <- colMeans(pmax(y, 0), na.rm = TRUE)
+            idx <- match(common, detector_names)
+            keep <- is.finite(sig)
+            sums[idx[keep]] <- sums[idx[keep]] + sig[keep]
+            counts[idx[keep]] <- counts[idx[keep]] + 1
+        }
+
+        mean_sig <- sums / pmax(counts, 1)
+        mean_sig[!is.finite(mean_sig)] <- 0
+        1 / (pmax(mean_sig, 0) + background_noise)
     }
-    W <- derive_unmixing_matrix(M, method = static_unmixing_matrix_method)
+
+    static_unmixing_matrix_method <- toupper(unmix_method)
+    if (static_unmixing_matrix_method == "WLS") {
+        wls_weights <- estimate_wls_global_weights(fcs_files, colnames(M))
+        W <- derive_unmixing_matrix(M, method = "WLS", global_weights = wls_weights)
+    } else {
+        W <- derive_unmixing_matrix(M, method = static_unmixing_matrix_method)
+    }
+
     save_unmixing_matrix(W, unmixing_matrix_csv)
     p_unmix <- plot_unmixing_matrix(W, pd = pd)
     ggplot2::ggsave(unmixing_matrix_png, p_unmix, width = 200, height = 150, units = "mm")

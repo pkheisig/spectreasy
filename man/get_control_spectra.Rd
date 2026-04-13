@@ -36,7 +36,7 @@ the `af/` folder, then combines them for downstream unmixing.
 \examples{
 ## Minimal runnable example (no files needed)
 invisible(NULL)
-\donttest{
+\dontrun{
 ff <- flowCore::read.FCS("samples/Sample1.fcs", transformation = FALSE)
 M_ctrl <- get_control_spectra(
   flow_frame = ff,

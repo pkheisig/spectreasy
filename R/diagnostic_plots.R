@@ -147,6 +147,7 @@ calculate_nps <- function(data, markers = NULL) {
     if (is.null(markers)) {
         exclude <- .get_result_metadata_columns(colnames(data))
         markers <- setdiff(colnames(data), exclude)
+        markers <- markers[!grepl("^AF($|_)", markers, ignore.case = TRUE)]
     }
     
     # For each marker, isolate the negative population (intensity < threshold)

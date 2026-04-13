@@ -1,12 +1,15 @@
 #' Derive Unmixing Matrix from Reference Matrix
 #' 
-#' Calculates the analytical unmixing matrix from a reference spectral matrix (M).
+#' Calculates a static unmixing matrix from a reference spectral matrix (M).
 #' The output matrix (W) has the same dimensions as M (Markers x Detectors).
 #' To unmix data manually: Unmixed_Data = Raw_Data %*% t(W)
 #' 
 #' @param M Reference matrix (Markers x Detectors)
-#' @param method Unmixing method ("OLS" or "WLS")
-#' @param global_weights Optional vector of weights for WLS (one per detector)
+#' @param method Unmixing method ("OLS", "WLS", or "NNLS")
+#' @param global_weights Optional detector weights for WLS (one per detector).
+#'   These are interpreted as inverse variances.
+#' @param background_noise Fallback noise floor used when `method = "WLS"`
+#'   and `global_weights` is not supplied.
 #' @return A matrix of unmixing coefficients (Markers x Detectors)
 #' @examples
 #' M <- matrix(c(1, 0.2, 0.1, 1), nrow = 2, byrow = TRUE)
@@ -15,42 +18,73 @@
 #' W <- derive_unmixing_matrix(M, method = "OLS")
 #' W
 #' @export
-derive_unmixing_matrix <- function(M, method = "OLS", global_weights = NULL) {
+derive_unmixing_matrix <- function(M, method = "OLS", global_weights = NULL, background_noise = 25) {
     M <- .as_reference_matrix(M, "M")
     # M is Markers (m) x Detectors (d)
     Mt <- t(M) # Detectors x Markers
-    
-    if (toupper(method) == "OLS") {
+
+    method_upper <- toupper(trimws(method))
+
+    if (method_upper == "OLS") {
         # Standard analytical solution: W = (M %*% M^T)^-1 %*% M
-        # This W is m x d.
-        # Check for singularity
         MMt <- M %*% Mt
         if (rcond(MMt) < 1e-10) stop("Reference Matrix is singular (collinear spectra).")
-        
         W <- solve(MMt) %*% M
-        
-    } else if (toupper(method) == "WLS") {
-        # Weighted solution: W = (M %*% V^-1 %*% M^T)^-1 %*% M %*% V^-1
-        # If no weights provided, we assume Identity (which is OLS)
+
+    } else if (method_upper == "WLS") {
+        # Static WLS requires global detector weights.
+        # If none are provided, estimate a simple global set from M.
         if (is.null(global_weights)) {
-            warning("WLS requested but no weights provided. Using OLS.")
-            return(derive_unmixing_matrix(M, method = "OLS"))
+            det_signal <- colMeans(pmax(M, 0), na.rm = TRUE)
+            global_weights <- 1 / (pmax(det_signal, 0) + background_noise)
+            warning(
+                "WLS requested without global_weights; using detector-level weights estimated from M and background_noise = ",
+                background_noise,
+                "."
+            )
         }
-        
+
+        global_weights <- as.numeric(global_weights)
+        if (length(global_weights) != ncol(M)) {
+            stop("global_weights length must match number of detectors (", ncol(M), ").")
+        }
+        if (any(!is.finite(global_weights)) || any(global_weights <= 0)) {
+            stop("global_weights must be finite and > 0.")
+        }
+
         V_inv <- diag(global_weights)
-        
-        # W = (M V_inv Mt)^-1 M V_inv
+        # W = (M V^-1 M^T)^-1 M V^-1
         MVMt <- M %*% V_inv %*% Mt
-        if (rcond(MVMt) < 1e-10) stop("Weighted Matrix is singular.")
-        
+        if (rcond(MVMt) < 1e-10) stop("Weighted matrix is singular.")
         W <- solve(MVMt) %*% M %*% V_inv
+
+    } else if (method_upper == "NNLS") {
+        # A single static matrix cannot exactly reproduce per-cell NNLS
+        # (piecewise-linear constraint). We export a deterministic linear proxy
+        # by solving NNLS for each detector basis vector.
+        if (!requireNamespace("nnls", quietly = TRUE)) {
+            stop("Package 'nnls' required for NNLS. Install with: install.packages('nnls')")
+        }
+
+        d <- ncol(M)
+        W <- matrix(0, nrow = nrow(M), ncol = d)
+        I_det <- diag(d)
+        for (j in seq_len(d)) {
+            W[, j] <- nnls::nnls(Mt, I_det[, j])$x
+        }
+
+        warning(
+            "Static NNLS matrix is a linear proxy and may differ from per-cell NNLS solutions. ",
+            "Use dynamic method = 'NNLS' in unmix_samples() for exact constrained per-cell fits."
+        )
+
     } else {
-        stop("Only 'OLS' and 'WLS' (with global weights) can generate a single static matrix.")
+        stop("method must be one of: 'OLS', 'WLS', 'NNLS'")
     }
-    
+
     rownames(W) <- rownames(M)
     colnames(W) <- colnames(M)
-    
+
     return(W)
 }
 

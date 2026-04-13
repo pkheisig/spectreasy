@@ -40,7 +40,7 @@ the source of the mismatch.
 \examples{
 ## Minimal runnable example (no files needed)
 invisible(NULL)
-\donttest{
+\dontrun{
 p <- plot_detector_residuals(res_list[[1]], M, top_n = 50)
 print(p)
 }

@@ -11,6 +11,8 @@ build_reference_matrix(
   control_df = NULL,
   include_multi_af = FALSE,
   af_dir = "af",
+  af_n_bands = 1,
+  af_max_cells = 50000,
   default_sample_type = "beads",
   cytometer = "Aurora",
   histogram_pct_beads = 0.98,
@@ -41,6 +43,12 @@ Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is 
 \item{include_multi_af}{Logical; if `TRUE`, include additional AF controls from `af_dir`.}
 
 \item{af_dir}{Directory with extra AF controls when `include_multi_af = TRUE`.}
+
+\item{af_n_bands}{Number of AF basis signatures to extract from the primary
+unstained/AF control (`1` = classic single AF signature).}
+
+\item{af_max_cells}{Maximum number of AF events used when deriving AF basis
+signatures.}
 
 \item{default_sample_type}{Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).}
 
@@ -85,7 +93,7 @@ This is the core matrix-construction step used before unmixing.
 \examples{
 ## Minimal runnable example (no files needed)
 invisible(NULL)
-\donttest{
+\dontrun{
 # Build matrix from SCC folder and control CSV
 M <- build_reference_matrix(
   input_folder = "scc",

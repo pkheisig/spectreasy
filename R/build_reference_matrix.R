@@ -12,6 +12,10 @@
 #'   Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.
 #' @param include_multi_af Logical; if `TRUE`, include additional AF controls from `af_dir`.
 #' @param af_dir Directory with extra AF controls when `include_multi_af = TRUE`.
+#' @param af_n_bands Number of AF basis signatures to extract from the primary
+#'   unstained/AF control (`1` = classic single AF signature).
+#' @param af_max_cells Maximum number of AF events used when deriving AF basis
+#'   signatures.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used for channel alias resolution (for example `"Aurora"`).
 #' @param histogram_pct_beads Histogram gate width for bead controls.
@@ -53,6 +57,8 @@ build_reference_matrix <- function(
   control_df = NULL,
   include_multi_af = FALSE,
   af_dir = "af",
+  af_n_bands = 1,
+  af_max_cells = 50000,
   default_sample_type = "beads",
   cytometer = "Aurora",
   histogram_pct_beads = 0.98,
@@ -87,6 +93,15 @@ build_reference_matrix <- function(
         control_df$fluorophore <- trimws(as.character(control_df$fluorophore))
         control_df$channel <- trimws(as.character(control_df$channel))
         control_df$universal.negative <- trimws(as.character(control_df$universal.negative))
+    }
+
+    af_n_bands <- as.integer(af_n_bands[1])
+    if (!is.finite(af_n_bands) || is.na(af_n_bands) || af_n_bands < 1) {
+        stop("af_n_bands must be an integer >= 1.")
+    }
+    af_max_cells <- as.integer(af_max_cells[1])
+    if (!is.finite(af_max_cells) || is.na(af_max_cells) || af_max_cells < 100) {
+        stop("af_max_cells must be an integer >= 100.")
     }
 
     sample_patterns <- get_fluorophore_patterns()
@@ -276,6 +291,81 @@ build_reference_matrix <- function(
         peak_vals
     }
 
+    extract_af_profiles <- function(ff_af, detector_names, n_bands = 1, max_cells = 50000) {
+        raw <- flowCore::exprs(ff_af)
+        pd_af <- flowCore::pData(flowCore::parameters(ff_af))
+
+        idx <- seq_len(nrow(raw))
+        fsc <- pd_af$name[grepl("^FSC", pd_af$name) & grepl("-A$", pd_af$name)][1]
+        ssc <- pd_af$name[grepl("^SSC", pd_af$name) & grepl("-A$", pd_af$name)][1]
+        if (!is.na(fsc) && nzchar(fsc) && !is.na(ssc) && nzchar(ssc) && all(c(fsc, ssc) %in% colnames(raw))) {
+            fsc_lo <- stats::quantile(raw[, fsc], 0.2, na.rm = TRUE)
+            fsc_hi <- stats::quantile(raw[, fsc], 0.8, na.rm = TRUE)
+            ssc_lo <- stats::quantile(raw[, ssc], 0.2, na.rm = TRUE)
+            ssc_hi <- stats::quantile(raw[, ssc], 0.8, na.rm = TRUE)
+            idx_gate <- which(
+                raw[, fsc] >= fsc_lo & raw[, fsc] <= fsc_hi &
+                    raw[, ssc] >= ssc_lo & raw[, ssc] <= ssc_hi
+            )
+            if (length(idx_gate) >= 200) idx <- idx_gate
+        }
+
+        af_events <- raw[idx, detector_names, drop = FALSE]
+        af_events <- af_events[stats::complete.cases(af_events), , drop = FALSE]
+        if (nrow(af_events) == 0) {
+            return(list(raw_median = NULL, signatures = NULL))
+        }
+
+        if (nrow(af_events) > max_cells) {
+            af_events <- af_events[sample.int(nrow(af_events), max_cells), , drop = FALSE]
+        }
+
+        raw_median <- apply(af_events, 2, stats::median, na.rm = TRUE)
+
+        af_pos <- pmax(af_events, 0)
+        row_scale <- apply(af_pos, 1, max, na.rm = TRUE)
+        keep <- is.finite(row_scale) & row_scale > 0
+        if (!any(keep)) {
+            sig <- pmax(raw_median, 0)
+            sig <- sig / max(sig, na.rm = TRUE)
+            sig_mat <- matrix(sig, nrow = 1)
+            rownames(sig_mat) <- "AF"
+            colnames(sig_mat) <- detector_names
+            return(list(raw_median = raw_median, signatures = sig_mat))
+        }
+
+        af_shape <- af_pos[keep, , drop = FALSE] / row_scale[keep]
+        n_eff <- min(as.integer(n_bands), nrow(af_shape))
+        if (n_eff < 1) n_eff <- 1
+
+        if (n_eff == 1) {
+            centers <- matrix(colMeans(af_shape, na.rm = TRUE), nrow = 1)
+        } else {
+            km <- stats::kmeans(af_shape, centers = n_eff, nstart = 10, iter.max = 100)
+            centers <- km$centers
+            cluster_sizes <- as.numeric(table(factor(km$cluster, levels = seq_len(n_eff))))
+            ord <- order(cluster_sizes, decreasing = TRUE)
+            centers <- centers[ord, , drop = FALSE]
+        }
+
+        centers <- t(apply(centers, 1, function(v) {
+            v <- pmax(v, 0)
+            vmax <- max(v, na.rm = TRUE)
+            if (!is.finite(vmax) || vmax <= 0) {
+                return(rep(0, length(v)))
+            }
+            v / vmax
+        }))
+
+        if (is.null(dim(centers))) {
+            centers <- matrix(centers, nrow = 1)
+        }
+        rownames(centers) <- c("AF", if (nrow(centers) > 1) paste0("AF_", seq.int(2, nrow(centers))) else NULL)
+        colnames(centers) <- detector_names
+
+        list(raw_median = raw_median, signatures = centers)
+    }
+
     results_list <- list()
     qc_summary_list <- list()
 
@@ -289,6 +379,7 @@ build_reference_matrix <- function(
     }
 
     af_data_raw <- NULL
+    af_signatures_norm <- NULL
     af_fn <- NULL
     if (!is.null(control_df)) {
         af_rows <- if ("fluorophore" %in% colnames(control_df)) {
@@ -306,7 +397,12 @@ build_reference_matrix <- function(
         af_path <- fcs_files[grep(af_fn, fcs_files, fixed = TRUE)]
         if (length(af_path) > 0) {
             ff_af <- flowCore::read.FCS(af_path[1], transformation = FALSE, truncate_max_range = FALSE)
-            af_data_raw <- apply(flowCore::exprs(ff_af)[, detector_names, drop = FALSE], 2, median)
+            af_profiles <- extract_af_profiles(ff_af, detector_names, n_bands = af_n_bands, max_cells = af_max_cells)
+            af_data_raw <- af_profiles$raw_median
+            af_signatures_norm <- af_profiles$signatures
+            if (!is.null(af_signatures_norm)) {
+                message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from primary unstained control.")
+            }
         }
     }
 
@@ -594,10 +690,33 @@ build_reference_matrix <- function(
             histogram_gate_pct = round(100 * nrow(final_gated_data) / max(nrow(gated_data), 1), 1)
         )
     }
-    results_dt <- data.table::rbindlist(results_list)
-    spectra_list <- results_dt$spectrum
-    names(spectra_list) <- results_dt$fluorophore
-    if (!is.null(af_data_raw)) spectra_list[["AF"]] <- af_data_raw / max(af_data_raw, na.rm = TRUE)
+    results_dt <- if (length(results_list) > 0) data.table::rbindlist(results_list) else data.table::data.table()
+    spectra_list <- if (nrow(results_dt) > 0) results_dt$spectrum else list()
+    if (nrow(results_dt) > 0) names(spectra_list) <- results_dt$fluorophore
+
+    if (is.null(af_signatures_norm) && !is.null(af_data_raw)) {
+        af_vec <- pmax(af_data_raw, 0)
+        af_max <- max(af_vec, na.rm = TRUE)
+        if (is.finite(af_max) && af_max > 0) {
+            af_signatures_norm <- matrix(af_vec / af_max, nrow = 1)
+            rownames(af_signatures_norm) <- "AF"
+            colnames(af_signatures_norm) <- detector_names
+        }
+    }
+
+    if (!is.null(af_signatures_norm) && nrow(af_signatures_norm) > 0) {
+        for (i in seq_len(nrow(af_signatures_norm))) {
+            nm <- rownames(af_signatures_norm)[i]
+            if (is.na(nm) || !nzchar(nm)) nm <- if (i == 1) "AF" else paste0("AF_", i)
+            base_nm <- nm
+            k <- 2L
+            while (nm %in% names(spectra_list)) {
+                nm <- paste0(base_nm, "_", k)
+                k <- k + 1L
+            }
+            spectra_list[[nm]] <- as.numeric(af_signatures_norm[i, ])
+        }
+    }
 
     if (length(spectra_list) == 0) {
         warning("No valid spectra found!")

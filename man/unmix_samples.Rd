@@ -48,7 +48,7 @@ Unmix Experimental Samples
 \examples{
 ## Minimal runnable example (no files needed)
 invisible(NULL)
-\donttest{
+\dontrun{
 unmixed <- unmix_samples(
   sample_dir = "samples",
   unmixing_matrix_file = "spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv",

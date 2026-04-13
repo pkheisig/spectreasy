@@ -47,7 +47,7 @@ Generates a spectreasy-compatible control CSV.
 \examples{
 ## Minimal runnable example (no files needed)
 invisible(NULL)
-\donttest{
+\dontrun{
 control_df <- create_control_file(
   input_folder = "scc",
   cytometer = "Aurora",

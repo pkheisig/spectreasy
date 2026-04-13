@@ -219,9 +219,13 @@ create_control_file <- function(input_folder = "scc",
     }
 
     contains_literal <- function(text, patterns) {
+        text_up <- toupper(as.character(text))
         any(vapply(
             patterns,
-            function(p) nzchar(p) && grepl(p, text, ignore.case = TRUE, fixed = TRUE),
+            function(p) {
+                p_up <- toupper(as.character(p))
+                nzchar(p_up) && grepl(p_up, text_up, fixed = TRUE)
+            },
             logical(1)
         ))
     }
@@ -297,7 +301,8 @@ create_control_file <- function(input_folder = "scc",
         fn_norm <- normalize_token(fn)
         for (p in fluor_patterns) {
             key <- normalize_token(p)
-            literal_hit <- grepl(p, fn, ignore.case = TRUE, fixed = TRUE)
+            p_norm <- normalize_token(p)
+            literal_hit <- nzchar(p_norm) && grepl(p_norm, fn_norm, fixed = TRUE)
             normalized_hit <- nzchar(key) && grepl(key, fn_norm, fixed = TRUE)
             if (literal_hit || normalized_hit) {
                 if (key %in% names(fluor_name_map)) {
