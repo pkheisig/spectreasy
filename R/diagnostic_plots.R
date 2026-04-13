@@ -31,7 +31,7 @@ plot_detector_residuals <- function(res_list, M, top_n = 50, output_file = "dete
     # Identify highest-residual cells by detector residual energy
     residual_score <- sqrt(rowMeans(residuals^2, na.rm = TRUE))
     residual_score[!is.finite(residual_score)] <- -Inf
-    idx <- order(residual_score, decreasing = TRUE)[1:min(top_n, nrow(data))]
+    idx <- order(residual_score, decreasing = TRUE)[seq_len(min(top_n, nrow(data)))]
     R_sub <- residuals[idx, , drop = FALSE]
     
     # Convert to long format for plotting
@@ -72,7 +72,7 @@ plot_detector_residuals <- function(res_list, M, top_n = 50, output_file = "dete
         max_abs <- max(abs(y_all), na.rm = TRUE)
         if (is.finite(max_abs) && max_abs > 0) {
             max_pow <- max(1, ceiling(log10(max_abs)))
-            pos_breaks <- 10^(1:max_pow)
+            pos_breaks <- 10^seq_len(max_pow)
             pos_breaks <- pos_breaks[pos_breaks <= (max_abs * 1.05)]
             if (length(pos_breaks) == 0) pos_breaks <- 10
 

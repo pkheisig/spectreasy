@@ -20,3 +20,4 @@
 ^spectreasy_outputs$
 ^gating_and_spectrum_plots$
 ^spectreasy\.BiocCheck$
+^\.github$

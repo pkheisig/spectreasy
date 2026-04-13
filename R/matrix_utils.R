@@ -232,3 +232,16 @@
     }
     path
 }
+
+.with_optional_seed <- function(seed = NULL, .local_envir = parent.frame()) {
+    if (is.null(seed)) {
+        return(invisible(NULL))
+    }
+    seed <- as.integer(seed[1])
+    if (!is.finite(seed) || is.na(seed)) {
+        stop("seed must be a finite integer when provided.")
+    }
+
+    withr::local_seed(seed, .local_envir = .local_envir)
+    invisible(NULL)
+}

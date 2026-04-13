@@ -7,7 +7,7 @@ Description: Review single-color controls, build spectral reference matrices,
 URL: https://github.com/pkheisig/spectreasy
 BugReports: https://github.com/pkheisig/spectreasy/issues
 License: MIT + file LICENSE
-Depends: R (>= 4.1.0)
+Depends: R (>= 4.5.0)
 Imports:
     data.table,
     dplyr,
@@ -19,12 +19,14 @@ Imports:
     png,
     scales,
     sp,
-    tidyr
+    tidyr,
+    withr
 Suggests:
     knitr,
+    pdftools,
+    plumber,
     rmarkdown,
-    testthat (>= 3.0.0),
-    plumber
+    testthat (>= 3.0.0)
 VignetteBuilder: knitr
 biocViews: FlowCytometry, QualityControl, Visualization, GUI, WorkflowStep
 Config/testthat/edition: 3

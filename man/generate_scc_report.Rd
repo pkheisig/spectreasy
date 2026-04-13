@@ -15,6 +15,7 @@ generate_scc_report(
   include_multi_af = FALSE,
   af_dir = "af",
   include_ssm = TRUE,
+  seed = NULL,
   ...
 )
 }
@@ -39,6 +40,8 @@ matrix generated from the supplied SCC files.}
 \item{af_dir}{AF directory forwarded to [build_reference_matrix()].}
 
 \item{include_ssm}{Logical; include the spectral spread matrix page.}
+
+\item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }

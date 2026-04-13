@@ -193,11 +193,10 @@ validate_control_file_mapping <- function(
                 c(
                     "Control mapping preflight failed:",
                     paste0(" - ", out$errors),
-                    if (length(out$warnings) > 0) c("Warnings:", paste0(" - ", out$warnings)) else NULL
+                    if (length(out$warnings) > 0) c("Preflight notes:", paste0(" - ", out$warnings)) else NULL
                 ),
                 collapse = "\n"
-            ),
-            call. = FALSE
+            )
         )
     }
 

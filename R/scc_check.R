@@ -14,6 +14,7 @@
 #' @param include_multi_af Logical; forward to [build_reference_matrix()].
 #' @param af_dir AF directory forwarded to [build_reference_matrix()].
 #' @param include_ssm Logical; include the spectral spread matrix page.
+#' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #' @return Invisibly returns a list with `M`, `qc_summary`, and `qc_plot_dir`.
 #' @examples
@@ -36,6 +37,7 @@ generate_scc_report <- function(
     include_multi_af = FALSE,
     af_dir = "af",
     include_ssm = TRUE,
+    seed = NULL,
     ...
 ) {
     message("Generating SCC QC report...")
@@ -59,6 +61,7 @@ generate_scc_report <- function(
         include_multi_af = include_multi_af,
         af_dir = af_dir,
         cytometer = cytometer,
+        seed = seed,
         ...
     )
     if (is.null(M_built) || nrow(M_built) == 0) {
@@ -147,7 +150,7 @@ generate_scc_report <- function(
             x[is.na(x)] <- ""
             vapply(x, function(s) {
                 if (nchar(s, type = "width") > w) {
-                    paste0(substr(s, 1, max(1, w - 1)), "…")
+                    paste0(substr(s, 1, max(1, w - 3)), "...")
                 } else {
                     s
                 }
@@ -223,11 +226,19 @@ generate_scc_report <- function(
     M_no_af <- M_report[keep_non_af, , drop = FALSE]
 
     if (nrow(M_no_af) > 0) {
-        print(plot_spectra(M_no_af, pd = pd, output_file = NULL))
+        p_spectra <- plot_spectra(M_no_af, pd = pd, output_file = NULL)
+        if (!is.null(p_spectra)) {
+            grid::grid.newpage()
+            grid::grid.draw(ggplot2::ggplotGrob(p_spectra))
+        }
     }
 
     if (isTRUE(include_ssm) && nrow(M_no_af) > 1) {
-        print(plot_ssm(calculate_ssm(M_no_af), output_file = NULL))
+        p_ssm <- plot_ssm(calculate_ssm(M_no_af), output_file = NULL)
+        if (!is.null(p_ssm)) {
+            grid::grid.newpage()
+            grid::grid.draw(ggplot2::ggplotGrob(p_ssm))
+        }
     }
 
     if (nrow(qc_summary) > 0) {

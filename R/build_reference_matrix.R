@@ -16,6 +16,7 @@
 #'   unstained/AF control (`1` = classic single AF signature).
 #' @param af_max_cells Maximum number of AF events used when deriving AF basis
 #'   signatures.
+#' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used for channel alias resolution (for example `"Aurora"`).
 #' @param histogram_pct_beads Histogram gate width for bead controls.
@@ -59,6 +60,7 @@ build_reference_matrix <- function(
   af_dir = "af",
   af_n_bands = 1,
   af_max_cells = 50000,
+  seed = NULL,
   default_sample_type = "beads",
   cytometer = "Aurora",
   histogram_pct_beads = 0.98,
@@ -103,6 +105,8 @@ build_reference_matrix <- function(
     if (!is.finite(af_max_cells) || is.na(af_max_cells) || af_max_cells < 100) {
         stop("af_max_cells must be an integer >= 100.")
     }
+
+    .with_optional_seed(seed)
 
     sample_patterns <- get_fluorophore_patterns()
     fcs_files <- list.files(input_folder, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
@@ -200,11 +204,11 @@ build_reference_matrix <- function(
     fit_gmm_populations <- function(data, max_k = 5, min_prop = 0.05) {
         # mclust::Mclust evaluates mclustBIC() in parent.frame(), so bind it here.
         mclustBIC <- get("mclustBIC", envir = asNamespace("mclust"))
-        fit <- mclust::Mclust(data, G = 1:max_k, verbose = FALSE)
+        fit <- mclust::Mclust(data, G = seq_len(max_k), verbose = FALSE)
         if (is.null(fit)) {
             return(NULL)
         }
-        sigmas <- lapply(1:fit$G, function(k) {
+        sigmas <- lapply(seq_len(fit$G), function(k) {
             if (fit$modelName %in% c("EII", "VII")) {
                 diag(fit$parameters$variance$sigmasq[k], nrow = 2)
             } else {
@@ -647,7 +651,7 @@ build_reference_matrix <- function(
             dt_c$y <- dt_c$y_orig^y_power
 
             if (nrow(dt_c) == 0) {
-                message("  Warning: dt_c is empty for ", sn, ". Max count: ", max(counts_mat, na.rm = TRUE))
+                message("  Note: dt_c is empty for ", sn, ". Max count: ", max(counts_mat, na.rm = TRUE))
             } else {
                 message("  Plotting ", nrow(dt_c), " bins for ", sn)
             }
@@ -657,7 +661,7 @@ build_reference_matrix <- function(
             fill_hi <- quantile(dt_c$fill, 0.96, na.rm = TRUE)
             y_breaks_orig <- 0:ceiling(max_y)
             y_breaks_trans <- y_breaks_orig^y_power
-            y_labels <- sapply(y_breaks_orig, function(x) bquote(10^.(x)))
+            y_labels <- vapply(y_breaks_orig, function(x) paste0("10^", x), character(1))
 
             p3 <- ggplot2::ggplot(dt_c, ggplot2::aes(ch_idx, y, fill = fill)) +
                 ggplot2::geom_tile(width = 0.7, height = bin_height * 3) +
@@ -738,5 +742,6 @@ build_reference_matrix <- function(
     if (isTRUE(save_qc_plots)) {
         attr(M, "qc_plot_dir") <- out_path
     }
+    attr(M, "detector_pd") <- pd_meta
     return(M)
 }

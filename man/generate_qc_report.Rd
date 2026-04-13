@@ -24,7 +24,8 @@ generate_qc_report(
 
 \item{png_dir}{Deprecated and ignored (kept for backward compatibility).}
 
-\item{pd}{Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.}
+\item{pd}{Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
+If omitted, `attr(M, "detector_pd")` is used when available.}
 }
 \value{
 Invisibly returns `NULL`; writes report to disk.

@@ -22,6 +22,34 @@ W_demo <- derive_unmixing_matrix(M_demo)
 stopifnot(all(dim(W_demo) == dim(M_demo)))
 ```
 
+## Reproducible toy QC example
+
+This small synthetic example runs end-to-end without FCS files and demonstrates
+reproducible report generation.
+
+```{r}
+set.seed(1)
+
+M_toy <- rbind(
+  FITC = c(1.0, 0.2, 0.1),
+  PE = c(0.1, 1.0, 0.2),
+  AF = c(0.2, 0.2, 1.0)
+)
+colnames(M_toy) <- c("B1-A", "YG1-A", "R1-A")
+
+results_toy <- data.frame(
+  FITC = rnorm(200, 0, 0.3),
+  PE = rnorm(200, 0, 0.4),
+  AF = rnorm(200, 0, 0.2),
+  File = rep(c("SampleA", "SampleB"), each = 100),
+  check.names = FALSE
+)
+
+toy_report <- tempfile(fileext = ".pdf")
+generate_qc_report(results_toy, M_toy, output_file = toy_report)
+file.exists(toy_report)
+```
+
 ## Installation
 
 

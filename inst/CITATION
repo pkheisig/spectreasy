@@ -1,0 +1,18 @@
+citHeader("To cite spectreasy in publications use:")
+
+citEntry(
+  entry = "Manual",
+  title = "spectreasy: Single-Color Review and Spectral Unmixing Made Easier",
+  author = personList(
+    person(given = "Paul", family = "Heisig")
+  ),
+  year = "2026",
+  note = "R package version 0.99.0",
+  url = "https://github.com/pkheisig/spectreasy",
+  textVersion = paste(
+    "Heisig P (2026).",
+    "spectreasy: Single-Color Review and Spectral Unmixing Made Easier.",
+    "R package version 0.99.0.",
+    "https://github.com/pkheisig/spectreasy"
+  )
+)

@@ -80,7 +80,8 @@ generate_scc_report(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
-  output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf")
+  output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf"),
+  seed = 1
 )
 ```
 
@@ -90,6 +91,8 @@ Use this report to inspect each SCC before unmixing. The PDF includes:
 - per-control spectrum distributions
 - global reference spectra overlay
 - spectral spread matrix
+
+AF handling in reports: AF basis rows (`AF`, `AF_2`, ...) are excluded from spectra overlays, spectral spread matrix pages, and NPS pages to keep summaries focused on non-AF biological channels.
 
 The report also writes the underlying PNG QC assets to `spectreasy_outputs/scc_report_plots/`.
 
@@ -106,7 +109,8 @@ ctrl <- autounmix_controls(
   unmix_method = "WLS",
   af_n_bands = 5,                     # optional: derive multiple AF basis signatures
   build_qc_plots = TRUE,
-  unmix_scatter_panel_size_mm = 30
+  unmix_scatter_panel_size_mm = 30,
+  seed = 1
 )
 ```
 
@@ -180,13 +184,16 @@ M <- build_reference_matrix(
   output_folder = "gating_plots",
   control_df = control_df,
   default_sample_type = "beads",
-  cytometer = "Aurora"
+  cytometer = "Aurora",
+  seed = 1
 )
 ```
 
 This saves gating/spectrum plots to `gating_plots/` and exports the matrix to `spectreasy_outputs/reference_matrix.csv`.
 
 For per-cell AF extraction with multiple AF basis signatures, increase `af_n_bands` (for example `af_n_bands = 10`).
+
+For reproducible SCC gating/subsampling and AF-band extraction, set `seed` in `generate_scc_report()`, `build_reference_matrix()`, or `autounmix_controls()`.
 
 ---
 

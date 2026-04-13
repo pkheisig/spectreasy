@@ -115,6 +115,7 @@ plot_spectra <- function(ref_matrix,
 #' @param transform One of `"asinh"` or `"none"`.
 #' @param asinh_cofactor Cofactor used when `transform = "asinh"`.
 #' @param panel_size_mm Size per matrix panel in millimeters.
+#' @param seed Optional integer seed for deterministic point subsampling.
 #' @return Invisibly returns `output_file`.
 #' @export
 #' @examples
@@ -134,9 +135,12 @@ plot_unmixing_scatter_matrix <- function(
     max_points_per_sample = 3000,
     transform = c("none", "asinh"),
     asinh_cofactor = 150,
-    panel_size_mm = 30
+    panel_size_mm = 30,
+    seed = NULL
 ) {
     transform <- match.arg(transform)
+    .with_optional_seed(seed)
+
     if (!is.list(unmixed_list) || length(unmixed_list) == 0) {
         stop("unmixed_list must be a non-empty list from unmix_samples().")
     }

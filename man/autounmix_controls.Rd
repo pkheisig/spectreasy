@@ -16,6 +16,7 @@ autounmix_controls(
   unmix_method = "WLS",
   build_qc_plots = FALSE,
   unmix_scatter_panel_size_mm = 30,
+  seed = NULL,
   ...
 )
 }
@@ -42,6 +43,8 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 \item{build_qc_plots}{Logical; keep detailed build_reference_matrix plots.}
 
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
+
+\item{seed}{Optional integer seed for deterministic subsampling and plotting.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }

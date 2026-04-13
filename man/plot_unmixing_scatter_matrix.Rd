@@ -13,7 +13,8 @@ plot_unmixing_scatter_matrix(
   max_points_per_sample = 3000,
   transform = c("none", "asinh"),
   asinh_cofactor = 150,
-  panel_size_mm = 30
+  panel_size_mm = 30,
+  seed = NULL
 )
 }
 \arguments{
@@ -36,6 +37,8 @@ names to display labels (for example `"BUV395 / CD45RA"`).}
 \item{asinh_cofactor}{Cofactor used when `transform = "asinh"`.}
 
 \item{panel_size_mm}{Size per matrix panel in millimeters.}
+
+\item{seed}{Optional integer seed for deterministic point subsampling.}
 }
 \value{
 Invisibly returns `output_file`.

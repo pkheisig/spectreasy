@@ -13,6 +13,7 @@ build_reference_matrix(
   af_dir = "af",
   af_n_bands = 1,
   af_max_cells = 50000,
+  seed = NULL,
   default_sample_type = "beads",
   cytometer = "Aurora",
   histogram_pct_beads = 0.98,
@@ -49,6 +50,8 @@ unstained/AF control (`1` = classic single AF signature).}
 
 \item{af_max_cells}{Maximum number of AF events used when deriving AF basis
 signatures.}
+
+\item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 
 \item{default_sample_type}{Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).}
 

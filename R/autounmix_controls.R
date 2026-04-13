@@ -22,6 +22,7 @@
 #' @param unmix_method SCC unmixing method (`"WLS"`, `"OLS"`, `"NNLS"`).
 #' @param build_qc_plots Logical; keep detailed build_reference_matrix plots.
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
+#' @param seed Optional integer seed for deterministic subsampling and plotting.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #'
 #' @return List with `M`, `W`, `unmixed_list`, and key output file paths.
@@ -49,9 +50,12 @@ autounmix_controls <- function(
     unmix_method = "WLS",
     build_qc_plots = FALSE,
     unmix_scatter_panel_size_mm = 30,
+    seed = NULL,
     ...
 ) {
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
+    .with_optional_seed(seed)
+
     user_supplied_control_df <- !is.null(control_df)
     created_control_file <- FALSE
     control_file <- .resolve_control_file_path(control_file)
@@ -185,13 +189,12 @@ autounmix_controls <- function(
                 c(
                     "autounmix_controls preflight failed:",
                     paste0(" - ", preflight$errors),
-                    if (length(preflight$warnings) > 0) c("Warnings:", paste0(" - ", preflight$warnings)) else NULL,
+                    if (length(preflight$warnings) > 0) c("Preflight notes:", paste0(" - ", preflight$warnings)) else NULL,
                     hint,
                     "Fix the control file and rerun autounmix_controls()."
                 ),
                 collapse = "\n"
-            ),
-            call. = FALSE
+            )
         )
     }
 
@@ -209,6 +212,7 @@ autounmix_controls <- function(
         save_qc_plots = build_qc_plots,
         control_df = control_df,
         cytometer = cytometer,
+        seed = seed,
         ...
     )
     if (is.null(M) || nrow(M) == 0) stop("No valid spectra found while building reference matrix.")
@@ -308,7 +312,8 @@ autounmix_controls <- function(
         marker_display = marker_display,
         output_file = unmixing_scatter_png,
         transform = "none",
-        panel_size_mm = unmix_scatter_panel_size_mm
+        panel_size_mm = unmix_scatter_panel_size_mm,
+        seed = seed
     )
 
     invisible(list(
