@@ -7,6 +7,7 @@
 spectreasy_example_data(
   asset = NULL,
   cache_dir = file.path(tools::R_user_dir("spectreasy", which = "cache"), "example-data"),
+  dest_dir = NULL,
   force = FALSE,
   quiet = FALSE
 )
@@ -20,8 +21,15 @@ testing or offline reuse.}
 \item{cache_dir}{Directory used for the downloaded zip and extracted files.
 Defaults to a package-specific user cache directory.}
 
+\item{dest_dir}{Optional destination directory for a project-local copy of the
+extracted `sample/` and `scc/` folders. For example,
+`spectreasy_example_data(dest_dir = getwd())` will place `sample/` and
+`scc/` in the current working directory. If `NULL` (default), the cached
+extracted paths are returned directly.}
+
 \item{force}{Logical; if `TRUE`, redownload and re-extract the archive even if
-a cached copy is already available.}
+a cached copy is already available. When `dest_dir` is supplied, `force = TRUE`
+also refreshes the copied project-local `sample/` and `scc/` folders.}
 
 \item{quiet}{Logical; if `TRUE`, suppress progress messages where possible.}
 }
@@ -36,12 +44,16 @@ unzips it automatically, and returns the local paths to the extracted
 }
 \details{
 The downloaded archive is cached under [tools::R_user_dir()] so it only needs
-to be fetched once unless `force = TRUE`.
+to be fetched once unless `force = TRUE`. If `dest_dir` is supplied, the cached
+files are copied there after download/extraction.
 }
 \examples{
 \dontrun{
 paths <- spectreasy_example_data()
 list.files(paths$scc_dir)
 list.files(paths$sample_dir)
+
+local_paths <- spectreasy_example_data(dest_dir = tempdir())
+list.files(local_paths$sample_dir)
 }
 }

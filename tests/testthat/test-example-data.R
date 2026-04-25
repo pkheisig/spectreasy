@@ -1,4 +1,4 @@
-test_that("spectreasy_example_data downloads, unzips, and caches local archives", {
+test_that("spectreasy_example_data downloads, unzips, caches, and can copy locally", {
     skip_if_not(nzchar(Sys.which("zip")))
 
     src_root <- tempfile("spectreasy_example_src_")
@@ -29,9 +29,17 @@ test_that("spectreasy_example_data downloads, unzips, and caches local archives"
     cached_paths <- spectreasy::spectreasy_example_data(asset = zip_file, cache_dir = cache_dir)
     expect_equal(normalizePath(cached_paths$sample_dir), normalizePath(paths$sample_dir))
     expect_true(file.exists(file.path(cached_paths$scc_dir, "FITC (Beads).fcs")))
+
+    dest_dir <- tempfile("spectreasy_example_dest_")
+    local_paths <- spectreasy::spectreasy_example_data(asset = zip_file, cache_dir = cache_dir, dest_dir = dest_dir)
+    expect_equal(normalizePath(local_paths$root_dir), normalizePath(dest_dir, mustWork = FALSE))
+    expect_equal(basename(local_paths$sample_dir), "sample")
+    expect_equal(basename(local_paths$scc_dir), "scc")
+    expect_true(file.exists(file.path(dest_dir, "sample", "sample.fcs")))
+    expect_true(file.exists(file.path(dest_dir, "scc", "FITC (Beads).fcs")))
 })
 
-test_that("spectreasy_example_data validates archive contents", {
+test_that("spectreasy_example_data validates archive contents and dest_dir", {
     skip_if_not(nzchar(Sys.which("zip")))
 
     src_root <- tempfile("spectreasy_example_bad_src_")
@@ -48,5 +56,9 @@ test_that("spectreasy_example_data validates archive contents", {
     expect_error(
         spectreasy::spectreasy_example_data(asset = zip_file, cache_dir = tempfile("spectreasy_example_bad_cache_")),
         regexp = "expected 'sample/' and 'scc/' folders"
+    )
+    expect_error(
+        spectreasy::spectreasy_example_data(asset = zip_file, dest_dir = ""),
+        regexp = "dest_dir must be NULL or a non-empty directory path"
     )
 })

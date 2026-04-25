@@ -31,6 +31,7 @@ and returns local paths to:
 All code is evaluated during vignette builds.
 
 ```{r}
+devtools::install("/Users/pkheisig/Building/spectreasy", upgrade = "never")
 suppressPackageStartupMessages(library(spectreasy))
 ```
 
@@ -59,7 +60,7 @@ We then copy the extracted `sample/` and `scc/` folders into a temporary
 working directory so that the vignette writes outputs outside the cache.
 
 ```{r}
-example_paths <- spectreasy_example_data()
+example_paths <- spectreasy_example_data(force=TRUE)
 
 project_dir <- file.path(tempdir(), "spectreasy_vignette_project")
 if (dir.exists(project_dir)) {

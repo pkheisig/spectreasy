@@ -40,6 +40,9 @@ unzips it automatically.
 paths <- spectreasy_example_data()
 paths$scc_dir
 paths$sample_dir
+
+local_paths <- spectreasy_example_data(dest_dir = getwd())
+local_paths$sample_dir
 ```
 
 ---
