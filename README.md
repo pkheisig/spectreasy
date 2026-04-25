@@ -16,16 +16,19 @@
 
 ## Installation
 
-```r
-# Install the development version from GitHub
-if (!requireNamespace("remotes", quietly = TRUE)) {
-  install.packages("remotes")
-}
-remotes::install_github("pkheisig/spectreasy")
+For the released Bioconductor version, install with:
 
-# Once accepted by Bioconductor:
-# BiocManager::install("spectreasy")
+```r
+BiocManager::install("spectreasy")
 ```
+
+If you need the development version from GitHub, install with:
+
+```r
+remotes::install_github("pkheisig/spectreasy")
+```
+
+`remotes` is used here rather than `devtools` because only GitHub installation is needed.
 
 ---
 

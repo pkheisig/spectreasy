@@ -28,17 +28,19 @@ suppressPackageStartupMessages(library(spectreasy))
 
 ## Installation
 
-Install the current development version with:
+For the released Bioconductor version, install with:
 
 ```r
-if (!requireNamespace("remotes", quietly = TRUE)) {
-  install.packages("remotes")
-}
-remotes::install_github("pkheisig/spectreasy")
-
-# Once accepted by Bioconductor:
-# BiocManager::install("spectreasy")
+BiocManager::install("spectreasy")
 ```
+
+If you need the current development version from GitHub, install with:
+
+```r
+remotes::install_github("pkheisig/spectreasy")
+```
+
+`remotes` is used here rather than `devtools` because only GitHub installation is needed.
 
 ## 1. Create a toy reference matrix
 
