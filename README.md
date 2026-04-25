@@ -32,8 +32,9 @@ remotes::install_github("pkheisig/spectreasy")
 
 ## Example data
 
-`spectreasy_example_data()` downloads the example FCS dataset from the latest
-GitHub release asset, caches it locally, and unzips it automatically.
+`spectreasy_example_data()` downloads the example FCS dataset from the GitHub
+release asset matching the installed package version, caches it locally, and
+unzips it automatically.
 
 ```r
 paths <- spectreasy_example_data()

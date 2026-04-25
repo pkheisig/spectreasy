@@ -1,6 +1,6 @@
 #' Download and cache the spectreasy example FCS files
 #'
-#' Downloads the example-data zip archive from the latest GitHub release,
+#' Downloads the example-data zip archive from the matching GitHub release,
 #' unzips it automatically, and returns the local paths to the extracted
 #' `sample/` and `scc/` folders.
 #'
@@ -8,8 +8,9 @@
 #' to be fetched once unless `force = TRUE`.
 #'
 #' @param asset Optional URL to a zip archive containing `sample/` and `scc/`
-#'   folders. Defaults to the latest `spectreasy` GitHub release asset. A local
-#'   zip file path can also be supplied for testing or offline reuse.
+#'   folders. Defaults to the `spectreasy` GitHub release asset matching the
+#'   installed package version. A local zip file path can also be supplied for
+#'   testing or offline reuse.
 #' @param cache_dir Directory used for the downloaded zip and extracted files.
 #'   Defaults to a package-specific user cache directory.
 #' @param force Logical; if `TRUE`, redownload and re-extract the archive even if
@@ -96,7 +97,10 @@ spectreasy_example_data <- function(
         "spectreasy.example_data_asset",
         Sys.getenv(
             "SPECTREASY_EXAMPLE_DATA_ASSET",
-            unset = "https://github.com/pkheisig/spectreasy/releases/latest/download/spectreasy-example-data.zip"
+            unset = sprintf(
+                "https://github.com/pkheisig/spectreasy/releases/download/v%s/spectreasy-example-data.zip",
+                as.character(utils::packageVersion("spectreasy"))
+            )
         )
     )
 }

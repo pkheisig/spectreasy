@@ -21,8 +21,9 @@ knitr::opts_chunk$set(
 # spectreasy: spectral unmixing on example FCS files
 
 This vignette runs a complete `spectreasy` workflow on example FCS files stored
-as a GitHub release asset. `spectreasy_example_data()` downloads that archive on
-first use, unzips it automatically, and returns local paths to:
+as a GitHub release asset. `spectreasy_example_data()` downloads the archive
+matching the installed package version on first use, unzips it automatically,
+and returns local paths to:
 
 - single-color controls in `scc/`
 - one experimental sample in `sample/sample.fcs`
@@ -51,8 +52,9 @@ remotes::install_github("pkheisig/spectreasy")
 
 ## 1. Download the example data and prepare a temporary project
 
-We first download the example-data archive from the latest GitHub release.
-`spectreasy_example_data()` caches the zip file and unzips it automatically.
+We first download the example-data archive from the GitHub release matching the
+installed package version. `spectreasy_example_data()` caches the zip file and
+unzips it automatically.
 We then copy the extracted `sample/` and `scc/` folders into a temporary
 working directory so that the vignette writes outputs outside the cache.
 

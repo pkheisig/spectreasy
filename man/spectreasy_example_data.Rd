@@ -13,8 +13,9 @@ spectreasy_example_data(
 }
 \arguments{
 \item{asset}{Optional URL to a zip archive containing `sample/` and `scc/`
-folders. Defaults to the latest `spectreasy` GitHub release asset. A local
-zip file path can also be supplied for testing or offline reuse.}
+folders. Defaults to the `spectreasy` GitHub release asset matching the
+installed package version. A local zip file path can also be supplied for
+testing or offline reuse.}
 
 \item{cache_dir}{Directory used for the downloaded zip and extracted files.
 Defaults to a package-specific user cache directory.}
@@ -29,7 +30,7 @@ A named list with elements `root_dir`, `zip_file`, `sample_dir`,
   `sample_files`, and `scc_dir`.
 }
 \description{
-Downloads the example-data zip archive from the latest GitHub release,
+Downloads the example-data zip archive from the matching GitHub release,
 unzips it automatically, and returns the local paths to the extracted
 `sample/` and `scc/` folders.
 }
