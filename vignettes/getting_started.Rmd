@@ -31,7 +31,6 @@ and returns local paths to:
 All code is evaluated during vignette builds.
 
 ```{r}
-devtools::install("/Users/pkheisig/Building/spectreasy", upgrade = "never")
 suppressPackageStartupMessages(library(spectreasy))
 ```
 
