@@ -30,6 +30,17 @@ remotes::install_github("pkheisig/spectreasy")
 
 `remotes` is used here rather than `devtools` because only GitHub installation is needed.
 
+## Example data
+
+`spectreasy_example_data()` downloads the example FCS dataset from the latest
+GitHub release asset, caches it locally, and unzips it automatically.
+
+```r
+paths <- spectreasy_example_data()
+paths$scc_dir
+paths$sample_dir
+```
+
 ---
 
 ## Project Setup

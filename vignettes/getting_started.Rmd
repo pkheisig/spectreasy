@@ -12,15 +12,22 @@ knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
   fig.width = 7,
-  fig.height = 4.5
+  fig.height = 4.5,
+  warning = FALSE,
+  message = FALSE
 )
 ```
 
-# spectreasy: Spectral Unmixing Quality Control
+# spectreasy: spectral unmixing on example FCS files
 
-This vignette runs a small end-to-end `spectreasy` workflow with synthetic data.
-The code is evaluated during vignette builds, so it demonstrates actual package
-usage rather than static pseudocode.
+This vignette runs a complete `spectreasy` workflow on example FCS files stored
+as a GitHub release asset. `spectreasy_example_data()` downloads that archive on
+first use, unzips it automatically, and returns local paths to:
+
+- single-color controls in `scc/`
+- one experimental sample in `sample/sample.fcs`
+
+All code is evaluated during vignette builds.
 
 ```{r}
 suppressPackageStartupMessages(library(spectreasy))
@@ -42,276 +49,213 @@ remotes::install_github("pkheisig/spectreasy")
 
 `remotes` is used here rather than `devtools` because only GitHub installation is needed.
 
-## 1. Create a toy reference matrix
+## 1. Download the example data and prepare a temporary project
 
-We start with a simple 3-marker reference matrix and derive a static OLS
-unmixing matrix.
-
-```{r}
-M_demo <- rbind(
-  FITC = c(1.00, 0.20, 0.05),
-  PE   = c(0.10, 1.00, 0.20),
-  APC  = c(0.05, 0.15, 1.00)
-)
-colnames(M_demo) <- c("B2-A", "YG1-A", "R1-A")
-
-W_demo <- derive_unmixing_matrix(M_demo, method = "OLS")
-W_demo
-```
-
-## 2. Build a toy `flowSet` in memory
-
-A useful Bioconductor-friendly workflow is to keep multiple samples in memory as
-a `flowSet`. The helper below simulates three single-stain-like samples.
+We first download the example-data archive from the latest GitHub release.
+`spectreasy_example_data()` caches the zip file and unzips it automatically.
+We then copy the extracted `sample/` and `scc/` folders into a temporary
+working directory so that the vignette writes outputs outside the cache.
 
 ```{r}
-simulate_sample <- function(sample_name, dominant_marker, M, n_cells = 400) {
-  markers <- rownames(M)
-  marker_signal <- matrix(rexp(n_cells * length(markers), rate = 8), ncol = length(markers))
-  colnames(marker_signal) <- markers
-  marker_signal[, dominant_marker] <- rexp(n_cells, rate = 0.6) + 2
+example_paths <- spectreasy_example_data()
 
-  raw_signal <- marker_signal %*% M + matrix(rnorm(n_cells * ncol(M), sd = 0.03), ncol = ncol(M))
-  exprs_mat <- cbind(
-    raw_signal,
-    "Time" = seq_len(n_cells),
-    "FSC-A" = rnorm(n_cells, mean = 90000, sd = 7000),
-    "SSC-A" = rnorm(n_cells, mean = 45000, sd = 5000)
-  )
-  colnames(exprs_mat)[seq_len(ncol(M))] <- colnames(M)
-
-  ff <- flowCore::flowFrame(exprs_mat)
-  pd <- flowCore::pData(flowCore::parameters(ff))
-  if (all(c("name", "desc") %in% colnames(pd))) {
-    pd$desc <- pd$name
-    flowCore::parameters(ff) <- methods::new("AnnotatedDataFrame", data = pd)
-  }
-  ff
+project_dir <- file.path(tempdir(), "spectreasy_vignette_project")
+if (dir.exists(project_dir)) {
+  unlink(project_dir, recursive = TRUE, force = TRUE)
 }
+dir.create(project_dir, recursive = TRUE)
+dir.create(file.path(project_dir, "scc"))
+dir.create(file.path(project_dir, "sample"))
 
-toy_fs <- flowCore::flowSet(list(
-  FITC_sample = simulate_sample("FITC_sample", "FITC", M_demo),
-  PE_sample = simulate_sample("PE_sample", "PE", M_demo),
-  APC_sample = simulate_sample("APC_sample", "APC", M_demo)
-))
-
-flowCore::sampleNames(toy_fs)
-```
-
-## 3. Unmix samples directly from the `flowSet`
-
-`unmix_samples()` can work directly on an in-memory `flowSet`, which makes it
-simpler to stay within the Bioconductor flow cytometry ecosystem.
-
-```{r}
-toy_unmixed <- unmix_samples(
-  sample_dir = toy_fs,
-  M = M_demo,
-  method = "OLS",
-  write_fcs = FALSE
+file.copy(
+  list.files(example_paths$scc_dir, full.names = TRUE, pattern = "\\.[Ff][Cc][Ss]$"),
+  file.path(project_dir, "scc")
+)
+file.copy(
+  list.files(example_paths$sample_dir, full.names = TRUE, pattern = "\\.[Ff][Cc][Ss]$"),
+  file.path(project_dir, "sample")
 )
 
-names(toy_unmixed)
-head(toy_unmixed[[1]]$data)
+list.files(project_dir, recursive = TRUE)
 ```
 
-If you want an in-memory Bioconductor container back, set
-`return_type = "flowSet"`.
+## 2. Create and review `fcs_mapping.csv`
+
+We first let `spectreasy` infer the detector channels from the example controls,
+then we replace the fluorophore and marker annotations with the intended panel
+labels for this vignette.
 
 ```{r}
-toy_unmixed_flowset <- unmix_samples(
-  sample_dir = toy_fs,
-  M = M_demo,
-  method = "OLS",
-  write_fcs = FALSE,
-  return_type = "flowSet"
+control_file <- file.path(project_dir, "fcs_mapping.csv")
+
+auto_control_df <- create_control_file(
+  input_folder = file.path(project_dir, "scc"),
+  include_af_folder = FALSE,
+  cytometer = "Aurora",
+  output_file = file.path(project_dir, "fcs_mapping_auto.csv")
 )
 
-class(toy_unmixed_flowset)
-flowCore::sampleNames(toy_unmixed_flowset)
-```
-
-`spectreasy` also supports `SingleCellExperiment`, which fits more naturally
-into downstream Bioconductor single-cell workflows.
-
-```{r}
-if (requireNamespace("SingleCellExperiment", quietly = TRUE) &&
-    requireNamespace("SummarizedExperiment", quietly = TRUE) &&
-    requireNamespace("S4Vectors", quietly = TRUE)) {
-  toy_exprs <- do.call(cbind, lapply(seq_along(toy_fs), function(i) {
-    t(flowCore::exprs(toy_fs[[i]]))
-  }))
-  toy_coldata <- data.frame(
-    sample_id = rep(flowCore::sampleNames(toy_fs), each = nrow(flowCore::exprs(toy_fs[[1]]))),
-    row.names = paste0("cell_", seq_len(ncol(toy_exprs))),
-    stringsAsFactors = FALSE
-  )
-  colnames(toy_exprs) <- rownames(toy_coldata)
-
-  toy_sce <- suppressWarnings(
-    SingleCellExperiment::SingleCellExperiment(
-      assays = list(counts = toy_exprs),
-      colData = S4Vectors::DataFrame(toy_coldata)
-    )
-  )
-
-  toy_unmixed_sce <- suppressWarnings(
-    unmix_samples(
-      sample_dir = toy_sce,
-      M = M_demo,
-      method = "OLS",
-      write_fcs = FALSE,
-      return_type = "SingleCellExperiment"
-    )
-  )
-
-  class(toy_unmixed_sce)
-  SummarizedExperiment::assayNames(toy_unmixed_sce)
-  SingleCellExperiment::altExpNames(toy_unmixed_sce)
-}
-```
-
-## 4. Generate diagnostic plots without writing files
-
-Most plotting helpers return `ggplot` objects and only save when you pass an
-explicit `output_file`.
-
-```{r}
-plot_spectra(M_demo, output_file = NULL)
-```
-
-```{r}
-plot_ssm(calculate_ssm(M_demo), output_file = NULL)
-```
-
-For SCC-like scatter diagnostics, provide a sample-to-marker mapping.
-
-```{r}
-sample_to_marker <- c(
-  FITC_sample = "FITC",
-  PE_sample = "PE",
-  APC_sample = "APC"
+manual_annotations <- data.frame(
+  filename = c(
+    "Alexa Fluor 700 (Beads).fcs",
+    "BUV395 (Beads).fcs",
+    "BV510 (Beads).fcs",
+    "FITC (Beads).fcs",
+    "LIVE DEAD NIR (Cells).fcs",
+    "PerCP-Cy5.5 (Beads).fcs",
+    "Unstained (Cells).fcs"
+  ),
+  fluorophore = c(
+    "Alexa Fluor 700",
+    "BUV395",
+    "BV510",
+    "FITC",
+    "LIVE DEAD NIR",
+    "PerCP-Cy5.5",
+    "AF"
+  ),
+  marker = c(
+    "CD3",
+    "CD45RA",
+    "CD27",
+    "CD8",
+    "Live",
+    "CCR7",
+    "Autofluorescence"
+  ),
+  control.type = c("beads", "beads", "beads", "beads", "cells", "beads", "cells"),
+  is.viability = c("", "", "", "", "TRUE", "", ""),
+  stringsAsFactors = FALSE
 )
 
-plot_unmixing_scatter_matrix(
-  unmixed_list = toy_unmixed,
-  sample_to_marker = sample_to_marker,
-  markers = rownames(M_demo),
-  output_file = NULL,
-  max_points_per_sample = 150,
+match_idx <- match(auto_control_df$filename, manual_annotations$filename)
+stopifnot(!anyNA(match_idx))
+
+control_df <- auto_control_df
+control_df$fluorophore <- manual_annotations$fluorophore[match_idx]
+control_df$marker <- manual_annotations$marker[match_idx]
+control_df$control.type <- manual_annotations$control.type[match_idx]
+control_df$is.viability <- manual_annotations$is.viability[match_idx]
+
+utils::write.csv(control_df, control_file, row.names = FALSE, quote = TRUE)
+knitr::kable(control_df)
+```
+
+## 3. Review the single-color controls
+
+Before unmixing, we generate the SCC review report.
+
+```{r}
+scc_report_file <- file.path(project_dir, "spectreasy_outputs", "SCC_QC_Report.pdf")
+
+generate_scc_report(
+  scc_dir = file.path(project_dir, "scc"),
+  control_df = control_df,
+  cytometer = "Aurora",
+  output_file = scc_report_file,
   seed = 1
 )
+
+file.exists(scc_report_file)
 ```
 
-We can also summarize negative-population spread from the unmixed results.
+## 4. Build the control-stage outputs
+
+`autounmix_controls()` builds the reference matrix, saves control-stage plots,
+and unmixes the controls.
 
 ```{r}
-toy_results_df <- do.call(rbind, lapply(toy_unmixed, function(x) x$data))
-plot_nps(calculate_nps(toy_results_df), output_file = NULL)
-```
-
-## 5. Build a QC report explicitly
-
-Report functions write files only when you supply an explicit destination.
-Here we generate a temporary PDF to show the full workflow.
-
-```{r}
-toy_report <- tempfile(fileext = ".pdf")
-generate_qc_report(toy_results_df, M_demo, output_file = toy_report)
-file.exists(toy_report)
-```
-
-## Real-data workflow
-
-For real projects, organize your data like this:
-
-```
-my_project/
-├── scc/                          # Single-color control FCS files
-│   ├── FITC_beads.fcs
-│   ├── PE_beads.fcs
-│   └── Unstained.fcs             # Autofluorescence control
-├── samples/                      # Experimental FCS files
-│   └── Sample1.fcs
-└── fcs_mapping.csv               # Control file (optional)
-```
-
-### Create or review the control file
-
-```r
-create_control_file(
-  input_folder = "scc",
-  cytometer = "Aurora",
-  output_file = "fcs_mapping.csv"
-)
-```
-
-### Generate the SCC review report
-
-```r
-generate_scc_report(
-  scc_dir = "scc",
-  control_file = "fcs_mapping.csv",
-  cytometer = "Aurora",
-  output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf")
-)
-```
-
-### Build the reference matrix
-
-```r
-control_df <- read.csv("fcs_mapping.csv", stringsAsFactors = FALSE, check.names = FALSE)
-
-M <- build_reference_matrix(
-  input_folder = "scc",
-  output_folder = "gating_plots",
-  save_qc_plots = TRUE,
-  control_df = control_df,
-  default_sample_type = "beads"
-)
-```
-
-### Run control-stage unmixing
-
-```r
 ctrl <- autounmix_controls(
-  scc_dir = "scc",
-  control_file = "fcs_mapping.csv",
+  scc_dir = file.path(project_dir, "scc"),
+  control_df = control_df,
   cytometer = "Aurora",
-  output_dir = "spectreasy_outputs/autounmix_controls"
+  output_dir = file.path(project_dir, "spectreasy_outputs", "autounmix_controls"),
+  build_qc_plots = FALSE,
+  seed = 1
 )
+
+dim(ctrl$M)
+rownames(ctrl$M)
 ```
 
-### Launch the interactive GUI
+The control-stage matrix is labeled by fluorophore, which is useful for control
+QC. For downstream sample interpretation, we relabel the matrix rows to marker
+names using `fcs_mapping.csv`.
 
-```r
-launch_gui(
-  matrix_dir = "spectreasy_outputs/autounmix_controls",
-  samples_dir = "samples"
-)
+```{r}
+marker_map <- stats::setNames(control_df$marker, control_df$fluorophore)
+reference_matrix <- ctrl$M
+rownames(reference_matrix) <- unname(marker_map[rownames(reference_matrix)])
+
+rownames(reference_matrix)
 ```
 
-### Unmix experimental samples
+We can visualize the non-autofluorescence spectra directly from the evaluated
+matrix.
 
-```r
+```{r}
+reference_matrix_no_af <- reference_matrix[rownames(reference_matrix) != "Autofluorescence", , drop = FALSE]
+plot_spectra(reference_matrix_no_af, output_file = NULL)
+```
+
+```{r}
+plot_ssm(calculate_ssm(reference_matrix_no_af), output_file = NULL)
+```
+
+## 5. Unmix the example sample
+
+Now we unmix `sample/sample.fcs` using the marker-labeled reference matrix.
+
+```{r}
 unmixed <- unmix_samples(
-  sample_dir = "samples",
-  M = M,
+  sample_dir = file.path(project_dir, "sample"),
+  M = reference_matrix,
   method = "WLS",
-  output_dir = "spectreasy_outputs/unmix_samples",
+  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples"),
   write_fcs = TRUE
 )
+
+sample_results <- unmixed$sample$data
+knitr::kable(utils::head(sample_results[, c(
+  "CD3", "CD45RA", "CD27", "CD8", "CCR7", "Live", "Autofluorescence", "File"
+)]))
 ```
 
-## Function reference
+The unmixed FCS file is written only because we explicitly supplied an output
+folder and set `write_fcs = TRUE`.
 
-| Function | Purpose |
-|----------|---------|
-| `generate_scc_report()` | Review SCC quality before unmixing |
-| `build_reference_matrix()` | Extract signatures from single-color controls |
-| `autounmix_controls()` | Build/save control-stage matrices and SCC unmix outputs |
-| `unmix_samples()` | Unmix experimental FCS files or in-memory `flowSet`s |
-| `launch_gui()` | Launch the interactive web interface |
+```{r}
+file.exists(file.path(project_dir, "spectreasy_outputs", "unmix_samples", "sample_unmixed.fcs"))
+```
+
+## 6. Summarize sample-level diagnostics
+
+We can inspect the negative-population spread on the evaluated sample output.
+
+```{r}
+plot_nps(calculate_nps(sample_results), output_file = NULL)
+```
+
+And we can generate the sample QC PDF report.
+
+```{r}
+qc_report_file <- file.path(project_dir, "spectreasy_outputs", "QC_Report.pdf")
+generate_qc_report(sample_results, reference_matrix, output_file = qc_report_file)
+file.exists(qc_report_file)
+```
+
+## 7. Generated files
+
+The evaluated vignette produces the expected control-stage and sample-stage
+artifacts.
+
+```{r}
+output_files <- list.files(file.path(project_dir, "spectreasy_outputs"), recursive = TRUE)
+knitr::kable(data.frame(file = output_files, stringsAsFactors = FALSE))
+```
+
+The interactive GUI can be launched later from the generated control outputs,
+but it is not started during vignette builds.
 
 ```{r}
 sessionInfo()
