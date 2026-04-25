@@ -11,16 +11,30 @@
 #'   (`Time` plus all `FSC*`/`SSC*` columns, when available).
 #'         If return_residuals=TRUE, returns a list with [[data]] and [[residuals]].
 #' @examples
-#' \dontrun{
-#' ff <- flowCore::read.FCS("samples/Sample1.fcs", transformation = FALSE)
-#' res <- calc_residuals(
-#'   flow_frame = ff,
-#'   M = M,
-#'   method = "WLS",
-#'   return_residuals = TRUE
+#' M_demo <- rbind(
+#'   FITC = c(1.00, 0.20, 0.05),
+#'   PE = c(0.10, 1.00, 0.20),
+#'   APC = c(0.05, 0.15, 1.00)
 #' )
+#' colnames(M_demo) <- c("B2-A", "YG1-A", "R1-A")
+#'
+#' marker_signal <- matrix(rexp(300 * nrow(M_demo), rate = 8), ncol = nrow(M_demo))
+#' colnames(marker_signal) <- rownames(M_demo)
+#' marker_signal[, "FITC"] <- rexp(300, rate = 0.6) + 2
+#' raw_signal <- marker_signal %*% M_demo +
+#'   matrix(rnorm(300 * ncol(M_demo), sd = 0.03), ncol = ncol(M_demo))
+#'
+#' exprs_mat <- cbind(
+#'   raw_signal,
+#'   Time = seq_len(300),
+#'   "FSC-A" = rnorm(300, mean = 90000, sd = 7000),
+#'   "SSC-A" = rnorm(300, mean = 45000, sd = 5000)
+#' )
+#' colnames(exprs_mat)[seq_len(ncol(M_demo))] <- colnames(M_demo)
+#' ff <- flowCore::flowFrame(exprs_mat)
+#'
+#' res <- calc_residuals(ff, M_demo, method = "OLS", return_residuals = TRUE)
 #' head(res$data)
-#' }
 #' @export
 calc_residuals <- function(flow_frame, M, file_name = NULL, method = "OLS", 
                           background_noise = 25, return_residuals = FALSE) {
@@ -37,26 +51,7 @@ calc_residuals <- function(flow_frame, M, file_name = NULL, method = "OLS",
     Y <- full_data[, detectors, drop = FALSE]
 
     Mt <- t(M)
-    n_cells <- nrow(Y)
-    n_fluor <- nrow(M)
-    
     method <- toupper(method)
-
-    safe_inverse <- function(mat, tol = 1e-10) {
-        if (rcond(mat) > tol) {
-            return(solve(mat))
-        }
-        sv <- svd(mat)
-        if (length(sv$d) == 0 || max(sv$d) == 0) {
-            return(matrix(0, nrow = nrow(mat), ncol = ncol(mat)))
-        }
-        keep <- sv$d > (max(sv$d) * tol)
-        if (!any(keep)) {
-            return(matrix(0, nrow = nrow(mat), ncol = ncol(mat)))
-        }
-        sv$v[, keep, drop = FALSE] %*%
-            (diag(1 / sv$d[keep], nrow = sum(keep)) %*% t(sv$u[, keep, drop = FALSE]))
-    }
 
     if (method == "OLS") {
         # Ordinary Least Squares: A = Y * M^T * (M * M^T)^-1
@@ -66,30 +61,13 @@ calc_residuals <- function(flow_frame, M, file_name = NULL, method = "OLS",
         }
         A <- Y %*% Mt %*% solve(matrix_to_invert)
     } else if (method == "NNLS") {
-        # Non-Negative Least Squares (slower, per-cell)
-        if (!requireNamespace("nnls", quietly = TRUE)) {
-            stop("Package 'nnls' required for NNLS. Install with: install.packages('nnls')")
-        }
-        A <- matrix(0, nrow = n_cells, ncol = n_fluor)
-        for (i in seq_len(n_cells)) {
-            A[i, ] <- nnls::nnls(Mt, Y[i, ])$x
-        }
+        A <- spectreasy_nnls_unmix_cpp(Y = Y, M = M)
     } else if (method == "WLS") {
-        # Weighted Least Squares (Per-Cell)
-        A <- matrix(0, nrow = n_cells, ncol = n_fluor)
-        MMt <- M %*% Mt
-        MMt_inv <- safe_inverse(MMt)
-        
-        for (i in seq_len(n_cells)) {
-            weights_i <- 1 / (pmax(Y[i, ], 0) + background_noise)
-            Wi <- diag(weights_i)
-            MWMt_i <- M %*% Wi %*% Mt
-            if (rcond(MWMt_i) > 1e-10) {
-                A[i, ] <- Y[i, , drop = FALSE] %*% Wi %*% Mt %*% solve(MWMt_i)
-            } else {
-                A[i, ] <- Y[i, , drop = FALSE] %*% Mt %*% MMt_inv
-            }
-        }
+        A <- spectreasy_wls_unmix_cpp(
+            Y = Y,
+            M = M,
+            background_noise = background_noise
+        )
     } else {
         stop("method must be 'OLS', 'NNLS', or 'WLS'")
     }

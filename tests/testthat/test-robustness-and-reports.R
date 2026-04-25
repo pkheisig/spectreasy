@@ -84,8 +84,48 @@ test_that("generate_qc_report has stable pages and no recommendation page", {
     expect_true(file.exists(pdf_out))
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 4)
+    expect_equal(info$pages, 5)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_false(grepl("Conclusions & Recommendations", txt, fixed = TRUE))
+    expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))
+    expect_false(grepl("Sample NxN Scatter Matrix: SampleB", txt, fixed = TRUE))
+    expect_false(grepl("Good: populations remain compact", txt, fixed = TRUE))
+})
+
+test_that("generate_qc_report can include NxN pages for all samples", {
+    skip_if_not_installed("pdftools")
+
+    set.seed(1)
+    n <- 120
+    results_df <- data.frame(
+        FITC = rnorm(n, 0, 0.3),
+        PE = rnorm(n, 0, 0.4),
+        AF = rnorm(n, 0, 0.2),
+        File = rep(c("SampleA", "SampleB"), each = n / 2),
+        check.names = FALSE
+    )
+
+    M <- matrix(c(
+        1.0, 0.2, 0.1,
+        0.1, 1.0, 0.2,
+        0.2, 0.2, 1.0
+    ), nrow = 3, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE", "AF")
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A")
+
+    pdf_out <- tempfile(fileext = ".pdf")
+    spectreasy::generate_qc_report(
+        results_df = results_df,
+        M = M,
+        output_file = pdf_out,
+        nxn_all_samples = TRUE
+    )
+
+    info <- pdftools::pdf_info(pdf_out)
+    expect_equal(info$pages, 6)
+
+    txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
+    expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))
+    expect_true(grepl("Sample NxN Scatter Matrix: SampleB", txt, fixed = TRUE))
 })

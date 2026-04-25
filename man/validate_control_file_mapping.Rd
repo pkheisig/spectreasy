@@ -8,6 +8,7 @@ validate_control_file_mapping(
   control_df,
   scc_dir = "scc",
   include_multi_af = FALSE,
+  exclude_af = FALSE,
   af_dir = "af",
   require_all_scc_mapped = TRUE,
   require_channels = TRUE,
@@ -20,6 +21,9 @@ validate_control_file_mapping(
 \item{scc_dir}{SCC directory containing FCS files.}
 
 \item{include_multi_af}{Logical. Whether AF files from `af_dir` are expected.}
+
+\item{exclude_af}{Logical. If `TRUE`, AF/unstained controls are optional and
+ignored during mapping completeness checks.}
 
 \item{af_dir}{Optional AF directory with additional FCS files.}
 
@@ -39,11 +43,32 @@ This catches common setup issues early (missing files, wrong channel names,
 malformed universal negatives, incomplete mappings).
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
-control_df <- read.csv("fcs_mapping.csv", stringsAsFactors = FALSE)
-preflight <- validate_control_file_mapping(control_df, scc_dir = "scc")
-preflight$ok
+make_example_ff <- function(main, n = 250) {
+  exprs <- cbind(
+    "B2-A" = pmax(rnorm(n, main[1], 40), 1),
+    "YG1-A" = pmax(rnorm(n, main[2], 15), 1),
+    "R1-A" = pmax(rnorm(n, main[3], 10), 1),
+    "FSC-A" = rnorm(n, 90000, 7000),
+    "SSC-A" = rnorm(n, 45000, 5000),
+    Time = seq_len(n)
+  )
+  flowCore::flowFrame(exprs)
 }
+
+td <- tempfile("spectreasy-")
+dir.create(td)
+scc_dir <- file.path(td, "scc")
+dir.create(scc_dir)
+flowCore::write.FCS(make_example_ff(c(800, 80, 50)), file.path(scc_dir, "FITC_cells.fcs"))
+flowCore::write.FCS(make_example_ff(c(80, 820, 60)), file.path(scc_dir, "PE_cells.fcs"))
+
+control_df <- data.frame(
+  filename = c("FITC_cells.fcs", "PE_cells.fcs"),
+  fluorophore = c("FITC", "PE"),
+  channel = c("B2-A", "YG1-A"),
+  stringsAsFactors = FALSE
+)
+
+preflight <- validate_control_file_mapping(control_df, scc_dir = scc_dir)
+preflight$ok
 }

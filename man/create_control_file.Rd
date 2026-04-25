@@ -45,14 +45,30 @@ or `"cells"`), and forces AF rows to `cells`.
 Generates a spectreasy-compatible control CSV.
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
+make_example_ff <- function(main, n = 250) {
+  exprs <- cbind(
+    "B2-A" = pmax(rnorm(n, main[1], 40), 1),
+    "YG1-A" = pmax(rnorm(n, main[2], 15), 1),
+    "R1-A" = pmax(rnorm(n, main[3], 10), 1),
+    "FSC-A" = rnorm(n, 90000, 7000),
+    "SSC-A" = rnorm(n, 45000, 5000),
+    Time = seq_len(n)
+  )
+  flowCore::flowFrame(exprs)
+}
+
+td <- tempfile("spectreasy-")
+dir.create(td)
+scc_dir <- file.path(td, "scc")
+dir.create(scc_dir)
+flowCore::write.FCS(make_example_ff(c(800, 80, 50)), file.path(scc_dir, "FITC_cells.fcs"))
+flowCore::write.FCS(make_example_ff(c(80, 820, 60)), file.path(scc_dir, "PE_cells.fcs"))
+
 control_df <- create_control_file(
-  input_folder = "scc",
+  input_folder = scc_dir,
+  include_af_folder = FALSE,
   cytometer = "Aurora",
-  output_file = "fcs_mapping.csv"
+  output_file = file.path(td, "fcs_mapping.csv")
 )
 head(control_df)
-}
 }

@@ -4,7 +4,7 @@
 \alias{plot_nps}
 \title{Plot Negative Population Spread}
 \usage{
-plot_nps(nps_results, output_file = "nps_plot.png", width = 200)
+plot_nps(nps_results, output_file = NULL, width = 200)
 }
 \arguments{
 \item{nps_results}{Output of [calculate_nps()].}
@@ -20,11 +20,12 @@ A `ggplot` object.
 Plot Negative Population Spread
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
-nps <- calculate_nps(results_df)
-p <- plot_nps(nps, output_file = "nps_plot.png")
+demo_df <- data.frame(
+  File = rep(c("sample_a", "sample_b"), each = 60),
+  FITC = c(rnorm(60, 0.2, 0.2), rnorm(60, 0.1, 0.15)),
+  PE = c(rnorm(60, 0.3, 0.25), rnorm(60, 0.2, 0.2))
+)
+nps <- calculate_nps(demo_df)
+p <- plot_nps(nps, output_file = NULL)
 print(p)
-}
 }

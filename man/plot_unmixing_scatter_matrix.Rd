@@ -9,7 +9,7 @@ plot_unmixing_scatter_matrix(
   sample_to_marker = NULL,
   markers = NULL,
   marker_display = NULL,
-  output_file = "unmixing_scatter_matrix.png",
+  output_file = NULL,
   max_points_per_sample = 3000,
   transform = c("none", "asinh"),
   asinh_cofactor = 150,
@@ -28,7 +28,7 @@ without extension) to fluorophore/marker names.}
 \item{marker_display}{Optional named character vector mapping primary marker
 names to display labels (for example `"BUV395 / CD45RA"`).}
 
-\item{output_file}{Path to PNG output.}
+\item{output_file}{Optional path to save a PNG output. Set `NULL` to return the plot without writing a file.}
 
 \item{max_points_per_sample}{Maximum events sampled per sample for plotting.}
 
@@ -41,7 +41,7 @@ names to display labels (for example `"BUV395 / CD45RA"`).}
 \item{seed}{Optional integer seed for deterministic point subsampling.}
 }
 \value{
-Invisibly returns `output_file`.
+A `ggplot` object.
 }
 \description{
 Creates a lower-triangle marker-vs-marker scatter matrix from unmixed SCC output.
@@ -49,13 +49,43 @@ Each populated panel uses events from only one single-stain file (row stain),
 while the column stain is permuted across the lower triangle.
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
-plot_unmixing_scatter_matrix(
-  unmixed_list = unmixed_list,
-  markers = rownames(M),
-  output_file = "scc_unmixing_scatter_matrix.png"
+M_demo <- rbind(
+  FITC = c(1.00, 0.20, 0.05),
+  PE = c(0.10, 1.00, 0.20),
+  APC = c(0.05, 0.15, 1.00)
 )
+colnames(M_demo) <- c("B2-A", "YG1-A", "R1-A")
+
+simulate_sample <- function(dominant_marker, M, n_cells = 120) {
+  markers <- rownames(M)
+  marker_signal <- matrix(rexp(n_cells * length(markers), rate = 8), ncol = length(markers))
+  colnames(marker_signal) <- markers
+  marker_signal[, dominant_marker] <- rexp(n_cells, rate = 0.6) + 2
+  raw_signal <- marker_signal \%*\% M + matrix(rnorm(n_cells * ncol(M), sd = 0.03), ncol = ncol(M))
+  exprs_mat <- cbind(
+    raw_signal,
+    Time = seq_len(n_cells),
+    "FSC-A" = rnorm(n_cells, mean = 90000, sd = 7000),
+    "SSC-A" = rnorm(n_cells, mean = 45000, sd = 5000)
+  )
+  colnames(exprs_mat)[seq_len(ncol(M))] <- colnames(M)
+  flowCore::flowFrame(exprs_mat)
 }
+
+toy_fs <- flowCore::flowSet(list(
+  FITC_sample = simulate_sample("FITC", M_demo),
+  PE_sample = simulate_sample("PE", M_demo),
+  APC_sample = simulate_sample("APC", M_demo)
+))
+toy_unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", write_fcs = FALSE)
+
+p <- plot_unmixing_scatter_matrix(
+  unmixed_list = toy_unmixed,
+  sample_to_marker = c(FITC_sample = "FITC", PE_sample = "PE", APC_sample = "APC"),
+  markers = rownames(M_demo),
+  output_file = NULL,
+  max_points_per_sample = 80,
+  seed = 1
+)
+print(p)
 }

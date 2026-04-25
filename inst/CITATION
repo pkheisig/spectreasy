@@ -1,9 +1,9 @@
 citHeader("To cite spectreasy in publications use:")
 
-citEntry(
-  entry = "Manual",
+bibentry(
+  bibtype = "Manual",
   title = "spectreasy: Single-Color Review and Spectral Unmixing Made Easier",
-  author = personList(
+  author = c(
     person(given = "Paul", family = "Heisig")
   ),
   year = "2026",

@@ -34,15 +34,14 @@ Extracts SCC signatures using internal logic and optional AF signatures from
 the `af/` folder, then combines them for downstream unmixing.
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
-ff <- flowCore::read.FCS("samples/Sample1.fcs", transformation = FALSE)
-M_ctrl <- get_control_spectra(
-  flow_frame = ff,
-  control_file = "fcs_mapping.csv",
-  control_dir = "scc",
-  cytometer = "Aurora"
-)
+if (interactive()) {
+  ff <- flowCore::read.FCS("samples/Sample1.fcs", transformation = FALSE)
+  M_ctrl <- get_control_spectra(
+    flow_frame = ff,
+    control_file = "fcs_mapping.csv",
+    control_dir = "scc",
+    cytometer = "Aurora"
+  )
+  dim(M_ctrl)
 }
 }

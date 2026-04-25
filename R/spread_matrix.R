@@ -63,7 +63,7 @@ calculate_ssm <- function(M, method = "OLS", background_noise = 100) {
 
 #' Plot Spectral Spread Matrix
 #' @param SSM Matrix returned by calculate_ssm
-#' @param output_file Path to save the plot
+#' @param output_file Optional path to save the plot. Set `NULL` to return the plot without writing a file.
 #' @param width Width of plot in mm
 #' @param height Height of plot in mm
 #' @return A `ggplot` object.
@@ -75,7 +75,7 @@ calculate_ssm <- function(M, method = "OLS", background_noise = 100) {
 #' p <- plot_ssm(ssm, output_file = NULL)
 #' print(p)
 #' @export
-plot_ssm <- function(SSM, output_file = "spectral_spread_matrix.png", width = 200, height = 180) {
+plot_ssm <- function(SSM, output_file = NULL, width = 200, height = 180) {
     long <- as.data.frame(SSM)
     long$Spilling_Marker <- rownames(SSM)
     long <- tidyr::pivot_longer(long, cols = -Spilling_Marker, names_to = "Receiving_Marker", values_to = "Spread")

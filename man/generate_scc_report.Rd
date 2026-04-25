@@ -7,11 +7,12 @@
 generate_scc_report(
   M = NULL,
   scc_dir = "scc",
-  output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf"),
+  output_file = NULL,
   control_df = NULL,
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
+  save_qc_pngs = FALSE,
   include_multi_af = FALSE,
   af_dir = "af",
   include_ssm = TRUE,
@@ -25,7 +26,7 @@ matrix generated from the supplied SCC files.}
 
 \item{scc_dir}{Directory containing SCC FCS files.}
 
-\item{output_file}{Path to save the PDF report.}
+\item{output_file}{Path to save the PDF report. Must be supplied explicitly.}
 
 \item{control_df}{Optional control mapping data.frame or CSV path.}
 
@@ -33,7 +34,12 @@ matrix generated from the supplied SCC files.}
 
 \item{cytometer}{Cytometer name passed to [build_reference_matrix()].}
 
-\item{qc_plot_dir}{Directory where FSC/SSC, histogram, and spectrum PNGs are written.}
+\item{qc_plot_dir}{Directory where FSC/SSC, histogram, and spectrum PNGs are written
+when `save_qc_pngs = TRUE`.}
+
+\item{save_qc_pngs}{Logical; if `TRUE`, keep the intermediate QC PNG files in
+`qc_plot_dir`. If `FALSE` (default), PNGs are written to a temporary directory
+for report assembly and removed afterward.}
 
 \item{include_multi_af}{Logical; forward to [build_reference_matrix()].}
 
@@ -47,19 +53,18 @@ matrix generated from the supplied SCC files.}
 }
 \value{
 Invisibly returns a list with `M`, `qc_summary`, and `qc_plot_dir`.
+  `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 }
 \description{
-Builds a reference matrix from single-color controls, writes QC plots for each
-control, and assembles a PDF report for pre-unmix review.
+Builds a reference matrix from single-color controls, assembles a PDF report
+for pre-unmix review, and can optionally retain the intermediate QC PNG plots.
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
-generate_scc_report(
-  scc_dir = "scc",
-  control_file = "fcs_mapping.csv",
-  output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf")
-)
+if (interactive()) {
+  generate_scc_report(
+    scc_dir = "scc",
+    control_file = "fcs_mapping.csv",
+    output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf")
+  )
 }
 }

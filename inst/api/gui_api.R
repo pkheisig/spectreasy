@@ -269,7 +269,7 @@ function(filename, content) {
 #* Get unmixed data for a subset of cells from a sample
 #* @get /data
 #* @param sample_name The name of the sample to load
-function(sample_name = NULL) {
+function(sample_name = "") {
     # If no sample provided, take the first one in samples/
     samples_dir <- get_samples_dir()
     files <- sort(list.files(samples_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE))
@@ -277,7 +277,7 @@ function(sample_name = NULL) {
         return(list(error = paste0("No FCS files found in samples directory: ", samples_dir)))
     }
 
-    if (is.null(sample_name)) {
+    if (is.null(sample_name) || !nzchar(trimws(as.character(sample_name)))) {
         sample_path <- files[1]
     } else {
         sn <- trimws(as.character(sample_name))

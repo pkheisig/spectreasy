@@ -7,7 +7,7 @@
 plot_spectra(
   ref_matrix,
   pd = NULL,
-  output_file = "spectra_overlay.png",
+  output_file = NULL,
   width = 250,
   height = 100,
   unit = "mm",
@@ -20,7 +20,7 @@ plot_spectra(
 
 \item{pd}{Optional pData for descriptive labels}
 
-\item{output_file}{Path to save plot}
+\item{output_file}{Optional path to save the plot. Set `NULL` to return the plot without writing a file.}
 
 \item{width}{Plot width.}
 

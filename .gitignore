@@ -39,6 +39,11 @@ inst/gui/node_modules/
 # Logs
 *.log
 
+# Compiled artifacts
+*.o
+*.so
+src/symbols.rds
+
 # Local package build/check artifacts
 *.tar.gz
 *.Rcheck/

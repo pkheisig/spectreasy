@@ -8,7 +8,7 @@ plot_detector_residuals(
   res_list,
   M,
   top_n = 50,
-  output_file = "detector_residuals.png",
+  output_file = NULL,
   width = 250,
   height = 120,
   pd = NULL
@@ -21,7 +21,7 @@ plot_detector_residuals(
 
 \item{top_n}{Number of top high-error cells to analyze}
 
-\item{output_file}{Path to save the plot}
+\item{output_file}{Optional path to save the plot. Set `NULL` to return the plot without writing a file.}
 
 \item{width}{Plot width.}
 
@@ -38,10 +38,28 @@ highest-residual cells. Overlays the reference signatures to help identify
 the source of the mismatch.
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
-p <- plot_detector_residuals(res_list[[1]], M, top_n = 50)
+M_demo <- rbind(
+  FITC = c(1.00, 0.20, 0.05),
+  PE = c(0.10, 1.00, 0.20),
+  APC = c(0.05, 0.15, 1.00)
+)
+colnames(M_demo) <- c("B2-A", "YG1-A", "R1-A")
+
+marker_signal <- matrix(rexp(250 * nrow(M_demo), rate = 8), ncol = nrow(M_demo))
+colnames(marker_signal) <- rownames(M_demo)
+marker_signal[, "FITC"] <- rexp(250, rate = 0.6) + 2
+raw_signal <- marker_signal \%*\% M_demo +
+  matrix(rnorm(250 * ncol(M_demo), sd = 0.03), ncol = ncol(M_demo))
+exprs_mat <- cbind(
+  raw_signal,
+  Time = seq_len(250),
+  "FSC-A" = rnorm(250, mean = 90000, sd = 7000),
+  "SSC-A" = rnorm(250, mean = 45000, sd = 5000)
+)
+colnames(exprs_mat)[seq_len(ncol(M_demo))] <- colnames(M_demo)
+ff <- flowCore::flowFrame(exprs_mat)
+res <- calc_residuals(ff, M_demo, return_residuals = TRUE)
+
+p <- plot_detector_residuals(res, M_demo, top_n = 20, output_file = NULL)
 print(p)
-}
 }

@@ -13,6 +13,7 @@ autounmix_controls(
   auto_default_control_type = "beads",
   auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
   output_dir = "spectreasy_outputs/autounmix_controls",
+  exclude_af = FALSE,
   unmix_method = "WLS",
   build_qc_plots = FALSE,
   unmix_scatter_panel_size_mm = 30,
@@ -37,6 +38,9 @@ autounmix_controls(
 when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 
 \item{output_dir}{Output directory for SCC workflow artifacts.}
+
+\item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls even when
+they are present in the SCC folder or control mapping.}
 
 \item{unmix_method}{SCC unmixing method (`"WLS"`, `"OLS"`, `"NNLS"`).}
 
@@ -64,16 +68,14 @@ This function is intended as the control-stage step before GUI adjustment
 and downstream sample unmixing.
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
-ctrl <- autounmix_controls(
-  scc_dir = "scc",
-  control_file = "fcs_mapping.csv",
-  auto_create_control = TRUE,
-  cytometer = "Aurora",
-  output_dir = "spectreasy_outputs/autounmix_controls"
-)
-ctrl$unmixing_matrix_file
+if (interactive()) {
+  ctrl <- autounmix_controls(
+    scc_dir = "scc",
+    control_file = "fcs_mapping.csv",
+    auto_create_control = TRUE,
+    cytometer = "Aurora",
+    output_dir = "spectreasy_outputs/autounmix_controls"
+  )
+  ctrl$unmixing_matrix_file
 }
 }

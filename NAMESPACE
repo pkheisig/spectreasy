@@ -1,3 +1,5 @@
+useDynLib(spectreasy, .registration=TRUE)
+importFrom(Rcpp,evalCpp)
 importFrom(graphics,hist)
 importFrom(grDevices,chull)
 importFrom(grDevices,dev.off)

@@ -36,16 +36,28 @@ Data frame with unmixed abundances and retained acquisition parameters
 Calculate unmixing residuals
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
-ff <- flowCore::read.FCS("samples/Sample1.fcs", transformation = FALSE)
-res <- calc_residuals(
-  flow_frame = ff,
-  M = M,
-  method = "WLS",
-  return_residuals = TRUE
+M_demo <- rbind(
+  FITC = c(1.00, 0.20, 0.05),
+  PE = c(0.10, 1.00, 0.20),
+  APC = c(0.05, 0.15, 1.00)
 )
+colnames(M_demo) <- c("B2-A", "YG1-A", "R1-A")
+
+marker_signal <- matrix(rexp(300 * nrow(M_demo), rate = 8), ncol = nrow(M_demo))
+colnames(marker_signal) <- rownames(M_demo)
+marker_signal[, "FITC"] <- rexp(300, rate = 0.6) + 2
+raw_signal <- marker_signal \%*\% M_demo +
+  matrix(rnorm(300 * ncol(M_demo), sd = 0.03), ncol = ncol(M_demo))
+
+exprs_mat <- cbind(
+  raw_signal,
+  Time = seq_len(300),
+  "FSC-A" = rnorm(300, mean = 90000, sd = 7000),
+  "SSC-A" = rnorm(300, mean = 45000, sd = 5000)
+)
+colnames(exprs_mat)[seq_len(ncol(M_demo))] <- colnames(M_demo)
+ff <- flowCore::flowFrame(exprs_mat)
+
+res <- calc_residuals(ff, M_demo, method = "OLS", return_residuals = TRUE)
 head(res$data)
-}
 }

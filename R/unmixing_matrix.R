@@ -62,16 +62,9 @@ derive_unmixing_matrix <- function(M, method = "OLS", global_weights = NULL, bac
         # A single static matrix cannot exactly reproduce per-cell NNLS
         # (piecewise-linear constraint). We export a deterministic linear proxy
         # by solving NNLS for each detector basis vector.
-        if (!requireNamespace("nnls", quietly = TRUE)) {
-            stop("Package 'nnls' required for NNLS. Install with: install.packages('nnls')")
-        }
-
         d <- ncol(M)
-        W <- matrix(0, nrow = nrow(M), ncol = d)
         I_det <- diag(d)
-        for (j in seq_len(d)) {
-            W[, j] <- nnls::nnls(Mt, I_det[, j])$x
-        }
+        W <- t(spectreasy_nnls_unmix_cpp(Y = I_det, M = M))
 
         warning(
             "Static NNLS matrix is a linear proxy and may differ from per-cell NNLS solutions. ",

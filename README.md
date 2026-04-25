@@ -10,14 +10,21 @@
 - **Per-Cell WLS Unmixing**: High-accuracy unmixing using photon-counting variance weighting
 - **SCC Diagnostics & Visualization**: Spectra, gating plots, and SCC unmixing scatter outputs for control-stage QC
 - **Interactive GUI**: Web-based interface for manual matrix adjustment
+- **Bioconductor-Native In-Memory Workflows**: `unmix_samples()` accepts `flowSet` and `SingleCellExperiment`, and can return either container
 
 ---
 
 ## Installation
 
 ```r
-# Install from GitHub
-devtools::install_github("pkheisig/spectreasy")
+# Install the development version from GitHub
+if (!requireNamespace("remotes", quietly = TRUE)) {
+  install.packages("remotes")
+}
+remotes::install_github("pkheisig/spectreasy")
+
+# Once accepted by Bioconductor:
+# BiocManager::install("spectreasy")
 ```
 
 ---
@@ -94,7 +101,7 @@ Use this report to inspect each SCC before unmixing. The PDF includes:
 
 AF handling in reports: AF basis rows (`AF`, `AF_2`, ...) are excluded from spectra overlays, spectral spread matrix pages, and NPS pages to keep summaries focused on non-AF biological channels.
 
-The report also writes the underlying PNG QC assets to `spectreasy_outputs/scc_report_plots/`.
+By default, the report does not retain intermediate PNG QC assets. If you want to keep them, set `save_qc_pngs = TRUE` and choose `qc_plot_dir`.
 
 #### Step 2: Run controls with `autounmix_controls()`:
 
@@ -106,6 +113,7 @@ ctrl <- autounmix_controls(
   cytometer = "Aurora",
   auto_unknown_fluor_policy = "by_channel",
   output_dir = "spectreasy_outputs/autounmix_controls",
+  exclude_af = FALSE,                 # set TRUE to ignore unstained/AF controls
   unmix_method = "WLS",
   af_n_bands = 5,                     # optional: derive multiple AF basis signatures
   build_qc_plots = TRUE,
@@ -139,6 +147,8 @@ Set `unmix_scatter_panel_size_mm` higher (for example `40`) if you want larger p
 - non-AF rows must define a valid `channel`
 - if `universal.negative` is present, values for active SCC rows must be empty/keyword or reference a file present in your selected SCC/AF directories
 
+If you want to keep an unstained/AF file in the SCC folder but leave it out of the control-stage matrix, set `exclude_af = TRUE`. This safely skips AF/unstained rows even when no AF row exists in `fcs_mapping.csv`.
+
 ---
 
 #### Step 3: Launch the GUI if you need manual matrix adjustment.
@@ -159,12 +169,17 @@ This starts both the backend API and bundled frontend on one port (default `http
 unmixed <- unmix_samples(
   sample_dir = "samples",
   unmixing_matrix_file = "spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv",
-  output_dir = "spectreasy_outputs/unmix_samples"
+  output_dir = "spectreasy_outputs/unmix_samples",
+  write_fcs = TRUE
 )
 ```
 
 When writing unmixed FCS files, primary feature names come from matrix row names (fluorophores).  
 Secondary feature names are taken from `fcs_mapping.csv` (`marker` column) when available.
+
+For in-memory Bioconductor workflows, `unmix_samples()` also accepts a `flowSet` or
+`SingleCellExperiment`, and can return `return_type = "flowSet"` or
+`return_type = "SingleCellExperiment"`.
 
 ### Path B: Step-wise manual workflow
 
@@ -182,6 +197,7 @@ control_df <- read.csv("fcs_mapping.csv", stringsAsFactors = FALSE, check.names 
 M <- build_reference_matrix(
   input_folder = "scc",
   output_folder = "gating_plots",
+  save_qc_plots = TRUE,
   control_df = control_df,
   default_sample_type = "beads",
   cytometer = "Aurora",
@@ -189,7 +205,7 @@ M <- build_reference_matrix(
 )
 ```
 
-This saves gating/spectrum plots to `gating_plots/` and exports the matrix to `spectreasy_outputs/reference_matrix.csv`.
+This saves gating/spectrum plots to `gating_plots/` and returns the reference matrix in memory.
 
 For per-cell AF extraction with multiple AF basis signatures, increase `af_n_bands` (for example `af_n_bands = 10`).
 
@@ -203,6 +219,7 @@ Play around with gating parameters if auto-gating fails:
 M <- build_reference_matrix(
   input_folder = "scc",
   output_folder = "gating_plots",
+  save_qc_plots = TRUE,
   histogram_pct_beads = 0.98,         # Width of positive gate for beads
   histogram_pct_cells = 0.35,         # Width of positive gate for cells
   max_clusters = 6,                   # Maximum GMM clusters
@@ -224,14 +241,16 @@ unmixed <- unmix_samples(
   M = M,
   method = "WLS",                     # "OLS", "WLS", or "NNLS"
   cytometer = "Aurora",
-  output_dir = "spectreasy_outputs/unmix_samples"
+  output_dir = "spectreasy_outputs/unmix_samples",
+  write_fcs = TRUE
 )
 
 # Option 2: static unmixing from saved unmixing matrix (W)
 unmixed_w <- unmix_samples(
   sample_dir = "samples",
   unmixing_matrix_file = "spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv",
-  output_dir = "spectreasy_outputs/unmix_samples_w"
+  output_dir = "spectreasy_outputs/unmix_samples_w",
+  write_fcs = TRUE
 )
 ```
 
@@ -276,7 +295,7 @@ launch_gui(
 
 ### Output Directories
 
-- `spectreasy_outputs/reference_matrix.csv`: Reference matrix written by `build_reference_matrix(...)`
+- `spectreasy_outputs/autounmix_controls/scc_reference_matrix.csv`: Reference matrix written by `autounmix_controls(...)`
 - `spectreasy_outputs/autounmix_controls/`: SCC control-stage outputs (`scc_reference_matrix.csv`, `scc_unmixing_matrix.csv/.png`, `scc_spectra.png`, `scc_unmixing_scatter_matrix.png`)
 - `spectreasy_outputs/autounmix_controls/scc_unmixed/`: Unmixed SCC control files (FCS format)
 - `spectreasy_outputs/unmix_samples/`: Unmixed experimental data (FCS format)
@@ -299,9 +318,16 @@ generate_scc_report(
 generate_qc_report(
       results_df = do.call(rbind, lapply(unmixed, `[[`, "data")),
       M = ctrl$M,  # matrix used for unmixing context
-      output_file = file.path("spectreasy_outputs", "Sample_QC_Report.pdf")
+      output_file = file.path("spectreasy_outputs", "Sample_QC_Report.pdf"),
+      sample_nxn_rows_per_page = 10,
+      nxn_all_samples = FALSE
 )
 ```
+
+`generate_qc_report()` now adds per-sample NxN marker scatter pages after the
+summary diagnostics. By default it shows 10 marker rows/columns per page block,
+which keeps the panels square and standardized across pages. By default only the
+first sample gets NxN pages; set `nxn_all_samples = TRUE` to include all samples.
 
 ---
 
@@ -315,6 +341,7 @@ Use the same rule everywhere: first look for consistency across files/markers, t
 - `Per-Event Spectrum Distribution`: Good = the spectral shape is smooth and concentrated in the expected detector region. Bad = broad, noisy, or multimodal distributions that do not match the assigned fluorophore. Action = inspect labeling, staining quality, and instrument setup.
 - `Unmixing Matrix Coefficients`: Good = strongest coefficients align with expected detector-marker relationships and off-target coefficients are moderate. Bad = many large off-target coefficients across rows. Action = inspect collinear markers, low-quality controls, or unstable matrix inversion.
 - `Unmixing Scatter Matrix` (SCC controls): Good = row-stain events are high on Y while X (other markers) stays near zero. Bad = large off-axis/off-target clouds in lower-triangle panels. Action = inspect spillover-heavy pairs and verify single-stain identity.
+- `Sample NxN Scatter Pages` (experimental samples): Good = each sample shows compact, interpretable pairwise structure without widespread off-axis spread. Bad = broad diagonal/off-axis clouds across many panels suggest unstable unmixing, high spread, or problematic marker combinations.
 - `Spectral Spread Matrix`: Good = mostly low off-diagonal spread values. Bad = bright/high off-diagonal cells for specific marker pairs. Action = avoid those pairs for dim co-expression readouts or adjust panel design.
 - `Residual Contributions`: Good = median residual per detector stays near zero. Bad = systematic positive/negative shifts in specific detectors. Action = investigate missing fluorophores, detector drift, or matrix mismatch in affected detector groups.
 - `Negative Population Spread (NPS)`: Good = low and comparable MAD across files and markers. Bad = isolated high bars in selected markers/files. Action = identify bright spreaders into those channels and rebalance panel usage.

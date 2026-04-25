@@ -4,17 +4,12 @@
 \alias{plot_ssm}
 \title{Plot Spectral Spread Matrix}
 \usage{
-plot_ssm(
-  SSM,
-  output_file = "spectral_spread_matrix.png",
-  width = 200,
-  height = 180
-)
+plot_ssm(SSM, output_file = NULL, width = 200, height = 180)
 }
 \arguments{
 \item{SSM}{Matrix returned by calculate_ssm}
 
-\item{output_file}{Path to save the plot}
+\item{output_file}{Optional path to save the plot. Set `NULL` to return the plot without writing a file.}
 
 \item{width}{Width of plot in mm}
 

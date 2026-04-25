@@ -1,7 +1,9 @@
 Package: spectreasy
 Title: Single-Color Review and Spectral Unmixing Made Easier
 Version: 0.99.0
-Authors@R: person("Paul Heisig", email = "pkheisig@gmail.com", role = c("aut", "cre"))
+Authors@R: person(given = "Paul", family = "Heisig", email = "pkheisig@gmail.com", role = c("aut", "cre"), comment = c(ORCID = "0000-0002-8529-7944"))
+Author: Paul Heisig [aut, cre] (<https://orcid.org/0000-0002-8529-7944>)
+Maintainer: Paul Heisig <pkheisig@gmail.com>
 Description: Review single-color controls, build spectral reference matrices,
     and unmix experimental spectral flow cytometry data.
 URL: https://github.com/pkheisig/spectreasy
@@ -15,17 +17,23 @@ Imports:
     ggplot2,
     mclust,
     methods,
-    nnls,
     png,
+    Rcpp,
     scales,
     sp,
     tidyr,
     withr
+LinkingTo:
+    Rcpp,
+    RcppArmadillo
 Suggests:
     knitr,
     pdftools,
     plumber,
     rmarkdown,
+    S4Vectors,
+    SingleCellExperiment,
+    SummarizedExperiment,
     testthat (>= 3.0.0)
 VignetteBuilder: knitr
 biocViews: FlowCytometry, QualityControl, Visualization, GUI, WorkflowStep

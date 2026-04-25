@@ -7,9 +7,10 @@
 build_reference_matrix(
   input_folder = "scc",
   output_folder = "gating_and_spectrum_plots",
-  save_qc_plots = TRUE,
+  save_qc_plots = FALSE,
   control_df = NULL,
   include_multi_af = FALSE,
+  exclude_af = FALSE,
   af_dir = "af",
   af_n_bands = 1,
   af_max_cells = 50000,
@@ -36,12 +37,16 @@ build_reference_matrix(
 
 \item{output_folder}{Directory where gating/spectrum plots are written.}
 
-\item{save_qc_plots}{Logical; if `TRUE`, write FSC/SSC, histogram, and spectrum plots.}
+\item{save_qc_plots}{Logical; if `TRUE`, write FSC/SSC, histogram, and spectrum plots.
+When `FALSE` (default), the function returns the matrix without writing QC files.}
 
 \item{control_df}{Optional control mapping as a data.frame or CSV path.
 Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.}
 
 \item{include_multi_af}{Logical; if `TRUE`, include additional AF controls from `af_dir`.}
+
+\item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls entirely,
+even when they are present in `control_df`, the SCC folder, or `af_dir`.}
 
 \item{af_dir}{Directory with extra AF controls when `include_multi_af = TRUE`.}
 
@@ -94,21 +99,18 @@ then computes one normalized spectrum per fluorophore.
 This is the core matrix-construction step used before unmixing.
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
-# Build matrix from SCC folder and control CSV
-M <- build_reference_matrix(
-  input_folder = "scc",
-  output_folder = "spectreasy_outputs/build_reference_plots",
-  control_df = "fcs_mapping.csv",
-  cytometer = "Aurora"
-)
+if (interactive()) {
+  M <- build_reference_matrix(
+    input_folder = "scc",
+    output_folder = "spectreasy_outputs/build_reference_plots",
+    save_qc_plots = TRUE,
+    control_df = "fcs_mapping.csv",
+    cytometer = "Aurora"
+  )
 
-# Build quickly without saving QC plots
-M_fast <- build_reference_matrix(
-  input_folder = "scc",
-  save_qc_plots = FALSE
-)
+  M_fast <- build_reference_matrix(
+    input_folder = "scc",
+    save_qc_plots = FALSE
+  )
 }
 }

@@ -2,7 +2,7 @@
 #' 
 #' @param ref_matrix Reference matrix (Markers x Detectors)
 #' @param pd Optional pData for descriptive labels
-#' @param output_file Path to save plot
+#' @param output_file Optional path to save the plot. Set `NULL` to return the plot without writing a file.
 #' @param width Plot width.
 #' @param height Plot height.
 #' @param unit Plot size unit.
@@ -18,7 +18,7 @@
 #' print(p)
 plot_spectra <- function(ref_matrix,
                          pd = NULL,
-                         output_file = "spectra_overlay.png",
+                         output_file = NULL,
                          width = 250,
                          height = 100,
                          unit = "mm",
@@ -92,55 +92,13 @@ plot_spectra <- function(ref_matrix,
         )
 
     if (!is.null(output_file)) {
-        ggplot2::ggsave(output_file, p, width = width, height = height, unit = unit, dpi = dpi)
+        ggplot2::ggsave(output_file, p, width = width, height = height, units = unit, dpi = dpi)
     }
     return(p)
 }
 
 
-#' Plot NxN Unmixing Scatter Matrix
-#'
-#' Creates a lower-triangle marker-vs-marker scatter matrix from unmixed SCC output.
-#' Each populated panel uses events from only one single-stain file (row stain),
-#' while the column stain is permuted across the lower triangle.
-#'
-#' @param unmixed_list Output list from `unmix_samples()`.
-#' @param sample_to_marker Named character vector mapping sample IDs (basename
-#'   without extension) to fluorophore/marker names.
-#' @param markers Optional character vector of marker columns to include.
-#' @param marker_display Optional named character vector mapping primary marker
-#'   names to display labels (for example `"BUV395 / CD45RA"`).
-#' @param output_file Path to PNG output.
-#' @param max_points_per_sample Maximum events sampled per sample for plotting.
-#' @param transform One of `"asinh"` or `"none"`.
-#' @param asinh_cofactor Cofactor used when `transform = "asinh"`.
-#' @param panel_size_mm Size per matrix panel in millimeters.
-#' @param seed Optional integer seed for deterministic point subsampling.
-#' @return Invisibly returns `output_file`.
-#' @export
-#' @examples
-#' \dontrun{
-#' plot_unmixing_scatter_matrix(
-#'   unmixed_list = unmixed_list,
-#'   markers = rownames(M),
-#'   output_file = "scc_unmixing_scatter_matrix.png"
-#' )
-#' }
-plot_unmixing_scatter_matrix <- function(
-    unmixed_list,
-    sample_to_marker = NULL,
-    markers = NULL,
-    marker_display = NULL,
-    output_file = "unmixing_scatter_matrix.png",
-    max_points_per_sample = 3000,
-    transform = c("none", "asinh"),
-    asinh_cofactor = 150,
-    panel_size_mm = 30,
-    seed = NULL
-) {
-    transform <- match.arg(transform)
-    .with_optional_seed(seed)
-
+.extract_unmix_scatter_data_list <- function(unmixed_list) {
     if (!is.list(unmixed_list) || length(unmixed_list) == 0) {
         stop("unmixed_list must be a non-empty list from unmix_samples().")
     }
@@ -161,7 +119,10 @@ plot_unmixing_scatter_matrix <- function(
         sample_ids <- paste0("sample_", seq_along(data_list))
     }
     names(data_list) <- sample_ids
+    data_list
+}
 
+.normalize_unmix_scatter_mapping <- function(sample_ids, sample_to_marker = NULL) {
     normalize_id <- function(x) tools::file_path_sans_ext(basename(as.character(x)))
     sample_keys <- normalize_id(sample_ids)
 
@@ -177,7 +138,10 @@ plot_unmixing_scatter_matrix <- function(
 
     sample_stains <- sample_to_marker[sample_keys]
     names(sample_stains) <- sample_ids
+    sample_stains
+}
 
+.resolve_unmix_scatter_markers <- function(sample_stains, markers = NULL, marker_display = NULL) {
     if (is.null(markers)) {
         markers <- unique(sample_stains[!is.na(sample_stains) & sample_stains != ""])
     } else {
@@ -185,6 +149,7 @@ plot_unmixing_scatter_matrix <- function(
     }
     markers <- markers[!is.na(markers) & markers != ""]
     if (length(markers) < 2) stop("Need at least two marker names for scatter matrix.")
+
     marker_labels <- stats::setNames(markers, markers)
     if (!is.null(marker_display)) {
         md <- as.character(marker_display)
@@ -196,34 +161,44 @@ plot_unmixing_scatter_matrix <- function(
         }
     }
 
+    list(markers = markers, marker_labels = marker_labels)
+}
+
+.compute_unmix_scatter_limits <- function(v) {
+    v <- v[is.finite(v)]
+    if (length(v) == 0) return(c(-1, 1))
+    q <- stats::quantile(v, probs = c(0.005, 0.995), na.rm = TRUE, names = FALSE, type = 7)
+    lo <- q[1]
+    hi <- q[2]
+    if (!is.finite(lo) || !is.finite(hi)) {
+        lo <- min(v, na.rm = TRUE)
+        hi <- max(v, na.rm = TRUE)
+    }
+    lo <- min(lo, 0)
+    hi <- max(hi, 0)
+    if (lo == hi) {
+        pad <- max(1e-6, abs(lo) * 0.1)
+        lo <- lo - pad
+        hi <- hi + pad
+    } else {
+        pad <- (hi - lo) * 0.05
+        lo <- lo - pad
+        hi <- hi + pad
+    }
+    c(lo, hi)
+}
+
+.build_unmix_scatter_panel_data <- function(data_list,
+                                            sample_stains,
+                                            markers,
+                                            max_points_per_sample = 3000,
+                                            transform = c("none", "asinh"),
+                                            asinh_cofactor = 150) {
+    transform <- match.arg(transform)
     panel_data <- list()
     panel_limits <- list()
     k <- 1
     lim_k <- 1
-
-    compute_limits <- function(v) {
-        v <- v[is.finite(v)]
-        if (length(v) == 0) return(c(-1, 1))
-        q <- stats::quantile(v, probs = c(0.005, 0.995), na.rm = TRUE, names = FALSE, type = 7)
-        lo <- q[1]
-        hi <- q[2]
-        if (!is.finite(lo) || !is.finite(hi)) {
-            lo <- min(v, na.rm = TRUE)
-            hi <- max(v, na.rm = TRUE)
-        }
-        lo <- min(lo, 0)
-        hi <- max(hi, 0)
-        if (lo == hi) {
-            pad <- max(1e-6, abs(lo) * 0.1)
-            lo <- lo - pad
-            hi <- hi + pad
-        } else {
-            pad <- (hi - lo) * 0.05
-            lo <- lo - pad
-            hi <- hi + pad
-        }
-        c(lo, hi)
-    }
 
     for (i in seq_along(data_list)) {
         d <- data_list[[i]]
@@ -252,8 +227,8 @@ plot_unmixing_scatter_matrix <- function(
                 y_vals <- asinh(y_vals / asinh_cofactor)
             }
 
-            x_lim <- compute_limits(x_vals)
-            y_lim <- compute_limits(y_vals)
+            x_lim <- .compute_unmix_scatter_limits(x_vals)
+            y_lim <- .compute_unmix_scatter_limits(y_vals)
             x_plot <- pmax(pmin(x_vals, x_lim[2]), x_lim[1])
             y_plot <- pmax(pmin(y_vals, y_lim[2]), y_lim[1])
 
@@ -277,15 +252,20 @@ plot_unmixing_scatter_matrix <- function(
             lim_k <- lim_k + 1
         }
     }
+
     if (length(panel_data) == 0) stop("No panel data available for scatter matrix plot.")
+
     plot_df <- do.call(rbind, panel_data)
     lim_df <- do.call(rbind, panel_limits)
-
     plot_df$panel_col <- factor(plot_df$panel_col, levels = markers)
     plot_df$panel_row <- factor(plot_df$panel_row, levels = markers)
     lim_df$panel_col <- factor(lim_df$panel_col, levels = markers)
     lim_df$panel_row <- factor(lim_df$panel_row, levels = markers)
 
+    list(plot_df = plot_df, lim_df = lim_df)
+}
+
+.build_unmix_scatter_plot <- function(plot_df, lim_df, markers, marker_labels) {
     panel_used <- unique(lim_df[, c("panel_row", "panel_col"), drop = FALSE])
     panel_grid <- expand.grid(
         panel_row = factor(markers, levels = markers),
@@ -294,7 +274,7 @@ plot_unmixing_scatter_matrix <- function(
         stringsAsFactors = FALSE
     )
 
-    p <- ggplot2::ggplot() +
+    ggplot2::ggplot() +
         ggplot2::geom_blank(data = panel_grid, ggplot2::aes(x = 0, y = 0)) +
         ggplot2::geom_blank(data = lim_df, ggplot2::aes(x = x_low, y = y_low)) +
         ggplot2::geom_blank(data = lim_df, ggplot2::aes(x = x_high, y = y_high)) +
@@ -348,13 +328,115 @@ plot_unmixing_scatter_matrix <- function(
             panel.spacing = grid::unit(0.3, "mm"),
             plot.title = ggplot2::element_text(size = 10, face = "bold", hjust = 0.5)
         )
+}
 
+.resolve_unmix_scatter_plot_size <- function(markers, panel_size_mm = 30) {
     n <- length(markers)
     panel_size_mm <- as.numeric(panel_size_mm)[1]
     if (!is.finite(panel_size_mm) || panel_size_mm <= 0) panel_size_mm <- 30
-    width_mm <- max(220, panel_size_mm * n + 35)
-    height_mm <- max(220, panel_size_mm * n + 30)
-    ggplot2::ggsave(output_file, p, width = width_mm, height = height_mm, units = "mm", dpi = 350)
+    list(
+        width_mm = max(220, panel_size_mm * n + 35),
+        height_mm = max(220, panel_size_mm * n + 30)
+    )
+}
 
-    invisible(output_file)
+#' Plot NxN Unmixing Scatter Matrix
+#'
+#' Creates a lower-triangle marker-vs-marker scatter matrix from unmixed SCC output.
+#' Each populated panel uses events from only one single-stain file (row stain),
+#' while the column stain is permuted across the lower triangle.
+#'
+#' @param unmixed_list Output list from `unmix_samples()`.
+#' @param sample_to_marker Named character vector mapping sample IDs (basename
+#'   without extension) to fluorophore/marker names.
+#' @param markers Optional character vector of marker columns to include.
+#' @param marker_display Optional named character vector mapping primary marker
+#'   names to display labels (for example `"BUV395 / CD45RA"`).
+#' @param output_file Optional path to save a PNG output. Set `NULL` to return the plot without writing a file.
+#' @param max_points_per_sample Maximum events sampled per sample for plotting.
+#' @param transform One of `"asinh"` or `"none"`.
+#' @param asinh_cofactor Cofactor used when `transform = "asinh"`.
+#' @param panel_size_mm Size per matrix panel in millimeters.
+#' @param seed Optional integer seed for deterministic point subsampling.
+#' @return A `ggplot` object.
+#' @export
+#' @examples
+#' M_demo <- rbind(
+#'   FITC = c(1.00, 0.20, 0.05),
+#'   PE = c(0.10, 1.00, 0.20),
+#'   APC = c(0.05, 0.15, 1.00)
+#' )
+#' colnames(M_demo) <- c("B2-A", "YG1-A", "R1-A")
+#'
+#' simulate_sample <- function(dominant_marker, M, n_cells = 120) {
+#'   markers <- rownames(M)
+#'   marker_signal <- matrix(rexp(n_cells * length(markers), rate = 8), ncol = length(markers))
+#'   colnames(marker_signal) <- markers
+#'   marker_signal[, dominant_marker] <- rexp(n_cells, rate = 0.6) + 2
+#'   raw_signal <- marker_signal %*% M + matrix(rnorm(n_cells * ncol(M), sd = 0.03), ncol = ncol(M))
+#'   exprs_mat <- cbind(
+#'     raw_signal,
+#'     Time = seq_len(n_cells),
+#'     "FSC-A" = rnorm(n_cells, mean = 90000, sd = 7000),
+#'     "SSC-A" = rnorm(n_cells, mean = 45000, sd = 5000)
+#'   )
+#'   colnames(exprs_mat)[seq_len(ncol(M))] <- colnames(M)
+#'   flowCore::flowFrame(exprs_mat)
+#' }
+#'
+#' toy_fs <- flowCore::flowSet(list(
+#'   FITC_sample = simulate_sample("FITC", M_demo),
+#'   PE_sample = simulate_sample("PE", M_demo),
+#'   APC_sample = simulate_sample("APC", M_demo)
+#' ))
+#' toy_unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", write_fcs = FALSE)
+#'
+#' p <- plot_unmixing_scatter_matrix(
+#'   unmixed_list = toy_unmixed,
+#'   sample_to_marker = c(FITC_sample = "FITC", PE_sample = "PE", APC_sample = "APC"),
+#'   markers = rownames(M_demo),
+#'   output_file = NULL,
+#'   max_points_per_sample = 80,
+#'   seed = 1
+#' )
+#' print(p)
+plot_unmixing_scatter_matrix <- function(
+    unmixed_list,
+    sample_to_marker = NULL,
+    markers = NULL,
+    marker_display = NULL,
+    output_file = NULL,
+    max_points_per_sample = 3000,
+    transform = c("none", "asinh"),
+    asinh_cofactor = 150,
+    panel_size_mm = 30,
+    seed = NULL
+) {
+    transform <- match.arg(transform)
+    .with_optional_seed(seed)
+
+    data_list <- .extract_unmix_scatter_data_list(unmixed_list)
+    sample_stains <- .normalize_unmix_scatter_mapping(names(data_list), sample_to_marker = sample_to_marker)
+    marker_info <- .resolve_unmix_scatter_markers(sample_stains, markers = markers, marker_display = marker_display)
+    panel_info <- .build_unmix_scatter_panel_data(
+        data_list = data_list,
+        sample_stains = sample_stains,
+        markers = marker_info$markers,
+        max_points_per_sample = max_points_per_sample,
+        transform = transform,
+        asinh_cofactor = asinh_cofactor
+    )
+    p <- .build_unmix_scatter_plot(
+        plot_df = panel_info$plot_df,
+        lim_df = panel_info$lim_df,
+        markers = marker_info$markers,
+        marker_labels = marker_info$marker_labels
+    )
+
+    plot_size <- .resolve_unmix_scatter_plot_size(marker_info$markers, panel_size_mm = panel_size_mm)
+    if (!is.null(output_file)) {
+        ggplot2::ggsave(output_file, p, width = plot_size$width_mm, height = plot_size$height_mm, units = "mm", dpi = 350)
+    }
+
+    return(p)
 }

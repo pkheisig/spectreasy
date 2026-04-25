@@ -7,10 +7,15 @@
 generate_qc_report(
   results_df,
   M,
-  output_file = file.path("spectreasy_outputs", "Sample_QC_Report.pdf"),
+  output_file = NULL,
   res_list = NULL,
   png_dir = NULL,
-  pd = NULL
+  pd = NULL,
+  sample_nxn_rows_per_page = 10,
+  sample_nxn_max_points = 3000,
+  sample_nxn_transform = c("none", "asinh"),
+  sample_nxn_asinh_cofactor = 150,
+  nxn_all_samples = FALSE
 )
 }
 \arguments{
@@ -18,7 +23,7 @@ generate_qc_report(
 
 \item{M}{Reference matrix used for unmixing.}
 
-\item{output_file}{Output PDF file path.}
+\item{output_file}{Output PDF file path. Must be supplied explicitly.}
 
 \item{res_list}{Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.}
 
@@ -26,23 +31,42 @@ generate_qc_report(
 
 \item{pd}{Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
 If omitted, `attr(M, "detector_pd")` is used when available.}
+
+\item{sample_nxn_rows_per_page}{Number of marker rows and columns to show per per-sample NxN page block.
+Defaults to 10, which standardizes panel geometry across pages and samples.}
+
+\item{sample_nxn_max_points}{Maximum cells sampled per sample for each NxN page.}
+
+\item{sample_nxn_transform}{One of `"none"` or `"asinh"` for per-sample NxN pages.}
+
+\item{sample_nxn_asinh_cofactor}{Cofactor used when `sample_nxn_transform = "asinh"`.}
+
+\item{nxn_all_samples}{Logical; if `TRUE`, include per-sample NxN pages for all samples.
+If `FALSE` (default), only include NxN pages for the first sample in `results_df`.}
 }
 \value{
 Invisibly returns `NULL`; writes report to disk.
 }
 \description{
 Creates a multi-page report summarizing unmixing quality, including spectra,
-detector residuals, spread matrix, and NPS.
+detector residuals, spread matrix, NPS, and per-sample NxN marker scatter pages.
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
-# results_df <- data.table::rbindlist(lapply(unmixed_list, `[[`, "data"))
-generate_qc_report(
-  results_df = results_df,
-  M = M,
-  output_file = file.path("spectreasy_outputs", "Sample_QC_Report.pdf")
+M_demo <- rbind(
+  FITC = c(1.00, 0.20, 0.05),
+  PE = c(0.10, 1.00, 0.20),
+  APC = c(0.05, 0.15, 1.00)
 )
-}
+colnames(M_demo) <- c("B2-A", "YG1-A", "R1-A")
+
+results_df <- data.frame(
+  File = rep(c("sample_a", "sample_b"), each = 120),
+  FITC = c(rnorm(120, 2, 0.4), rnorm(120, 0.1, 0.2)),
+  PE = c(rnorm(120, 0.2, 0.2), rnorm(120, 2.5, 0.5)),
+  APC = rnorm(240, 0.3, 0.3)
+)
+
+pdf_file <- tempfile(fileext = ".pdf")
+generate_qc_report(results_df = results_df, M = M_demo, output_file = pdf_file)
+file.exists(pdf_file)
 }

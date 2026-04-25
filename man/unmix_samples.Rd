@@ -13,11 +13,13 @@ unmix_samples(
   method = "WLS",
   cytometer = "Aurora",
   output_dir = file.path("spectreasy_outputs", "unmix_samples"),
-  write_fcs = TRUE
+  write_fcs = FALSE,
+  return_type = c("list", "flowSet", "SingleCellExperiment")
 )
 }
 \arguments{
-\item{sample_dir}{Directory containing experimental FCS files.}
+\item{sample_dir}{Directory containing experimental FCS files, a
+`flowCore::flowSet`, or a `SingleCellExperiment` for in-memory workflows.}
 
 \item{M}{Optional reference matrix (Markers x Detectors). Required for
 dynamic unmixing methods (`"WLS"`, `"OLS"`, `"NNLS"`).}
@@ -29,16 +31,24 @@ unmixing is performed using matrix multiplication with the transposed W.}
 Used when `W` is not supplied. By default this points to the matrix produced
 by [autounmix_controls()].}
 
-\item{method}{Unmixing method ("WLS", "OLS", or "NNLS").}
+\item{method}{Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).}
 
 \item{cytometer}{Reserved for compatibility with older workflows.}
 
-\item{output_dir}{Directory to save unmixed FCS files.}
+\item{output_dir}{Directory to save unmixed FCS files when `write_fcs = TRUE`.}
 
-\item{write_fcs}{Logical; if `TRUE`, write unmixed FCS files to `output_dir`.}
+\item{write_fcs}{Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
+Defaults to `FALSE` so files are not written unless requested explicitly.}
+
+\item{return_type}{Return format: `"list"` (default), `"flowSet"`, or
+`"SingleCellExperiment"`. When `"flowSet"`, detector residuals are attached
+as `attr(x, "spectreasy_residuals")`. When `"SingleCellExperiment"`, cell-level
+unmixed values are returned in assay `"unmixed"`, with detector residuals in
+`altExp(x, "detector_residuals")` when available.}
 }
 \value{
-A named list with one element per sample. Each element contains
+Either a named list with one element per sample, a `flowSet`, or a
+  `SingleCellExperiment` depending on `return_type`. List elements contain
   `data` (unmixed abundances plus retained acquisition parameters) and
   `residuals` (detector residual matrix when available, otherwise `NULL`).
 }
@@ -46,14 +56,35 @@ A named list with one element per sample. Each element contains
 Unmix Experimental Samples
 }
 \examples{
-## Minimal runnable example (no files needed)
-invisible(NULL)
-\dontrun{
-unmixed <- unmix_samples(
-  sample_dir = "samples",
-  unmixing_matrix_file = "spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv",
-  output_dir = "spectreasy_outputs/unmix_samples"
+M_demo <- rbind(
+  FITC = c(1.00, 0.20, 0.05),
+  PE = c(0.10, 1.00, 0.20),
+  APC = c(0.05, 0.15, 1.00)
 )
-names(unmixed)
+colnames(M_demo) <- c("B2-A", "YG1-A", "R1-A")
+
+simulate_sample <- function(dominant_marker, M, n_cells = 120) {
+  markers <- rownames(M)
+  marker_signal <- matrix(rexp(n_cells * length(markers), rate = 8), ncol = length(markers))
+  colnames(marker_signal) <- markers
+  marker_signal[, dominant_marker] <- rexp(n_cells, rate = 0.6) + 2
+  raw_signal <- marker_signal \%*\% M + matrix(rnorm(n_cells * ncol(M), sd = 0.03), ncol = ncol(M))
+  exprs_mat <- cbind(
+    raw_signal,
+    Time = seq_len(n_cells),
+    "FSC-A" = rnorm(n_cells, mean = 90000, sd = 7000),
+    "SSC-A" = rnorm(n_cells, mean = 45000, sd = 5000)
+  )
+  colnames(exprs_mat)[seq_len(ncol(M))] <- colnames(M)
+  flowCore::flowFrame(exprs_mat)
 }
+
+toy_fs <- flowCore::flowSet(list(
+  FITC_sample = simulate_sample("FITC", M_demo),
+  PE_sample = simulate_sample("PE", M_demo),
+  APC_sample = simulate_sample("APC", M_demo)
+))
+
+unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", write_fcs = FALSE)
+names(unmixed)
 }

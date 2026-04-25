@@ -86,19 +86,19 @@
     }
 
     alias_map <- character()
-    add_alias <- function(alias, target) {
+    add_alias <- function(alias_map, alias, target) {
         key <- .normalize_channel_token(alias)
-        if (!nzchar(key) || is.na(target) || !nzchar(target)) return(invisible(NULL))
-        if (!key %in% names(alias_map)) alias_map[[key]] <<- target
-        invisible(NULL)
+        if (!nzchar(key) || is.na(target) || !nzchar(target)) return(alias_map)
+        if (!key %in% names(alias_map)) alias_map[[key]] <- target
+        alias_map
     }
 
     # Direct aliases from detector names.
     for (det in detector_names) {
         det_key <- .normalize_channel_token(det)
-        add_alias(det_key, det)
-        add_alias(gsub("-A$", "", det_key), det)
-        add_alias(paste0(gsub("-A$", "", det_key), "-A"), det)
+        alias_map <- add_alias(alias_map, det_key, det)
+        alias_map <- add_alias(alias_map, gsub("-A$", "", det_key), det)
+        alias_map <- add_alias(alias_map, paste0(gsub("-A$", "", det_key), "-A"), det)
     }
 
     # Build code-style aliases (UV1, V7, B2, YG1, R4) from detector metadata.
@@ -153,8 +153,8 @@
             block <- block[ord, , drop = FALSE]
             for (i in seq_len(nrow(block))) {
                 alias_base <- paste0(prefix, i)
-                add_alias(alias_base, block$detector[i])
-                add_alias(paste0(alias_base, "-A"), block$detector[i])
+                alias_map <- add_alias(alias_map, alias_base, block$detector[i])
+                alias_map <- add_alias(alias_map, paste0(alias_base, "-A"), block$detector[i])
             }
         }
     }
