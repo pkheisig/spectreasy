@@ -13,7 +13,7 @@ unmix_samples(
   method = "WLS",
   cytometer = "Aurora",
   output_dir = file.path("spectreasy_outputs", "unmix_samples"),
-  write_fcs = FALSE,
+  write_fcs = TRUE,
   return_type = c("list", "flowSet", "SingleCellExperiment")
 )
 }
@@ -38,7 +38,7 @@ by [autounmix_controls()].}
 \item{output_dir}{Directory to save unmixed FCS files when `write_fcs = TRUE`.}
 
 \item{write_fcs}{Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
-Defaults to `FALSE` so files are not written unless requested explicitly.}
+Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
 
 \item{return_type}{Return format: `"list"` (default), `"flowSet"`, or
 `"SingleCellExperiment"`. When `"flowSet"`, detector residuals are attached
@@ -51,6 +51,8 @@ Either a named list with one element per sample, a `flowSet`, or a
   `SingleCellExperiment` depending on `return_type`. List elements contain
   `data` (unmixed abundances plus retained acquisition parameters) and
   `residuals` (detector residual matrix when available, otherwise `NULL`).
+  The return value is provided invisibly to avoid printing large result objects
+  during interactive or Quarto execution.
 }
 \description{
 Unmix Experimental Samples
@@ -85,6 +87,6 @@ toy_fs <- flowCore::flowSet(list(
   APC_sample = simulate_sample("APC", M_demo)
 ))
 
-unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", write_fcs = FALSE)
+unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", output_dir = tempdir())
 names(unmixed)
 }

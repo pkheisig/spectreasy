@@ -157,6 +157,40 @@ test_that("autounmix_controls handles WLS output and exclude_af branch", {
     expect_false(file.exists(file.path(output_dir, "scc_unmixed", "Unstained (Cells)_unmixed.fcs")))
 })
 
+test_that("unmix_samples writes FCS files by default and returns invisibly", {
+    wf <- make_synthetic_workflow()
+    sample_dir <- tempfile("spectreasy_covr_samples_")
+    output_dir <- tempfile("spectreasy_covr_unmixed_")
+    dir.create(sample_dir, recursive = TRUE, showWarnings = FALSE)
+
+    flowCore::write.FCS(make_synthetic_ff(c("B1-A" = 900, "YG1-A" = 150)), file.path(sample_dir, "sample_a.fcs"))
+    flowCore::write.FCS(make_synthetic_ff(c("B1-A" = 180, "YG1-A" = 1100)), file.path(sample_dir, "sample_b.fcs"))
+
+    W <- spectreasy::derive_unmixing_matrix(
+        spectreasy::build_reference_matrix(
+            input_folder = wf$scc_dir,
+            control_df = wf$control_df,
+            save_qc_plots = FALSE,
+            seed = 1,
+            subsample_n = 400
+        ),
+        method = "OLS"
+    )
+
+    call_result <- withVisible(
+        spectreasy::unmix_samples(
+            sample_dir = sample_dir,
+            W = W,
+            output_dir = output_dir
+        )
+    )
+
+    expect_false(call_result$visible)
+    expect_setequal(names(call_result$value), c("sample_a", "sample_b"))
+    expect_true(file.exists(file.path(output_dir, "sample_a_unmixed.fcs")))
+    expect_true(file.exists(file.path(output_dir, "sample_b_unmixed.fcs")))
+})
+
 test_that("generate_scc_report writes a PDF from synthetic SCC files", {
     wf <- make_synthetic_workflow()
     output_pdf <- tempfile(fileext = ".pdf")

@@ -418,7 +418,7 @@
 #' @param cytometer Reserved for compatibility with older workflows.
 #' @param output_dir Directory to save unmixed FCS files when `write_fcs = TRUE`.
 #' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
-#'   Defaults to `FALSE` so files are not written unless requested explicitly.
+#'   Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.
 #' @param return_type Return format: `"list"` (default), `"flowSet"`, or
 #'   `"SingleCellExperiment"`. When `"flowSet"`, detector residuals are attached
 #'   as `attr(x, "spectreasy_residuals")`. When `"SingleCellExperiment"`, cell-level
@@ -428,6 +428,8 @@
 #'   `SingleCellExperiment` depending on `return_type`. List elements contain
 #'   `data` (unmixed abundances plus retained acquisition parameters) and
 #'   `residuals` (detector residual matrix when available, otherwise `NULL`).
+#'   The return value is provided invisibly to avoid printing large result objects
+#'   during interactive or Quarto execution.
 #' @examples
 #' M_demo <- rbind(
 #'   FITC = c(1.00, 0.20, 0.05),
@@ -458,7 +460,7 @@
 #'   APC_sample = simulate_sample("APC", M_demo)
 #' ))
 #'
-#' unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", write_fcs = FALSE)
+#' unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", output_dir = tempdir())
 #' names(unmixed)
 #' @export
 unmix_samples <- function(sample_dir = "samples", 
@@ -468,7 +470,7 @@ unmix_samples <- function(sample_dir = "samples",
                           method = "WLS", 
                           cytometer = "Aurora",
                           output_dir = file.path("spectreasy_outputs", "unmix_samples"),
-                          write_fcs = FALSE,
+                          write_fcs = TRUE,
                           return_type = c("list", "flowSet", "SingleCellExperiment")) {
     return_type <- match.arg(return_type)
 
@@ -559,11 +561,11 @@ unmix_samples <- function(sample_dir = "samples",
     }
     
     if (identical(return_type, "flowSet")) {
-        return(.unmixed_results_to_flowset(results))
+        return(invisible(.unmixed_results_to_flowset(results)))
     }
     if (identical(return_type, "SingleCellExperiment")) {
-        return(.unmixed_results_to_sce(results, sample_entries = sample_entries))
+        return(invisible(.unmixed_results_to_sce(results, sample_entries = sample_entries)))
     }
 
-    return(results)
+    invisible(results)
 }
