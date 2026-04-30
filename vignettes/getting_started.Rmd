@@ -18,78 +18,48 @@ knitr::opts_chunk$set(
 )
 ```
 
-# spectreasy: spectral unmixing on example FCS files
-
-This vignette runs a complete `spectreasy` workflow on example FCS files stored
-as a GitHub release asset. `spectreasy_example_data()` downloads the archive
-matching the installed package version on first use, unzips it automatically,
-and returns local paths to:
-
-- single-color controls in `scc/`
-- one experimental sample in `sample/sample.fcs`
-
-All code is evaluated during vignette builds.
-
 ```{r}
 suppressPackageStartupMessages(library(spectreasy))
 ```
 
-## Installation
+# Example workflow
 
-For the released Bioconductor version, install with:
+This vignette demonstrates the primary `spectreasy` workflow on the packaged
+example dataset. The example project contains:
 
-```r
-BiocManager::install("spectreasy")
-```
+- single-color controls in `scc/`
+- one experimental sample in `sample/sample.fcs`
 
-If you need the current development version from GitHub, install with:
+The user-facing workflow is:
 
-```r
-remotes::install_github("pkheisig/spectreasy")
-```
+1. download the example data into a project directory
+2. run `autounmix_controls()`
+3. review and supplement the generated `fcs_mapping.csv`
+4. confirm the control file in the console so `autounmix_controls()` can finish
+5. run `unmix_samples()`
 
-`remotes` is used here rather than `devtools` because only GitHub installation is needed.
+## 1. Download the example data
 
-## 1. Download the example data and prepare a temporary project
-
-We first download the example-data archive from the GitHub release matching the
-installed package version. `spectreasy_example_data()` caches the zip file and
-unzips it automatically.
-We then copy the extracted `sample/` and `scc/` folders into a temporary
-working directory so that the vignette writes outputs outside the cache.
+`spectreasy_example_data()` downloads the example archive once, caches it under
+the R user cache, and can copy the extracted files into a project directory for
+local work.
 
 ```{r}
-example_paths <- spectreasy_example_data(force=TRUE)
-
 project_dir <- file.path(tempdir(), "spectreasy_vignette_project")
 if (dir.exists(project_dir)) {
   unlink(project_dir, recursive = TRUE, force = TRUE)
 }
-dir.create(project_dir, recursive = TRUE)
-dir.create(file.path(project_dir, "scc"))
-dir.create(file.path(project_dir, "sample"))
 
-file.copy(
-  list.files(example_paths$scc_dir, full.names = TRUE, pattern = "\\.[Ff][Cc][Ss]$"),
-  file.path(project_dir, "scc")
-)
-file.copy(
-  list.files(example_paths$sample_dir, full.names = TRUE, pattern = "\\.[Ff][Cc][Ss]$"),
-  file.path(project_dir, "sample")
-)
+example_paths <- spectreasy_example_data(dest_dir = project_dir)
 
 list.files(project_dir, recursive = TRUE)
 ```
 
-## 2. Create and review `fcs_mapping.csv`
+For the remainder of this vignette, the commands are shown as they would be run
+from the project directory created above.
 
-We first let `spectreasy` infer the detector channels from the example controls,
-then we replace the fluorophore and marker annotations with the intended panel
-labels for this vignette.
-
-```{r}
+```{r, include = FALSE}
 control_file <- file.path(project_dir, "fcs_mapping.csv")
-
 auto_control_df <- create_control_file(
   input_folder = file.path(project_dir, "scc"),
   include_af_folder = FALSE,
@@ -97,7 +67,7 @@ auto_control_df <- create_control_file(
   output_file = file.path(project_dir, "fcs_mapping_auto.csv")
 )
 
-manual_annotations <- data.frame(
+panel_annotations <- data.frame(
   filename = c(
     "Alexa Fluor 700 (Beads).fcs",
     "BUV395 (Beads).fcs",
@@ -130,22 +100,154 @@ manual_annotations <- data.frame(
   stringsAsFactors = FALSE
 )
 
-match_idx <- match(auto_control_df$filename, manual_annotations$filename)
+match_idx <- match(auto_control_df$filename, panel_annotations$filename)
 stopifnot(!anyNA(match_idx))
 
 control_df <- auto_control_df
-control_df$fluorophore <- manual_annotations$fluorophore[match_idx]
-control_df$marker <- manual_annotations$marker[match_idx]
-control_df$control.type <- manual_annotations$control.type[match_idx]
-control_df$is.viability <- manual_annotations$is.viability[match_idx]
+control_df$fluorophore <- panel_annotations$fluorophore[match_idx]
+control_df$marker <- panel_annotations$marker[match_idx]
+control_df$control.type <- panel_annotations$control.type[match_idx]
+control_df$is.viability <- panel_annotations$is.viability[match_idx]
 
 utils::write.csv(control_df, control_file, row.names = FALSE, quote = TRUE)
+
+ctrl <- autounmix_controls(
+  scc_dir = file.path(project_dir, "scc"),
+  control_df = control_df,
+  cytometer = "Aurora",
+  output_dir = file.path(project_dir, "spectreasy_outputs", "autounmix_controls"),
+  unmix_method = "WLS",
+  build_qc_plots = TRUE,
+  unmix_scatter_panel_size_mm = 30,
+  seed = 1
+)
+
+unmixed <- unmix_samples(
+  sample_dir = file.path(project_dir, "sample"),
+  unmixing_matrix_file = file.path(
+    project_dir,
+    "spectreasy_outputs",
+    "autounmix_controls",
+    "scc_unmixing_matrix.csv"
+  ),
+  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples")
+)
+```
+
+## 2. Start the control-stage workflow
+
+Run `autounmix_controls()` first. If `fcs_mapping.csv` is missing,
+`auto_create_control = TRUE` creates it automatically and then pauses for
+review.
+
+```{r, eval = FALSE}
+setwd(project_dir)
+
+autounmix_controls(
+  scc_dir = "scc",
+  auto_create_control = TRUE,
+  cytometer = "Aurora",
+  auto_unknown_fluor_policy = "by_channel",
+  unmix_method = "WLS",
+  build_qc_plots = TRUE,
+  unmix_scatter_panel_size_mm = 30
+)
+```
+
+After the control file is created, `autounmix_controls()` prints a confirmation
+prompt and waits:
+
+```text
+Proceed with autounmix_controls now? [y/n]:
+```
+
+## 3. Review and supplement `fcs_mapping.csv`
+
+Open the generated `fcs_mapping.csv` in the project directory and complete the
+panel annotation before continuing. At minimum, review these columns:
+
+- `fluorophore`
+- `marker`
+- `channel`
+- `control.type`
+- `is.viability`
+
+For the example dataset used in this vignette, the reviewed control file looks
+like this:
+
+```{r, echo = FALSE}
 knitr::kable(control_df)
 ```
 
-## 3. Review the single-color controls
+## 4. Return to the console and confirm with `y`
 
-Before unmixing, we generate the SCC review report.
+Once `fcs_mapping.csv` has been reviewed and saved, return to the console where
+`autounmix_controls()` is waiting and enter:
+
+```text
+y
+```
+
+The same `autounmix_controls()` call then continues and writes the control-stage
+outputs to `spectreasy_outputs/autounmix_controls/`.
+
+```{r, echo = FALSE}
+list.files(file.path(project_dir, "spectreasy_outputs", "autounmix_controls"), recursive = TRUE)
+```
+
+Key outputs from this step include:
+
+- `fcs_mapping.csv`
+- `spectreasy_outputs/autounmix_controls/scc_reference_matrix.csv`
+- `spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv`
+- `spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.png`
+- `spectreasy_outputs/autounmix_controls/scc_unmixing_scatter_matrix.png`
+- `spectreasy_outputs/autounmix_controls/scc_unmixed/*.fcs`
+
+## 5. Unmix the experimental sample
+
+After the control-stage workflow has completed, unmix the experimental files
+with `unmix_samples()`. The static unmixing matrix written by
+`autounmix_controls()` is used directly.
+
+```{r, eval = FALSE}
+unmixed <- unmix_samples(
+  sample_dir = "sample",
+  unmixing_matrix_file = "spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv",
+  output_dir = "spectreasy_outputs/unmix_samples"
+)
+```
+
+For the example dataset, this writes:
+
+- `spectreasy_outputs/unmix_samples/sample_unmixed.fcs`
+
+and returns a named list with one element per sample.
+
+```{r, echo = FALSE}
+sample_name <- names(unmixed)[1]
+sample_results <- unmixed[[sample_name]]$data
+preview_cols <- intersect(
+  c("Alexa Fluor 700", "BUV395", "BV510", "FITC", "LIVE DEAD NIR", "PerCP-Cy5.5", "AF", "File"),
+  colnames(sample_results)
+)
+
+knitr::kable(utils::head(sample_results[, preview_cols, drop = FALSE]))
+```
+
+```{r, echo = FALSE}
+file.exists(file.path(project_dir, "spectreasy_outputs", "unmix_samples", "sample_unmixed.fcs"))
+```
+
+# Optional steps
+
+The sections below are useful extensions, but they are not required for the
+core `autounmix_controls()` -> `unmix_samples()` workflow shown above.
+
+## Generate the SCC review report before unmixing
+
+If you want a PDF review of the single-color controls before the control-stage
+run, call `generate_scc_report()` first.
 
 ```{r}
 scc_report_file <- file.path(project_dir, "spectreasy_outputs", "SCC_QC_Report.pdf")
@@ -161,42 +263,55 @@ generate_scc_report(
 file.exists(scc_report_file)
 ```
 
-## 4. Build the control-stage outputs
+## Use a reviewed control table in non-interactive workflows
 
-`autounmix_controls()` builds the reference matrix, saves control-stage plots,
-and unmixes the controls.
+For scripts, reports, or CI jobs, you can pass a reviewed `control_df` directly
+to `autounmix_controls()` and skip the confirmation prompt.
 
 ```{r}
-ctrl <- autounmix_controls(
+ctrl_noninteractive <- autounmix_controls(
   scc_dir = file.path(project_dir, "scc"),
   control_df = control_df,
   cytometer = "Aurora",
-  output_dir = file.path(project_dir, "spectreasy_outputs", "autounmix_controls"),
+  output_dir = file.path(project_dir, "spectreasy_outputs", "autounmix_controls_noninteractive"),
+  unmix_method = "WLS",
   build_qc_plots = FALSE,
   seed = 1
 )
 
-dim(ctrl$M)
-rownames(ctrl$M)
+dim(ctrl_noninteractive$M)
 ```
 
-The control-stage matrix is labeled by fluorophore, which is useful for control
-QC. For downstream sample interpretation, we relabel the matrix rows to marker
-names using `fcs_mapping.csv`.
+## Unmix directly from the reference matrix
+
+Instead of using the saved static matrix file, you can unmix dynamically from
+the in-memory reference matrix returned by `autounmix_controls()`.
 
 ```{r}
+fluor_reference_matrix <- ctrl$M
 marker_map <- stats::setNames(control_df$marker, control_df$fluorophore)
-reference_matrix <- ctrl$M
+reference_matrix <- fluor_reference_matrix
 rownames(reference_matrix) <- unname(marker_map[rownames(reference_matrix)])
 
-rownames(reference_matrix)
+unmixed_dynamic <- unmix_samples(
+  sample_dir = file.path(project_dir, "sample"),
+  M = reference_matrix,
+  method = "WLS",
+  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples_dynamic")
+)
+
+names(unmixed_dynamic)
 ```
 
-We can visualize the non-autofluorescence spectra directly from the evaluated
-matrix.
+## Inspect quick QC plots
+
+Reference spectra and spectral spread plots should be interpreted in
+fluorophore space, so the original fluorophore-labeled control matrix is used
+here.
 
 ```{r}
-reference_matrix_no_af <- reference_matrix[rownames(reference_matrix) != "Autofluorescence", , drop = FALSE]
+reference_matrix_no_af <- fluor_reference_matrix[!grepl("^AF($|_)", rownames(fluor_reference_matrix), ignore.case = TRUE), , drop = FALSE]
+
 plot_spectra(reference_matrix_no_af, output_file = NULL)
 ```
 
@@ -204,61 +319,6 @@ plot_spectra(reference_matrix_no_af, output_file = NULL)
 plot_ssm(calculate_ssm(reference_matrix_no_af), output_file = NULL)
 ```
 
-## 5. Unmix the example sample
-
-Now we unmix `sample/sample.fcs` using the marker-labeled reference matrix.
-
-```{r}
-unmixed <- unmix_samples(
-  sample_dir = file.path(project_dir, "sample"),
-  M = reference_matrix,
-  method = "WLS",
-  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples"),
-  write_fcs = TRUE
-)
-
-sample_results <- unmixed$sample$data
-knitr::kable(utils::head(sample_results[, c(
-  "CD3", "CD45RA", "CD27", "CD8", "CCR7", "Live", "Autofluorescence", "File"
-)]))
-```
-
-The unmixed FCS file is written only because we explicitly supplied an output
-folder and set `write_fcs = TRUE`.
-
-```{r}
-file.exists(file.path(project_dir, "spectreasy_outputs", "unmix_samples", "sample_unmixed.fcs"))
-```
-
-## 6. Summarize sample-level diagnostics
-
-We can inspect the negative-population spread on the evaluated sample output.
-
 ```{r}
 plot_nps(calculate_nps(sample_results), output_file = NULL)
-```
-
-And we can generate the sample QC PDF report.
-
-```{r}
-qc_report_file <- file.path(project_dir, "spectreasy_outputs", "QC_Report.pdf")
-generate_qc_report(sample_results, reference_matrix, output_file = qc_report_file)
-file.exists(qc_report_file)
-```
-
-## 7. Generated files
-
-The evaluated vignette produces the expected control-stage and sample-stage
-artifacts.
-
-```{r}
-output_files <- list.files(file.path(project_dir, "spectreasy_outputs"), recursive = TRUE)
-knitr::kable(data.frame(file = output_files, stringsAsFactors = FALSE))
-```
-
-The interactive GUI can be launched later from the generated control outputs,
-but it is not started during vignette builds.
-
-```{r}
-sessionInfo()
 ```
