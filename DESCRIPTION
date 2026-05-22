@@ -27,6 +27,7 @@ LinkingTo:
     Rcpp,
     RcppArmadillo
 Suggests:
+    jsonlite,
     knitr,
     pdftools,
     plumber,
@@ -36,7 +37,8 @@ Suggests:
     SummarizedExperiment,
     testthat (>= 3.0.0)
 VignetteBuilder: knitr
-biocViews: FlowCytometry, QualityControl, Visualization, GUI, WorkflowStep
+biocViews: FlowCytometry, MultiChannel, QualityControl, Visualization, GUI,
+    WorkflowStep
 Config/testthat/edition: 3
 Encoding: UTF-8
 RoxygenNote: 7.3.3

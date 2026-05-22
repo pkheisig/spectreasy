@@ -305,7 +305,10 @@ directly to `unmix_samples()` instead of loading it from the saved CSV file.
 fluor_reference_matrix <- ctrl$M
 marker_map <- stats::setNames(control_df$marker, control_df$fluorophore)
 reference_matrix <- fluor_reference_matrix
-rownames(reference_matrix) <- unname(marker_map[rownames(reference_matrix)])
+mapped_names <- marker_map[rownames(reference_matrix)]
+na_idx <- is.na(mapped_names)
+mapped_names[na_idx] <- rownames(reference_matrix)[na_idx]
+rownames(reference_matrix) <- unname(mapped_names)
 
 unmixed_dynamic <- unmix_samples(
   sample_dir = file.path(project_dir, "sample"),
@@ -344,3 +347,9 @@ By default, `autounmix_controls()` and `unmix_samples()` use a single average au
 This is enabled by passing `include_multi_af = TRUE` or setting `af_n_bands` > 1 (e.g., `af_n_bands = 100`) to `autounmix_controls()`.
 
 > **Warning:** Per-cell AF extraction and matching across a large number of basis bands can be computationally intensive. Because the matching is solved numerically for each individual cell, processing large datasets (with hundreds of thousands or millions of cells) with a high number of AF bands (such as the default `af_n_bands = 100`) can take a long time to complete. If performance is a concern, consider using a lower number of bands (e.g., 5 to 10) or utilizing default single-signature AF unmixing.
+
+## Session information
+
+```{r}
+sessionInfo()
+```

@@ -22,6 +22,8 @@ pi-sessions-*.html
 .Rhistory
 .RData
 .Ruserdata
+*.Rproj
+Rplots.pdf
 
 # Directory-based ignores
 gating_and_spectrum_plots/
@@ -32,19 +34,36 @@ spectreasy_outputs/
 samples/
 scc/
 inst/gui/node_modules/
+node_modules/
+dist-ssr/
 
 # System files
 .DS_Store
 
+# Editor files
+.vscode/
+.idea/
+
 # Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Compiled artifacts
 *.o
 *.so
+*.dll
+*.dSYM/
+*.tsbuildinfo
 src/symbols.rds
 
 # Local package build/check artifacts
 *.tar.gz
 *.Rcheck/
 spectreasy.BiocCheck/
+*.local
+
+# Local backup directory
+backtup/

@@ -1,8 +1,20 @@
 ^inst/gui/node_modules$
+^inst/gui/dist-ssr$
+^inst/gui/.*\.local$
+^inst/gui/.*\.tsbuildinfo$
 ^src/.*\.(o|so)$
+^src/.*\.(dll|dSYM)$
 ^inst/gui/frontend\.log$
+^inst/gui/npm-debug\.log.*$
+^inst/gui/yarn-debug\.log.*$
+^inst/gui/yarn-error\.log.*$
+^inst/gui/pnpm-debug\.log.*$
 ^inst/gui/\.DS_Store$
 ^\.DS_Store$
+^\.vscode$
+^\.idea$
+^.*\.Rproj$
+^\.Rproj\.user$
 ^.*\.Rcheck$
 ^\.Rcheck$
 ^\.\.?Rcheck$
@@ -29,3 +41,4 @@
 ^spectreasy\.BiocCheck$
 ^\.github$
 ^BIOC_REVIEW_RESPONSE\.md$
+^backtup$
