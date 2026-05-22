@@ -201,7 +201,37 @@ Key outputs from this step include:
 - `spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv`
 - `spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.png`
 - `spectreasy_outputs/autounmix_controls/scc_unmixing_scatter_matrix.png`
+- `spectreasy_outputs/autounmix_controls/fsc_ssc/*.png`
+- `spectreasy_outputs/autounmix_controls/histogram/*.png`
+- `spectreasy_outputs/autounmix_controls/spectrum/*.png`
 - `spectreasy_outputs/autounmix_controls/scc_unmixed/*.fcs`
+
+The control-stage run also writes visual checks for each single-color control.
+For one color, the three plots below show the FSC/SSC gate, the peak-channel
+histogram gate, and the detector spectrum used to build the reference matrix.
+
+```{r, echo = FALSE, out.width = "48%", fig.show = "hold"}
+example_control <- "FITC (Beads)"
+control_plot_dir <- file.path(project_dir, "spectreasy_outputs", "autounmix_controls")
+knitr::include_graphics(c(
+  file.path(control_plot_dir, "fsc_ssc", paste0(example_control, "_fsc_ssc.png")),
+  file.path(control_plot_dir, "histogram", paste0(example_control, "_histogram.png"))
+))
+```
+
+```{r, echo = FALSE, out.width = "100%"}
+knitr::include_graphics(
+  file.path(control_plot_dir, "spectrum", paste0(example_control, "_spectrum.png"))
+)
+```
+
+The same run creates the NxN scatter matrix for the single-color controls. Each
+row is one control, and each column checks how much signal appears in the other
+unmixed markers.
+
+```{r, echo = FALSE, out.width = "100%"}
+knitr::include_graphics(ctrl$unmixing_scatter_file)
+```
 
 ## 5. Unmix the experimental sample
 
@@ -279,6 +309,51 @@ file.exists(qc_report_file)
 The sections below are useful extensions, but they are not required for the
 core `autounmix_controls()` -> `unmix_samples()` workflow shown above.
 
+## Per-cell Autofluorescence (AF) Extraction
+
+By default, `autounmix_controls()` and `unmix_samples()` use one average
+autofluorescence signature from the unstained control. If your cells have
+different AF shapes from cell to cell, you can split AF into several basis
+signatures.
+
+Use the two multi-AF settings in the control-stage call. `af_n_bands` controls
+how many AF basis signatures are extracted from the unstained control, while
+`include_multi_af` tells `spectreasy` to include additional AF controls from
+the `af/` directory when those files are available.
+
+```{r, eval = FALSE}
+ctrl_multi_af <- autounmix_controls(
+  scc_dir = "scc",
+  control_file = "fcs_mapping.csv",
+  cytometer = "Aurora",
+  output_dir = "spectreasy_outputs/autounmix_controls_multi_af",
+  unmix_method = "WLS",
+  include_multi_af = TRUE,
+  af_n_bands = 10,
+  seed = 1
+)
+```
+
+If you want `unmix_samples()` to rebuild the reference matrix dynamically from
+the SCC files, pass the same two AF settings there as well:
+
+```{r, eval = FALSE}
+unmixed_multi_af <- unmix_samples(
+  sample_dir = "sample",
+  unmixing_matrix_file = NULL,
+  scc_dir = "scc",
+  control_file = "fcs_mapping.csv",
+  method = "WLS",
+  include_multi_af = TRUE,
+  af_n_bands = 10,
+  output_dir = "spectreasy_outputs/unmix_samples_multi_af"
+)
+```
+
+`af_n_bands` is like choosing how many AF "flavors" to model. More bands can
+fit complex AF better, but they also take longer to compute. For large files,
+start with 5 to 10 bands before trying higher values.
+
 ## Use a reviewed control CSV in non-interactive workflows
 
 For scripts, reports, or CI jobs, you can supply a pre-existing, reviewed control CSV file via `control_file` to `autounmix_controls()` to skip the confirmation prompt.
@@ -339,14 +414,6 @@ plot_ssm(calculate_ssm(reference_matrix_no_af), output_file = NULL)
 ```{r}
 plot_nps(calculate_nps(sample_results), output_file = NULL)
 ```
-
-## Per-cell Autofluorescence (AF) Extraction
-
-By default, `autounmix_controls()` and `unmix_samples()` use a single average autofluorescence signature derived from the unstained control. To model cell-to-cell autofluorescence variations (similar to the AutoSpill / AutoSpectral algorithm), you can extract multiple AF basis signatures.
-
-This is enabled by passing `include_multi_af = TRUE` or setting `af_n_bands` > 1 (e.g., `af_n_bands = 100`) to `autounmix_controls()`.
-
-> **Warning:** Per-cell AF extraction and matching across a large number of basis bands can be computationally intensive. Because the matching is solved numerically for each individual cell, processing large datasets (with hundreds of thousands or millions of cells) with a high number of AF bands (such as the default `af_n_bands = 100`) can take a long time to complete. If performance is a concern, consider using a lower number of bands (e.g., 5 to 10) or utilizing default single-signature AF unmixing.
 
 ## Session information
 

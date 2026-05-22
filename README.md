@@ -153,6 +153,7 @@ For newly auto-created files:
 - `scc_spectra.png` (reference spectra overlay)
 - `scc_unmixing_matrix.png` and `scc_unmixing_matrix.csv`
 - `scc_unmixing_scatter_matrix.png` (lower-triangle scatter matrix, one single-stain file per row, with x=0/y=0 guides)
+- `fsc_ssc/`, `histogram/`, and `spectrum/` per-control QC PNGs
 
 Note: `scc_unmixing_matrix.csv` is now exported using the selected `unmix_method` (`OLS`, `WLS`, or `NNLS`).  
 For `NNLS`, the exported static matrix is a deterministic linear proxy; exact NNLS behavior remains available via dynamic unmixing (`unmix_samples(..., M = ..., method = "NNLS")`).
@@ -225,7 +226,7 @@ This saves gating/spectrum plots to `gating_plots/` and returns the reference ma
 
 For per-cell AF extraction with multiple AF basis signatures, increase `af_n_bands` (for example `af_n_bands = 10`). You can also include extra AF controls from an external directory by setting `include_multi_af = TRUE`.
 
-> **Note:** Performing per-cell AF matching with a high number of bands (e.g., `af_n_bands = 100`) is computationally intensive and can take a long time on large datasets. If performance is a concern, consider using a lower number of bands (e.g., 5 to 10) or relying on standard single-signature AF unmixing.
+> **Note:** Performing per-cell AF matching with many bands (for example `af_n_bands = 100`) is computationally intensive and can take a long time on large datasets. The default `af_n_bands = 10` is a practical starting point; increase it only when you need finer AF modeling.
 
 For reproducible SCC gating/subsampling and AF-band extraction, set `seed` in `generate_scc_report()`, `build_reference_matrix()`, or `autounmix_controls()`.
 
@@ -306,7 +307,7 @@ launch_gui(
 ### Output Directories
 
 - `spectreasy_outputs/autounmix_controls/scc_reference_matrix.csv`: Reference matrix written by `autounmix_controls(...)`
-- `spectreasy_outputs/autounmix_controls/`: SCC control-stage outputs (`scc_reference_matrix.csv`, `scc_unmixing_matrix.csv/.png`, `scc_spectra.png`, `scc_unmixing_scatter_matrix.png`)
+- `spectreasy_outputs/autounmix_controls/`: SCC control-stage outputs (`scc_reference_matrix.csv`, `scc_unmixing_matrix.csv/.png`, `scc_spectra.png`, `scc_unmixing_scatter_matrix.png`, and per-control QC PNG folders)
 - `spectreasy_outputs/autounmix_controls/scc_unmixed/`: Unmixed SCC control files (FCS format)
 - `spectreasy_outputs/unmix_samples/`: Unmixed experimental data (FCS format)
 

@@ -86,7 +86,6 @@ plot_spectra <- function(ref_matrix,
         ggplot2::theme(axis.text.x = ggplot2::element_text(size = 5, angle = 90, hjust = 1, vjust = 0.5)) +
         ggplot2::labs(
             title = "Reference Spectra Overlay",
-            subtitle = "Good: each fluorophore shows a clear dominant detector profile with smooth shape. Bad: noisy or unexpectedly broad/overlapping profiles suggest SCC gating or label issues.",
             x = "Detector",
             y = "Normalized Intensity"
         )

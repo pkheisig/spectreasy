@@ -217,7 +217,6 @@ plot_nps <- function(nps_results, output_file = NULL, width = 200) {
     p <- ggplot2::ggplot(nps_results, ggplot2::aes(Marker, NPS, fill = File)) +
         ggplot2::geom_bar(stat = "identity", position = "dodge") +
         ggplot2::labs(title = "Negative Population Spread (Unmixing Noise Floor)",
-                      subtitle = "Good: low, similar MAD across files and markers. Bad: isolated high bars indicate broad negative-population spread, often from spillover into dim channels.",
                       y = "Spread (MAD)", x = "Unmixed Marker") +
         ggplot2::theme_minimal() +
         ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))

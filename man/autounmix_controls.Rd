@@ -16,8 +16,9 @@ autounmix_controls(
   unmix_method = "WLS",
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
-  af_n_bands = 100,
+  af_n_bands = 10,
   include_multi_af = FALSE,
+  save_qc_plots = TRUE,
   ...
 )
 }
@@ -46,9 +47,12 @@ they are present in the SCC folder or control mapping.}
 
 \item{seed}{Optional integer seed for deterministic subsampling and plotting.}
 
-\item{af_n_bands}{Number of AF bands to extract from the unstained control. Default is 100.}
+\item{af_n_bands}{Number of AF bands to extract from the unstained control. Default is 10.}
 
 \item{include_multi_af}{Logical; whether to include additional AF files from `af_dir`. Default is FALSE.}
+
+\item{save_qc_plots}{Logical; whether to write per-control FSC/SSC,
+histogram, and spectrum PNGs under `output_dir`.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }
@@ -61,7 +65,8 @@ SCC workflow helper that:
 2) builds the reference matrix from SCCs,
 3) unmixed SCC files,
 4) saves reference/unmixing matrices,
-5) plots spectra, unmixing matrix, and SCC unmixing scatter matrix.
+5) plots spectra, unmixing matrix, SCC unmixing scatter matrix, and optional
+per-control QC PNGs.
 }
 \details{
 This function is intended as the control-stage step before GUI adjustment

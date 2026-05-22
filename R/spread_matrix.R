@@ -91,19 +91,18 @@ plot_ssm <- function(SSM, output_file = NULL, width = 200, height = 180) {
 
     n_markers <- max(nrow(SSM), ncol(SSM))
     text_size <- max(1.6, min(3.2, 24 / max(1, n_markers)))
-    spread_cut <- stats::quantile(long$Spread, 0.7, na.rm = TRUE)
 
     p <- ggplot2::ggplot(long, ggplot2::aes(Receiving_Marker, Spilling_Marker, fill = Spread)) +
         ggplot2::geom_tile() +
         ggplot2::scale_fill_viridis_c(option = "magma", name = "Spread Factor") +
         ggplot2::geom_text(
-            ggplot2::aes(label = vapply(Spread, fmt_spread, character(1)), color = Spread > spread_cut),
+            ggplot2::aes(label = vapply(Spread, fmt_spread, character(1)), color = Spread > 0.3),
             size = text_size,
             show.legend = FALSE
         ) +
         ggplot2::scale_color_manual(values = c("TRUE" = "black", "FALSE" = "white")) +
         ggplot2::labs(title = "Spectral Spread Matrix",
-                      subtitle = "Rows = noise source, columns = noise destination. Good: low off-diagonal spread (darker cells). Bad: bright off-diagonal cells mark problematic marker pairs for dim co-expression.",
+                      subtitle = "Rows = noise source, columns = noise destination.",
                       x = "Receiving Marker (Noise Destination)", y = "Spilling Marker (Noise Source)") +
         ggplot2::theme_minimal() +
         ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
