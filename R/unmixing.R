@@ -107,21 +107,6 @@
     .prepare_unmix_samples_input_from_directory(sample_input)
 }
 
-.build_result_from_static_unmix <- function(flow_frame, W_sub, file_name) {
-    full_data <- flowCore::exprs(flow_frame)
-    detectors <- colnames(W_sub)
-    Y <- full_data[, detectors, drop = FALSE]
-    abundances <- Y %*% t(W_sub)
-    colnames(abundances) <- rownames(W_sub)
-    residuals <- NULL
-
-    out <- as.data.frame(abundances)
-    out <- .append_passthrough_parameters(out, full_data, detector_names = detectors)
-    out$File <- file_name
-
-    list(data = out, residuals = residuals)
-}
-
 .read_unmixing_matrix_csv <- function(path) {
     if (!file.exists(path)) stop("unmixing_matrix_file not found: ", path)
     df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
@@ -252,6 +237,39 @@
         }
         i <- i + 1L
     }
+}
+
+.as_unmixed_results_data_frame <- function(x, arg_name = "x") {
+    if (!is.list(x) || length(x) == 0) {
+        stop(arg_name, " must be a non-empty list returned by unmix_samples().")
+    }
+
+    sample_names <- names(x)
+    if (is.null(sample_names)) {
+        sample_names <- rep("", length(x))
+    }
+
+    data_parts <- vector("list", length(x))
+    for (i in seq_along(x)) {
+        res_obj <- x[[i]]
+        if (!is.list(res_obj) || !is.data.frame(res_obj$data)) {
+            stop(arg_name, " must contain one data frame per sample in $data.")
+        }
+
+        data_df <- as.data.frame(res_obj$data, stringsAsFactors = FALSE, check.names = FALSE)
+        if (!("File" %in% colnames(data_df))) {
+            sample_name <- if (nzchar(sample_names[[i]])) sample_names[[i]] else paste0("sample_", i)
+            data_df$File <- sample_name
+        }
+        data_parts[[i]] <- data_df
+    }
+
+    do.call(rbind, data_parts)
+}
+
+#' @export
+as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, optional = FALSE, ...) {
+    .as_unmixed_results_data_frame(x, arg_name = "x")
 }
 
 .unmixed_results_to_flowset <- function(results) {
@@ -407,15 +425,21 @@
 #' 
 #' @param sample_dir Directory containing experimental FCS files, a
 #'   `flowCore::flowSet`, or a `SingleCellExperiment` for in-memory workflows.
-#' @param M Optional reference matrix (Markers x Detectors). Required for
-#'   dynamic unmixing methods (`"WLS"`, `"OLS"`, `"NNLS"`).
-#' @param W Optional static unmixing matrix (Markers x Detectors). If supplied,
-#'   unmixing is performed using matrix multiplication with the transposed W.
-#' @param unmixing_matrix_file Optional CSV path to a saved unmixing matrix.
-#'   Used when `W` is not supplied. By default this points to the matrix produced
-#'   by [autounmix_controls()].
+#' @param M Optional reference matrix (Markers x Detectors). If supplied,
+#'   unmixing is computed dynamically using this matrix. If not supplied,
+#'   it is loaded from the CSV path provided in `unmixing_matrix_file`.
+#' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
+#'   Used when `M` is not supplied. By default this points to the reference matrix
+#'   produced by [autounmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param method Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).
 #' @param cytometer Reserved for compatibility with older workflows.
+#' @param scc_dir Directory containing single-color control files. Used to dynamically
+#'   build the reference matrix if `M` and `unmixing_matrix_file` are missing.
+#' @param control_file Path to the control mapping CSV.
+#'   Used when dynamically building the reference matrix.
+#' @param af_n_bands Number of AF bands to extract from the unstained control.
+#' @param exclude_af Logical; whether to exclude AF from unmixing.
+#' @param include_multi_af Logical; whether to include multi-AF controls.
 #' @param output_dir Directory to save unmixed FCS files when `write_fcs = TRUE`.
 #' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 #'   Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.
@@ -425,11 +449,13 @@
 #'   unmixed values are returned in assay `"unmixed"`, with detector residuals in
 #'   `altExp(x, "detector_residuals")` when available.
 #' @return Either a named list with one element per sample, a `flowSet`, or a
-#'   `SingleCellExperiment` depending on `return_type`. List elements contain
+#'   `SingleCellExperiment` depending on `return_type`. For `return_type = "list"`,
+#'   the result has class `spectreasy_unmixed_results`; list elements contain
 #'   `data` (unmixed abundances plus retained acquisition parameters) and
 #'   `residuals` (detector residual matrix when available, otherwise `NULL`).
-#'   The return value is provided invisibly to avoid printing large result objects
-#'   during interactive or Quarto execution.
+#'   The list can be passed directly to `generate_sample_report(results_df = ...)`
+#'   or coerced with `as.data.frame()`. The return value is provided invisibly to
+#'   avoid printing large result objects during interactive or Quarto execution.
 #' @examples
 #' M_demo <- rbind(
 #'   FITC = c(1.00, 0.20, 0.05),
@@ -465,10 +491,14 @@
 #' @export
 unmix_samples <- function(sample_dir = "samples", 
                           M = NULL, 
-                          W = NULL,
-                          unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls", "scc_unmixing_matrix.csv"),
+                          unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls", "scc_reference_matrix.csv"),
                           method = "WLS", 
                           cytometer = "Aurora",
+                          scc_dir = NULL,
+                          control_file = NULL,
+                          af_n_bands = 1,
+                          exclude_af = FALSE,
+                          include_multi_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples"),
                           write_fcs = TRUE,
                           return_type = c("list", "flowSet", "SingleCellExperiment")) {
@@ -476,44 +506,47 @@ unmix_samples <- function(sample_dir = "samples",
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")
-    }
-
-    sample_entries <- .prepare_unmix_samples_input(sample_dir)
-
-    using_static_W <- FALSE
-    W_use <- NULL
-    if (!is.null(W)) {
-        W_use <- as.matrix(W)
-        using_static_W <- TRUE
-    } else if (is.null(M) && !is.null(unmixing_matrix_file)) {
-        W_use <- .read_unmixing_matrix_csv(unmixing_matrix_file)
-        using_static_W <- TRUE
-    }
-
-    if (is.null(M) && !using_static_W) {
-        stop(
-            "No unmixing input provided. Supply either:\n",
-            " - M (reference matrix), or\n",
-            " - W / unmixing_matrix_file (static unmixing matrix)."
-        )
-    }
-    if (!is.null(M) && using_static_W) {
-        message("Both M and W/unmixing_matrix_file provided. Using static unmixing matrix.")
+    } else if (!is.null(unmixing_matrix_file) && file.exists(unmixing_matrix_file)) {
+        M <- .read_unmixing_matrix_csv(unmixing_matrix_file)
+        M <- .as_reference_matrix(M, "M")
+    } else {
+        # Try to build reference matrix dynamically
+        resolved_scc_dir <- if (!is.null(scc_dir)) scc_dir else "scc"
+        if (dir.exists(resolved_scc_dir)) {
+            message("Building reference matrix dynamically from: ", resolved_scc_dir)
+            M <- build_reference_matrix(
+                input_folder = resolved_scc_dir,
+                control_df = control_file,
+                af_n_bands = af_n_bands,
+                exclude_af = exclude_af,
+                include_multi_af = include_multi_af,
+                cytometer = cytometer
+            )
+        } else {
+            if (!is.null(unmixing_matrix_file)) {
+                stop("unmixing_matrix_file not found: ", unmixing_matrix_file, 
+                     ". Also, no reference matrix provided and 'scc' directory not found.")
+            } else {
+                stop("No reference matrix provided, and 'scc' directory not found. Supply M, a valid unmixing_matrix_file, or an scc_dir.")
+            }
+        }
     }
 
     method_upper <- toupper(method)
     allowed_methods <- c("WLS", "OLS", "NNLS")
-    if (!using_static_W && !(method_upper %in% allowed_methods)) {
+    if (!(method_upper %in% allowed_methods)) {
         stop("method must be one of: ", paste(allowed_methods, collapse = ", "))
     }
 
     results <- list()
-    marker_source_all <- if (using_static_W) rownames(W_use) else rownames(M)
+    marker_source_all <- rownames(M)
     secondary_label_map <- .resolve_secondary_label_map(marker_source_all, sample_dir = sample_dir)
 
     if (isTRUE(write_fcs)) {
         dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
     }
+
+    sample_entries <- .prepare_unmix_samples_input(sample_dir)
 
     for (entry in sample_entries) {
         sn <- entry$sample_name
@@ -524,20 +557,10 @@ unmix_samples <- function(sample_dir = "samples",
             flowCore::read.FCS(entry$file_path, transformation = FALSE, truncate_max_range = FALSE)
         }
 
-        if (using_static_W) {
-            raw_data <- flowCore::exprs(ff)
-            detectors <- colnames(W_use)
-            missing <- setdiff(detectors, colnames(raw_data))
-            if (length(missing) > 0) {
-                stop("Detectors in unmixing matrix not found in sample '", sn, "': ", paste(missing, collapse = ", "))
-            }
-            res_obj <- .build_result_from_static_unmix(ff, W_use, sn)
-        } else {
-            res_obj <- calc_residuals(ff, M, method = method_upper, file_name = sn, return_residuals = TRUE)
-        }
+        res_obj <- calc_residuals(ff, M, method = method_upper, file_name = sn, return_residuals = TRUE)
         
         if (isTRUE(write_fcs)) {
-            marker_source <- if (using_static_W) rownames(W_use) else rownames(M)
+            marker_source <- rownames(M)
             markers_to_keep <- intersect(colnames(res_obj$data), marker_source)
             passthrough_cols <- .get_passthrough_parameter_names(colnames(res_obj$data))
             cols_to_write <- unique(c(markers_to_keep, passthrough_cols))
@@ -566,6 +589,8 @@ unmix_samples <- function(sample_dir = "samples",
     if (identical(return_type, "SingleCellExperiment")) {
         return(invisible(.unmixed_results_to_sce(results, sample_entries = sample_entries)))
     }
+
+    class(results) <- c("spectreasy_unmixed_results", "list")
 
     invisible(results)
 }

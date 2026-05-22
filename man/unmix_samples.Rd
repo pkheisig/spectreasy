@@ -7,11 +7,15 @@
 unmix_samples(
   sample_dir = "samples",
   M = NULL,
-  W = NULL,
   unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls",
-    "scc_unmixing_matrix.csv"),
+    "scc_reference_matrix.csv"),
   method = "WLS",
   cytometer = "Aurora",
+  scc_dir = NULL,
+  control_file = NULL,
+  af_n_bands = 1,
+  exclude_af = FALSE,
+  include_multi_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples"),
   write_fcs = TRUE,
   return_type = c("list", "flowSet", "SingleCellExperiment")
@@ -21,19 +25,29 @@ unmix_samples(
 \item{sample_dir}{Directory containing experimental FCS files, a
 `flowCore::flowSet`, or a `SingleCellExperiment` for in-memory workflows.}
 
-\item{M}{Optional reference matrix (Markers x Detectors). Required for
-dynamic unmixing methods (`"WLS"`, `"OLS"`, `"NNLS"`).}
+\item{M}{Optional reference matrix (Markers x Detectors). If supplied,
+unmixing is computed dynamically using this matrix. If not supplied,
+it is loaded from the CSV path provided in `unmixing_matrix_file`.}
 
-\item{W}{Optional static unmixing matrix (Markers x Detectors). If supplied,
-unmixing is performed using matrix multiplication with the transposed W.}
-
-\item{unmixing_matrix_file}{Optional CSV path to a saved unmixing matrix.
-Used when `W` is not supplied. By default this points to the matrix produced
-by [autounmix_controls()].}
+\item{unmixing_matrix_file}{Optional CSV path to a saved reference matrix.
+Used when `M` is not supplied. By default this points to the reference matrix
+produced by [autounmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{method}{Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).}
 
 \item{cytometer}{Reserved for compatibility with older workflows.}
+
+\item{scc_dir}{Directory containing single-color control files. Used to dynamically
+build the reference matrix if `M` and `unmixing_matrix_file` are missing.}
+
+\item{control_file}{Path to the control mapping CSV.
+Used when dynamically building the reference matrix.}
+
+\item{af_n_bands}{Number of AF bands to extract from the unstained control.}
+
+\item{exclude_af}{Logical; whether to exclude AF from unmixing.}
+
+\item{include_multi_af}{Logical; whether to include multi-AF controls.}
 
 \item{output_dir}{Directory to save unmixed FCS files when `write_fcs = TRUE`.}
 
@@ -48,11 +62,13 @@ unmixed values are returned in assay `"unmixed"`, with detector residuals in
 }
 \value{
 Either a named list with one element per sample, a `flowSet`, or a
-  `SingleCellExperiment` depending on `return_type`. List elements contain
+  `SingleCellExperiment` depending on `return_type`. For `return_type = "list"`,
+  the result has class `spectreasy_unmixed_results`; list elements contain
   `data` (unmixed abundances plus retained acquisition parameters) and
   `residuals` (detector residual matrix when available, otherwise `NULL`).
-  The return value is provided invisibly to avoid printing large result objects
-  during interactive or Quarto execution.
+  The list can be passed directly to `generate_sample_report(results_df = ...)`
+  or coerced with `as.data.frame()`. The return value is provided invisibly to
+  avoid printing large result objects during interactive or Quarto execution.
 }
 \description{
 Unmix Experimental Samples

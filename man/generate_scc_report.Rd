@@ -6,16 +6,16 @@
 \usage{
 generate_scc_report(
   M = NULL,
+  unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls",
+    "scc_reference_matrix.csv"),
   scc_dir = "scc",
   output_file = NULL,
-  control_df = NULL,
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   save_qc_pngs = FALSE,
   include_multi_af = FALSE,
   af_dir = "af",
-  include_ssm = TRUE,
   seed = NULL,
   ...
 )
@@ -24,13 +24,15 @@ generate_scc_report(
 \item{M}{Optional precomputed reference matrix. If omitted, the report uses the
 matrix generated from the supplied SCC files.}
 
+\item{unmixing_matrix_file}{Optional CSV path to a saved reference matrix.
+Used when `M` is not supplied. By default this points to the reference matrix
+produced by [autounmix_controls()] (`"scc_reference_matrix.csv"`).}
+
 \item{scc_dir}{Directory containing SCC FCS files.}
 
 \item{output_file}{Path to save the PDF report. Must be supplied explicitly.}
 
-\item{control_df}{Optional control mapping data.frame or CSV path.}
-
-\item{control_file}{Control mapping CSV path used when `control_df` is `NULL`.}
+\item{control_file}{Control mapping CSV path.}
 
 \item{cytometer}{Cytometer name passed to [build_reference_matrix()].}
 
@@ -44,8 +46,6 @@ for report assembly and removed afterward.}
 \item{include_multi_af}{Logical; forward to [build_reference_matrix()].}
 
 \item{af_dir}{AF directory forwarded to [build_reference_matrix()].}
-
-\item{include_ssm}{Logical; include the spectral spread matrix page.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

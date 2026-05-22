@@ -52,24 +52,39 @@ calc_residuals <- function(flow_frame, M, file_name = NULL, method = "OLS",
 
     Mt <- t(M)
     method <- toupper(method)
+    if (!method %in% c("OLS", "NNLS", "WLS")) {
+        stop("method must be 'OLS', 'NNLS', or 'WLS'")
+    }
 
-    if (method == "OLS") {
-        # Ordinary Least Squares: A = Y * M^T * (M * M^T)^-1
-        matrix_to_invert <- M %*% Mt
-        if (rcond(matrix_to_invert) < 1e-10) {
-            stop("Reference Matrix is singular. You likely have collinear spectra.")
-        }
-        A <- Y %*% Mt %*% solve(matrix_to_invert)
-    } else if (method == "NNLS") {
-        A <- spectreasy_nnls_unmix_cpp(Y = Y, M = M)
-    } else if (method == "WLS") {
-        A <- spectreasy_wls_unmix_cpp(
+    af_match <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
+    if (sum(af_match) > 1) {
+        fluor_idx <- which(!af_match) - 1
+        af_idx <- which(af_match) - 1
+        A <- spectreasy_unmix_best_af_cpp(
             Y = Y,
             M = M,
+            fluor_idx = fluor_idx,
+            af_idx = af_idx,
+            method = method,
             background_noise = background_noise
         )
     } else {
-        stop("method must be 'OLS', 'NNLS', or 'WLS'")
+        if (method == "OLS") {
+            # Ordinary Least Squares: A = Y * M^T * (M * M^T)^-1
+            matrix_to_invert <- M %*% Mt
+            if (rcond(matrix_to_invert) < 1e-10) {
+                stop("Reference Matrix is singular. You likely have collinear spectra.")
+            }
+            A <- Y %*% Mt %*% solve(matrix_to_invert)
+        } else if (method == "NNLS") {
+            A <- spectreasy_nnls_unmix_cpp(Y = Y, M = M)
+        } else if (method == "WLS") {
+            A <- spectreasy_wls_unmix_cpp(
+                Y = Y,
+                M = M,
+                background_noise = background_noise
+            )
+        }
     }
 
     Fitted <- A %*% M

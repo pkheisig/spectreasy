@@ -199,23 +199,19 @@ function(filename) {
 
     df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
 
-    # Check if it's a spillover/reference matrix (M) or unmixing matrix (W)
-    # Reference/Spillover usually has Markers as rows, Detectors as cols
-    # Unmixing usually has Detectors as rows, Markers as cols (or vice versa depending on convention)
-    # spectreasy convention:
-    # M (Reference): Rows=Markers, Cols=Detectors
-    # W (Unmixing): Rows=Markers, Cols=Detectors (so Unmixed = Raw %*% t(W))
-
     # Ensure the first column is named 'Marker' for the frontend
-    # If the CSV has a header but first col is unnamed or "V1", fix it
     if (colnames(df)[1] %in% c("V1", "")) {
         colnames(df)[1] <- "Marker"
     } else if (colnames(df)[1] != "Marker") {
-        # Assume first column is Marker if it contains strings
         if (is.character(df[[1]])) {
             colnames(df)[1] <- "Marker"
         }
     }
+
+    # Filter out AF rows (matching ^AF($|_) case-insensitively)
+    is_af <- grepl("^AF($|_)", as.character(df[[1]]), ignore.case = TRUE)
+    df <- df[!is_af, , drop = FALSE]
+
     return(df)
 }
 
@@ -227,6 +223,24 @@ function(req) {
     matrix_data <- body$matrix_json
     df <- as.data.frame(matrix_data, check.names = FALSE)
     path <- file.path(get_matrix_dir(), filename)
+
+    # If the file exists, retrieve and merge back any AF rows
+    if (file.exists(path)) {
+        existing_df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+        is_af <- grepl("^AF($|_)", as.character(existing_df[[1]]), ignore.case = TRUE)
+        af_rows <- existing_df[is_af, , drop = FALSE]
+        if (nrow(af_rows) > 0) {
+            colnames(af_rows)[1] <- colnames(df)[1]
+            af_rows_aligned <- af_rows[, intersect(colnames(df), colnames(af_rows)), drop = FALSE]
+            missing_cols <- setdiff(colnames(df), colnames(af_rows_aligned))
+            for (m_col in missing_cols) {
+                af_rows_aligned[[m_col]] <- 0
+            }
+            af_rows_aligned <- af_rows_aligned[, colnames(df), drop = FALSE]
+            df <- rbind(df, af_rows_aligned)
+        }
+    }
+
     utils::write.csv(df, path, row.names = FALSE, quote = TRUE)
     return(list(success = TRUE, path = path))
 }

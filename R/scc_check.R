@@ -1,12 +1,4 @@
 # Internal helpers for SCC report generation.
-.resolve_scc_report_control_input <- function(control_df = NULL, control_file = "fcs_mapping.csv") {
-    control_file <- .resolve_control_file_path(control_file)
-    control_input <- control_df
-    if (is.null(control_input) && file.exists(control_file)) {
-        control_input <- control_file
-    }
-    control_input
-}
 
 .prepare_scc_report_plot_dir <- function(qc_plot_dir, save_qc_pngs = FALSE) {
     if (isTRUE(save_qc_pngs)) {
@@ -178,10 +170,12 @@
 #'
 #' @param M Optional precomputed reference matrix. If omitted, the report uses the
 #'   matrix generated from the supplied SCC files.
+#' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
+#'   Used when `M` is not supplied. By default this points to the reference matrix
+#'   produced by [autounmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param scc_dir Directory containing SCC FCS files.
 #' @param output_file Path to save the PDF report. Must be supplied explicitly.
-#' @param control_df Optional control mapping data.frame or CSV path.
-#' @param control_file Control mapping CSV path used when `control_df` is `NULL`.
+#' @param control_file Control mapping CSV path.
 #' @param cytometer Cytometer name passed to [build_reference_matrix()].
 #' @param qc_plot_dir Directory where FSC/SSC, histogram, and spectrum PNGs are written
 #'   when `save_qc_pngs = TRUE`.
@@ -190,7 +184,6 @@
 #'   for report assembly and removed afterward.
 #' @param include_multi_af Logical; forward to [build_reference_matrix()].
 #' @param af_dir AF directory forwarded to [build_reference_matrix()].
-#' @param include_ssm Logical; include the spectral spread matrix page.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #' @return Invisibly returns a list with `M`, `qc_summary`, and `qc_plot_dir`.
@@ -206,16 +199,15 @@
 #' @export
 generate_scc_report <- function(
     M = NULL,
+    unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls", "scc_reference_matrix.csv"),
     scc_dir = "scc",
     output_file = NULL,
-    control_df = NULL,
     control_file = "fcs_mapping.csv",
     cytometer = "Aurora",
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
     save_qc_pngs = FALSE,
     include_multi_af = FALSE,
     af_dir = "af",
-    include_ssm = TRUE,
     seed = NULL,
     ...
 ) {
@@ -234,7 +226,8 @@ generate_scc_report <- function(
         on.exit(unlink(plot_dir_info$cleanup_dir, recursive = TRUE, force = TRUE), add = TRUE)
     }
 
-    control_input <- .resolve_scc_report_control_input(control_df = control_df, control_file = control_file)
+    control_resolved <- .resolve_control_file_path(control_file)
+    control_input <- if (file.exists(control_resolved)) control_resolved else NULL
 
     M_built <- build_reference_matrix(
         input_folder = scc_dir,
@@ -265,7 +258,19 @@ generate_scc_report <- function(
     }
     retained_qc_plot_dir <- if (isTRUE(save_qc_pngs)) report_plot_dir else NULL
 
-    M_report <- if (is.null(M)) M_built else .as_reference_matrix(M, "M")
+    M_report <- NULL
+    if (!is.null(M)) {
+        M_report <- .as_reference_matrix(M, "M")
+    } else if (!is.null(unmixing_matrix_file)) {
+        if (file.exists(unmixing_matrix_file)) {
+            M_report <- .read_unmixing_matrix_csv(unmixing_matrix_file)
+            M_report <- .as_reference_matrix(M_report, "M")
+        }
+    }
+
+    if (is.null(M_report)) {
+        M_report <- M_built
+    }
 
     fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     if (length(fcs_files) == 0) {
@@ -321,7 +326,7 @@ generate_scc_report <- function(
         .draw_report_ggplot_page(plot_spectra(M_no_af, pd = pd, output_file = NULL))
     }
 
-    if (isTRUE(include_ssm) && nrow(M_no_af) > 1) {
+    if (nrow(M_no_af) > 1) {
         .draw_report_ggplot_page(plot_ssm(calculate_ssm(M_no_af), output_file = NULL))
     }
 

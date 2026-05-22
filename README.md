@@ -134,7 +134,6 @@ ctrl <- autounmix_controls(
   exclude_af = FALSE,                 # set TRUE to ignore unstained/AF controls
   unmix_method = "WLS",
   af_n_bands = 5,                     # optional: derive multiple AF basis signatures
-  build_qc_plots = TRUE,
   unmix_scatter_panel_size_mm = 30,
   seed = 1
 )
@@ -180,13 +179,12 @@ launch_gui(
 
 This starts both the backend API and bundled frontend on one port (default `http://localhost:8000`) and opens it in your browser.
 
-#### Step 4: Unmix samples using the unmixing matrix generated in the autounmix_controls step.
+#### Step 4: Unmix samples using the reference matrix generated in the autounmix_controls step.
 
 ```r
-# Uses saved unmixing matrix by filepath (default points to autounmix_controls output)
+# Uses saved reference matrix by filepath (default points to autounmix_controls output)
 unmixed <- unmix_samples(
   sample_dir = "samples",
-  unmixing_matrix_file = "spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv",
   output_dir = "spectreasy_outputs/unmix_samples",
   write_fcs = TRUE
 )
@@ -253,7 +251,7 @@ M <- build_reference_matrix(
 Apply the reference matrix to your samples:
 
 ```r
-# Option 1: dynamic unmixing directly from reference matrix (M)
+# Dynamic unmixing from reference matrix (M) or saved CSV
 unmixed <- unmix_samples(
   sample_dir = "samples",
   M = M,
@@ -262,20 +260,12 @@ unmixed <- unmix_samples(
   output_dir = "spectreasy_outputs/unmix_samples",
   write_fcs = TRUE
 )
-
-# Option 2: static unmixing from saved unmixing matrix (W)
-unmixed_w <- unmix_samples(
-  sample_dir = "samples",
-  unmixing_matrix_file = "spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv",
-  output_dir = "spectreasy_outputs/unmix_samples_w",
-  write_fcs = TRUE
-)
 ```
 
 **Methods:**
-- **OLS**: Ordinary least squares — fast, suitable for most panels
-- **WLS**: Weighted least squares — accounts for photon-counting noise, best accuracy
-- **NNLS**: Non-negative least squares — forces positive abundances (dynamic mode). Static NNLS matrix export is a linear proxy.
+- **WLS**: Weighted least squares — accounts for photon-counting noise, best accuracy (default)
+- **OLS**: Ordinary least squares — standard least squares
+- **NNLS**: Non-negative least squares — forces positive abundances
 
 ---
 
@@ -306,10 +296,10 @@ launch_gui(
 
 #### What To Do After GUI
 
-1. Save your adjusted matrix CSV (typically `scc_unmixing_matrix.csv` or `scc_reference_matrix.csv`).
+1. Save your adjusted matrix CSV (typically `scc_reference_matrix.csv`).
 2. Run `unmix_samples(...)` on your experimental samples:
-   - if you edited `scc_unmixing_matrix.csv`, pass `unmixing_matrix_file = "..."`
-   - if you edited a reference matrix, load it as `M` and pass `M = ...`
+   - if you edited `scc_reference_matrix.csv` at a custom path, pass `unmixing_matrix_file = "..."`
+   - if you edited a reference matrix in-memory, load it as `M` and pass `M = ...`
 
 ### Output Directories
 
@@ -333,16 +323,16 @@ generate_scc_report(
 )
 
 # Full sample-level report
-generate_qc_report(
+generate_sample_report(
       results_df = do.call(rbind, lapply(unmixed, `[[`, "data")),
-      M = ctrl$M,  # matrix used for unmixing context
+      M = ctrl$M,  # matrix used for unmixing context (optional if the default reference matrix CSV exists)
       output_file = file.path("spectreasy_outputs", "Sample_QC_Report.pdf"),
       sample_nxn_rows_per_page = 10,
       nxn_all_samples = FALSE
 )
 ```
 
-`generate_qc_report()` now adds per-sample NxN marker scatter pages after the
+`generate_sample_report()` now adds per-sample NxN marker scatter pages after the
 summary diagnostics. By default it shows 10 marker rows/columns per page block,
 which keeps the panels square and standardized across pages. By default only the
 first sample gets NxN pages; set `nxn_all_samples = TRUE` to include all samples.

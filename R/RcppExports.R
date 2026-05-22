@@ -9,3 +9,7 @@ spectreasy_nnls_unmix_cpp <- function(Y, M, tol = 1e-10, max_outer = 500L, max_i
     .Call(`_spectreasy_spectreasy_nnls_unmix_cpp`, Y, M, tol, max_outer, max_inner)
 }
 
+spectreasy_unmix_best_af_cpp <- function(Y, M, fluor_idx, af_idx, method, background_noise = 25, tol = 1e-10, max_outer = 500L, max_inner = 500L) {
+    .Call(`_spectreasy_spectreasy_unmix_best_af_cpp`, Y, M, fluor_idx, af_idx, method, background_noise, tol, max_outer, max_inner)
+}
+

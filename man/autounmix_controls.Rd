@@ -6,7 +6,6 @@
 \usage{
 autounmix_controls(
   scc_dir = "scc",
-  control_df = NULL,
   control_file = "fcs_mapping.csv",
   auto_create_control = TRUE,
   cytometer = "Aurora",
@@ -15,18 +14,17 @@ autounmix_controls(
   output_dir = "spectreasy_outputs/autounmix_controls",
   exclude_af = FALSE,
   unmix_method = "WLS",
-  build_qc_plots = FALSE,
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
+  af_n_bands = 100,
+  include_multi_af = FALSE,
   ...
 )
 }
 \arguments{
 \item{scc_dir}{Directory containing SCC FCS files.}
 
-\item{control_df}{Optional control mapping data.frame, or a path to control CSV.}
-
-\item{control_file}{Path to control mapping CSV used when `control_df` is `NULL`.}
+\item{control_file}{Path to control mapping CSV.}
 
 \item{auto_create_control}{Logical; auto-generate control file when missing.}
 
@@ -44,11 +42,13 @@ they are present in the SCC folder or control mapping.}
 
 \item{unmix_method}{SCC unmixing method (`"WLS"`, `"OLS"`, `"NNLS"`).}
 
-\item{build_qc_plots}{Logical; keep detailed build_reference_matrix plots.}
-
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
 
 \item{seed}{Optional integer seed for deterministic subsampling and plotting.}
+
+\item{af_n_bands}{Number of AF bands to extract from the unstained control. Default is 100.}
+
+\item{include_multi_af}{Logical; whether to include additional AF files from `af_dir`. Default is FALSE.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }

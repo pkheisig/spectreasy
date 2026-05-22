@@ -22,6 +22,29 @@
     invisible(NULL)
 }
 
+.normalize_qc_report_results_df <- function(results_df) {
+    if (is.data.frame(results_df)) {
+        return(as.data.frame(results_df, stringsAsFactors = FALSE, check.names = FALSE))
+    }
+
+    if (inherits(results_df, "spectreasy_unmixed_results")) {
+        return(as.data.frame(results_df, stringsAsFactors = FALSE, check.names = FALSE))
+    }
+
+    if (is.list(results_df) && length(results_df) > 0) {
+        looks_like_unmixed <- all(vapply(
+            results_df,
+            function(x) is.list(x) && is.data.frame(x$data),
+            logical(1)
+        ))
+        if (looks_like_unmixed) {
+            return(.as_unmixed_results_data_frame(results_df, arg_name = "results_df"))
+        }
+    }
+
+    as.data.frame(results_df, stringsAsFactors = FALSE, check.names = FALSE)
+}
+
 .get_qc_report_marker_labels <- function(markers) {
     stats::setNames(markers, markers)
 }
@@ -312,20 +335,38 @@
     pages
 }
 
-#' Generate a Full QC PDF Report
+#' Generate a Full Sample PDF Report
 #'
 #' Creates a multi-page report summarizing unmixing quality, including spectra,
 #' detector residuals, spread matrix, NPS, and per-sample NxN marker scatter pages.
 #'
-#' @param results_df Combined unmixed data frame (typically `rbind` of sample results).
-#' @param M Reference matrix used for unmixing.
+#' `generate_sample_report()` expects a combined data frame, not the raw list returned
+#' by [unmix_samples()]. In the usual workflow, build `results_df` with
+#' `do.call(rbind, lapply(unmixed, \`[[\`, "data"))`.
+#'
+#' `M` should be the reference matrix used for the unmixing context, supplied as
+#' a numeric matrix or detector-column data frame. In the usual
+#' `autounmix_controls()` workflow, pass `ctrl$M` or load
+#' `scc_reference_matrix.csv`. Do not pass the path to
+#' `scc_unmixing_matrix.csv` here.
+#'
+#' @param results_df Combined unmixed data frame, or the list returned by
+#'   [unmix_samples()]. `generate_sample_report()` will automatically bind
+#'   per-sample `$data` elements when needed.
+#' @param M Reference matrix used for report context. Must be a numeric matrix or
+#'   a data frame with detector columns, for example `ctrl$M` from
+#'   `autounmix_controls()` or `utils::read.csv("scc_reference_matrix.csv",
+#'   check.names = FALSE)`.
+#' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
+#'   Used when `M` is not supplied. By default this points to the reference matrix
+#'   produced by [autounmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param output_file Output PDF file path. Must be supplied explicitly.
 #' @param res_list Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.
 #' @param png_dir Deprecated and ignored (kept for backward compatibility).
 #' @param pd Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
 #'   If omitted, `attr(M, "detector_pd")` is used when available.
 #' @param sample_nxn_rows_per_page Number of marker rows and columns to show per per-sample NxN page block.
-#'   Defaults to 10, which standardizes panel geometry across pages and samples.
+#'   Defaults to 10, which standardizes geometry across pages and samples.
 #' @param sample_nxn_max_points Maximum cells sampled per sample for each NxN page.
 #' @param sample_nxn_transform One of `"none"` or `"asinh"` for per-sample NxN pages.
 #' @param sample_nxn_asinh_cofactor Cofactor used when `sample_nxn_transform = "asinh"`.
@@ -349,20 +390,28 @@
 #'   APC = rnorm(240, 0.3, 0.3)
 #' )
 #'
+#' # Typical workflow after unmix_samples():
+#' # generate_sample_report(
+#' #   results_df = unmixed,
+#' #   M = ctrl$M,
+#' #   output_file = "Sample_QC_Report.pdf"
+#' # )
+#'
 #' pdf_file <- tempfile(fileext = ".pdf")
-#' generate_qc_report(results_df = results_df, M = M_demo, output_file = pdf_file)
+#' generate_sample_report(results_df = results_df, M = M_demo, output_file = pdf_file)
 #' file.exists(pdf_file)
-generate_qc_report <- function(results_df,
-                               M,
-                               output_file = NULL,
-                               res_list = NULL,
-                               png_dir = NULL,
-                               pd = NULL,
-                               sample_nxn_rows_per_page = 10,
-                               sample_nxn_max_points = 3000,
-                               sample_nxn_transform = c("none", "asinh"),
-                               sample_nxn_asinh_cofactor = 150,
-                               nxn_all_samples = FALSE) {
+generate_sample_report <- function(results_df,
+                                   M = NULL,
+                                   unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls", "scc_reference_matrix.csv"),
+                                   output_file = NULL,
+                                   res_list = NULL,
+                                   png_dir = NULL,
+                                   pd = NULL,
+                                   sample_nxn_rows_per_page = 10,
+                                   sample_nxn_max_points = 3000,
+                                   sample_nxn_transform = c("none", "asinh"),
+                                   sample_nxn_asinh_cofactor = 150,
+                                   nxn_all_samples = FALSE) {
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the QC PDF report.", call. = FALSE)
     }
@@ -373,7 +422,20 @@ generate_qc_report <- function(results_df,
         warning("png_dir is deprecated and ignored; report output is PDF-only.")
     }
 
-    M <- .as_reference_matrix(M, "M")
+    if (!is.null(M)) {
+        M <- .as_reference_matrix(M, "M")
+    } else if (!is.null(unmixing_matrix_file)) {
+        if (!file.exists(unmixing_matrix_file)) {
+            stop("unmixing_matrix_file not found: ", unmixing_matrix_file)
+        }
+        M <- .read_unmixing_matrix_csv(unmixing_matrix_file)
+        M <- .as_reference_matrix(M, "M")
+    }
+
+    if (is.null(M)) {
+        stop("No reference matrix provided. Supply either M or a valid unmixing_matrix_file.")
+    }
+
     if (is.null(pd)) {
         pd_attr <- attr(M, "detector_pd")
         if (is.data.frame(pd_attr)) {
@@ -381,7 +443,7 @@ generate_qc_report <- function(results_df,
         }
     }
 
-    results_df <- as.data.frame(results_df, stringsAsFactors = FALSE)
+    results_df <- .normalize_qc_report_results_df(results_df)
     if (!("File" %in% colnames(results_df))) {
         stop("results_df must contain a 'File' column.")
     }

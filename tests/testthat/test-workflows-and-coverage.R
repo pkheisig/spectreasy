@@ -115,13 +115,14 @@ test_that("build_reference_matrix works on synthetic SCC files", {
 test_that("autounmix_controls runs end-to-end on synthetic SCC files", {
     wf <- make_synthetic_workflow()
     output_dir <- tempfile("spectreasy_covr_auto_")
+    control_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
 
     ctrl <- spectreasy::autounmix_controls(
         scc_dir = wf$scc_dir,
-        control_df = wf$control_df,
+        control_file = control_csv,
         output_dir = output_dir,
         unmix_method = "OLS",
-        build_qc_plots = FALSE,
         seed = 1,
         subsample_n = 400
     )
@@ -142,11 +143,10 @@ test_that("autounmix_controls handles WLS output and exclude_af branch", {
 
     ctrl <- spectreasy::autounmix_controls(
         scc_dir = wf$scc_dir,
-        control_df = control_csv,
+        control_file = control_csv,
         output_dir = output_dir,
         exclude_af = TRUE,
         unmix_method = "WLS",
-        build_qc_plots = FALSE,
         seed = 1,
         subsample_n = 400
     )
@@ -166,21 +166,19 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
     flowCore::write.FCS(make_synthetic_ff(c("B1-A" = 900, "YG1-A" = 150)), file.path(sample_dir, "sample_a.fcs"))
     flowCore::write.FCS(make_synthetic_ff(c("B1-A" = 180, "YG1-A" = 1100)), file.path(sample_dir, "sample_b.fcs"))
 
-    W <- spectreasy::derive_unmixing_matrix(
-        spectreasy::build_reference_matrix(
-            input_folder = wf$scc_dir,
-            control_df = wf$control_df,
-            save_qc_plots = FALSE,
-            seed = 1,
-            subsample_n = 400
-        ),
-        method = "OLS"
+    M <- spectreasy::build_reference_matrix(
+        input_folder = wf$scc_dir,
+        control_df = wf$control_df,
+        save_qc_plots = FALSE,
+        seed = 1,
+        subsample_n = 400
     )
 
     call_result <- withVisible(
         spectreasy::unmix_samples(
             sample_dir = sample_dir,
-            W = W,
+            M = M,
+            method = "OLS",
             output_dir = output_dir
         )
     )
@@ -195,14 +193,15 @@ test_that("generate_scc_report writes a PDF from synthetic SCC files", {
     wf <- make_synthetic_workflow()
     output_pdf <- tempfile(fileext = ".pdf")
     qc_plot_dir <- tempfile("spectreasy_covr_scc_report_")
+    control_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
 
     out <- spectreasy::generate_scc_report(
         scc_dir = wf$scc_dir,
         output_file = output_pdf,
-        control_df = wf$control_df,
+        control_file = control_csv,
         qc_plot_dir = qc_plot_dir,
         save_qc_pngs = TRUE,
-        include_ssm = TRUE,
         seed = 1,
         subsample_n = 400
     )
@@ -217,13 +216,14 @@ test_that("generate_scc_report does not retain QC PNGs unless requested", {
     wf <- make_synthetic_workflow()
     output_pdf <- tempfile(fileext = ".pdf")
     qc_plot_dir <- tempfile("spectreasy_scc_report_no_retain_")
+    control_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
 
     out <- spectreasy::generate_scc_report(
         scc_dir = wf$scc_dir,
         output_file = output_pdf,
-        control_df = wf$control_df,
+        control_file = control_csv,
         qc_plot_dir = qc_plot_dir,
-        include_ssm = FALSE,
         seed = 1,
         subsample_n = 400
     )

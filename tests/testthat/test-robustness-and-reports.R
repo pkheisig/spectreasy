@@ -57,7 +57,64 @@ test_that("calculate_nps excludes AF markers by default", {
     expect_false(any(grepl("^AF($|_)", nps$Marker, ignore.case = TRUE)))
 })
 
-test_that("generate_qc_report has stable pages and no recommendation page", {
+test_that("generate_sample_report accepts unmix_samples results directly", {
+    M <- matrix(c(
+        1.0, 0.2, 0.1,
+        0.1, 1.0, 0.2,
+        0.2, 0.2, 1.0
+    ), nrow = 3, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE", "APC")
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A")
+
+    simulate_sample <- function(dominant_marker, M, n_cells = 60) {
+        markers <- rownames(M)
+        marker_signal <- matrix(rexp(n_cells * length(markers), rate = 8), ncol = length(markers))
+        colnames(marker_signal) <- markers
+        marker_signal[, dominant_marker] <- rexp(n_cells, rate = 0.6) + 2
+        raw_signal <- marker_signal %*% M + matrix(rnorm(n_cells * ncol(M), sd = 0.03), ncol = ncol(M))
+        exprs_mat <- cbind(
+            raw_signal,
+            Time = seq_len(n_cells),
+            "FSC-A" = rnorm(n_cells, mean = 90000, sd = 7000),
+            "SSC-A" = rnorm(n_cells, mean = 45000, sd = 5000)
+        )
+        colnames(exprs_mat)[seq_len(ncol(M))] <- colnames(M)
+        flowCore::flowFrame(exprs_mat)
+    }
+
+    toy_fs <- flowCore::flowSet(list(
+        FITC_sample = simulate_sample("FITC", M),
+        PE_sample = simulate_sample("PE", M)
+    ))
+
+    unmixed <- spectreasy::unmix_samples(
+        toy_fs,
+        M = M,
+        method = "OLS",
+        output_dir = tempdir(),
+        write_fcs = FALSE
+    )
+
+    expect_s3_class(unmixed, "spectreasy_unmixed_results")
+
+    combined <- as.data.frame(unmixed)
+    expect_true("File" %in% colnames(combined))
+    expect_equal(sort(unique(combined$File)), c("FITC_sample", "PE_sample"))
+
+    pdf_out <- tempfile(fileext = ".pdf")
+    expect_no_error(
+        suppressMessages(
+            spectreasy::generate_sample_report(
+                results_df = unmixed,
+                M = M,
+                output_file = pdf_out
+            )
+        )
+    )
+    expect_true(file.exists(pdf_out))
+})
+
+test_that("generate_sample_report has stable pages and no recommendation page", {
     skip_if_not_installed("pdftools")
 
     set.seed(1)
@@ -79,7 +136,7 @@ test_that("generate_qc_report has stable pages and no recommendation page", {
     colnames(M) <- c("B1-A", "YG1-A", "R1-A")
 
     pdf_out <- tempfile(fileext = ".pdf")
-    spectreasy::generate_qc_report(results_df = results_df, M = M, output_file = pdf_out)
+    spectreasy::generate_sample_report(results_df = results_df, M = M, output_file = pdf_out)
 
     expect_true(file.exists(pdf_out))
 
@@ -93,7 +150,7 @@ test_that("generate_qc_report has stable pages and no recommendation page", {
     expect_false(grepl("Good: populations remain compact", txt, fixed = TRUE))
 })
 
-test_that("generate_qc_report can include NxN pages for all samples", {
+test_that("generate_sample_report can include NxN pages for all samples", {
     skip_if_not_installed("pdftools")
 
     set.seed(1)
@@ -115,7 +172,7 @@ test_that("generate_qc_report can include NxN pages for all samples", {
     colnames(M) <- c("B1-A", "YG1-A", "R1-A")
 
     pdf_out <- tempfile(fileext = ".pdf")
-    spectreasy::generate_qc_report(
+    spectreasy::generate_sample_report(
         results_df = results_df,
         M = M,
         output_file = pdf_out,
@@ -128,4 +185,284 @@ test_that("generate_qc_report can include NxN pages for all samples", {
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))
     expect_true(grepl("Sample NxN Scatter Matrix: SampleB", txt, fixed = TRUE))
+})
+
+test_that("generate_sample_report loads M from unmixing_matrix_file", {
+    set.seed(1)
+    n <- 120
+    results_df <- data.frame(
+        FITC = rnorm(n, 0, 0.3),
+        PE = rnorm(n, 0, 0.4),
+        AF = rnorm(n, 0, 0.2),
+        File = rep(c("SampleA", "SampleB"), each = n / 2),
+        check.names = FALSE
+    )
+
+    M <- matrix(c(
+        1.0, 0.2, 0.1,
+        0.1, 1.0, 0.2,
+        0.2, 0.2, 1.0
+    ), nrow = 3, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE", "AF")
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A")
+
+    csv_file <- tempfile(fileext = ".csv")
+    M_df <- as.data.frame(M, check.names = FALSE)
+    M_df$Marker <- rownames(M)
+    M_df <- M_df[, c("Marker", setdiff(colnames(M_df), "Marker")), drop = FALSE]
+    utils::write.csv(M_df, csv_file, row.names = FALSE, quote = TRUE)
+
+    pdf_out <- tempfile(fileext = ".pdf")
+    expect_no_error(
+        suppressMessages(
+            spectreasy::generate_sample_report(
+                results_df = results_df,
+                unmixing_matrix_file = csv_file,
+                output_file = pdf_out
+            )
+        )
+    )
+    expect_true(file.exists(pdf_out))
+})
+
+test_that("per-cell AF selection unmix selects exactly one AF band per cell", {
+    # Create reference matrix with multiple AF bands
+    M <- matrix(c(
+        1.0, 0.2, 0.1, 0.05,
+        0.1, 1.0, 0.2, 0.05,
+        0.2, 0.2, 1.0, 0.05,
+        0.05, 0.05, 0.05, 1.0
+    ), nrow = 4, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE", "AF", "AF_2")
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A", "V1-A")
+
+    # Construct some cells where we know which AF band they should select
+    # Cell 1: high FITC, some PE, high AF (R1-A)
+    # Cell 2: high PE, some FITC, high AF_2 (V1-A)
+    exprs <- matrix(c(
+        100, 10, 50, 0,
+        10, 100, 0, 50
+    ), nrow = 2, byrow = TRUE)
+    colnames(exprs) <- c("B1-A", "YG1-A", "R1-A", "V1-A")
+    
+    exprs_full <- cbind(
+        exprs,
+        Time = c(1, 2),
+        "FSC-A" = c(90000, 92000),
+        "SSC-A" = c(45000, 46000)
+    )
+    ff <- flowCore::flowFrame(exprs_full)
+
+    # Run calc_residuals with different methods: OLS, WLS, NNLS
+    for (m in c("OLS", "WLS", "NNLS")) {
+        res <- spectreasy::calc_residuals(ff, M, method = m)
+        
+        # Verify that for each cell, at most one AF band is non-zero
+        expect_equal(nrow(res), 2)
+        
+        # For Cell 1
+        expect_true(sum(res[1, c("AF", "AF_2")] != 0) <= 1)
+        # For Cell 2
+        expect_true(sum(res[2, c("AF", "AF_2")] != 0) <= 1)
+    }
+})
+
+test_that("unmix_samples can dynamically construct reference matrix and handle multi-AF", {
+    # 1. Create a temporary SCC directory
+    scc_dir <- tempfile("scc_dir_")
+    dir.create(scc_dir)
+    
+    # 2. Generate a flowFrame with some channels: "B1-A", "YG1-A"
+    # FITC control
+    fitc_exprs <- cbind(
+        "B1-A" = rnorm(100, mean = 1000, sd = 50),
+        "YG1-A" = rnorm(100, mean = 10, sd = 2),
+        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+    )
+    fitc_ff <- flowCore::flowFrame(fitc_exprs)
+    flowCore::write.FCS(fitc_ff, file.path(scc_dir, "FITC (Beads).fcs"))
+    
+    # PE control
+    pe_exprs <- cbind(
+        "B1-A" = rnorm(100, mean = 10, sd = 2),
+        "YG1-A" = rnorm(100, mean = 1500, sd = 75),
+        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+    )
+    pe_ff <- flowCore::flowFrame(pe_exprs)
+    flowCore::write.FCS(pe_ff, file.path(scc_dir, "PE (Beads).fcs"))
+    
+    # Unstained / AF control
+    af_exprs <- cbind(
+        "B1-A" = rnorm(100, mean = 15, sd = 3),
+        "YG1-A" = rnorm(100, mean = 15, sd = 3),
+        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+    )
+    af_ff <- flowCore::flowFrame(af_exprs)
+    flowCore::write.FCS(af_ff, file.path(scc_dir, "Unstained (Cells).fcs"))
+    
+    # 3. Create a control_file mapping
+    control_df <- data.frame(
+        filename = c("FITC (Beads).fcs", "PE (Beads).fcs", "Unstained (Cells).fcs"),
+        fluorophore = c("FITC", "PE", "AF"),
+        marker = c("CD4", "CD8", "Autofluorescence"),
+        channel = c("B1-A", "YG1-A", "B1-A"),
+        control.type = c("beads", "beads", "cells"),
+        universal.negative = c("", "", ""),
+        large.gate = c("", "", ""),
+        is.viability = c("", "", ""),
+        stringsAsFactors = FALSE
+    )
+    control_file <- tempfile(fileext = ".csv")
+    write.csv(control_df, control_file, row.names = FALSE)
+    
+    # 4. Create sample flowSet to unmix
+    sample_exprs <- matrix(c(
+        500, 200, 1, 100000, 50000,
+        100, 800, 2, 100000, 50000
+    ), nrow = 2, byrow = TRUE)
+    colnames(sample_exprs) <- c("B1-A", "YG1-A", "Time", "FSC-A", "SSC-A")
+    sample_ff <- flowCore::flowFrame(sample_exprs)
+    toy_fs <- flowCore::flowSet(list(Sample1 = sample_ff))
+    
+    # 5. Call unmix_samples with scc_dir and af_n_bands = 2
+    # Ensure unmixing_matrix_file points to a non-existent temp file so it triggers build
+    temp_matrix_file <- tempfile(fileext = ".csv")
+    
+    unmixed <- spectreasy::unmix_samples(
+        sample_dir = toy_fs,
+        unmixing_matrix_file = temp_matrix_file,
+        scc_dir = scc_dir,
+        control_file = control_file,
+        af_n_bands = 2,
+        write_fcs = FALSE,
+        return_type = "list"
+    )
+    
+    expect_s3_class(unmixed, "spectreasy_unmixed_results")
+    unmixed_df <- as.data.frame(unmixed)
+    
+    # Check that columns FITC, PE, AF, and AF_2 exist in the output
+    expect_true(all(c("FITC", "PE", "AF", "AF_2") %in% colnames(unmixed_df)))
+    
+    # Verify that selection unmix worked: for each cell, at most one of AF and AF_2 is non-zero
+    expect_true(sum(unmixed_df[1, c("AF", "AF_2")] != 0) <= 1)
+    expect_true(sum(unmixed_df[2, c("AF", "AF_2")] != 0) <= 1)
+})
+
+test_that("autounmix_controls supports af_n_bands and include_multi_af", {
+    scc_dir <- tempfile("scc_dir_controls_")
+    dir.create(scc_dir)
+    
+    fitc_exprs <- cbind(
+        "B1-A" = rnorm(100, mean = 1000, sd = 50),
+        "YG1-A" = rnorm(100, mean = 10, sd = 2),
+        "V1-A" = rnorm(100, mean = 5, sd = 1),
+        "R1-A" = rnorm(100, mean = 5, sd = 1),
+        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+    )
+    flowCore::write.FCS(flowCore::flowFrame(fitc_exprs), file.path(scc_dir, "FITC (Beads).fcs"))
+    
+    pe_exprs <- cbind(
+        "B1-A" = rnorm(100, mean = 10, sd = 2),
+        "YG1-A" = rnorm(100, mean = 1500, sd = 75),
+        "V1-A" = rnorm(100, mean = 5, sd = 1),
+        "R1-A" = rnorm(100, mean = 5, sd = 1),
+        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+    )
+    flowCore::write.FCS(flowCore::flowFrame(pe_exprs), file.path(scc_dir, "PE (Beads).fcs"))
+    
+    af_exprs <- cbind(
+        "B1-A" = rnorm(100, mean = 15, sd = 3),
+        "YG1-A" = rnorm(100, mean = 15, sd = 3),
+        "V1-A" = rnorm(100, mean = 15, sd = 3),
+        "R1-A" = rnorm(100, mean = 15, sd = 3),
+        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+    )
+    flowCore::write.FCS(flowCore::flowFrame(af_exprs), file.path(scc_dir, "Unstained (Cells).fcs"))
+    
+    control_df <- data.frame(
+        filename = c("FITC (Beads).fcs", "PE (Beads).fcs", "Unstained (Cells).fcs"),
+        fluorophore = c("FITC", "PE", "AF"),
+        marker = c("CD4", "CD8", "Autofluorescence"),
+        channel = c("B1-A", "YG1-A", "B1-A"),
+        control.type = c("beads", "beads", "cells"),
+        universal.negative = c("", "", ""),
+        large.gate = c("", "", ""),
+        is.viability = c("", "", ""),
+        stringsAsFactors = FALSE
+    )
+    control_file <- tempfile(fileext = ".csv")
+    write.csv(control_df, control_file, row.names = FALSE)
+    
+    output_dir <- tempfile("controls_out_")
+    
+    res <- spectreasy::autounmix_controls(
+        scc_dir = scc_dir,
+        control_file = control_file,
+        auto_create_control = FALSE,
+        output_dir = output_dir,
+        af_n_bands = 2,
+        include_multi_af = FALSE
+    )
+    
+    expect_true(all(c("FITC", "PE", "AF", "AF_2") %in% rownames(res$M)))
+})
+
+test_that("Plumber gui_api load_matrix and save_matrix filter and merge AF rows", {
+    api_file <- system.file("api/gui_api.R", package = "spectreasy")
+    if (api_file == "") {
+        api_file <- "../../inst/api/gui_api.R"
+    }
+    
+    expect_true(file.exists(api_file))
+    
+    pr <- plumber::plumb(api_file)
+    load_matrix_fn <- pr$routes$load_matrix$getFunc()
+    save_matrix_fn <- pr$routes$save_matrix$getFunc()
+    
+    tmp_matrix_dir <- tempfile("matrix_dir_")
+    dir.create(tmp_matrix_dir)
+    
+    old_opt <- getOption("spectreasy.matrix_dir")
+    options(spectreasy.matrix_dir = tmp_matrix_dir)
+    on.exit(options(spectreasy.matrix_dir = old_opt), add = TRUE)
+    
+    dummy_csv <- data.frame(
+        Marker = c("FITC", "PE", "AF", "AF_2"),
+        "B1-A" = c(1, 0.1, 0.05, 0.06),
+        "YG1-A" = c(0.05, 1, 0.04, 0.03),
+        check.names = FALSE,
+        stringsAsFactors = FALSE
+    )
+    write.csv(dummy_csv, file.path(tmp_matrix_dir, "ref_matrix.csv"), row.names = FALSE)
+    
+    loaded_df <- load_matrix_fn("ref_matrix.csv")
+    
+    expect_equal(nrow(loaded_df), 2)
+    expect_equal(loaded_df$Marker, c("FITC", "PE"))
+    
+    loaded_df[loaded_df$Marker == "PE", "B1-A"] <- 0.15
+    
+    req <- new.env()
+    req$postBody <- jsonlite::toJSON(list(
+        filename = "ref_matrix.csv",
+        matrix_json = loaded_df
+    ), auto_unbox = TRUE)
+    
+    res <- save_matrix_fn(req)
+    expect_true(res$success)
+    
+    saved_df <- read.csv(file.path(tmp_matrix_dir, "ref_matrix.csv"), stringsAsFactors = FALSE, check.names = FALSE)
+    
+    expect_equal(nrow(saved_df), 4)
+    expect_true(all(c("FITC", "PE", "AF", "AF_2") %in% saved_df$Marker))
+    expect_equal(saved_df[saved_df$Marker == "PE", "B1-A"], 0.15)
+    expect_equal(saved_df[saved_df$Marker == "AF", "B1-A"], 0.05)
+    expect_equal(saved_df[saved_df$Marker == "AF_2", "YG1-A"], 0.03)
 })
