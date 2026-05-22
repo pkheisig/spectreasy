@@ -223,7 +223,9 @@ M <- build_reference_matrix(
 
 This saves gating/spectrum plots to `gating_plots/` and returns the reference matrix in memory.
 
-For per-cell AF extraction with multiple AF basis signatures, increase `af_n_bands` (for example `af_n_bands = 10`).
+For per-cell AF extraction with multiple AF basis signatures, increase `af_n_bands` (for example `af_n_bands = 10`). You can also include extra AF controls from an external directory by setting `include_multi_af = TRUE`.
+
+> **Note:** Performing per-cell AF matching with a high number of bands (e.g., `af_n_bands = 100`) is computationally intensive and can take a long time on large datasets. If performance is a concern, consider using a lower number of bands (e.g., 5 to 10) or relying on standard single-signature AF unmixing.
 
 For reproducible SCC gating/subsampling and AF-band extraction, set `seed` in `generate_scc_report()`, `build_reference_matrix()`, or `autounmix_controls()`.
 
