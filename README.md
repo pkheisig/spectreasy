@@ -1,4 +1,4 @@
-# spectreasy: Full Spectrum Flow Cytometry Quality Control <img src="man/figures/logo.png" align="right" height="139" />
+# spectreasy: Full Spectrum Flow Cytometry Quality Control
 
 `spectreasy` is an R package for reviewing single-color controls, building spectral reference matrices, and unmixing experimental samples.
 
