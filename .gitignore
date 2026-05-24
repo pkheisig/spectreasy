@@ -16,6 +16,8 @@ pi-sessions-*.html
 *.png
 *.pdf
 !man/figures/*.png
+!inst/gui/public/logo.png
+!inst/gui/dist/logo.png
 
 # R specific
 .Rproj.user

@@ -1,4 +1,4 @@
-# spectreasy: Full Spectrum Flow Cytometry Quality Control
+# spectreasy: Full Spectrum Flow Cytometry Quality Control <img src="man/figures/logo.png" align="right" height="139" />
 
 `spectreasy` is an R package for reviewing single-color controls, building spectral reference matrices, and unmixing experimental samples.
 
@@ -30,332 +30,334 @@ remotes::install_github("pkheisig/spectreasy")
 
 `remotes` is used here rather than `devtools` because only GitHub installation is needed.
 
-## Example data
-
-`spectreasy_example_data()` downloads the example FCS dataset from the GitHub
-release asset matching the installed package version, caches it locally, and
-unzips it automatically.
-
-```r
-paths <- spectreasy_example_data()
-paths$scc_dir
-paths$sample_dir
-
-local_paths <- spectreasy_example_data(dest_dir = getwd())
-local_paths$sample_dir
-```
-
 ---
 
-## Project Setup
+# Example workflow
 
-Organize your data with this folder structure:
+This walkthrough demonstrates the primary `spectreasy` workflow on the packaged example dataset. The example project contains:
 
-```
-my_project/
-├── scc/                          # Single-color control FCS files
-│   ├── FITC_beads.fcs
-│   ├── PE_beads.fcs
-│   └── Unstained.fcs             # Autofluorescence control
-├── samples/                      # Experimental FCS files
-│   └── Sample1.fcs
-└── fcs_mapping.csv          # Control file mapping (optional)
-```
+- single-color controls in `scc/`
+- one experimental sample in `sample/sample.fcs`
 
-### Control File
+The user-facing workflow is:
 
-<img width="1102" height="201" alt="Screenshot 2026-02-20 at 11 00 23" src="https://github.com/user-attachments/assets/a8c5e253-e1c8-4592-8ea2-e0f404932a54" />
+1. download the example data into a project directory
+2. run `autounmix_controls()`
+3. review and supplement the generated `fcs_mapping.csv`
+4. confirm the control file in the console so `autounmix_controls()` can finish
+5. run `unmix_samples()`
+6. generate QC reports for the controls and unmixed samples (optional)
 
+## 1. Download the example data
 
-The control file maps FCS filenames to fluorophores and markers. Generate it with `spectreasy`:
-
-```r
-create_control_file(
-  input_folder = "scc",
-  cytometer = "Aurora",
-  output_file = "fcs_mapping.csv"
-)
-```
-
-Or create manually with columns: `filename`, `fluorophore`, `marker`, `channel` (`universal.negative` is optional).
-
-For auto-generation, `spectreasy` uses shipped dictionaries:
-- `inst/extdata/fluorophore_dictionary.csv`
-- `inst/extdata/marker_dictionary.csv`
-
-Logic:
-- detect `fluorophore` and `marker` from filename aliases first
-- if no fluorophore is detected, fallback to peak-channel mapping (for example `YG1 -> PE`, `UV2 -> BUV395`)
-- if a file is unlabeled (no marker/fluor match) but matches cytometer AF-channel behavior, it is auto-tagged as `AF`
-- if filename contains viability cues (`live`, `dead`, `viability`), `is.viability` is auto-set to `TRUE`
-- if no marker is detected, marker is left empty
-
----
-
-## Workflow
-
-### Path A: Recommended Quick Workflow
-
-#### Step 1: Generate the SCC review report with `generate_scc_report()`:
+`spectreasy_example_data()` downloads the example archive once, caches it under the R user cache, and can copy the extracted files into a project directory for local work.
 
 ```r
 library(spectreasy)
 
-generate_scc_report(
-  scc_dir = "scc",
-  control_file = "fcs_mapping.csv",
-  cytometer = "Aurora",
-  output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf"),
-  seed = 1
-)
+project_dir <- file.path(tempdir(), "spectreasy_vignette_project")
+if (dir.exists(project_dir)) {
+  unlink(project_dir, recursive = TRUE, force = TRUE)
+}
+
+example_paths <- spectreasy_example_data(dest_dir = project_dir)
+
+list.files(project_dir, recursive = TRUE)
+#> [1] "sample/sample.fcs"               "scc/Alexa Fluor 700 (Beads).fcs"
+#> [3] "scc/BUV395 (Beads).fcs"          "scc/BV510 (Beads).fcs"          
+#> [5] "scc/FITC (Beads).fcs"            "scc/LIVE DEAD NIR (Cells).fcs"  
+#> [7] "scc/PerCP-Cy5.5 (Beads).fcs"     "scc/Unstained (Cells).fcs"
 ```
 
-Use this report to inspect each SCC before unmixing. The PDF includes:
-- FSC/SSC auto-gating per control
-- peak-channel histogram gating per control
-- per-control spectrum distributions
-- global reference spectra overlay
-- spectral spread matrix
+For the remainder of this walkthrough, the commands are shown as they would be run from the project directory created above.
 
-AF handling in reports: AF basis rows (`AF`, `AF_2`, ...) are excluded from spectra overlays, spectral spread matrix pages, and NPS pages to keep summaries focused on non-AF biological channels.
+## 2. Start the control-stage workflow
 
-By default, the report does not retain intermediate PNG QC assets. If you want to keep them, set `save_qc_pngs = TRUE` and choose `qc_plot_dir`.
-
-#### Step 2: Run controls with `autounmix_controls()`:
+Run `autounmix_controls()` first. If `fcs_mapping.csv` is missing, `auto_create_control = TRUE` creates it automatically and then pauses for review.
 
 ```r
-ctrl <- autounmix_controls(
+setwd(project_dir)
+
+autounmix_controls(
   scc_dir = "scc",
-  control_file = "fcs_mapping.csv",
   auto_create_control = TRUE,
   cytometer = "Aurora",
   auto_unknown_fluor_policy = "by_channel",
-  output_dir = "spectreasy_outputs/autounmix_controls",
-  exclude_af = FALSE,                 # set TRUE to ignore unstained/AF controls
   unmix_method = "WLS",
-  af_n_bands = 5,                     # optional: derive multiple AF basis signatures
-  unmix_scatter_panel_size_mm = 30,
-  seed = 1
+  unmix_scatter_panel_size_mm = 30
 )
 ```
 
-If `fcs_mapping.csv` is missing and `auto_create_control = TRUE`, `autounmix_controls()` auto-generates a control file (filename, marker, fluorophore, and detected peak channel), then asks for confirmation before continuing.
-`cytometer` is used for channel-aware fluorophore inference via spectreasy's shipped dictionaries and detector metadata.
+After the control file is created, `autounmix_controls()` prints a confirmation prompt and waits:
 
-For newly auto-created files:
-- `control.type` is auto-detected from filename tokens (`beads`/`cells`) when possible; AF rows are always `cells`
-- `is.viability` is auto-detected from filename cues (`live`/`dead`/`viability`) when possible
-- `universal.negative` is left empty by default for all rows
-- `autounmix_controls()` pauses and asks for `y/n` confirmation so you can review/edit the file first
-
-`autounmix_controls()` writes:
-- `scc_reference_matrix.csv`
-- `scc_spectra.png` (reference spectra overlay)
-- `scc_unmixing_matrix.png` and `scc_unmixing_matrix.csv`
-- `scc_unmixing_scatter_matrix.png` (lower-triangle scatter matrix, one single-stain file per row, with x=0/y=0 guides)
-- `fsc_ssc/`, `histogram/`, and `spectrum/` per-control QC PNGs
-
-Note: `scc_unmixing_matrix.csv` is now exported using the selected `unmix_method` (`OLS`, `WLS`, or `NNLS`).  
-For `NNLS`, the exported static matrix is a deterministic linear proxy; exact NNLS behavior remains available via dynamic unmixing (`unmix_samples(..., M = ..., method = "NNLS")`).
-
-Set `unmix_scatter_panel_size_mm` higher (for example `40`) if you want larger per-panel scatter plots.
-
-`autounmix_controls()` also runs a strict preflight check before processing:
-- every SCC file must be mapped in `fcs_mapping.csv`
-- non-AF rows must define a valid `channel`
-- if `universal.negative` is present, values for active SCC rows must be empty/keyword or reference a file present in your selected SCC/AF directories
-
-If you want to keep an unstained/AF file in the SCC folder but leave it out of the control-stage matrix, set `exclude_af = TRUE`. This safely skips AF/unstained rows even when no AF row exists in `fcs_mapping.csv`.
-
----
-
-#### Step 3: Launch the GUI if you need manual matrix adjustment.
-
-```r
-launch_gui(
-  matrix_dir = "spectreasy_outputs/autounmix_controls",
-  samples_dir = "samples"
-)
+```text
+Proceed with autounmix_controls now? [y/n]:
 ```
 
-This starts both the backend API and bundled frontend on one port (default `http://localhost:8000`) and opens it in your browser.
+## 3. Review and supplement `fcs_mapping.csv`
 
-#### Step 4: Unmix samples using the reference matrix generated in the autounmix_controls step.
+Open the generated `fcs_mapping.csv` in the project directory and complete the panel annotation before continuing. At minimum, review these columns:
+
+- `fluorophore`
+- `marker`
+- `channel`
+- `control.type`
+- `is.viability`
+
+For the example dataset, the reviewed control file looks like this:
+
+|filename                    |fluorophore     |marker           |channel |control.type |universal.negative |large.gate |is.viability |
+|:---------------------------|:---------------|:----------------|:-------|:------------|:------------------|:----------|:------------|
+|Alexa Fluor 700 (Beads).fcs |Alexa Fluor 700 |CD3              |R4-A    |beads        |                   |           |             |
+|BUV395 (Beads).fcs          |BUV395          |CD45RA           |UV2-A   |beads        |                   |           |             |
+|BV510 (Beads).fcs           |BV510           |CD27             |V7-A    |beads        |                   |           |             |
+|FITC (Beads).fcs            |FITC            |CD8              |B2-A    |beads        |                   |           |             |
+|LIVE DEAD NIR (Cells).fcs   |LIVE DEAD NIR   |Live             |R7-A    |cells        |                   |           |TRUE         |
+|PerCP-Cy5.5 (Beads).fcs     |PerCP-Cy5.5     |CCR7             |B9-A    |beads        |                   |           |             |
+|Unstained (Cells).fcs       |AF              |Autofluorescence |UV7-A   |cells        |                   |           |             |
+
+## 4. Return to the console and confirm with `y`
+
+Once `fcs_mapping.csv` has been reviewed and saved, return to the console where `autounmix_controls()` is waiting and enter:
+
+```text
+y
+```
+
+The same `autounmix_controls()` call then continues and writes the control-stage outputs to `spectreasy_outputs/autounmix_controls/`.
+
+```
+#>  [1] "fsc_ssc/Alexa Fluor 700 (Beads)_fsc_ssc.png"    
+#>  [2] "fsc_ssc/BUV395 (Beads)_fsc_ssc.png"             
+#>  [3] "fsc_ssc/BV510 (Beads)_fsc_ssc.png"              
+#>  [4] "fsc_ssc/FITC (Beads)_fsc_ssc.png"               
+#>  [5] "fsc_ssc/LIVE DEAD NIR (Cells)_fsc_ssc.png"      
+#>  [6] "fsc_ssc/PerCP-Cy5.5 (Beads)_fsc_ssc.png"        
+#>  [7] "histogram/Alexa Fluor 700 (Beads)_histogram.png"
+#>  [8] "histogram/BUV395 (Beads)_histogram.png"         
+#>  [9] "histogram/BV510 (Beads)_histogram.png"          
+#> [10] "histogram/FITC (Beads)_histogram.png"           
+#> [11] "histogram/LIVE DEAD NIR (Cells)_histogram.png"  
+#> [12] "histogram/PerCP-Cy5.5 (Beads)_histogram.png"    
+#> [13] "scc_reference_matrix.csv"                       
+#> [14] "scc_spectra.png"                                
+#> [15] "scc_unmixed/Alexa Fluor 700 (Beads)_unmixed.fcs"
+#> [16] "scc_unmixed/BUV395 (Beads)_unmixed.fcs"         
+#> [17] "scc_unmixed/BV510 (Beads)_unmixed.fcs"          
+#> [18] "scc_unmixed/FITC (Beads)_unmixed.fcs"           
+#> [19] "scc_unmixed/LIVE DEAD NIR (Cells)_unmixed.fcs"  
+#> [20] "scc_unmixed/PerCP-Cy5.5 (Beads)_unmixed.fcs"    
+#> [21] "scc_unmixed/Unstained (Cells)_unmixed.fcs"      
+#> [22] "scc_unmixing_matrix.csv"                        
+#> [23] "scc_unmixing_matrix.png"                        
+#> [24] "scc_unmixing_scatter_matrix.png"                
+#> [25] "spectrum/Alexa Fluor 700 (Beads)_spectrum.png"  
+#> [26] "spectrum/BUV395 (Beads)_spectrum.png"           
+#> [27] "spectrum/BV510 (Beads)_spectrum.png"            
+#> [28] "spectrum/FITC (Beads)_spectrum.png"             
+#> [29] "spectrum/LIVE DEAD NIR (Cells)_spectrum.png"    
+#> [30] "spectrum/PerCP-Cy5.5 (Beads)_spectrum.png"
+```
+
+Key outputs from this step include:
+
+- `fcs_mapping.csv`
+- `spectreasy_outputs/autounmix_controls/scc_reference_matrix.csv`
+- `spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv`
+- `spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.png`
+- `spectreasy_outputs/autounmix_controls/scc_unmixing_scatter_matrix.png`
+- `spectreasy_outputs/autounmix_controls/fsc_ssc/*.png`
+- `spectreasy_outputs/autounmix_controls/histogram/*.png`
+- `spectreasy_outputs/autounmix_controls/spectrum/*.png`
+- `spectreasy_outputs/autounmix_controls/scc_unmixed/*.fcs`
+
+The control-stage run also writes visual checks for each single-color control. For one color, the three plots below show the FSC/SSC gate, the peak-channel histogram gate, and the detector spectrum used to build the reference matrix:
+
+<p align="center">
+  <img src="man/figures/vignette_fsc_ssc.png" width="48%" />
+  <img src="man/figures/vignette_histogram.png" width="48%" />
+</p>
+
+<p align="center">
+  <img src="man/figures/vignette_spectrum.png" width="100%" />
+</p>
+
+The same run creates the NxN scatter matrix for the single-color controls. Each row is one control, and each column checks how much signal appears in the other unmixed markers.
+
+<p align="center">
+  <img src="man/figures/vignette_scatter_matrix.png" width="100%" />
+</p>
+
+## 5. Unmix the experimental sample
+
+After the control-stage workflow has completed, unmix the experimental files with `unmix_samples()`. The reference matrix written by `autounmix_controls()` is loaded by default.
 
 ```r
-# Uses saved reference matrix by filepath (default points to autounmix_controls output)
 unmixed <- unmix_samples(
-  sample_dir = "samples",
-  output_dir = "spectreasy_outputs/unmix_samples",
-  write_fcs = TRUE
+  sample_dir = "sample",
+  output_dir = "spectreasy_outputs/unmix_samples"
 )
 ```
 
-When writing unmixed FCS files, primary feature names come from matrix row names (fluorophores).  
-Secondary feature names are taken from `fcs_mapping.csv` (`marker` column) when available.
+For the example dataset, this writes:
 
-For in-memory Bioconductor workflows, `unmix_samples()` also accepts a `flowSet` or
-`SingleCellExperiment`, and can return `return_type = "flowSet"` or
-`return_type = "SingleCellExperiment"`.
+- `spectreasy_outputs/unmix_samples/sample_unmixed.fcs`
 
-### Path B: Step-wise manual workflow
+and returns a named list with one element per sample.
 
-#### Step 1: Build Reference Matrix
+| Alexa Fluor 700|      BUV395|      BV510|       FITC| LIVE DEAD NIR| PerCP-Cy5.5| AF|File   |
+|---------------:|-----------:|----------:|----------:|-------------:|-----------:|--:|:------|
+|     -20.0046965|    78.02875|  596.62462|  324.35267|     167.87073|  -212.23328|  0|sample |
+|     237.2567103|   554.65499| 1072.44707| -929.98170|     297.11526|   -64.63053|  0|sample |
+|       0.7253584|  -340.35803|  172.66508|   10.90629|     -66.49656|  -158.87998|  0|sample |
+|     -58.6181900|    31.38628|  681.66951|  263.65788|      16.26860|  -136.49576|  0|sample |
+|    8403.7958580| 17036.58226| 2769.59003| 1281.26888|      87.47512|  -338.49202|  0|sample |
+|     -74.3725140|  -269.70584|   41.78715|  112.99311|     101.74875|  -145.45809|  0|sample |
 
-Extract spectral signatures from single-color controls:
+## 6. Generate quality control reports (optional)
 
-```r
-library(spectreasy)
+After unmixing, you can generate comprehensive PDF reports to inspect the quality of both the single-color controls and the unmixed experimental samples.
 
-# Load control file (optional but recommended)
-control_df <- read.csv("fcs_mapping.csv", stringsAsFactors = FALSE, check.names = FALSE)
+### Single-Color Control (SCC) Report
 
-# Build reference matrix from SCC files
-M <- build_reference_matrix(
-  input_folder = "scc",
-  output_folder = "gating_plots",
-  save_qc_plots = TRUE,
-  control_df = control_df,
-  default_sample_type = "beads",
-  cytometer = "Aurora",
-  seed = 1
-)
-```
-
-This saves gating/spectrum plots to `gating_plots/` and returns the reference matrix in memory.
-
-For per-cell AF extraction with multiple AF basis signatures, increase `af_n_bands` (for example `af_n_bands = 10`). You can also include extra AF controls from an external directory by setting `include_multi_af = TRUE`.
-
-> **Note:** Performing per-cell AF matching with many bands (for example `af_n_bands = 100`) is computationally intensive and can take a long time on large datasets. The default `af_n_bands = 10` is a practical starting point; increase it only when you need finer AF modeling.
-
-For reproducible SCC gating/subsampling and AF-band extraction, set `seed` in `generate_scc_report()`, `build_reference_matrix()`, or `autounmix_controls()`.
-
----
-
-Play around with gating parameters if auto-gating fails:
+The SCC report reviews gating, peak channels, and signal distributions for each control file.
 
 ```r
-M <- build_reference_matrix(
-  input_folder = "scc",
-  output_folder = "gating_plots",
-  save_qc_plots = TRUE,
-  histogram_pct_beads = 0.98,         # Width of positive gate for beads
-  histogram_pct_cells = 0.35,         # Width of positive gate for cells
-  max_clusters = 6,                   # Maximum GMM clusters
-  gate_contour_beads = 0.999999999,   # Contour level for bead gates
-  gate_contour_cells = 0.95           # Contour level for cell gates
-)
-```
+scc_report_file <- file.path(project_dir, "spectreasy_outputs", "SCC_QC_Report.pdf")
 
----
-
-#### Step 2: Unmix Experimental Samples
-
-Apply the reference matrix to your samples:
-
-```r
-# Dynamic unmixing from reference matrix (M) or saved CSV
-unmixed <- unmix_samples(
-  sample_dir = "samples",
-  M = M,
-  method = "WLS",                     # "OLS", "WLS", or "NNLS"
-  cytometer = "Aurora",
-  output_dir = "spectreasy_outputs/unmix_samples",
-  write_fcs = TRUE
-)
-```
-
-**Methods:**
-- **WLS**: Weighted least squares — accounts for photon-counting noise, best accuracy (default)
-- **OLS**: Ordinary least squares — standard least squares
-- **NNLS**: Non-negative least squares — forces positive abundances
-
----
-
-### Optional: Interactive Matrix Adjustment (before sample unmixing)
-
-For manual fine-tuning, use the web interface.
-
-No terminal setup is required for end users. The bundled GUI is served directly by `launch_gui()`.
-
-#### Launch the GUI:
-
-```r
-launch_gui(
-  matrix_dir = getwd(),
-  samples_dir = "samples"
-)
-```
-
-Developer mode (optional, for GUI hacking):
-
-```r
-launch_gui(
-  matrix_dir = getwd(),
-  samples_dir = "samples",
-  dev_mode = TRUE
-)
-```
-
-#### What To Do After GUI
-
-1. Save your adjusted matrix CSV (typically `scc_reference_matrix.csv`).
-2. Run `unmix_samples(...)` on your experimental samples:
-   - if you edited `scc_reference_matrix.csv` at a custom path, pass `unmixing_matrix_file = "..."`
-   - if you edited a reference matrix in-memory, load it as `M` and pass `M = ...`
-
-### Output Directories
-
-- `spectreasy_outputs/autounmix_controls/scc_reference_matrix.csv`: Reference matrix written by `autounmix_controls(...)`
-- `spectreasy_outputs/autounmix_controls/`: SCC control-stage outputs (`scc_reference_matrix.csv`, `scc_unmixing_matrix.csv/.png`, `scc_spectra.png`, `scc_unmixing_scatter_matrix.png`, and per-control QC PNG folders)
-- `spectreasy_outputs/autounmix_controls/scc_unmixed/`: Unmixed SCC control files (FCS format)
-- `spectreasy_outputs/unmix_samples/`: Unmixed experimental data (FCS format)
-
-If you run the manual path with `build_reference_matrix(...)`, `output_folder` (for example `gating_plots/`) is used for build-stage QC plots.
-
----
-
-## Report APIs
-
-```r
-# SCC review report (recommended before autounmix_controls)
 generate_scc_report(
+  scc_dir = file.path(project_dir, "scc"),
+  cytometer = "Aurora",
+  output_file = scc_report_file,
+  seed = 1
+)
+```
+
+### Samples Report
+
+The overall sample report visualizes unmixing quality across samples, including spectra overlays, detector residuals, spread matrices, and marker scatter plots.
+
+```r
+qc_report_file <- file.path(project_dir, "spectreasy_outputs", "Sample_QC_Report.pdf")
+
+generate_sample_report(
+  results_df = unmixed,
+  M = ctrl$M,
+  output_file = qc_report_file
+)
+```
+
+# Optional steps
+
+The sections below are useful extensions, but they are not required for the core `autounmix_controls()` -> `unmix_samples()` workflow shown above.
+
+## Per-cell Autofluorescence (AF) Extraction
+
+By default, `autounmix_controls()` and `unmix_samples()` use one average autofluorescence signature from the unstained control. If your cells have different AF shapes from cell to cell, you can split AF into several basis signatures.
+
+Use the two multi-AF settings in the control-stage call. `af_n_bands` controls how many AF basis signatures are extracted from the unstained control, while `include_multi_af` tells `spectreasy` to include additional AF controls from the `af/` directory when those files are available.
+
+```r
+ctrl_multi_af <- autounmix_controls(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",
-  output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf")
-)
-
-# Full sample-level report
-generate_sample_report(
-      results_df = do.call(rbind, lapply(unmixed, `[[`, "data")),
-      M = ctrl$M,  # matrix used for unmixing context (optional if the default reference matrix CSV exists)
-      output_file = file.path("spectreasy_outputs", "Sample_QC_Report.pdf"),
-      sample_nxn_rows_per_page = 10,
-      nxn_all_samples = FALSE
+  cytometer = "Aurora",
+  output_dir = "spectreasy_outputs/autounmix_controls_multi_af",
+  unmix_method = "WLS",
+  include_multi_af = TRUE,
+  af_n_bands = 10,
+  seed = 1
 )
 ```
 
-`generate_sample_report()` now adds per-sample NxN marker scatter pages after the
-summary diagnostics. By default it shows 10 marker rows/columns per page block,
-which keeps the panels square and standardized across pages. By default only the
-first sample gets NxN pages; set `nxn_all_samples = TRUE` to include all samples.
+If you want `unmix_samples()` to rebuild the reference matrix dynamically from the SCC files, pass the same two AF settings there as well:
 
----
+```r
+unmixed_multi_af <- unmix_samples(
+  sample_dir = "sample",
+  unmixing_matrix_file = NULL,
+  scc_dir = "scc",
+  control_file = "fcs_mapping.csv",
+  method = "WLS",
+  include_multi_af = TRUE,
+  af_n_bands = 10,
+  output_dir = "spectreasy_outputs/unmix_samples_multi_af"
+)
+```
 
-## QC Plot Interpretation Guide
+`af_n_bands` is like choosing how many AF "flavors" to model. More bands can fit complex AF better, but they also take longer to compute. For large files, start with 5 to 10 bands before trying higher values.
 
-Use the same rule everywhere: first look for consistency across files/markers, then look for outlier structures that repeat in specific channels or populations.
+## Use a reviewed control CSV in non-interactive workflows
 
-- `Reference Spectra Overlay`: Good = each fluorophore shows a clear dominant detector profile with smooth shape. Bad = noisy, flattened, or unexpectedly broad/overlapping profiles. Action = recheck SCC gating, fluorophore labels, and control quality.
-- `FSC/SSC Auto-Gate`: Good = the gate captures the main bead/cell cloud and excludes obvious debris/outliers. Bad = clipped main populations or large debris regions retained. Action = review sample type, scatter distributions, and gating parameters.
-- `Peak-Channel Histogram Gate`: Good = the kept interval isolates the bright positive population. Bad = the interval covers mostly negative/background events or misses the dominant bright peak. Action = verify the control-file channel and the single-stain identity.
-- `Per-Event Spectrum Distribution`: Good = the spectral shape is smooth and concentrated in the expected detector region. Bad = broad, noisy, or multimodal distributions that do not match the assigned fluorophore. Action = inspect labeling, staining quality, and instrument setup.
-- `Unmixing Matrix Coefficients`: Good = strongest coefficients align with expected detector-marker relationships and off-target coefficients are moderate. Bad = many large off-target coefficients across rows. Action = inspect collinear markers, low-quality controls, or unstable matrix inversion.
-- `Unmixing Scatter Matrix` (SCC controls): Good = row-stain events are high on Y while X (other markers) stays near zero. Bad = large off-axis/off-target clouds in lower-triangle panels. Action = inspect spillover-heavy pairs and verify single-stain identity.
-- `Sample NxN Scatter Pages` (experimental samples): Good = each sample shows compact, interpretable pairwise structure without widespread off-axis spread. Bad = broad diagonal/off-axis clouds across many panels suggest unstable unmixing, high spread, or problematic marker combinations.
-- `Spectral Spread Matrix`: Good = mostly low off-diagonal spread values. Bad = bright/high off-diagonal cells for specific marker pairs. Action = avoid those pairs for dim co-expression readouts or adjust panel design.
-- `Residual Contributions`: Good = median residual per detector stays near zero. Bad = systematic positive/negative shifts in specific detectors. Action = investigate missing fluorophores, detector drift, or matrix mismatch in affected detector groups.
-- `Negative Population Spread (NPS)`: Good = low and comparable MAD across files and markers. Bad = isolated high bars in selected markers/files. Action = identify bright spreaders into those channels and rebalance panel usage.
+For scripts, reports, or CI jobs, you can supply a pre-existing, reviewed control CSV file via `control_file` to `autounmix_controls()` to skip the confirmation prompt.
+
+```r
+ctrl_noninteractive <- autounmix_controls(
+  scc_dir = file.path(project_dir, "scc"),
+  control_file = control_file,
+  cytometer = "Aurora",
+  output_dir = file.path(project_dir, "spectreasy_outputs", "autounmix_controls_noninteractive"),
+  unmix_method = "WLS",
+  seed = 1
+)
+
+dim(ctrl_noninteractive$M)
+#> [1] 16 64
+```
+
+## Pass the in-memory reference matrix directly
+
+You can pass the in-memory reference matrix returned by `autounmix_controls()` directly to `unmix_samples()` instead of loading it from the saved CSV file.
+
+```r
+fluor_reference_matrix <- ctrl$M
+marker_map <- stats::setNames(control_df$marker, control_df$fluorophore)
+reference_matrix <- fluor_reference_matrix
+mapped_names <- marker_map[rownames(reference_matrix)]
+na_idx <- is.na(mapped_names)
+mapped_names[na_idx] <- rownames(reference_matrix)[na_idx]
+rownames(reference_matrix) <- unname(mapped_names)
+
+unmixed_dynamic <- unmix_samples(
+  sample_dir = file.path(project_dir, "sample"),
+  M = reference_matrix,
+  method = "WLS",
+  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples_dynamic")
+)
+
+names(unmixed_dynamic)
+#> [1] "sample"
+```
+
+## Inspect quick QC plots
+
+Reference spectra and spectral spread plots should be interpreted in fluorophore space, so the original fluorophore-labeled control matrix is used here.
+
+```r
+reference_matrix_no_af <- fluor_reference_matrix[!grepl("^AF($|_)", rownames(fluor_reference_matrix), ignore.case = TRUE), , drop = FALSE]
+
+plot_spectra(reference_matrix_no_af, output_file = NULL)
+```
+
+<p align="center">
+  <img src="man/figures/vignette_spectra.png" width="80%" />
+</p>
+
+```r
+plot_ssm(calculate_ssm(reference_matrix_no_af), output_file = NULL)
+```
+
+<p align="center">
+  <img src="man/figures/vignette_ssm.png" width="80%" />
+</p>
+
+```r
+plot_nps(calculate_nps(sample_results), output_file = NULL)
+```
+
+<p align="center">
+  <img src="man/figures/vignette_nps.png" width="80%" />
+</p>
 
 ---
 

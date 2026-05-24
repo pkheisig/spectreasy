@@ -501,18 +501,17 @@ const App = () => {
                 zIndex: 50
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div style={{
-                        width: 44,
-                        height: 44,
-                        background: `linear-gradient(135deg, ${g.accent}, #8b5cf6)`,
-                        borderRadius: 12,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        boxShadow: `0 4px 16px ${g.accentGlow}`
-                    }}>
-                        <Activity color="white" size={22} />
-                    </div>
+                    <img
+                        src="/logo.png"
+                        alt="spectreasy logo"
+                        style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 12,
+                            boxShadow: `0 4px 16px ${g.accentGlow}`,
+                            objectFit: 'cover'
+                        }}
+                    />
                     <div>
                         <h1 style={{ fontWeight: 700, fontSize: 18, margin: 0, letterSpacing: '-0.02em' }}>spectreasy</h1>
                         <p style={{ fontSize: 10, color: g.textMuted, margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Interactive Spectral Tuner</p>
