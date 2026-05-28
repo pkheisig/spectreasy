@@ -42,3 +42,5 @@
 ^\.github$
 ^BIOC_REVIEW_RESPONSE\.md$
 ^backtup$
+^doc$
+^Meta$

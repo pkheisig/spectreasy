@@ -24,7 +24,7 @@ This file maps each major reviewer comment to the implemented fix in the package
   - Refactored into helper-driven orchestration:
     - `create_control_file()` → `R/control_interface.R`
     - `build_reference_matrix()` → `R/build_reference_matrix.R`
-    - `autounmix_controls()` → `R/autounmix_controls.R`
+    - `unmix_controls()` → `R/unmix_controls.R`
     - `validate_control_file_mapping()` → `R/control_validation.R`
     - `plot_unmixing_scatter_matrix()` → `R/plot_functions.R`
     - `generate_scc_report()` → `R/scc_check.R`

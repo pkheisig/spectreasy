@@ -204,7 +204,31 @@
     if (length(gmm_result$main_populations) == 0) {
         return(NULL)
     }
-    best <- gmm_result$main_populations[which.max(gmm_result$proportions[gmm_result$main_populations])]
+    
+    # Calculate local density of raw data around each GMM mean to ensure we select the actual peak
+    data_fit <- gmm_result$fit$data
+    means <- gmm_result$means
+    
+    sd_fsc <- stats::sd(data_fit[, 1])
+    sd_ssc <- stats::sd(data_fit[, 2])
+    
+    # Avoid division by zero
+    if (is.na(sd_fsc) || sd_fsc == 0) sd_fsc <- 1
+    if (is.na(sd_ssc) || sd_ssc == 0) sd_ssc <- 1
+    
+    # Normalized data
+    data_norm <- data_fit
+    data_norm[, 1] <- data_fit[, 1] / sd_fsc
+    data_norm[, 2] <- data_fit[, 2] / sd_ssc
+    
+    # Compute local density within r = 0.10 in normalized space
+    local_densities <- sapply(gmm_result$main_populations, function(k) {
+        mu_norm <- c(means[1, k] / sd_fsc, means[2, k] / sd_ssc)
+        dists <- sqrt((data_norm[, 1] - mu_norm[1])^2 + (data_norm[, 2] - mu_norm[2])^2)
+        sum(dists <= 0.10)
+    })
+    
+    best <- gmm_result$main_populations[which.max(local_densities)]
     list(selected = best)
 }
 
@@ -975,7 +999,7 @@ build_reference_matrix <- function(
   histogram_min_x_log = 2,
   max_clusters = 6,
   min_cluster_proportion = 0.03,
-  gate_contour_beads = 0.999999999,
+  gate_contour_beads = 0.95,
   gate_contour_cells = 0.95,
   subsample_n = 5000
 ) {

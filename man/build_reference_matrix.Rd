@@ -27,7 +27,7 @@ build_reference_matrix(
   histogram_min_x_log = 2,
   max_clusters = 6,
   min_cluster_proportion = 0.03,
-  gate_contour_beads = 0.999999999,
+  gate_contour_beads = 0.95,
   gate_contour_cells = 0.95,
   subsample_n = 5000
 )

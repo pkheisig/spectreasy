@@ -112,13 +112,13 @@ test_that("build_reference_matrix works on synthetic SCC files", {
     expect_equal(nrow(qc_summary), 2)
 })
 
-test_that("autounmix_controls runs end-to-end on synthetic SCC files", {
+test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     wf <- make_synthetic_workflow()
     output_dir <- tempfile("spectreasy_covr_auto_")
     control_csv <- tempfile(fileext = ".csv")
     utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
 
-    ctrl <- spectreasy::autounmix_controls(
+    ctrl <- spectreasy::unmix_controls(
         scc_dir = wf$scc_dir,
         control_file = control_csv,
         output_dir = output_dir,
@@ -135,13 +135,13 @@ test_that("autounmix_controls runs end-to-end on synthetic SCC files", {
     expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))
 })
 
-test_that("autounmix_controls handles WLS output and exclude_af branch", {
+test_that("unmix_controls handles WLS output and exclude_af branch", {
     wf <- make_synthetic_workflow(include_af = TRUE)
     output_dir <- tempfile("spectreasy_covr_auto_wls_")
     control_csv <- tempfile(fileext = ".csv")
     utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
 
-    ctrl <- spectreasy::autounmix_controls(
+    ctrl <- spectreasy::unmix_controls(
         scc_dir = wf$scc_dir,
         control_file = control_csv,
         output_dir = output_dir,

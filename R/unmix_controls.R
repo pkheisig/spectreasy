@@ -1,5 +1,5 @@
-# Internal helpers for autounmix_controls().
-.autounmix_confirm_created_control_file <- function(path) {
+# Internal helpers for unmix_controls().
+.unmix_confirm_created_control_file <- function(path) {
     msg <- paste(
         c(
             "A new control file was created:",
@@ -17,34 +17,34 @@
         stop(
             msg, "\n",
             "R session is non-interactive, so confirmation prompt is not possible.\n",
-            "After reviewing the file, rerun autounmix_controls().",
+            "After reviewing the file, rerun unmix_controls().",
             call. = FALSE
         )
     }
 
     message(msg)
     repeat {
-        ans <- tolower(trimws(readline("Proceed with autounmix_controls now? [y/n]: ")))
+        ans <- tolower(trimws(readline("Proceed with unmix_controls now? [y/n]: ")))
         if (ans %in% c("y", "yes")) return(invisible(TRUE))
         if (ans %in% c("n", "no", "")) {
-            stop("Stopped after control-file creation. Review and rerun autounmix_controls() when ready.", call. = FALSE)
+            stop("Stopped after control-file creation. Review and rerun unmix_controls() when ready.", call. = FALSE)
         }
         message("Please answer 'y' or 'n'.")
     }
 }
 
-.autounmix_read_control_df <- function(control_file) {
+.unmix_read_control_df <- function(control_file) {
     tryCatch(
         utils::read.csv(control_file, stringsAsFactors = FALSE, check.names = FALSE),
         error = function(e) NULL
     )
 }
 
-.autounmix_generate_control_file <- function(scc_dir,
-                                             control_file,
-                                             cytometer,
-                                             auto_default_control_type,
-                                             auto_unknown_fluor_policy) {
+.unmix_generate_control_file <- function(scc_dir,
+                                         control_file,
+                                         cytometer,
+                                         auto_default_control_type,
+                                         auto_unknown_fluor_policy) {
     message("Control file not found: ", control_file)
     message("Auto-generating control file from SCC filenames and peak channels...")
     create_control_file(
@@ -59,12 +59,12 @@
     invisible(control_file)
 }
 
-.prepare_autounmix_control_df <- function(control_file,
-                                          scc_dir,
-                                          auto_create_control,
-                                          cytometer,
-                                          auto_default_control_type,
-                                          auto_unknown_fluor_policy) {
+.prepare_unmix_control_df <- function(control_file,
+                                      scc_dir,
+                                      auto_create_control,
+                                      cytometer,
+                                      auto_default_control_type,
+                                      auto_unknown_fluor_policy) {
     created_control_file <- FALSE
 
     if (!file.exists(control_file)) {
@@ -74,7 +74,7 @@
                 "Set auto_create_control = TRUE to auto-generate it from SCC files."
             )
         }
-        .autounmix_generate_control_file(
+        .unmix_generate_control_file(
             scc_dir = scc_dir,
             control_file = control_file,
             cytometer = cytometer,
@@ -83,7 +83,7 @@
         )
         created_control_file <- TRUE
     }
-    control_df <- .autounmix_read_control_df(control_file)
+    control_df <- .unmix_read_control_df(control_file)
     if (is.null(control_df)) {
         stop("Could not read control file: ", control_file)
     }
@@ -91,7 +91,7 @@
     list(control_df = control_df, control_file = control_file, created_control_file = created_control_file)
 }
 
-.normalize_autounmix_control_df <- function(control_df, required_cols = c("filename", "fluorophore", "channel")) {
+.normalize_unmix_control_df <- function(control_df, required_cols = c("filename", "fluorophore", "channel")) {
     missing_cols <- setdiff(required_cols, colnames(control_df))
     if (length(missing_cols) > 0) {
         stop(
@@ -106,7 +106,7 @@
     control_df
 }
 
-.filter_autounmix_af_rows <- function(control_df, exclude_af = FALSE, emit_message = TRUE) {
+.filter_unmix_af_rows <- function(control_df, exclude_af = FALSE, emit_message = TRUE) {
     excluded_af_filenames <- character()
     if (!isTRUE(exclude_af)) {
         return(list(control_df = control_df, excluded_af_filenames = excluded_af_filenames))
@@ -128,7 +128,7 @@
     list(control_df = control_df, excluded_af_filenames = excluded_af_filenames)
 }
 
-.run_autounmix_preflight <- function(control_df, scc_dir, exclude_af = FALSE, include_multi_af = FALSE) {
+.run_unmix_preflight <- function(control_df, scc_dir, exclude_af = FALSE, include_multi_af = FALSE) {
     validate_control_file_mapping(
         control_df = control_df,
         scc_dir = scc_dir,
@@ -141,12 +141,12 @@
     )
 }
 
-.autounmix_regenerate_control_df <- function(control_file,
-                                             scc_dir,
-                                             cytometer,
-                                             auto_default_control_type,
-                                             auto_unknown_fluor_policy,
-                                             exclude_af = FALSE) {
+.unmix_regenerate_control_df <- function(control_file,
+                                         scc_dir,
+                                         cytometer,
+                                         auto_default_control_type,
+                                         auto_unknown_fluor_policy,
+                                         exclude_af = FALSE) {
     message("Control preflight failed; attempting automatic control-file regeneration...")
     create_control_file(
         input_folder = scc_dir,
@@ -157,11 +157,11 @@
         output_file = control_file
     )
     control_df <- utils::read.csv(control_file, stringsAsFactors = FALSE, check.names = FALSE)
-    filtered <- .filter_autounmix_af_rows(control_df, exclude_af = exclude_af, emit_message = FALSE)
+    filtered <- .filter_unmix_af_rows(control_df, exclude_af = exclude_af, emit_message = FALSE)
     list(control_df = filtered$control_df, excluded_af_filenames = filtered$excluded_af_filenames)
 }
 
-.stop_autounmix_preflight <- function(preflight, auto_unknown_fluor_policy) {
+.stop_unmix_preflight <- function(preflight, auto_unknown_fluor_policy) {
     hint <- NULL
     if (any(grepl("^Empty fluorophore", preflight$errors)) && identical(auto_unknown_fluor_policy, "empty")) {
         hint <- "Tip: rerun with auto_unknown_fluor_policy = \"by_channel\" to auto-fill common fluorophore names from detected channels."
@@ -169,18 +169,18 @@
     stop(
         paste(
             c(
-                "autounmix_controls preflight failed:",
+                "unmix_controls preflight failed:",
                 paste0(" - ", preflight$errors),
                 if (length(preflight$warnings) > 0) c("Preflight notes:", paste0(" - ", preflight$warnings)) else NULL,
                 hint,
-                "Fix the control file and rerun autounmix_controls()."
+                "Fix the control file and rerun unmix_controls()."
             ),
             collapse = "\n"
         )
     )
 }
 
-.autounmix_output_paths <- function(output_dir) {
+.unmix_output_paths <- function(output_dir) {
     list(
         unmixed_dir = file.path(output_dir, "scc_unmixed"),
         spectra_file = file.path(output_dir, "scc_spectra.png"),
@@ -199,7 +199,7 @@
     invisible(path)
 }
 
-.read_autounmix_metadata_pd <- function(scc_dir) {
+.read_unmix_metadata_pd <- function(scc_dir) {
     fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     if (length(fcs_files) == 0) {
         stop("No FCS files found in scc_dir: ", scc_dir)
@@ -208,7 +208,7 @@
     list(fcs_files = fcs_files, pd = flowCore::pData(flowCore::parameters(ff_meta)))
 }
 
-.filter_autounmix_excluded_af_outputs <- function(unmixed_list, scc_dir, excluded_af_filenames, unmixed_dir, exclude_af = FALSE) {
+.filter_unmix_excluded_af_outputs <- function(unmixed_list, scc_dir, excluded_af_filenames, unmixed_dir, exclude_af = FALSE) {
     if (!isTRUE(exclude_af)) {
         return(unmixed_list)
     }
@@ -230,7 +230,7 @@
     unmixed_list
 }
 
-.estimate_autounmix_wls_global_weights <- function(files, detector_names, background_noise = 25, max_events_per_file = 50000) {
+.estimate_unmix_wls_global_weights <- function(files, detector_names, background_noise = 25, max_events_per_file = 50000) {
     sums <- rep(0, length(detector_names))
     counts <- rep(0, length(detector_names))
 
@@ -257,7 +257,7 @@
     1 / (pmax(mean_sig, 0) + background_noise)
 }
 
-.derive_autounmix_static_matrix <- function(M, fcs_files, unmix_method) {
+.derive_unmix_static_matrix <- function(M, fcs_files, unmix_method) {
     # If M has multiple AF bands, only use the base "AF" band (and non-AF markers) for the static unmixing matrix
     # to avoid singularity (since we cannot statically unmix more markers than detectors).
     marker_names <- rownames(M)
@@ -270,7 +270,7 @@
 
     static_unmixing_matrix_method <- toupper(unmix_method)
     if (static_unmixing_matrix_method == "WLS") {
-        wls_weights <- .estimate_autounmix_wls_global_weights(fcs_files, colnames(M_static))
+        wls_weights <- .estimate_unmix_wls_global_weights(fcs_files, colnames(M_static))
         W <- derive_unmixing_matrix(M_static, method = "WLS", global_weights = wls_weights)
     } else {
         W <- derive_unmixing_matrix(M_static, method = static_unmixing_matrix_method)
@@ -279,7 +279,7 @@
     list(W = W, static_unmixing_matrix_method = static_unmixing_matrix_method)
 }
 
-.resolve_autounmix_marker_mappings <- function(control_df) {
+.resolve_unmix_marker_mappings <- function(control_df) {
     sample_to_marker <- NULL
     marker_display <- NULL
 
@@ -311,7 +311,7 @@
     list(sample_to_marker = sample_to_marker, marker_display = marker_display)
 }
 
-#' Auto-Unmix Single-Color Controls
+#' Unmix Single-Color Controls
 #'
 #' SCC workflow helper that:
 #' 1) validates/creates the control file,
@@ -347,23 +347,23 @@
 #' @export
 #' @examples
 #' if (interactive()) {
-#'   ctrl <- autounmix_controls(
+#'   ctrl <- unmix_controls(
 #'     scc_dir = "scc",
 #'     control_file = "fcs_mapping.csv",
 #'     auto_create_control = TRUE,
 #'     cytometer = "Aurora",
-#'     output_dir = "spectreasy_outputs/autounmix_controls"
+#'     output_dir = "spectreasy_outputs/unmix_controls"
 #'   )
 #'   ctrl$unmixing_matrix_file
 #' }
-autounmix_controls <- function(
+unmix_controls <- function(
     scc_dir = "scc",
     control_file = "fcs_mapping.csv",
     auto_create_control = TRUE,
     cytometer = "Aurora",
     auto_default_control_type = "beads",
     auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
-    output_dir = "spectreasy_outputs/autounmix_controls",
+    output_dir = "spectreasy_outputs/unmix_controls",
     exclude_af = FALSE,
     unmix_method = "WLS",
     unmix_scatter_panel_size_mm = 30,
@@ -381,7 +381,7 @@ autounmix_controls <- function(
     dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
     if (!dir.exists(scc_dir)) stop("scc_dir not found: ", scc_dir)
 
-    control_info <- .prepare_autounmix_control_df(
+    control_info <- .prepare_unmix_control_df(
         control_file = control_file,
         scc_dir = scc_dir,
         auto_create_control = auto_create_control,
@@ -389,20 +389,20 @@ autounmix_controls <- function(
         auto_default_control_type = auto_default_control_type,
         auto_unknown_fluor_policy = auto_unknown_fluor_policy
     )
-    control_df <- .normalize_autounmix_control_df(control_info$control_df)
+    control_df <- .normalize_unmix_control_df(control_info$control_df)
     control_file <- control_info$control_file
 
-    filtered <- .filter_autounmix_af_rows(control_df, exclude_af = exclude_af)
+    filtered <- .filter_unmix_af_rows(control_df, exclude_af = exclude_af)
     control_df <- filtered$control_df
     excluded_af_filenames <- filtered$excluded_af_filenames
 
     if (isTRUE(control_info$created_control_file)) {
-        .autounmix_confirm_created_control_file(control_file)
+        .unmix_confirm_created_control_file(control_file)
     }
 
-    preflight <- .run_autounmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af, include_multi_af = include_multi_af)
+    preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af, include_multi_af = include_multi_af)
     if (!preflight$ok && isTRUE(auto_create_control)) {
-        regenerated <- .autounmix_regenerate_control_df(
+        regenerated <- .unmix_regenerate_control_df(
             control_file = control_file,
             scc_dir = scc_dir,
             cytometer = cytometer,
@@ -412,13 +412,13 @@ autounmix_controls <- function(
         )
         control_df <- regenerated$control_df
         excluded_af_filenames <- unique(c(excluded_af_filenames, regenerated$excluded_af_filenames))
-        preflight <- .run_autounmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af, include_multi_af = include_multi_af)
+        preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af, include_multi_af = include_multi_af)
     }
     if (!preflight$ok) {
-        .stop_autounmix_preflight(preflight, auto_unknown_fluor_policy = auto_unknown_fluor_policy)
+        .stop_unmix_preflight(preflight, auto_unknown_fluor_policy = auto_unknown_fluor_policy)
     }
 
-    output_paths <- .autounmix_output_paths(output_dir)
+    output_paths <- .unmix_output_paths(output_dir)
     M <- build_reference_matrix(
         input_folder = scc_dir,
         output_folder = output_dir,
@@ -434,7 +434,7 @@ autounmix_controls <- function(
     if (is.null(M) || nrow(M) == 0) stop("No valid spectra found while building reference matrix.")
 
     .save_reference_matrix_csv(M, output_paths$reference_matrix_csv)
-    meta_info <- .read_autounmix_metadata_pd(scc_dir)
+    meta_info <- .read_unmix_metadata_pd(scc_dir)
     p_spectra <- plot_spectra(M, pd = meta_info$pd, output_file = output_paths$spectra_file)
 
     unmixed_list <- unmix_samples(
@@ -445,7 +445,7 @@ autounmix_controls <- function(
         output_dir = output_paths$unmixed_dir,
         write_fcs = TRUE
     )
-    unmixed_list <- .filter_autounmix_excluded_af_outputs(
+    unmixed_list <- .filter_unmix_excluded_af_outputs(
         unmixed_list = unmixed_list,
         scc_dir = scc_dir,
         excluded_af_filenames = excluded_af_filenames,
@@ -453,14 +453,14 @@ autounmix_controls <- function(
         exclude_af = exclude_af
     )
 
-    static_info <- .derive_autounmix_static_matrix(M, fcs_files = meta_info$fcs_files, unmix_method = unmix_method)
+    static_info <- .derive_unmix_static_matrix(M, fcs_files = meta_info$fcs_files, unmix_method = unmix_method)
     W <- static_info$W
     save_unmixing_matrix(W, output_paths$unmixing_matrix_csv)
 
     p_unmix <- plot_unmixing_matrix(W, pd = meta_info$pd)
     ggplot2::ggsave(output_paths$unmixing_matrix_png, p_unmix, width = 200, height = 150, units = "mm")
 
-    marker_mapping <- .resolve_autounmix_marker_mappings(control_df)
+    marker_mapping <- .resolve_unmix_marker_mappings(control_df)
     scatter_markers <- rownames(M)
     extra_af_rows <- grepl("^AF_", scatter_markers, ignore.case = TRUE)
     scatter_markers <- scatter_markers[!extra_af_rows]

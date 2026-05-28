@@ -6,7 +6,7 @@
 \usage{
 generate_scc_report(
   M = NULL,
-  unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls",
+  unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
   scc_dir = "scc",
   output_file = NULL,
@@ -26,7 +26,7 @@ matrix generated from the supplied SCC files.}
 
 \item{unmixing_matrix_file}{Optional CSV path to a saved reference matrix.
 Used when `M` is not supplied. By default this points to the reference matrix
-produced by [autounmix_controls()] (`"scc_reference_matrix.csv"`).}
+produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{scc_dir}{Directory containing SCC FCS files.}
 

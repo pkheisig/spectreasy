@@ -69,3 +69,5 @@ spectreasy.BiocCheck/
 
 # Local backup directory
 backtup/
+/doc/
+/Meta/

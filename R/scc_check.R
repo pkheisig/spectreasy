@@ -172,7 +172,7 @@
 #'   matrix generated from the supplied SCC files.
 #' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
 #'   Used when `M` is not supplied. By default this points to the reference matrix
-#'   produced by [autounmix_controls()] (`"scc_reference_matrix.csv"`).
+#'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param scc_dir Directory containing SCC FCS files.
 #' @param output_file Path to save the PDF report. Must be supplied explicitly.
 #' @param control_file Control mapping CSV path.
@@ -199,7 +199,7 @@
 #' @export
 generate_scc_report <- function(
     M = NULL,
-    unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls", "scc_reference_matrix.csv"),
+    unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
     scc_dir = "scc",
     output_file = NULL,
     control_file = "fcs_mapping.csv",
@@ -293,7 +293,7 @@ generate_scc_report <- function(
             "Generated on: ", Sys.time(), "\n",
             "SCC directory: ", normalizePath(scc_dir, mustWork = FALSE), "\n",
             "Controls processed: ", nrow(qc_summary), "\n",
-            "Workflow intent: review SCC quality before autounmix_controls()."
+            "Workflow intent: review SCC quality before unmix_controls()."
         ),
         x = 0.5,
         y = 0.48,

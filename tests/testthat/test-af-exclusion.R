@@ -71,6 +71,6 @@ test_that("build_reference_matrix omits AF basis rows when exclude_af = TRUE", {
     testthat::expect_false(any(grepl("^AF($|_)", rownames(M), ignore.case = TRUE)))
 })
 
-test_that("autounmix_controls exposes exclude_af", {
-    testthat::expect_true("exclude_af" %in% names(formals(spectreasy::autounmix_controls)))
+test_that("unmix_controls exposes exclude_af", {
+    testthat::expect_true("exclude_af" %in% names(formals(spectreasy::unmix_controls)))
 })

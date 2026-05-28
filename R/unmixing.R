@@ -430,7 +430,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   it is loaded from the CSV path provided in `unmixing_matrix_file`.
 #' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
 #'   Used when `M` is not supplied. By default this points to the reference matrix
-#'   produced by [autounmix_controls()] (`"scc_reference_matrix.csv"`).
+#'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param method Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).
 #' @param cytometer Reserved for compatibility with older workflows.
 #' @param scc_dir Directory containing single-color control files. Used to dynamically
@@ -443,6 +443,10 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param output_dir Directory to save unmixed FCS files when `write_fcs = TRUE`.
 #' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 #'   Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.
+#' @param subsample_n Optional integer; if provided, subsample the returned in-memory
+#'   results to at most `subsample_n` events per sample. The full unsampled unmixed
+#'   data will still be written to the FCS files.
+#' @param seed Optional integer seed for deterministic subsampling.
 #' @param return_type Return format: `"list"` (default), `"flowSet"`, or
 #'   `"SingleCellExperiment"`. When `"flowSet"`, detector residuals are attached
 #'   as `attr(x, "spectreasy_residuals")`. When `"SingleCellExperiment"`, cell-level
@@ -453,7 +457,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   the result has class `spectreasy_unmixed_results`; list elements contain
 #'   `data` (unmixed abundances plus retained acquisition parameters) and
 #'   `residuals` (detector residual matrix when available, otherwise `NULL`).
-#'   The list can be passed directly to `generate_sample_report(results_df = ...)`
+#'   The list can be passed directly to `generate_sample_report(results = ...)`
 #'   or coerced with `as.data.frame()`. The return value is provided invisibly to
 #'   avoid printing large result objects during interactive or Quarto execution.
 #' @examples
@@ -491,7 +495,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @export
 unmix_samples <- function(sample_dir = "samples", 
                           M = NULL, 
-                          unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls", "scc_reference_matrix.csv"),
+                          unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
                           method = "WLS", 
                           cytometer = "Aurora",
                           scc_dir = NULL,
@@ -501,8 +505,11 @@ unmix_samples <- function(sample_dir = "samples",
                           include_multi_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples"),
                           write_fcs = TRUE,
+                          subsample_n = NULL,
+                          seed = NULL,
                           return_type = c("list", "flowSet", "SingleCellExperiment")) {
     return_type <- match.arg(return_type)
+    .with_optional_seed(seed)
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")
@@ -561,6 +568,7 @@ unmix_samples <- function(sample_dir = "samples",
         
         if (isTRUE(write_fcs)) {
             marker_source <- rownames(M)
+            marker_source <- marker_source[!grepl("^AF_", marker_source, ignore.case = TRUE)]
             markers_to_keep <- intersect(colnames(res_obj$data), marker_source)
             passthrough_cols <- .get_passthrough_parameter_names(colnames(res_obj$data))
             cols_to_write <- unique(c(markers_to_keep, passthrough_cols))
@@ -580,9 +588,19 @@ unmix_samples <- function(sample_dir = "samples",
             }
             flowCore::write.FCS(new_ff, output_path)
         }
+        if (!is.null(subsample_n)) {
+            n_events <- nrow(res_obj$data)
+            if (n_events > subsample_n) {
+                idx <- sample.int(n_events, subsample_n)
+                res_obj$data <- res_obj$data[idx, , drop = FALSE]
+                if (!is.null(res_obj$residuals)) {
+                    res_obj$residuals <- res_obj$residuals[idx, , drop = FALSE]
+                }
+            }
+        }
         results[[sn]] <- res_obj
     }
-    
+
     if (identical(return_type, "flowSet")) {
         return(invisible(.unmixed_results_to_flowset(results)))
     }

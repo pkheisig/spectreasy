@@ -105,7 +105,7 @@ test_that("generate_sample_report accepts unmix_samples results directly", {
     expect_no_error(
         suppressMessages(
             spectreasy::generate_sample_report(
-                results_df = unmixed,
+                results = unmixed,
                 M = M,
                 output_file = pdf_out
             )
@@ -119,7 +119,7 @@ test_that("generate_sample_report has stable pages and no recommendation page", 
 
     set.seed(1)
     n <- 120
-    results_df <- data.frame(
+    results <- data.frame(
         FITC = rnorm(n, 0, 0.3),
         PE = rnorm(n, 0, 0.4),
         AF = rnorm(n, 0, 0.2),
@@ -136,7 +136,7 @@ test_that("generate_sample_report has stable pages and no recommendation page", 
     colnames(M) <- c("B1-A", "YG1-A", "R1-A")
 
     pdf_out <- tempfile(fileext = ".pdf")
-    spectreasy::generate_sample_report(results_df = results_df, M = M, output_file = pdf_out)
+    spectreasy::generate_sample_report(results = results, M = M, output_file = pdf_out)
 
     expect_true(file.exists(pdf_out))
 
@@ -155,7 +155,7 @@ test_that("generate_sample_report can include NxN pages for all samples", {
 
     set.seed(1)
     n <- 120
-    results_df <- data.frame(
+    results <- data.frame(
         FITC = rnorm(n, 0, 0.3),
         PE = rnorm(n, 0, 0.4),
         AF = rnorm(n, 0, 0.2),
@@ -173,7 +173,7 @@ test_that("generate_sample_report can include NxN pages for all samples", {
 
     pdf_out <- tempfile(fileext = ".pdf")
     spectreasy::generate_sample_report(
-        results_df = results_df,
+        results = results,
         M = M,
         output_file = pdf_out,
         nxn_all_samples = TRUE
@@ -190,7 +190,7 @@ test_that("generate_sample_report can include NxN pages for all samples", {
 test_that("generate_sample_report loads M from unmixing_matrix_file", {
     set.seed(1)
     n <- 120
-    results_df <- data.frame(
+    results <- data.frame(
         FITC = rnorm(n, 0, 0.3),
         PE = rnorm(n, 0, 0.4),
         AF = rnorm(n, 0, 0.2),
@@ -216,7 +216,7 @@ test_that("generate_sample_report loads M from unmixing_matrix_file", {
     expect_no_error(
         suppressMessages(
             spectreasy::generate_sample_report(
-                results_df = results_df,
+                results = results,
                 unmixing_matrix_file = csv_file,
                 output_file = pdf_out
             )
@@ -275,30 +275,30 @@ test_that("unmix_samples can dynamically construct reference matrix and handle m
     # 2. Generate a flowFrame with some channels: "B1-A", "YG1-A"
     # FITC control
     fitc_exprs <- cbind(
-        "B1-A" = rnorm(100, mean = 1000, sd = 50),
-        "YG1-A" = rnorm(100, mean = 10, sd = 2),
-        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+        "B1-A" = rnorm(200, mean = 1000, sd = 50),
+        "YG1-A" = rnorm(200, mean = 10, sd = 2),
+        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
     )
     fitc_ff <- flowCore::flowFrame(fitc_exprs)
     flowCore::write.FCS(fitc_ff, file.path(scc_dir, "FITC (Beads).fcs"))
     
     # PE control
     pe_exprs <- cbind(
-        "B1-A" = rnorm(100, mean = 10, sd = 2),
-        "YG1-A" = rnorm(100, mean = 1500, sd = 75),
-        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+        "B1-A" = rnorm(200, mean = 10, sd = 2),
+        "YG1-A" = rnorm(200, mean = 1500, sd = 75),
+        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
     )
     pe_ff <- flowCore::flowFrame(pe_exprs)
     flowCore::write.FCS(pe_ff, file.path(scc_dir, "PE (Beads).fcs"))
     
     # Unstained / AF control
     af_exprs <- cbind(
-        "B1-A" = rnorm(100, mean = 15, sd = 3),
-        "YG1-A" = rnorm(100, mean = 15, sd = 3),
-        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+        "B1-A" = rnorm(200, mean = 15, sd = 3),
+        "YG1-A" = rnorm(200, mean = 15, sd = 3),
+        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
     )
     af_ff <- flowCore::flowFrame(af_exprs)
     flowCore::write.FCS(af_ff, file.path(scc_dir, "Unstained (Cells).fcs"))
@@ -352,37 +352,37 @@ test_that("unmix_samples can dynamically construct reference matrix and handle m
     expect_true(sum(unmixed_df[2, c("AF", "AF_2")] != 0) <= 1)
 })
 
-test_that("autounmix_controls supports af_n_bands and include_multi_af", {
+test_that("unmix_controls supports af_n_bands and include_multi_af", {
     scc_dir <- tempfile("scc_dir_controls_")
     dir.create(scc_dir)
     
     fitc_exprs <- cbind(
-        "B1-A" = rnorm(100, mean = 1000, sd = 50),
-        "YG1-A" = rnorm(100, mean = 10, sd = 2),
-        "V1-A" = rnorm(100, mean = 5, sd = 1),
-        "R1-A" = rnorm(100, mean = 5, sd = 1),
-        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+        "B1-A" = rnorm(200, mean = 1000, sd = 50),
+        "YG1-A" = rnorm(200, mean = 10, sd = 2),
+        "V1-A" = rnorm(200, mean = 5, sd = 1),
+        "R1-A" = rnorm(200, mean = 5, sd = 1),
+        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
     )
     flowCore::write.FCS(flowCore::flowFrame(fitc_exprs), file.path(scc_dir, "FITC (Beads).fcs"))
     
     pe_exprs <- cbind(
-        "B1-A" = rnorm(100, mean = 10, sd = 2),
-        "YG1-A" = rnorm(100, mean = 1500, sd = 75),
-        "V1-A" = rnorm(100, mean = 5, sd = 1),
-        "R1-A" = rnorm(100, mean = 5, sd = 1),
-        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+        "B1-A" = rnorm(200, mean = 10, sd = 2),
+        "YG1-A" = rnorm(200, mean = 1500, sd = 75),
+        "V1-A" = rnorm(200, mean = 5, sd = 1),
+        "R1-A" = rnorm(200, mean = 5, sd = 1),
+        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
     )
     flowCore::write.FCS(flowCore::flowFrame(pe_exprs), file.path(scc_dir, "PE (Beads).fcs"))
     
     af_exprs <- cbind(
-        "B1-A" = rnorm(100, mean = 15, sd = 3),
-        "YG1-A" = rnorm(100, mean = 15, sd = 3),
-        "V1-A" = rnorm(100, mean = 15, sd = 3),
-        "R1-A" = rnorm(100, mean = 15, sd = 3),
-        "FSC-A" = rnorm(100, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(100, mean = 50000, sd = 2500)
+        "B1-A" = rnorm(200, mean = 15, sd = 3),
+        "YG1-A" = rnorm(200, mean = 15, sd = 3),
+        "V1-A" = rnorm(200, mean = 15, sd = 3),
+        "R1-A" = rnorm(200, mean = 15, sd = 3),
+        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
+        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
     )
     flowCore::write.FCS(flowCore::flowFrame(af_exprs), file.path(scc_dir, "Unstained (Cells).fcs"))
     
@@ -402,7 +402,7 @@ test_that("autounmix_controls supports af_n_bands and include_multi_af", {
     
     output_dir <- tempfile("controls_out_")
     
-    res <- spectreasy::autounmix_controls(
+    res <- spectreasy::unmix_controls(
         scc_dir = scc_dir,
         control_file = control_file,
         auto_create_control = FALSE,
@@ -465,4 +465,85 @@ test_that("Plumber gui_api load_matrix and save_matrix filter and merge AF rows"
     expect_equal(saved_df[saved_df$Marker == "PE", "B1-A"], 0.15)
     expect_equal(saved_df[saved_df$Marker == "AF", "B1-A"], 0.05)
     expect_equal(saved_df[saved_df$Marker == "AF_2", "YG1-A"], 0.03)
+})
+
+test_that("unmix_samples supports in-memory subsampling via subsample_n", {
+    M <- matrix(c(
+        1.0, 0.2,
+        0.1, 1.0
+    ), nrow = 2, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE")
+    colnames(M) <- c("B1-A", "YG1-A")
+
+    exprs <- matrix(rnorm(100, mean = 200, sd = 20), ncol = 2)
+    colnames(exprs) <- c("B1-A", "YG1-A")
+    exprs_full <- cbind(
+        exprs,
+        Time = seq_len(50),
+        "FSC-A" = rnorm(50, mean = 90000, sd = 7000),
+        "SSC-A" = rnorm(50, mean = 45000, sd = 5000)
+    )
+    ff <- flowCore::flowFrame(exprs_full)
+    toy_fs <- flowCore::flowSet(list(Sample1 = ff))
+
+    tmp_dir <- tempfile("unmix_subsample_out_")
+    dir.create(tmp_dir)
+
+    unmixed <- spectreasy::unmix_samples(
+        toy_fs,
+        M = M,
+        method = "OLS",
+        output_dir = tmp_dir,
+        write_fcs = TRUE,
+        subsample_n = 10,
+        seed = 42
+    )
+
+    unmixed_df <- as.data.frame(unmixed)
+    expect_equal(nrow(unmixed_df), 10)
+
+    fcs_path <- file.path(tmp_dir, "Sample1_unmixed.fcs")
+    expect_true(file.exists(fcs_path))
+    ff_written <- flowCore::read.FCS(fcs_path, transformation = FALSE, truncate_max_range = FALSE)
+    expect_equal(nrow(flowCore::exprs(ff_written)), 50)
+})
+
+test_that("unmix_samples excludes secondary AF bands from written FCS files", {
+    M <- matrix(c(
+        1.0, 0.2, 0.1, 0.05,
+        0.1, 1.0, 0.2, 0.05,
+        0.2, 0.2, 1.0, 0.05,
+        0.05, 0.05, 0.05, 1.0
+    ), nrow = 4, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE", "AF", "AF_2")
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A", "V1-A")
+
+    exprs <- matrix(rnorm(200, mean = 200, sd = 20), ncol = 4)
+    colnames(exprs) <- c("B1-A", "YG1-A", "R1-A", "V1-A")
+    exprs_full <- cbind(
+        exprs,
+        Time = seq_len(50),
+        "FSC-A" = rnorm(50, mean = 90000, sd = 7000),
+        "SSC-A" = rnorm(50, mean = 45000, sd = 5000)
+    )
+    ff <- flowCore::flowFrame(exprs_full)
+    toy_fs <- flowCore::flowSet(list(Sample1 = ff))
+
+    tmp_dir <- tempfile("unmix_af_out_")
+    dir.create(tmp_dir)
+
+    unmixed <- spectreasy::unmix_samples(
+        toy_fs,
+        M = M,
+        method = "OLS",
+        output_dir = tmp_dir,
+        write_fcs = TRUE
+    )
+
+    fcs_path <- file.path(tmp_dir, "Sample1_unmixed.fcs")
+    expect_true(file.exists(fcs_path))
+    ff_written <- flowCore::read.FCS(fcs_path, transformation = FALSE, truncate_max_range = FALSE)
+    written_cols <- colnames(flowCore::exprs(ff_written))
+    expect_true("AF" %in% written_cols)
+    expect_false("AF_2" %in% written_cols)
 })

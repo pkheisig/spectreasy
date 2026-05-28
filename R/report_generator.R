@@ -340,26 +340,26 @@
 #' Creates a multi-page report summarizing unmixing quality, including spectra,
 #' detector residuals, spread matrix, NPS, and per-sample NxN marker scatter pages.
 #'
-#' `generate_sample_report()` expects a combined data frame, not the raw list returned
-#' by [unmix_samples()]. In the usual workflow, build `results_df` with
-#' `do.call(rbind, lapply(unmixed, \`[[\`, "data"))`.
+#' `generate_sample_report()` expects a combined data frame or the raw list returned
+#' by [unmix_samples()]. In the usual workflow, pass the unmixed results object
+#' directly.
 #'
 #' `M` should be the reference matrix used for the unmixing context, supplied as
 #' a numeric matrix or detector-column data frame. In the usual
-#' `autounmix_controls()` workflow, pass `ctrl$M` or load
+#' `unmix_controls()` workflow, pass `ctrl$M` or load
 #' `scc_reference_matrix.csv`. Do not pass the path to
 #' `scc_unmixing_matrix.csv` here.
 #'
-#' @param results_df Combined unmixed data frame, or the list returned by
+#' @param results Combined unmixed data frame, or the list returned by
 #'   [unmix_samples()]. `generate_sample_report()` will automatically bind
 #'   per-sample `$data` elements when needed.
 #' @param M Reference matrix used for report context. Must be a numeric matrix or
 #'   a data frame with detector columns, for example `ctrl$M` from
-#'   `autounmix_controls()` or `utils::read.csv("scc_reference_matrix.csv",
+#'   `unmix_controls()` or `utils::read.csv("scc_reference_matrix.csv",
 #'   check.names = FALSE)`.
 #' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
 #'   Used when `M` is not supplied. By default this points to the reference matrix
-#'   produced by [autounmix_controls()] (`"scc_reference_matrix.csv"`).
+#'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param output_file Output PDF file path. Must be supplied explicitly.
 #' @param res_list Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.
 #' @param png_dir Deprecated and ignored (kept for backward compatibility).
@@ -371,7 +371,7 @@
 #' @param sample_nxn_transform One of `"none"` or `"asinh"` for per-sample NxN pages.
 #' @param sample_nxn_asinh_cofactor Cofactor used when `sample_nxn_transform = "asinh"`.
 #' @param nxn_all_samples Logical; if `TRUE`, include per-sample NxN pages for all samples.
-#'   If `FALSE` (default), only include NxN pages for the first sample in `results_df`.
+#'   If `FALSE` (default), only include NxN pages for the first sample in `results`.
 #'
 #' @return Invisibly returns `NULL`; writes report to disk.
 #' @export
@@ -383,7 +383,7 @@
 #' )
 #' colnames(M_demo) <- c("B2-A", "YG1-A", "R1-A")
 #'
-#' results_df <- data.frame(
+#' results <- data.frame(
 #'   File = rep(c("sample_a", "sample_b"), each = 120),
 #'   FITC = c(rnorm(120, 2, 0.4), rnorm(120, 0.1, 0.2)),
 #'   PE = c(rnorm(120, 0.2, 0.2), rnorm(120, 2.5, 0.5)),
@@ -392,17 +392,17 @@
 #'
 #' # Typical workflow after unmix_samples():
 #' # generate_sample_report(
-#' #   results_df = unmixed,
+#' #   results = unmixed,
 #' #   M = ctrl$M,
 #' #   output_file = "Sample_QC_Report.pdf"
 #' # )
 #'
 #' pdf_file <- tempfile(fileext = ".pdf")
-#' generate_sample_report(results_df = results_df, M = M_demo, output_file = pdf_file)
+#' generate_sample_report(results = results, M = M_demo, output_file = pdf_file)
 #' file.exists(pdf_file)
-generate_sample_report <- function(results_df,
+generate_sample_report <- function(results,
                                    M = NULL,
-                                   unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls", "scc_reference_matrix.csv"),
+                                   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
                                    output_file = NULL,
                                    res_list = NULL,
                                    png_dir = NULL,
@@ -443,9 +443,9 @@ generate_sample_report <- function(results_df,
         }
     }
 
-    results_df <- .normalize_qc_report_results_df(results_df)
+    results_df <- .normalize_qc_report_results_df(results)
     if (!("File" %in% colnames(results_df))) {
-        stop("results_df must contain a 'File' column.")
+        stop("results must contain a 'File' column.")
     }
     out_dir <- dirname(output_file)
     if (!is.na(out_dir) && nzchar(out_dir) && out_dir != ".") {

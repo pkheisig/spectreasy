@@ -7,7 +7,7 @@
 unmix_samples(
   sample_dir = "samples",
   M = NULL,
-  unmixing_matrix_file = file.path("spectreasy_outputs", "autounmix_controls",
+  unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
   method = "WLS",
   cytometer = "Aurora",
@@ -18,6 +18,8 @@ unmix_samples(
   include_multi_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples"),
   write_fcs = TRUE,
+  subsample_n = NULL,
+  seed = NULL,
   return_type = c("list", "flowSet", "SingleCellExperiment")
 )
 }
@@ -31,7 +33,7 @@ it is loaded from the CSV path provided in `unmixing_matrix_file`.}
 
 \item{unmixing_matrix_file}{Optional CSV path to a saved reference matrix.
 Used when `M` is not supplied. By default this points to the reference matrix
-produced by [autounmix_controls()] (`"scc_reference_matrix.csv"`).}
+produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{method}{Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).}
 
@@ -54,6 +56,12 @@ Used when dynamically building the reference matrix.}
 \item{write_fcs}{Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
 
+\item{subsample_n}{Optional integer; if provided, subsample the returned in-memory
+results to at most `subsample_n` events per sample. The full unsampled unmixed
+data will still be written to the FCS files.}
+
+\item{seed}{Optional integer seed for deterministic subsampling.}
+
 \item{return_type}{Return format: `"list"` (default), `"flowSet"`, or
 `"SingleCellExperiment"`. When `"flowSet"`, detector residuals are attached
 as `attr(x, "spectreasy_residuals")`. When `"SingleCellExperiment"`, cell-level
@@ -66,7 +74,7 @@ Either a named list with one element per sample, a `flowSet`, or a
   the result has class `spectreasy_unmixed_results`; list elements contain
   `data` (unmixed abundances plus retained acquisition parameters) and
   `residuals` (detector residual matrix when available, otherwise `NULL`).
-  The list can be passed directly to `generate_sample_report(results_df = ...)`
+  The list can be passed directly to `generate_sample_report(results = ...)`
   or coerced with `as.data.frame()`. The return value is provided invisibly to
   avoid printing large result objects during interactive or Quarto execution.
 }

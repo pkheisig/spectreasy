@@ -42,9 +42,9 @@ This walkthrough demonstrates the primary `spectreasy` workflow on the packaged 
 The user-facing workflow is:
 
 1. download the example data into a project directory
-2. run `autounmix_controls()`
+2. run `unmix_controls()`
 3. review and supplement the generated `fcs_mapping.csv`
-4. confirm the control file in the console so `autounmix_controls()` can finish
+4. confirm the control file in the console so `unmix_controls()` can finish
 5. run `unmix_samples()`
 6. generate QC reports for the controls and unmixed samples (optional)
 
@@ -73,12 +73,12 @@ For the remainder of this walkthrough, the commands are shown as they would be r
 
 ## 2. Start the control-stage workflow
 
-Run `autounmix_controls()` first. If `fcs_mapping.csv` is missing, `auto_create_control = TRUE` creates it automatically and then pauses for review.
+Run `unmix_controls()` first. If `fcs_mapping.csv` is missing, `auto_create_control = TRUE` creates it automatically and then pauses for review.
 
 ```r
 setwd(project_dir)
 
-autounmix_controls(
+unmix_controls(
   scc_dir = "scc",
   auto_create_control = TRUE,
   cytometer = "Aurora",
@@ -88,10 +88,10 @@ autounmix_controls(
 )
 ```
 
-After the control file is created, `autounmix_controls()` prints a confirmation prompt and waits:
+After the control file is created, `unmix_controls()` prints a confirmation prompt and waits:
 
 ```text
-Proceed with autounmix_controls now? [y/n]:
+Proceed with unmix_controls now? [y/n]:
 ```
 
 ## 3. Review and supplement `fcs_mapping.csv`
@@ -118,13 +118,13 @@ For the example dataset, the reviewed control file looks like this:
 
 ## 4. Return to the console and confirm with `y`
 
-Once `fcs_mapping.csv` has been reviewed and saved, return to the console where `autounmix_controls()` is waiting and enter:
+Once `fcs_mapping.csv` has been reviewed and saved, return to the console where `unmix_controls()` is waiting and enter:
 
 ```text
 y
 ```
 
-The same `autounmix_controls()` call then continues and writes the control-stage outputs to `spectreasy_outputs/autounmix_controls/`.
+The same `unmix_controls()` call then continues and writes the control-stage outputs to `spectreasy_outputs/unmix_controls/`.
 
 ```
 #>  [1] "fsc_ssc/Alexa Fluor 700 (Beads)_fsc_ssc.png"    
@@ -162,14 +162,14 @@ The same `autounmix_controls()` call then continues and writes the control-stage
 Key outputs from this step include:
 
 - `fcs_mapping.csv`
-- `spectreasy_outputs/autounmix_controls/scc_reference_matrix.csv`
-- `spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.csv`
-- `spectreasy_outputs/autounmix_controls/scc_unmixing_matrix.png`
-- `spectreasy_outputs/autounmix_controls/scc_unmixing_scatter_matrix.png`
-- `spectreasy_outputs/autounmix_controls/fsc_ssc/*.png`
-- `spectreasy_outputs/autounmix_controls/histogram/*.png`
-- `spectreasy_outputs/autounmix_controls/spectrum/*.png`
-- `spectreasy_outputs/autounmix_controls/scc_unmixed/*.fcs`
+- `spectreasy_outputs/unmix_controls/scc_reference_matrix.csv`
+- `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
+- `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.png`
+- `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
+- `spectreasy_outputs/unmix_controls/fsc_ssc/*.png`
+- `spectreasy_outputs/unmix_controls/histogram/*.png`
+- `spectreasy_outputs/unmix_controls/spectrum/*.png`
+- `spectreasy_outputs/unmix_controls/scc_unmixed/*.fcs`
 
 The control-stage run also writes visual checks for each single-color control. For one color, the three plots below show the FSC/SSC gate, the peak-channel histogram gate, and the detector spectrum used to build the reference matrix:
 
@@ -190,7 +190,7 @@ The same run creates the NxN scatter matrix for the single-color controls. Each 
 
 ## 5. Unmix the experimental sample
 
-After the control-stage workflow has completed, unmix the experimental files with `unmix_samples()`. The reference matrix written by `autounmix_controls()` is loaded by default.
+After the control-stage workflow has completed, unmix the experimental files with `unmix_samples()`. The reference matrix written by `unmix_controls()` is loaded by default.
 
 ```r
 unmixed <- unmix_samples(
@@ -241,7 +241,7 @@ The overall sample report visualizes unmixing quality across samples, including 
 qc_report_file <- file.path(project_dir, "spectreasy_outputs", "Sample_QC_Report.pdf")
 
 generate_sample_report(
-  results_df = unmixed,
+  results = unmixed,
   M = ctrl$M,
   output_file = qc_report_file
 )
@@ -249,20 +249,20 @@ generate_sample_report(
 
 # Optional steps
 
-The sections below are useful extensions, but they are not required for the core `autounmix_controls()` -> `unmix_samples()` workflow shown above.
+The sections below are useful extensions, but they are not required for the core `unmix_controls()` -> `unmix_samples()` workflow shown above.
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `autounmix_controls()` and `unmix_samples()` use one average autofluorescence signature from the unstained control. If your cells have different AF shapes from cell to cell, you can split AF into several basis signatures.
+By default, `unmix_controls()` and `unmix_samples()` use one average autofluorescence signature from the unstained control. If your cells have different AF shapes from cell to cell, you can split AF into several basis signatures.
 
 Use the two multi-AF settings in the control-stage call. `af_n_bands` controls how many AF basis signatures are extracted from the unstained control, while `include_multi_af` tells `spectreasy` to include additional AF controls from the `af/` directory when those files are available.
 
 ```r
-ctrl_multi_af <- autounmix_controls(
+ctrl_multi_af <- unmix_controls(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
-  output_dir = "spectreasy_outputs/autounmix_controls_multi_af",
+  output_dir = "spectreasy_outputs/unmix_controls_multi_af",
   unmix_method = "WLS",
   include_multi_af = TRUE,
   af_n_bands = 10,
@@ -289,14 +289,14 @@ unmixed_multi_af <- unmix_samples(
 
 ## Use a reviewed control CSV in non-interactive workflows
 
-For scripts, reports, or CI jobs, you can supply a pre-existing, reviewed control CSV file via `control_file` to `autounmix_controls()` to skip the confirmation prompt.
+For scripts, reports, or CI jobs, you can supply a pre-existing, reviewed control CSV file via `control_file` to `unmix_controls()` to skip the confirmation prompt.
 
 ```r
-ctrl_noninteractive <- autounmix_controls(
+ctrl_noninteractive <- unmix_controls(
   scc_dir = file.path(project_dir, "scc"),
   control_file = control_file,
   cytometer = "Aurora",
-  output_dir = file.path(project_dir, "spectreasy_outputs", "autounmix_controls_noninteractive"),
+  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls_noninteractive"),
   unmix_method = "WLS",
   seed = 1
 )
@@ -307,7 +307,7 @@ dim(ctrl_noninteractive$M)
 
 ## Pass the in-memory reference matrix directly
 
-You can pass the in-memory reference matrix returned by `autounmix_controls()` directly to `unmix_samples()` instead of loading it from the saved CSV file.
+You can pass the in-memory reference matrix returned by `unmix_controls()` directly to `unmix_samples()` instead of loading it from the saved CSV file.
 
 ```r
 fluor_reference_matrix <- ctrl$M
