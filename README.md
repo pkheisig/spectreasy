@@ -232,30 +232,24 @@ After unmixing, you can generate comprehensive PDF reports to inspect the qualit
 
 ### Single-Color Control (SCC) Report
 
-The SCC report reviews gating, peak channels, and signal distributions for each control file.
+The SCC report reviews gating, peak channels, and signal distributions for each control file. By default, it writes the report to `"spectreasy_outputs/unmix_samples/qc_controls_report.pdf"`.
 
 ```r
-scc_report_file <- file.path(project_dir, "spectreasy_outputs", "SCC_QC_Report.pdf")
-
-generate_scc_report(
-  scc_dir = file.path(project_dir, "scc"),
+qc_controls(
+  scc_dir = "scc",
   cytometer = "Aurora",
-  output_file = scc_report_file,
   seed = 1
 )
 ```
 
 ### Samples Report
 
-The overall sample report visualizes unmixing quality across samples, including spectra overlays, detector residuals, spread matrices, and marker scatter plots.
+The overall sample report visualizes unmixing quality across samples, including spectra overlays, detector residuals, spread matrices, and marker scatter plots. By default, it writes the report to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.
 
 ```r
-qc_report_file <- file.path(project_dir, "spectreasy_outputs", "Sample_QC_Report.pdf")
-
-generate_sample_report(
+qc_samples(
   results = unmixed,
-  M = ctrl$M,
-  output_file = qc_report_file
+  M = ctrl$M
 )
 ```
 

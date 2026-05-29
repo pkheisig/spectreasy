@@ -27,7 +27,7 @@ This file maps each major reviewer comment to the implemented fix in the package
     - `unmix_controls()` → `R/unmix_controls.R`
     - `validate_control_file_mapping()` → `R/control_validation.R`
     - `plot_unmixing_scatter_matrix()` → `R/plot_functions.R`
-    - `generate_scc_report()` → `R/scc_check.R`
+    - `qc_controls()` → `R/scc_check.R`
     - `unmix_samples()` → `R/unmixing.R`
     - `plot_detector_residuals()` → `R/diagnostic_plots.R`
 - Cyclomatic complexity hotspots
@@ -40,7 +40,7 @@ This file maps each major reviewer comment to the implemented fix in the package
   - Implemented in `R/launch_gui.R`.
 - Avoid saving files without consent
   - Plot/report helpers now save only when explicit output paths are supplied.
-  - `generate_scc_report()` no longer retains intermediate QC PNGs by default.
+  - `qc_controls()` no longer retains intermediate QC PNGs by default.
 - GUI host security
   - `launch_gui()` runs on `127.0.0.1`.
 - `unmix_samples()` overwriting FCS outputs

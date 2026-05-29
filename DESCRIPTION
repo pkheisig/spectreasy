@@ -28,6 +28,7 @@ LinkingTo:
     RcppArmadillo
 Suggests:
     jsonlite,
+    KernSmooth,
     knitr,
     pdftools,
     plumber,

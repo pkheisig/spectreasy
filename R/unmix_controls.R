@@ -182,7 +182,7 @@
 
 .unmix_output_paths <- function(output_dir) {
     list(
-        unmixed_dir = file.path(output_dir, "scc_unmixed"),
+        unmixed_dir = file.path(output_dir, "unmixed_fcs"),
         spectra_file = file.path(output_dir, "scc_spectra.png"),
         reference_matrix_csv = file.path(output_dir, "scc_reference_matrix.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
@@ -351,7 +351,7 @@ unmix_controls <- function(
     seed = NULL,
     af_n_bands = 10,
     include_multi_af = FALSE,
-    save_qc_plots = TRUE,
+    save_qc_plots = FALSE,
     ...
 ) {
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
@@ -442,7 +442,6 @@ unmix_controls <- function(
     save_unmixing_matrix(W, output_paths$unmixing_matrix_csv)
 
     p_unmix <- plot_unmixing_matrix(W, pd = meta_info$pd)
-    ggplot2::ggsave(output_paths$unmixing_matrix_png, p_unmix, width = 200, height = 150, units = "mm")
 
     marker_mapping <- .resolve_unmix_marker_mappings(control_df)
     scatter_markers <- rownames(M)
@@ -453,8 +452,8 @@ unmix_controls <- function(
         unmixed_list = unmixed_list,
         sample_to_marker = marker_mapping$sample_to_marker,
         markers = scatter_markers,
-        marker_display = marker_mapping$marker_display,
-        output_file = output_paths$unmixing_scatter_png,
+        marker_display = NULL,
+        output_file = NULL,
         transform = "none",
         panel_size_mm = unmix_scatter_panel_size_mm,
         seed = seed
@@ -468,8 +467,8 @@ unmix_controls <- function(
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
         variances_file = output_paths$variances_csv,
         spectra_file = output_paths$spectra_file,
-        unmixing_matrix_plot = output_paths$unmixing_matrix_png,
-        unmixing_scatter_file = output_paths$unmixing_scatter_png,
+        unmixing_matrix_plot = NULL,
+        unmixing_scatter_file = NULL,
         qc_plot_dir = if (isTRUE(save_qc_plots)) output_dir else NULL,
         static_unmixing_matrix_method = static_info$static_unmixing_matrix_method,
         spectra_plot = p_spectra,

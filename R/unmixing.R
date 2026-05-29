@@ -609,7 +609,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   the result has class `spectreasy_unmixed_results`; list elements contain
 #'   `data` (unmixed abundances plus retained acquisition parameters) and
 #'   `residuals` (detector residual matrix when available, otherwise `NULL`).
-#'   The list can be passed directly to `generate_sample_report(results = ...)`
+#'   The list can be passed directly to `qc_samples(results = ...)`
 #'   or coerced with `as.data.frame()`. The return value is provided invisibly to
 #'   avoid printing large result objects during interactive or Quarto execution.
 #' @examples
@@ -656,11 +656,12 @@ unmix_samples <- function(sample_dir = "samples",
                           af_n_bands = 1,
                           exclude_af = FALSE,
                           include_multi_af = FALSE,
-                          output_dir = file.path("spectreasy_outputs", "unmix_samples"),
+                          output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
                           subsample_n = NULL,
                           seed = NULL,
-                          return_type = c("list", "flowSet", "SingleCellExperiment")) {
+                          return_type = c("list", "flowSet", "SingleCellExperiment"),
+                          verbose = TRUE) {
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
     variances_file_was_missing <- missing(variances_file)
@@ -730,7 +731,7 @@ unmix_samples <- function(sample_dir = "samples",
 
     for (entry in sample_entries) {
         sn <- entry$sample_name
-        message("  Unmixing sample: ", sn)
+        if (isTRUE(verbose)) message("  Unmixing sample: ", sn)
         ff <- if (inherits(entry$flow_frame, "flowFrame")) {
             entry$flow_frame
         } else {

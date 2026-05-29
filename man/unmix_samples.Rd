@@ -17,11 +17,12 @@ unmix_samples(
   af_n_bands = 1,
   exclude_af = FALSE,
   include_multi_af = FALSE,
-  output_dir = file.path("spectreasy_outputs", "unmix_samples"),
+  output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
   subsample_n = NULL,
   seed = NULL,
-  return_type = c("list", "flowSet", "SingleCellExperiment")
+  return_type = c("list", "flowSet", "SingleCellExperiment"),
+  verbose = TRUE
 )
 }
 \arguments{
@@ -83,7 +84,7 @@ Either a named list with one element per sample, a `flowSet`, or a
   the result has class `spectreasy_unmixed_results`; list elements contain
   `data` (unmixed abundances plus retained acquisition parameters) and
   `residuals` (detector residual matrix when available, otherwise `NULL`).
-  The list can be passed directly to `generate_sample_report(results = ...)`
+  The list can be passed directly to `qc_samples(results = ...)`
   or coerced with `as.data.frame()`. The return value is provided invisibly to
   avoid printing large result objects during interactive or Quarto execution.
 }

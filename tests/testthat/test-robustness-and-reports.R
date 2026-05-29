@@ -57,7 +57,7 @@ test_that("calculate_nps excludes AF markers by default", {
     expect_false(any(grepl("^AF($|_)", nps$Marker, ignore.case = TRUE)))
 })
 
-test_that("generate_sample_report accepts unmix_samples results directly", {
+test_that("qc_samples accepts unmix_samples results directly", {
     M <- matrix(c(
         1.0, 0.2, 0.1,
         0.1, 1.0, 0.2,
@@ -104,7 +104,7 @@ test_that("generate_sample_report accepts unmix_samples results directly", {
     pdf_out <- tempfile(fileext = ".pdf")
     expect_no_error(
         suppressMessages(
-            spectreasy::generate_sample_report(
+            spectreasy::qc_samples(
                 results = unmixed,
                 M = M,
                 output_file = pdf_out
@@ -112,9 +112,23 @@ test_that("generate_sample_report accepts unmix_samples results directly", {
         )
     )
     expect_true(file.exists(pdf_out))
+
+    # Test default output file behavior
+    default_pdf <- "spectreasy_outputs/unmix_samples/qc_samples_report.pdf"
+    if (file.exists(default_pdf)) file.remove(default_pdf)
+    expect_no_error(
+        suppressMessages(
+            spectreasy::qc_samples(
+                results = unmixed,
+                M = M
+            )
+        )
+    )
+    expect_true(file.exists(default_pdf))
+    file.remove(default_pdf)
 })
 
-test_that("generate_sample_report has stable pages and no recommendation page", {
+test_that("qc_samples has stable pages and no recommendation page", {
     skip_if_not_installed("pdftools")
 
     set.seed(1)
@@ -136,7 +150,7 @@ test_that("generate_sample_report has stable pages and no recommendation page", 
     colnames(M) <- c("B1-A", "YG1-A", "R1-A")
 
     pdf_out <- tempfile(fileext = ".pdf")
-    spectreasy::generate_sample_report(results = results, M = M, output_file = pdf_out)
+    spectreasy::qc_samples(results = results, M = M, output_file = pdf_out)
 
     expect_true(file.exists(pdf_out))
 
@@ -150,7 +164,7 @@ test_that("generate_sample_report has stable pages and no recommendation page", 
     expect_false(grepl("Good: populations remain compact", txt, fixed = TRUE))
 })
 
-test_that("generate_sample_report can include NxN pages for all samples", {
+test_that("qc_samples can include NxN pages for all samples", {
     skip_if_not_installed("pdftools")
 
     set.seed(1)
@@ -172,7 +186,7 @@ test_that("generate_sample_report can include NxN pages for all samples", {
     colnames(M) <- c("B1-A", "YG1-A", "R1-A")
 
     pdf_out <- tempfile(fileext = ".pdf")
-    spectreasy::generate_sample_report(
+    spectreasy::qc_samples(
         results = results,
         M = M,
         output_file = pdf_out,
@@ -187,7 +201,7 @@ test_that("generate_sample_report can include NxN pages for all samples", {
     expect_true(grepl("Sample NxN Scatter Matrix: SampleB", txt, fixed = TRUE))
 })
 
-test_that("generate_sample_report loads M from unmixing_matrix_file", {
+test_that("qc_samples loads M from unmixing_matrix_file", {
     set.seed(1)
     n <- 120
     results <- data.frame(
@@ -215,7 +229,7 @@ test_that("generate_sample_report loads M from unmixing_matrix_file", {
     pdf_out <- tempfile(fileext = ".pdf")
     expect_no_error(
         suppressMessages(
-            spectreasy::generate_sample_report(
+            spectreasy::qc_samples(
                 results = results,
                 unmixing_matrix_file = csv_file,
                 output_file = pdf_out

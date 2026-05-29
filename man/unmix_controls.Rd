@@ -18,7 +18,7 @@ unmix_controls(
   seed = NULL,
   af_n_bands = 10,
   include_multi_af = FALSE,
-  save_qc_plots = TRUE,
+  save_qc_plots = FALSE,
   ...
 )
 }

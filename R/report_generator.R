@@ -350,7 +350,7 @@
 #' Creates a multi-page report summarizing unmixing quality, including spectra,
 #' detector residuals, spread matrix, NPS, and per-sample NxN marker scatter pages.
 #'
-#' `generate_sample_report()` expects a combined data frame or the raw list returned
+#' `qc_samples()` expects a combined data frame or the raw list returned
 #' by [unmix_samples()]. In the usual workflow, pass the unmixed results object
 #' directly.
 #'
@@ -361,7 +361,7 @@
 #' `scc_unmixing_matrix.csv` here.
 #'
 #' @param results Combined unmixed data frame, or the list returned by
-#'   [unmix_samples()]. `generate_sample_report()` will automatically bind
+#'   [unmix_samples()]. `qc_samples()` will automatically bind
 #'   per-sample `$data` elements when needed.
 #' @param M Reference matrix used for report context. Must be a numeric matrix or
 #'   a data frame with detector columns, for example `ctrl$M` from
@@ -370,7 +370,7 @@
 #' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
-#' @param output_file Output PDF file path. Must be supplied explicitly.
+#' @param output_file Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.
 #' @param res_list Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.
 #' @param png_dir Deprecated and ignored (kept for backward compatibility).
 #' @param pd Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
@@ -401,27 +401,26 @@
 #' )
 #'
 #' # Typical workflow after unmix_samples():
-#' # generate_sample_report(
+#' # qc_samples(
 #' #   results = unmixed,
-#' #   M = ctrl$M,
-#' #   output_file = "Sample_QC_Report.pdf"
+#' #   M = ctrl$M
 #' # )
 #'
 #' pdf_file <- tempfile(fileext = ".pdf")
-#' generate_sample_report(results = results, M = M_demo, output_file = pdf_file)
+#' qc_samples(results = results, M = M_demo, output_file = pdf_file)
 #' file.exists(pdf_file)
-generate_sample_report <- function(results,
-                                   M = NULL,
-                                   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
-                                   output_file = NULL,
-                                   res_list = NULL,
-                                   png_dir = NULL,
-                                   pd = NULL,
-                                   sample_nxn_rows_per_page = 10,
-                                   sample_nxn_max_points = 3000,
-                                   sample_nxn_transform = c("none", "asinh"),
-                                   sample_nxn_asinh_cofactor = 150,
-                                   nxn_all_samples = FALSE) {
+qc_samples <- function(results,
+                       M = NULL,
+                       unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
+                       output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
+                       res_list = NULL,
+                       png_dir = NULL,
+                       pd = NULL,
+                       sample_nxn_rows_per_page = 10,
+                       sample_nxn_max_points = 3000,
+                       sample_nxn_transform = c("none", "asinh"),
+                       sample_nxn_asinh_cofactor = 150,
+                       nxn_all_samples = FALSE) {
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the QC PDF report.", call. = FALSE)
     }

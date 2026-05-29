@@ -199,7 +199,7 @@
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param scc_dir Directory containing SCC FCS files.
-#' @param output_file Path to save the PDF report. Must be supplied explicitly.
+#' @param output_file Path to save the PDF report. Defaults to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.
 #' @param control_file Control mapping CSV path.
 #' @param cytometer Cytometer name passed to [build_reference_matrix()].
 #' @param qc_plot_dir Directory where FSC/SSC, histogram, and spectrum PNGs are written
@@ -215,18 +215,17 @@
 #'   `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 #' @examples
 #' if (interactive()) {
-#'   generate_scc_report(
+#'   qc_controls(
 #'     scc_dir = "scc",
-#'     control_file = "fcs_mapping.csv",
-#'     output_file = file.path("spectreasy_outputs", "SCC_QC_Report.pdf")
+#'     control_file = "fcs_mapping.csv"
 #'   )
 #' }
 #' @export
-generate_scc_report <- function(
+qc_controls <- function(
     M = NULL,
     unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
     scc_dir = "scc",
-    output_file = NULL,
+    output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
     control_file = "fcs_mapping.csv",
     cytometer = "Aurora",
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
@@ -356,14 +355,13 @@ generate_scc_report <- function(
         .draw_report_ggplot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
         .draw_report_ggplot_page(plot_ssm(calculate_ssm(M_no_af), output_file = NULL))
 
-        # Add single-color control unmixing scatter matrix
-        message("  - Adding SCC unmixing scatter matrix...")
         unmixed_list <- unmix_samples(
             sample_dir = scc_dir,
             M = M_report,
             method = "WLS",
             cytometer = cytometer,
-            write_fcs = FALSE
+            write_fcs = FALSE,
+            verbose = FALSE
         )
         sample_to_marker <- NULL
         marker_display <- NULL
@@ -397,7 +395,7 @@ generate_scc_report <- function(
             unmixed_list = unmixed_list,
             sample_to_marker = sample_to_marker,
             markers = scatter_markers,
-            marker_display = marker_display,
+            marker_display = NULL,
             output_file = NULL,
             seed = seed
         )

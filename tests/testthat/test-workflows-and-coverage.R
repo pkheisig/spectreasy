@@ -130,8 +130,8 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     expect_true(file.exists(ctrl$reference_matrix_file))
     expect_true(file.exists(ctrl$unmixing_matrix_file))
     expect_true(file.exists(ctrl$spectra_file))
-    expect_true(file.exists(ctrl$unmixing_matrix_plot))
-    expect_true(file.exists(ctrl$unmixing_scatter_file))
+    expect_null(ctrl$unmixing_matrix_plot)
+    expect_null(ctrl$unmixing_scatter_file)
     expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))
 })
 
@@ -154,7 +154,7 @@ test_that("unmix_controls handles WLS output and exclude_af branch", {
     expect_equal(ctrl$static_unmixing_matrix_method, "WLS")
     expect_false(any(grepl("^AF($|_)", rownames(ctrl$M), ignore.case = TRUE)))
     expect_false(any(grepl("Unstained", names(ctrl$unmixed_list), ignore.case = TRUE)))
-    expect_false(file.exists(file.path(output_dir, "scc_unmixed", "Unstained (Cells)_unmixed.fcs")))
+    expect_false(file.exists(file.path(output_dir, "unmixed_fcs", "Unstained (Cells)_unmixed.fcs")))
 })
 
 test_that("unmix_samples recomputes missing WLS variances from SCC files", {
@@ -228,14 +228,14 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
     expect_true(file.exists(file.path(output_dir, "sample_b_unmixed.fcs")))
 })
 
-test_that("generate_scc_report writes a PDF from synthetic SCC files", {
+test_that("qc_controls writes a PDF from synthetic SCC files", {
     wf <- make_synthetic_workflow()
     output_pdf <- tempfile(fileext = ".pdf")
     qc_plot_dir <- tempfile("spectreasy_covr_scc_report_")
     control_csv <- tempfile(fileext = ".csv")
     utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
 
-    out <- spectreasy::generate_scc_report(
+    out <- spectreasy::qc_controls(
         scc_dir = wf$scc_dir,
         output_file = output_pdf,
         control_file = control_csv,
@@ -249,16 +249,31 @@ test_that("generate_scc_report writes a PDF from synthetic SCC files", {
     expect_true(dir.exists(out$qc_plot_dir))
     expect_true(is.matrix(out$M))
     expect_true(is.data.frame(out$qc_summary))
+
+    # Test default output file behavior
+    default_pdf <- "spectreasy_outputs/unmix_controls/qc_controls_report.pdf"
+    if (file.exists(default_pdf)) file.remove(default_pdf)
+    
+    out_default <- spectreasy::qc_controls(
+        scc_dir = wf$scc_dir,
+        control_file = control_csv,
+        qc_plot_dir = qc_plot_dir,
+        save_qc_pngs = FALSE,
+        seed = 1,
+        subsample_n = 400
+    )
+    expect_true(file.exists(default_pdf))
+    file.remove(default_pdf)
 })
 
-test_that("generate_scc_report does not retain QC PNGs unless requested", {
+test_that("qc_controls does not retain QC PNGs unless requested", {
     wf <- make_synthetic_workflow()
     output_pdf <- tempfile(fileext = ".pdf")
     qc_plot_dir <- tempfile("spectreasy_scc_report_no_retain_")
     control_csv <- tempfile(fileext = ".csv")
     utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
 
-    out <- spectreasy::generate_scc_report(
+    out <- spectreasy::qc_controls(
         scc_dir = wf$scc_dir,
         output_file = output_pdf,
         control_file = control_csv,
