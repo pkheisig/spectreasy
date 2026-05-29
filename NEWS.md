@@ -8,6 +8,12 @@
 
 ## Changes
 
+- WLS now uses SCC-derived detector variances only; it no longer guesses weights from the reference matrix or sample brightness.
+- `unmix_samples(method = "WLS")` can recompute missing WLS variances from SCC files and save a regenerated `scc_variances.csv`.
+- Multi-AF WLS now uses SCC-derived variances for AF-band selection and coefficient fitting.
+- `control.type` in the control mapping now controls bead/cell FSC/SSC gating, with filename guessing used only when the column is empty.
+- `universal.negative` can now point to a specific negative FCS file for SCC subtraction.
+- Removed the unused `background_noise` argument from spectral spread matrix calculation.
 - Added AF basis-band extraction via `af_n_bands`/`af_max_cells` in `build_reference_matrix()`.
 - Added optional deterministic `seed` support in SCC report/matrix/control workflows.
 - Updated static matrix export in `unmix_controls()` to follow selected method (`OLS`, `WLS`, `NNLS` proxy).

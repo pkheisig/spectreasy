@@ -7,7 +7,7 @@
 - **Automated Gating**: Isolate positive populations from beads or cells using Gaussian Mixture Models
 - **Background Subtraction**: Automatically subtract internal negative populations to isolate pure fluorophore signatures
 - **Pre-Unmix SCC Review**: Generate a PDF with per-control gating, histogram, and spectrum diagnostics before unmixing
-- **Per-Cell WLS Unmixing**: High-accuracy unmixing using photon-counting variance weighting
+- **SCC-Variance WLS Unmixing**: Weighted unmixing using detector noise measured from the single-color controls
 - **SCC Diagnostics & Visualization**: Spectra, gating plots, and SCC unmixing scatter outputs for control-stage QC
 - **Interactive GUI**: Web-based interface for manual matrix adjustment
 - **Bioconductor-Native In-Memory Workflows**: `unmix_samples()` accepts `flowSet` and `SingleCellExperiment`, and can return either container
@@ -163,6 +163,7 @@ Key outputs from this step include:
 
 - `fcs_mapping.csv`
 - `spectreasy_outputs/unmix_controls/scc_reference_matrix.csv`
+- `spectreasy_outputs/unmix_controls/scc_variances.csv`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.png`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
@@ -187,6 +188,17 @@ The same run creates the NxN scatter matrix for the single-color controls. Each 
 <p align="center">
   <img src="man/figures/vignette_scatter_matrix.png" width="100%" />
 </p>
+
+### What WLS Uses
+
+When `method = "WLS"`, `spectreasy` does not guess weights from the reference matrix or from sample brightness. It uses detector-wise variance estimates measured from the single-color controls. In practice, that means WLS needs two pieces:
+
+- the reference spectra in `scc_reference_matrix.csv`
+- the SCC-derived noise estimates in `scc_variances.csv`
+
+`unmix_controls()` writes both files. If `unmix_samples(method = "WLS")` can load the reference matrix but cannot find `scc_variances.csv`, it tries to recompute the missing variances from the SCC files. This is still true WLS, because the weights still come from the controls. If neither a variance file nor the SCC files are available, WLS stops instead of silently falling back to a guess.
+
+The `control.type` column in `fcs_mapping.csv` also matters for this step. It tells `spectreasy` whether each control should be gated as `beads` or `cells`. If `control.type` is empty, `spectreasy` falls back to filename-based guessing.
 
 ## 5. Unmix the experimental sample
 
@@ -308,6 +320,8 @@ dim(ctrl_noninteractive$M)
 ## Pass the in-memory reference matrix directly
 
 You can pass the in-memory reference matrix returned by `unmix_controls()` directly to `unmix_samples()` instead of loading it from the saved CSV file.
+
+For WLS, the in-memory matrix returned by `unmix_controls()` already carries the SCC-derived variances with it. If you save only the matrix CSV and reload it later, keep the matching `scc_variances.csv` next to it or pass it through `variances_file`.
 
 ```r
 fluor_reference_matrix <- ctrl$M
