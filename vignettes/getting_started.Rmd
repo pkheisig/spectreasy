@@ -119,6 +119,7 @@ ctrl <- unmix_controls(
   output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls"),
   unmix_method = "WLS",
   unmix_scatter_panel_size_mm = 30,
+  save_qc_plots = TRUE,
   seed = 1
 )
 
@@ -149,7 +150,8 @@ unmix_controls(
   cytometer = "Aurora",
   auto_unknown_fluor_policy = "by_channel",
   unmix_method = "WLS",
-  unmix_scatter_panel_size_mm = 30
+  unmix_scatter_panel_size_mm = 30,
+  save_qc_plots = TRUE
 )
 ```
 
@@ -205,7 +207,7 @@ Key outputs from this step include:
 - `spectreasy_outputs/unmix_controls/fsc_ssc/*.png`
 - `spectreasy_outputs/unmix_controls/histogram/*.png`
 - `spectreasy_outputs/unmix_controls/spectrum/*.png`
-- `spectreasy_outputs/unmix_controls/scc_unmixed/*.fcs`
+- `spectreasy_outputs/unmix_controls/unmixed_fcs/*.fcs`
 
 The control-stage run also writes visual checks for each single-color control.
 For one color, the three plots below show the FSC/SSC gate, the peak-channel

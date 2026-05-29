@@ -84,7 +84,8 @@ unmix_controls(
   cytometer = "Aurora",
   auto_unknown_fluor_policy = "by_channel",
   unmix_method = "WLS",
-  unmix_scatter_panel_size_mm = 30
+  unmix_scatter_panel_size_mm = 30,
+  save_qc_plots = TRUE
 )
 ```
 
@@ -141,13 +142,13 @@ The same `unmix_controls()` call then continues and writes the control-stage out
 #> [12] "histogram/PerCP-Cy5.5 (Beads)_histogram.png"    
 #> [13] "scc_reference_matrix.csv"                       
 #> [14] "scc_spectra.png"                                
-#> [15] "scc_unmixed/Alexa Fluor 700 (Beads)_unmixed.fcs"
-#> [16] "scc_unmixed/BUV395 (Beads)_unmixed.fcs"         
-#> [17] "scc_unmixed/BV510 (Beads)_unmixed.fcs"          
-#> [18] "scc_unmixed/FITC (Beads)_unmixed.fcs"           
-#> [19] "scc_unmixed/LIVE DEAD NIR (Cells)_unmixed.fcs"  
-#> [20] "scc_unmixed/PerCP-Cy5.5 (Beads)_unmixed.fcs"    
-#> [21] "scc_unmixed/Unstained (Cells)_unmixed.fcs"      
+#> [15] "unmixed_fcs/Alexa Fluor 700 (Beads)_unmixed.fcs"
+#> [16] "unmixed_fcs/BUV395 (Beads)_unmixed.fcs"         
+#> [17] "unmixed_fcs/BV510 (Beads)_unmixed.fcs"          
+#> [18] "unmixed_fcs/FITC (Beads)_unmixed.fcs"           
+#> [19] "unmixed_fcs/LIVE DEAD NIR (Cells)_unmixed.fcs"  
+#> [20] "unmixed_fcs/PerCP-Cy5.5 (Beads)_unmixed.fcs"    
+#> [21] "unmixed_fcs/Unstained (Cells)_unmixed.fcs"      
 #> [22] "scc_unmixing_matrix.csv"                        
 #> [23] "scc_unmixing_matrix.png"                        
 #> [24] "scc_unmixing_scatter_matrix.png"                
@@ -170,7 +171,7 @@ Key outputs from this step include:
 - `spectreasy_outputs/unmix_controls/fsc_ssc/*.png`
 - `spectreasy_outputs/unmix_controls/histogram/*.png`
 - `spectreasy_outputs/unmix_controls/spectrum/*.png`
-- `spectreasy_outputs/unmix_controls/scc_unmixed/*.fcs`
+- `spectreasy_outputs/unmix_controls/unmixed_fcs/*.fcs`
 
 The control-stage run also writes visual checks for each single-color control. For one color, the three plots below show the FSC/SSC gate, the peak-channel histogram gate, and the detector spectrum used to build the reference matrix:
 

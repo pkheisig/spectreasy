@@ -77,6 +77,9 @@ data will still be written to the FCS files.}
 as `attr(x, "spectreasy_residuals")`. When `"SingleCellExperiment"`, cell-level
 unmixed values are returned in assay `"unmixed"`, with detector residuals in
 `altExp(x, "detector_residuals")` when available.}
+
+\item{verbose}{Logical; if `TRUE`, print progress messages while unmixing
+samples.}
 }
 \value{
 Either a named list with one element per sample, a `flowSet`, or a

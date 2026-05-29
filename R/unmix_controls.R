@@ -442,18 +442,19 @@ unmix_controls <- function(
     save_unmixing_matrix(W, output_paths$unmixing_matrix_csv)
 
     p_unmix <- plot_unmixing_matrix(W, pd = meta_info$pd)
+    ggplot2::ggsave(output_paths$unmixing_matrix_png, p_unmix, width = 220, height = 140, units = "mm", dpi = 300)
 
     marker_mapping <- .resolve_unmix_marker_mappings(control_df)
     scatter_markers <- rownames(M)
     extra_af_rows <- grepl("^AF_", scatter_markers, ignore.case = TRUE)
     scatter_markers <- scatter_markers[!extra_af_rows]
 
-    plot_unmixing_scatter_matrix(
+    p_scatter <- plot_unmixing_scatter_matrix(
         unmixed_list = unmixed_list,
         sample_to_marker = marker_mapping$sample_to_marker,
         markers = scatter_markers,
         marker_display = NULL,
-        output_file = NULL,
+        output_file = output_paths$unmixing_scatter_png,
         transform = "none",
         panel_size_mm = unmix_scatter_panel_size_mm,
         seed = seed
@@ -467,11 +468,12 @@ unmix_controls <- function(
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
         variances_file = output_paths$variances_csv,
         spectra_file = output_paths$spectra_file,
-        unmixing_matrix_plot = NULL,
-        unmixing_scatter_file = NULL,
+        unmixing_matrix_plot = output_paths$unmixing_matrix_png,
+        unmixing_scatter_file = output_paths$unmixing_scatter_png,
         qc_plot_dir = if (isTRUE(save_qc_plots)) output_dir else NULL,
         static_unmixing_matrix_method = static_info$static_unmixing_matrix_method,
         spectra_plot = p_spectra,
-        unmixing_plot = p_unmix
+        unmixing_plot = p_unmix,
+        unmixing_scatter_plot = p_scatter
     ))
 }

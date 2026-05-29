@@ -604,6 +604,8 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   as `attr(x, "spectreasy_residuals")`. When `"SingleCellExperiment"`, cell-level
 #'   unmixed values are returned in assay `"unmixed"`, with detector residuals in
 #'   `altExp(x, "detector_residuals")` when available.
+#' @param verbose Logical; if `TRUE`, print progress messages while unmixing
+#'   samples.
 #' @return Either a named list with one element per sample, a `flowSet`, or a
 #'   `SingleCellExperiment` depending on `return_type`. For `return_type = "list"`,
 #'   the result has class `spectreasy_unmixed_results`; list elements contain
