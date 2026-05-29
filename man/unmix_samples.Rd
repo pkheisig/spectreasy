@@ -37,8 +37,11 @@ Used when `M` is not supplied. By default this points to the reference matrix
 produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{variances_file}{Optional CSV path to a saved variances matrix. Used
-for WLS unmixing. If the file is missing and `scc_dir` is available,
-variances are recomputed from SCC files and saved to this path.}
+for WLS unmixing. If the default path is missing and
+`unmixing_matrix_file` points to a saved reference matrix, `unmix_samples()`
+also looks for `scc_variances.csv` beside that reference matrix. If no
+variance file is found and `scc_dir` is available, variances are recomputed
+from SCC files and saved to this path.}
 
 \item{method}{Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).}
 

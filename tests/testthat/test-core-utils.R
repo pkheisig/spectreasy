@@ -624,3 +624,71 @@ test_that("unmix_samples integrates with variances CSV file", {
     expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
     expect_setequal(names(unmixed), "sample")
 })
+
+test_that("unmix_samples finds sibling variances for saved reference matrix", {
+    M <- matrix(c(
+        1, 0.2,
+        0.1, 1
+    ), nrow = 2, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE")
+    colnames(M) <- c("B1-A", "YG1-A")
+
+    V <- matrix(c(
+        50, 10,
+        5, 60
+    ), nrow = 2, byrow = TRUE)
+    rownames(V) <- rownames(M)
+    colnames(V) <- colnames(M)
+
+    matrix_dir <- tempfile("saved_matrix_")
+    dir.create(matrix_dir, showWarnings = FALSE)
+    tmp_ref <- file.path(matrix_dir, "scc_reference_matrix.csv")
+    tmp_var <- file.path(matrix_dir, "scc_variances.csv")
+
+    ref_df <- as.data.frame(M)
+    ref_df$Marker <- rownames(M)
+    ref_df <- ref_df[, c("Marker", "B1-A", "YG1-A")]
+    write.csv(ref_df, tmp_ref, row.names = FALSE)
+
+    var_df <- as.data.frame(V)
+    var_df$Marker <- rownames(V)
+    var_df <- var_df[, c("Marker", "B1-A", "YG1-A")]
+    write.csv(var_df, tmp_var, row.names = FALSE)
+
+    exprs <- matrix(c(
+        100, 20,
+        10, 120
+    ), nrow = 2, byrow = TRUE)
+    colnames(exprs) <- c("B1-A", "YG1-A")
+    ff <- flowCore::flowFrame(exprs)
+
+    sample_dir <- tempfile("samples_")
+    dir.create(sample_dir, showWarnings = FALSE)
+    flowCore::write.FCS(ff, file.path(sample_dir, "sample.fcs"))
+
+    output_dir <- tempfile("unmixed_")
+
+    work_dir <- tempfile("working_dir_")
+    dir.create(file.path(work_dir, "spectreasy_outputs", "unmix_controls"), recursive = TRUE)
+    wrong_var <- matrix(1, nrow = 1, ncol = 2, dimnames = list("Wrong", colnames(M)))
+    wrong_var_df <- as.data.frame(wrong_var)
+    wrong_var_df$Marker <- rownames(wrong_var)
+    wrong_var_df <- wrong_var_df[, c("Marker", "B1-A", "YG1-A")]
+    write.csv(
+        wrong_var_df,
+        file.path(work_dir, "spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
+        row.names = FALSE
+    )
+    withr::local_dir(work_dir)
+
+    unmixed <- spectreasy::unmix_samples(
+        sample_dir = sample_dir,
+        unmixing_matrix_file = tmp_ref,
+        method = "WLS",
+        output_dir = output_dir,
+        write_fcs = TRUE
+    )
+
+    expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
+    expect_setequal(names(unmixed), "sample")
+})

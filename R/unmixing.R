@@ -160,6 +160,41 @@
     .attach_matching_variances(M, V, source = variances_file)
 }
 
+.resolve_variances_file_for_unmixing <- function(unmixing_matrix_file,
+                                                variances_file = NULL,
+                                                prefer_sibling = FALSE) {
+    if (is.null(variances_file)) {
+        return(variances_file)
+    }
+
+    if (!is.null(unmixing_matrix_file) && file.exists(unmixing_matrix_file)) {
+        sibling_variances_file <- file.path(dirname(unmixing_matrix_file), "scc_variances.csv")
+        if (isTRUE(prefer_sibling) && file.exists(sibling_variances_file)) {
+            return(sibling_variances_file)
+        }
+    }
+
+    if (file.exists(variances_file)) {
+        return(variances_file)
+    }
+
+    default_variances_file <- file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv")
+    if (!identical(normalizePath(variances_file, mustWork = FALSE), normalizePath(default_variances_file, mustWork = FALSE))) {
+        return(variances_file)
+    }
+
+    if (is.null(unmixing_matrix_file) || !file.exists(unmixing_matrix_file)) {
+        return(variances_file)
+    }
+
+    sibling_variances_file <- file.path(dirname(unmixing_matrix_file), "scc_variances.csv")
+    if (file.exists(sibling_variances_file)) {
+        return(sibling_variances_file)
+    }
+
+    variances_file
+}
+
 .recompute_wls_variances_from_scc <- function(M,
                                               scc_dir = NULL,
                                               control_file = NULL,
@@ -542,8 +577,11 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param variances_file Optional CSV path to a saved variances matrix. Used
-#'   for WLS unmixing. If the file is missing and `scc_dir` is available,
-#'   variances are recomputed from SCC files and saved to this path.
+#'   for WLS unmixing. If the default path is missing and
+#'   `unmixing_matrix_file` points to a saved reference matrix, `unmix_samples()`
+#'   also looks for `scc_variances.csv` beside that reference matrix. If no
+#'   variance file is found and `scc_dir` is available, variances are recomputed
+#'   from SCC files and saved to this path.
 #' @param method Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).
 #' @param cytometer Reserved for compatibility with older workflows.
 #' @param scc_dir Directory containing single-color control files. Used to
@@ -625,6 +663,7 @@ unmix_samples <- function(sample_dir = "samples",
                           return_type = c("list", "flowSet", "SingleCellExperiment")) {
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
+    variances_file_was_missing <- missing(variances_file)
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")
@@ -632,6 +671,11 @@ unmix_samples <- function(sample_dir = "samples",
     } else if (!is.null(unmixing_matrix_file) && file.exists(unmixing_matrix_file)) {
         M <- .read_unmixing_matrix_csv(unmixing_matrix_file)
         M <- .as_reference_matrix(M, "M")
+        variances_file <- .resolve_variances_file_for_unmixing(
+            unmixing_matrix_file = unmixing_matrix_file,
+            variances_file = variances_file,
+            prefer_sibling = variances_file_was_missing
+        )
         M <- .load_variances_for_unmixing(M, variances_file = variances_file)
     } else {
         # Try to build reference matrix dynamically
