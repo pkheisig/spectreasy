@@ -157,6 +157,45 @@ test_that("unmix_controls handles WLS output and exclude_af branch", {
     expect_false(file.exists(file.path(output_dir, "scc_unmixed", "Unstained (Cells)_unmixed.fcs")))
 })
 
+test_that("unmix_samples recomputes missing WLS variances from SCC files", {
+    wf <- make_synthetic_workflow()
+    M <- spectreasy::build_reference_matrix(
+        input_folder = wf$scc_dir,
+        control_df = wf$control_df,
+        save_qc_plots = FALSE,
+        seed = 1,
+        subsample_n = 400
+    )
+
+    ref_file <- tempfile("scc_reference_matrix_", fileext = ".csv")
+    var_file <- tempfile("scc_variances_", fileext = ".csv")
+    ref_df <- as.data.frame(M, check.names = FALSE)
+    ref_df$Marker <- rownames(M)
+    ref_df <- ref_df[, c("Marker", setdiff(colnames(ref_df), "Marker")), drop = FALSE]
+    utils::write.csv(ref_df, ref_file, row.names = FALSE)
+    if (file.exists(var_file)) file.remove(var_file)
+
+    sample_dir <- tempfile("spectreasy_recompute_samples_")
+    dir.create(sample_dir, recursive = TRUE, showWarnings = FALSE)
+    flowCore::write.FCS(make_synthetic_ff(c("B1-A" = 900, "YG1-A" = 500), n = 120), file.path(sample_dir, "sample.fcs"))
+
+    output_dir <- tempfile("spectreasy_recompute_unmixed_")
+    res <- spectreasy::unmix_samples(
+        sample_dir = sample_dir,
+        unmixing_matrix_file = ref_file,
+        variances_file = var_file,
+        method = "WLS",
+        scc_dir = wf$scc_dir,
+        control_file = wf$control_df,
+        output_dir = output_dir,
+        write_fcs = TRUE
+    )
+
+    expect_s3_class(res, "spectreasy_unmixed_results")
+    expect_true(file.exists(var_file))
+    expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
+})
+
 test_that("unmix_samples writes FCS files by default and returns invisibly", {
     wf <- make_synthetic_workflow()
     sample_dir <- tempfile("spectreasy_covr_samples_")

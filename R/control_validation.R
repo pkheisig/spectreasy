@@ -72,6 +72,10 @@
     df$filename <- .control_validation_as_chr(df$filename)
     df$fluorophore <- .control_validation_as_chr(df$fluorophore)
     df$channel <- .control_validation_as_chr(df$channel)
+    if (!("control.type" %in% colnames(df))) {
+        df$control.type <- ""
+    }
+    df$control.type <- tolower(.control_validation_as_chr(df$control.type))
     if (!("universal.negative" %in% colnames(df))) {
         df$universal.negative <- ""
     }
@@ -95,6 +99,11 @@
     if (any(df$fluorophore == "" | is.na(df$fluorophore))) {
         bad <- which(df$fluorophore == "" | is.na(df$fluorophore))
         errors <- c(errors, paste0("Empty fluorophore in control file rows: ", paste(bad, collapse = ", ")))
+    }
+
+    invalid_control_type <- which(nzchar(df$control.type) & !df$control.type %in% c("beads", "cells"))
+    if (length(invalid_control_type) > 0) {
+        errors <- c(errors, paste0("Invalid control.type in rows: ", paste(invalid_control_type, collapse = ", "), ". Use 'beads', 'cells', or leave empty."))
     }
 
     is_af <- .is_af_control_row(
@@ -150,7 +159,13 @@
     errors <- character()
     uv_vals <- df$universal.negative[active_rows]
     keyword_vals <- c("", "TRUE", "FALSE", "AF")
-    unresolved_uv <- uv_vals[!(uv_vals %in% keyword_vals) & !(uv_vals %in% known_files)]
+    known_keys <- unique(c(
+        known_files,
+        tools::file_path_sans_ext(basename(known_files))
+    ))
+    uv_keys <- tools::file_path_sans_ext(basename(uv_vals))
+    uv_upper <- toupper(uv_vals)
+    unresolved_uv <- uv_vals[!(uv_upper %in% keyword_vals) & !(uv_vals %in% known_keys) & !(uv_keys %in% known_keys)]
     if (length(unresolved_uv) > 0) {
         errors <- c(errors, paste0("universal.negative points to unknown files for active controls: ", paste(unique(unresolved_uv), collapse = ", ")))
     }

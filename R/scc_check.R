@@ -48,6 +48,12 @@
     if (!("marker" %in% colnames(df))) {
         df$marker <- ""
     }
+    if (!("stain_index" %in% colnames(df))) {
+        df$stain_index <- NA_real_
+    }
+    if (!("saturated" %in% colnames(df))) {
+        df$saturated <- "OK"
+    }
     df <- df[, c(
         "fluorophore",
         "marker",
@@ -55,14 +61,15 @@
         "type",
         "peak_channel",
         "n_total",
-        "n_scatter_gated",
         "n_final",
         "scatter_gate_pct",
-        "histogram_gate_pct"
+        "histogram_gate_pct",
+        "stain_index",
+        "saturated"
     ), drop = FALSE]
 
-    headers <- c("Fluor", "Marker", "Sample", "Type", "Peak", "Events", "Scatter", "Final", "Scatter%", "Hist%")
-    widths <- c(14, 14, 24, 8, 8, 9, 9, 7, 9, 7)
+    headers <- c("Fluor", "Marker", "Sample", "Type", "Peak", "Events", "Final", "Scatter%", "Hist%", "SI", "Sat")
+    widths <- c(14, 14, 20, 6, 8, 7, 7, 8, 7, 6, 4)
 
     trim_to <- function(x, w) {
         x <- as.character(x)
@@ -88,10 +95,11 @@
         trim_to(df$type, widths[4]),
         trim_to(df$peak_channel, widths[5]),
         trim_to(df$n_total, widths[6]),
-        trim_to(df$n_scatter_gated, widths[7]),
-        trim_to(df$n_final, widths[8]),
-        trim_to(fmt_num(df$scatter_gate_pct, 1), widths[9]),
-        trim_to(fmt_num(df$histogram_gate_pct, 1), widths[10])
+        trim_to(df$n_final, widths[7]),
+        trim_to(fmt_num(df$scatter_gate_pct, 1), widths[8]),
+        trim_to(fmt_num(df$histogram_gate_pct, 1), widths[9]),
+        trim_to(fmt_num(df$stain_index, 1), widths[10]),
+        trim_to(df$saturated, widths[11])
     )
 
     make_line <- function(parts) {
@@ -105,12 +113,29 @@
     c(header_line, sep_line, row_lines)
 }
 
-.draw_report_ggplot_page <- function(p) {
+.draw_report_ggplot_page <- function(p, square = FALSE, height_ratio = 1.0) {
     if (is.null(p)) {
         return(invisible(NULL))
     }
     grid::grid.newpage()
-    grid::grid.draw(ggplot2::ggplotGrob(p))
+    grob <- ggplot2::ggplotGrob(p)
+    if (!isTRUE(square) && height_ratio == 1.0) {
+        grid::grid.draw(grob)
+    } else {
+        vp_h <- if (isTRUE(square)) 0.99 else height_ratio
+        vp_w <- if (isTRUE(square)) 0.78 else 0.95
+        grid::grid.draw(
+            grid::editGrob(
+                grob,
+                vp = grid::viewport(
+                    x = 0.5,
+                    y = 0.5,
+                    width = vp_w,
+                    height = vp_h
+                )
+            )
+        )
+    }
     invisible(NULL)
 }
 
@@ -323,11 +348,60 @@ generate_scc_report <- function(
     M_no_af <- M_report[keep_non_af, , drop = FALSE]
 
     if (nrow(M_no_af) > 0) {
-        .draw_report_ggplot_page(plot_spectra(M_no_af, pd = pd, output_file = NULL))
+        .draw_report_ggplot_page(plot_spectra(M_no_af, pd = pd, output_file = NULL), height_ratio = 0.6)
     }
 
     if (nrow(M_no_af) > 1) {
+        sim_mat <- calculate_similarity_matrix(M_no_af)
+        .draw_report_ggplot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
         .draw_report_ggplot_page(plot_ssm(calculate_ssm(M_no_af), output_file = NULL))
+
+        # Add single-color control unmixing scatter matrix
+        message("  - Adding SCC unmixing scatter matrix...")
+        unmixed_list <- unmix_samples(
+            sample_dir = scc_dir,
+            M = M_report,
+            method = "WLS",
+            cytometer = cytometer,
+            write_fcs = FALSE
+        )
+        sample_to_marker <- NULL
+        marker_display <- NULL
+        if (nrow(qc_summary) > 0) {
+            sample_keys <- as.character(qc_summary$sample)
+            primary_vals <- trimws(as.character(qc_summary$fluorophore))
+            secondary_vals <- if ("marker" %in% colnames(qc_summary)) {
+                trimws(as.character(qc_summary$marker))
+            } else {
+                rep("", length(primary_vals))
+            }
+            secondary_vals[is.na(secondary_vals)] <- ""
+
+            keep <- !is.na(sample_keys) & sample_keys != "" & !is.na(primary_vals) & primary_vals != ""
+            if (any(keep)) {
+                sample_to_marker <- stats::setNames(primary_vals[keep], sample_keys[keep])
+                sample_to_marker <- sample_to_marker[!duplicated(names(sample_to_marker))]
+
+                display_vals <- primary_vals
+                show_secondary <- secondary_vals != "" &
+                    toupper(secondary_vals) != "AUTOFLUORESCENCE" &
+                    tolower(secondary_vals) != tolower(primary_vals)
+                display_vals[show_secondary] <- paste0(primary_vals[show_secondary], " / ", secondary_vals[show_secondary])
+                marker_display <- stats::setNames(display_vals[keep], primary_vals[keep])
+                marker_display <- marker_display[names(marker_display) != ""]
+                marker_display <- marker_display[!duplicated(names(marker_display))]
+            }
+        }
+        scatter_markers <- rownames(M_no_af)
+        p_scatter <- plot_unmixing_scatter_matrix(
+            unmixed_list = unmixed_list,
+            sample_to_marker = sample_to_marker,
+            markers = scatter_markers,
+            marker_display = marker_display,
+            output_file = NULL,
+            seed = seed
+        )
+        .draw_report_ggplot_page(p_scatter, square = TRUE)
     }
 
     if (nrow(qc_summary) > 0) {

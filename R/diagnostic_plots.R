@@ -94,8 +94,11 @@
             breaks = y_breaks,
             labels = scales::label_number(accuracy = 1, big.mark = ",", trim = TRUE)
         ) +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, size = 6))
+        ggplot2::theme_minimal(base_size = 13.75) +
+        ggplot2::theme(
+            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, size = 7.5),
+            plot.subtitle = ggplot2::element_text(size = 13.2, lineheight = 1.1)
+        )
 }
 
 #' Plot Detector-Level Residuals
@@ -214,15 +217,243 @@ calculate_nps <- function(data, markers = NULL) {
 #' print(p)
 #' @export
 plot_nps <- function(nps_results, output_file = NULL, width = 200) {
-    p <- ggplot2::ggplot(nps_results, ggplot2::aes(Marker, NPS, fill = File)) +
-        ggplot2::geom_bar(stat = "identity", position = "dodge") +
-        ggplot2::labs(title = "Negative Population Spread (Unmixing Noise Floor)",
-                      y = "Spread (MAD)", x = "Unmixed Marker") +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
+    n_files <- length(unique(nps_results$File))
+    
+    p <- ggplot2::ggplot(nps_results, ggplot2::aes(Marker, NPS))
+    
+    if (n_files > 1) {
+        p <- p + 
+            ggplot2::geom_boxplot(outlier.shape = NA, fill = "grey95", color = "grey40", width = 0.5) +
+            ggplot2::geom_jitter(ggplot2::aes(color = File), width = 0.15, height = 0, alpha = 0.8, size = 1.2)
+    } else {
+        p <- p + 
+            ggplot2::geom_bar(stat = "identity", fill = "#E06666", width = 0.6)
+    }
+    
+    p <- p +
+        ggplot2::labs(
+            title = "Negative Population Spread (Unmixing Noise Floor)",
+            subtitle = "Lower is better (<100 is excellent, >500 hides dim signals).\nCell-based control colors will show higher MAD.",
+            y = "Spread (MAD)",
+            x = "Unmixed Marker"
+        ) +
+        ggplot2::theme_minimal(base_size = 13.75) +
+        ggplot2::theme(
+            axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
+            plot.subtitle = ggplot2::element_text(size = 13.2, lineheight = 1.1)
+        )
+        
+    if (n_files == 1) {
+        p <- p + ggplot2::theme(legend.position = "none")
+    }
     
     if (!is.null(output_file)) {
         ggplot2::ggsave(output_file, p, width = width, height = 120, units = "mm", dpi = 300)
+    }
+    return(p)
+}
+
+#' Calculate Cosine Similarity Matrix
+#'
+#' @param M Reference matrix (Markers x Detectors)
+#' @return A square matrix representing pairwise cosine similarities.
+#' @export
+calculate_similarity_matrix <- function(M) {
+    M <- .as_reference_matrix(M, "M")
+    norms <- sqrt(rowSums(M^2, na.rm = TRUE))
+    norms[norms == 0] <- 1e-6
+    M_norm <- M / norms
+    sim_mat <- M_norm %*% t(M_norm)
+    sim_mat[sim_mat > 1] <- 1
+    sim_mat[sim_mat < -1] <- -1
+    return(sim_mat)
+}
+
+#' Plot Cosine Similarity Matrix
+#'
+#' @param similarity_matrix Matrix returned by calculate_similarity_matrix
+#' @param output_file Optional path to save the plot. Set `NULL` to return the plot.
+#' @param width Width of plot in mm
+#' @param height Height of plot in mm
+#' @return A `ggplot` object.
+#' @export
+plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width = 180, height = 160) {
+    sim_tri <- similarity_matrix
+    sim_tri[upper.tri(sim_tri, diag = FALSE)] <- NA
+    
+    long <- as.data.frame(sim_tri)
+    long$Marker1 <- rownames(sim_tri)
+    long <- tidyr::pivot_longer(long, cols = -Marker1, names_to = "Marker2", values_to = "Similarity")
+    long <- long[!is.na(long$Similarity), ]
+    
+    markers <- rownames(sim_tri)
+    long$Marker1 <- factor(long$Marker1, levels = markers)
+    long$Marker2 <- factor(long$Marker2, levels = markers)
+    
+    n_markers <- length(markers)
+    text_size <- max(2.4, min(4.8, 36 / max(1, n_markers)))
+    
+    p <- ggplot2::ggplot(long, ggplot2::aes(Marker2, Marker1, fill = Similarity)) +
+        ggplot2::geom_tile(color = "white", linewidth = 0.1) +
+        ggplot2::scale_fill_gradientn(
+            colors = c("#ECEFF1", "#CFD8DC", "#FFCC80", "#FF8A65", "#E53935"),
+            values = c(0, 0.6, 0.75, 0.85, 1.0),
+            limits = c(0, 1),
+            name = "Similarity"
+        ) +
+        ggplot2::geom_text(
+            ggplot2::aes(
+                label = sprintf("%.2f", Similarity)
+            ),
+            size = text_size,
+            color = ifelse(long$Similarity > 0.8, "white", "black"),
+            show.legend = FALSE
+        ) +
+        ggplot2::labs(
+            title = "Fluorophore Spectral Similarity",
+            subtitle = "Cosine similarity of reference signatures (0 = orthogonal, 1 = identical).\nHigh values (>0.85) cause unmixing instability.",
+            x = NULL, y = NULL
+        ) +
+        ggplot2::theme_minimal(base_size = 13.75) +
+        ggplot2::theme(
+            axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
+            panel.grid = ggplot2::element_blank(),
+            plot.subtitle = ggplot2::element_text(size = 13.2, lineheight = 1.1)
+        )
+        
+    if (!is.null(output_file)) {
+        ggplot2::ggsave(output_file, p, width = width, height = height, units = "mm", dpi = 300)
+    }
+    return(p)
+}
+
+#' Plot RMS Residual Distribution Across Samples
+#'
+#' @param results List of unmixed results from unmix_samples()
+#' @param M Optional reference matrix to reconstruct raw intensities and compute relative error
+#' @param output_file Optional path to save the plot. Set `NULL` to return the plot.
+#' @param width Width of plot in mm
+#' @param height Height of plot in mm
+#' @return A `ggplot` object.
+#' @export
+plot_sample_rms_residuals <- function(results, M = NULL, output_file = NULL, width = 225, height = 125) {
+    if (!is.list(results) || length(results) == 0) {
+        stop("results must be a non-empty list of unmixed results.")
+    }
+    
+    sample_dfs <- list()
+    for (sn in names(results)) {
+        res_obj <- results[[sn]]
+        if (is.list(res_obj) && !is.null(res_obj$residuals)) {
+            rms <- sqrt(rowMeans(res_obj$residuals^2, na.rm = TRUE))
+            median_rms <- stats::median(rms, na.rm = TRUE)
+            
+            # Estimate peak raw signal for relative error context
+            if (!is.null(M)) {
+                M_mat <- .as_reference_matrix(M, "M")
+                markers <- intersect(rownames(M_mat), colnames(res_obj$data))
+                Fitted <- as.matrix(res_obj$data[, markers, drop = FALSE]) %*% M_mat[, , drop = FALSE]
+                Y <- Fitted + res_obj$residuals
+                peak_signal <- stats::quantile(Y, 0.995, na.rm = TRUE)
+            } else {
+                expr_cols <- setdiff(colnames(res_obj$data), c("File", "Time"))
+                expr_cols <- expr_cols[!grepl("^FSC|^SSC", expr_cols)]
+                expr_mat <- as.matrix(res_obj$data[, expr_cols, drop = FALSE])
+                peak_signal <- stats::quantile(expr_mat, 0.995, na.rm = TRUE)
+            }
+            
+            error_ratio <- (median_rms / max(peak_signal, 100)) * 100
+            label_text <- sprintf("%s\n(Med: %.0f, Err: %.1f%%)", sn, median_rms, error_ratio)
+            
+            sample_dfs[[sn]] <- data.frame(
+                Sample = label_text,
+                RMS = rms,
+                stringsAsFactors = FALSE
+            )
+        }
+    }
+    
+    if (length(sample_dfs) == 0) {
+        warning("No residuals available to plot RMS residuals.")
+        return(NULL)
+    }
+    
+    df <- do.call(rbind, sample_dfs)
+    
+    p <- ggplot2::ggplot(df, ggplot2::aes(Sample, RMS, fill = Sample)) +
+        ggplot2::geom_violin(alpha = 0.5, color = "grey60", scale = "width") +
+        ggplot2::geom_boxplot(width = 0.15, fill = "white", outlier.shape = NA, color = "grey30") +
+        ggplot2::scale_y_continuous(
+            trans = scales::pseudo_log_trans(base = 10, sigma = 100),
+            breaks = c(0, 100, 500, 1000, 5000, 10000, 20000)
+        ) +
+        ggplot2::labs(
+            title = "Overall Unmixing Error (RMS Residuals)",
+            subtitle = "Y-axis: RMS of residuals per cell (pseudo-log scale).\nX-axis: Median RMS & Error % (relative to peak signal).\nGood unmixing: Error < 1.0%.",
+            x = "Sample", y = "RMS Residual"
+        ) +
+        ggplot2::theme_minimal(base_size = 13.75) +
+        ggplot2::theme(
+            legend.position = "none",
+            axis.text.x = ggplot2::element_text(size = 9.375),
+            plot.subtitle = ggplot2::element_text(size = 13.2, lineheight = 1.1)
+        )
+        
+    if (!is.null(output_file)) {
+        ggplot2::ggsave(output_file, p, width = width, height = height, units = "mm", dpi = 300)
+    }
+    return(p)
+}
+
+#' Plot Residuals vs Marker Expression
+#'
+#' @param results List of unmixed results
+#' @param marker Name of marker to plot on X-axis
+#' @param output_file Optional path to save the plot
+#' @param width Plot width
+#' @param height Plot height
+#' @return A `ggplot` object
+#' @export
+plot_residuals_vs_expression <- function(results, marker, output_file = NULL, width = 160, height = 120) {
+    if (!is.list(results) || length(results) == 0) return(NULL)
+    
+    sample_dfs <- list()
+    for (sn in names(results)) {
+        res_obj <- results[[sn]]
+        if (is.list(res_obj) && !is.null(res_obj$residuals) && (marker %in% colnames(res_obj$data))) {
+            rms <- sqrt(rowMeans(res_obj$residuals^2, na.rm = TRUE))
+            expr <- res_obj$data[[marker]]
+            sample_dfs[[sn]] <- data.frame(
+                Sample = sn,
+                Expression = expr,
+                RMS = rms,
+                stringsAsFactors = FALSE
+            )
+        }
+    }
+    
+    if (length(sample_dfs) == 0) return(NULL)
+    df <- do.call(rbind, sample_dfs)
+    
+    max_pts <- 10000
+    if (nrow(df) > max_pts) {
+        df <- df[sample.int(nrow(df), max_pts), ]
+    }
+    
+    p <- ggplot2::ggplot(df, ggplot2::aes(Expression, RMS)) +
+        ggplot2::geom_point(alpha = 0.25, size = 0.4, color = "#163B5C") +
+        ggplot2::geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"), color = "#C75000", linewidth = 0.8, na.rm = TRUE) +
+        ggplot2::labs(
+            title = paste("Residual Mismatch Diagnostic:", marker),
+            subtitle = "Upward-sloping curve shows that higher expression causes higher residuals, flagging signature mismatch.",
+            x = paste("Unmixed", marker), y = "RMS Residual"
+        ) +
+        ggplot2::theme_minimal(base_size = 13.75) +
+        ggplot2::theme(plot.subtitle = ggplot2::element_text(size = 13.2, lineheight = 1.1)) +
+        ggplot2::facet_wrap(~Sample)
+        
+    if (!is.null(output_file)) {
+        ggplot2::ggsave(output_file, p, width = width, height = height, units = "mm", dpi = 300)
     }
     return(p)
 }

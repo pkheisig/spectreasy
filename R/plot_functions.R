@@ -80,10 +80,19 @@ plot_spectra <- function(ref_matrix,
     
     long$Detector <- factor(long$Detector, levels = detectors, labels = labels)
 
+    n_fluor <- nrow(ref_matrix)
+    legend_cols <- if (n_fluor > 16) 3L else if (n_fluor > 8) 2L else 1L
+
     p <- ggplot2::ggplot(long, ggplot2::aes(Detector, Intensity, color = Fluorophore, group = Fluorophore)) +
         ggplot2::geom_line(linewidth = 0.7) +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(axis.text.x = ggplot2::element_text(size = 5, angle = 90, hjust = 1, vjust = 0.5)) +
+        ggplot2::theme_minimal(base_size = 13.75) +
+        ggplot2::theme(
+            axis.text.x = ggplot2::element_text(size = 6.25, angle = 90, hjust = 1, vjust = 0.5),
+            legend.text = ggplot2::element_text(size = 7.5),
+            legend.key.size = ggplot2::unit(4, "mm"),
+            legend.spacing.y = ggplot2::unit(0.5, "mm")
+        ) +
+        ggplot2::guides(color = ggplot2::guide_legend(ncol = legend_cols)) +
         ggplot2::labs(
             title = "Reference Spectra Overlay",
             x = "Detector",
@@ -230,12 +239,18 @@ plot_spectra <- function(ref_matrix,
             y_lim <- .compute_unmix_scatter_limits(y_vals)
             x_plot <- pmax(pmin(x_vals, x_lim[2]), x_lim[1])
             y_plot <- pmax(pmin(y_vals, y_lim[2]), y_lim[1])
+            if (nrow(d_pair) > 1 && stats::var(x_plot) > 0 && stats::var(y_plot) > 0) {
+                density_color <- grDevices::densCols(x_plot, y_plot, colramp = grDevices::colorRampPalette(c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000")))
+            } else {
+                density_color <- rep("#0000FF", length(x_plot))
+            }
 
             panel_data[[k]] <- data.frame(
                 x = x_plot,
                 y = y_plot,
                 panel_col = xm,
                 panel_row = row_stain,
+                color = density_color,
                 stringsAsFactors = FALSE
             )
             panel_limits[[lim_k]] <- data.frame(
@@ -293,12 +308,12 @@ plot_spectra <- function(ref_matrix,
         ) +
         ggplot2::geom_point(
             data = plot_df,
-            ggplot2::aes(x = x, y = y),
-            color = "black",
+            ggplot2::aes(x = x, y = y, color = color),
             alpha = 0.6,
             size = 0.25,
             stroke = 0
         ) +
+        ggplot2::scale_color_identity() +
         ggplot2::facet_grid(
             panel_row ~ panel_col,
             drop = FALSE,
@@ -311,21 +326,22 @@ plot_spectra <- function(ref_matrix,
         ) +
         ggplot2::labs(
             title = "Unmixing Scatter Matrix",
-            subtitle = "Good: row-stain events are high on Y and near zero on X (other markers). Bad: large off-axis clouds indicate cross-talk, control mislabeling, or unstable unmixing."
+            subtitle = "Good: row-stain events are high on Y and near zero on X (other markers).\nBad: large off-axis clouds indicate cross-talk, control mislabeling, or unstable unmixing."
         ) +
-        ggplot2::theme_bw(base_size = 7) +
+        ggplot2::theme_bw(base_size = 8.75) +
         ggplot2::theme(
             legend.position = "none",
             panel.grid = ggplot2::element_blank(),
             panel.border = ggplot2::element_rect(color = "grey60", linewidth = 0.25),
             strip.background = ggplot2::element_rect(fill = "grey95", color = "grey80"),
-            strip.text = ggplot2::element_text(size = 6, face = "bold"),
+            strip.text = ggplot2::element_text(size = 7.5, face = "bold"),
             axis.title = ggplot2::element_blank(),
             axis.text = ggplot2::element_blank(),
             axis.ticks = ggplot2::element_blank(),
             axis.line = ggplot2::element_blank(),
             panel.spacing = grid::unit(0.3, "mm"),
-            plot.title = ggplot2::element_text(size = 10, face = "bold", hjust = 0.5)
+            plot.title = ggplot2::element_text(size = 12.5, face = "bold", hjust = 0.5),
+            plot.subtitle = ggplot2::element_text(size = 8.4, hjust = 0.5, lineheight = 1.1)
         )
 }
 

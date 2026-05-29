@@ -6,10 +6,8 @@
 #' 
 #' @param M Reference matrix (Markers x Detectors)
 #' @param method Unmixing method ("OLS", "WLS", or "NNLS")
-#' @param global_weights Optional detector weights for WLS (one per detector).
-#'   These are interpreted as inverse variances.
-#' @param background_noise Fallback noise floor used when `method = "WLS"`
-#'   and `global_weights` is not supplied.
+#' @param variances Optional SCC-derived variance matrix with the same detector
+#'   columns as `M`. If `NULL`, `attr(M, "variances")` is used.
 #' @return A matrix of unmixing coefficients (Markers x Detectors)
 #' @examples
 #' M <- matrix(c(1, 0.2, 0.1, 1), nrow = 2, byrow = TRUE)
@@ -18,8 +16,11 @@
 #' W <- derive_unmixing_matrix(M, method = "OLS")
 #' W
 #' @export
-derive_unmixing_matrix <- function(M, method = "OLS", global_weights = NULL, background_noise = 25) {
+derive_unmixing_matrix <- function(M, method = "OLS", variances = NULL) {
     M <- .as_reference_matrix(M, "M")
+    if (!is.null(variances)) {
+        attr(M, "variances") <- .as_reference_matrix(variances, "variances")
+    }
     # M is Markers (m) x Detectors (d)
     Mt <- t(M) # Detectors x Markers
 
@@ -32,27 +33,24 @@ derive_unmixing_matrix <- function(M, method = "OLS", global_weights = NULL, bac
         W <- solve(MMt) %*% M
 
     } else if (method_upper == "WLS") {
-        # Static WLS requires global detector weights.
-        # If none are provided, estimate a simple global set from M.
-        if (is.null(global_weights)) {
-            det_signal <- colMeans(pmax(M, 0), na.rm = TRUE)
-            global_weights <- 1 / (pmax(det_signal, 0) + background_noise)
-            warning(
-                "WLS requested without global_weights; using detector-level weights estimated from M and background_noise = ",
-                background_noise,
-                "."
+        variances <- attr(M, "variances")
+        if (is.null(variances)) {
+            stop(
+                "WLS requires SCC-derived detector variances. ",
+                "Pass variances = <scc_variances matrix> or use an M returned by build_reference_matrix()."
             )
         }
+        detector_weights <- .wls_weights_from_variances(variances, n_detectors = ncol(M))
 
-        global_weights <- as.numeric(global_weights)
-        if (length(global_weights) != ncol(M)) {
-            stop("global_weights length must match number of detectors (", ncol(M), ").")
+        detector_weights <- as.numeric(detector_weights)
+        if (length(detector_weights) != ncol(M)) {
+            stop("WLS detector weights length must match number of detectors (", ncol(M), ").")
         }
-        if (any(!is.finite(global_weights)) || any(global_weights <= 0)) {
-            stop("global_weights must be finite and > 0.")
+        if (any(!is.finite(detector_weights)) || any(detector_weights <= 0)) {
+            stop("WLS detector weights must be finite and > 0.")
         }
 
-        V_inv <- diag(global_weights)
+        V_inv <- diag(detector_weights)
         # W = (M V^-1 M^T)^-1 M V^-1
         MVMt <- M %*% V_inv %*% Mt
         if (rcond(MVMt) < 1e-10) stop("Weighted matrix is singular.")
@@ -147,7 +145,10 @@ plot_unmixing_matrix <- function(W, pd = NULL) {
         ggplot2::labs(title = "Unmixing Matrix Coefficients",
                       subtitle = "Good: dominant, stable coefficients align with expected detector-markers. Bad: widespread large-magnitude off-target coefficients suggest collinearity, poor controls, or unstable inversion.") +
         ggplot2::theme_minimal() +
-        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, size = 5))
+        ggplot2::theme(
+            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, size = 5),
+            plot.subtitle = ggplot2::element_text(size = 10.6, lineheight = 1.1)
+        )
     
     return(p)
 }

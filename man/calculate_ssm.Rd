@@ -4,14 +4,12 @@
 \alias{calculate_ssm}
 \title{Calculate Spectral Spread Matrix (SSM)}
 \usage{
-calculate_ssm(M, method = "OLS", background_noise = 100)
+calculate_ssm(M, method = "OLS")
 }
 \arguments{
 \item{M}{Reference matrix (Markers x Detectors)}
 
 \item{method}{Unmixing method ("OLS" or "WLS")}
-
-\item{background_noise}{Background noise used for WLS}
 }
 \value{
 A matrix (Markers x Markers) representing unmixing spread

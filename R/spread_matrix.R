@@ -5,7 +5,6 @@
 #' 
 #' @param M Reference matrix (Markers x Detectors)
 #' @param method Unmixing method ("OLS" or "WLS")
-#' @param background_noise Background noise used for WLS
 #' @return A matrix (Markers x Markers) representing unmixing spread
 #' @examples
 #' M <- matrix(c(1, 0.2, 0.1, 1), nrow = 2, byrow = TRUE)
@@ -14,7 +13,7 @@
 #' ssm <- calculate_ssm(M)
 #' ssm
 #' @export
-calculate_ssm <- function(M, method = "OLS", background_noise = 100) {
+calculate_ssm <- function(M, method = "OLS") {
     M <- .as_reference_matrix(M, "M")
     # This function estimates unmixing-induced spread analytically.
     # Spreading error is proportional to the square root of signal intensity.
@@ -83,20 +82,19 @@ plot_ssm <- function(SSM, output_file = NULL, width = 200, height = 180) {
     fmt_spread <- function(x) {
         if (!is.finite(x)) return("")
         ax <- abs(x)
-        if (ax >= 1000) return(formatC(x, format = "e", digits = 1))
-        if (ax >= 100) return(formatC(x, format = "f", digits = 0))
-        if (ax >= 10) return(formatC(x, format = "f", digits = 1))
+        if (ax >= 10) return(formatC(x, format = "f", digits = 0))
         formatC(x, format = "f", digits = 2)
     }
 
     n_markers <- max(nrow(SSM), ncol(SSM))
-    text_size <- max(1.6, min(3.2, 24 / max(1, n_markers)))
+    text_size <- max(2.4, min(4.8, 36 / max(1, n_markers)))
+    max_val <- max(SSM, na.rm = TRUE)
 
     p <- ggplot2::ggplot(long, ggplot2::aes(Receiving_Marker, Spilling_Marker, fill = Spread)) +
         ggplot2::geom_tile() +
         ggplot2::scale_fill_viridis_c(option = "magma", name = "Spread Factor") +
         ggplot2::geom_text(
-            ggplot2::aes(label = vapply(Spread, fmt_spread, character(1)), color = Spread > 0.3),
+            ggplot2::aes(label = vapply(Spread, fmt_spread, character(1)), color = Spread > (max_val * 0.4)),
             size = text_size,
             show.legend = FALSE
         ) +
@@ -104,8 +102,11 @@ plot_ssm <- function(SSM, output_file = NULL, width = 200, height = 180) {
         ggplot2::labs(title = "Spectral Spread Matrix",
                       subtitle = "Rows = noise source, columns = noise destination.",
                       x = "Receiving Marker (Noise Destination)", y = "Spilling Marker (Noise Source)") +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
+        ggplot2::theme_minimal(base_size = 13.75) +
+        ggplot2::theme(
+            axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
+            plot.subtitle = ggplot2::element_text(size = 13.2, lineheight = 1.1)
+        )
 
     if (!is.null(output_file)) {
         ggplot2::ggsave(output_file, p, width = width, height = height, units = "mm", dpi = 300)

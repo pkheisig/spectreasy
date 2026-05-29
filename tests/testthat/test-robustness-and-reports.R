@@ -141,7 +141,7 @@ test_that("generate_sample_report has stable pages and no recommendation page", 
     expect_true(file.exists(pdf_out))
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 5)
+    expect_equal(info$pages, 6)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_false(grepl("Conclusions & Recommendations", txt, fixed = TRUE))
@@ -180,7 +180,7 @@ test_that("generate_sample_report can include NxN pages for all samples", {
     )
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 6)
+    expect_equal(info$pages, 7)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))
@@ -235,6 +235,8 @@ test_that("per-cell AF selection unmix selects exactly one AF band per cell", {
     ), nrow = 4, byrow = TRUE)
     rownames(M) <- c("FITC", "PE", "AF", "AF_2")
     colnames(M) <- c("B1-A", "YG1-A", "R1-A", "V1-A")
+    V <- matrix(1, nrow = nrow(M), ncol = ncol(M), dimnames = dimnames(M))
+    attr(M, "variances") <- V
 
     # Construct some cells where we know which AF band they should select
     # Cell 1: high FITC, some PE, high AF (R1-A)

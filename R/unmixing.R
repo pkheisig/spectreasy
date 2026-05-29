@@ -132,6 +132,116 @@
     W_mat
 }
 
+.attach_matching_variances <- function(M, V, source = "variances") {
+    M <- .as_reference_matrix(M, "M")
+    V <- .as_reference_matrix(V, source)
+
+    missing_rows <- setdiff(rownames(M), rownames(V))
+    missing_cols <- setdiff(colnames(M), colnames(V))
+    if (length(missing_rows) > 0 || length(missing_cols) > 0) {
+        stop(
+            "WLS variances from ", source, " do not match the reference matrix.\n",
+            if (length(missing_rows) > 0) paste0("Missing marker rows: ", paste(missing_rows, collapse = ", "), "\n") else "",
+            if (length(missing_cols) > 0) paste0("Missing detector columns: ", paste(missing_cols, collapse = ", ")) else ""
+        )
+    }
+
+    V <- V[rownames(M), colnames(M), drop = FALSE]
+    attr(M, "variances") <- V
+    M
+}
+
+.load_variances_for_unmixing <- function(M, variances_file = NULL) {
+    if (is.null(variances_file) || !file.exists(variances_file)) {
+        return(M)
+    }
+
+    V <- .read_unmixing_matrix_csv(variances_file)
+    .attach_matching_variances(M, V, source = variances_file)
+}
+
+.recompute_wls_variances_from_scc <- function(M,
+                                              scc_dir = NULL,
+                                              control_file = NULL,
+                                              variances_file = NULL,
+                                              af_n_bands = 1,
+                                              exclude_af = FALSE,
+                                              include_multi_af = FALSE,
+                                              cytometer = "Aurora",
+                                              seed = NULL) {
+    resolved_scc_dir <- if (!is.null(scc_dir)) scc_dir else "scc"
+    if (!dir.exists(resolved_scc_dir)) {
+        stop(
+            "WLS requires SCC-derived detector variances, but no matching variances were found ",
+            "and scc_dir does not exist: ", resolved_scc_dir
+        )
+    }
+
+    resolved_control_file <- control_file
+    if (is.null(resolved_control_file) && file.exists("fcs_mapping.csv")) {
+        resolved_control_file <- "fcs_mapping.csv"
+    }
+
+    message("WLS variances were not found. Recomputing detector variances from SCC files...")
+    M_scc <- build_reference_matrix(
+        input_folder = resolved_scc_dir,
+        control_df = resolved_control_file,
+        af_n_bands = af_n_bands,
+        exclude_af = exclude_af,
+        include_multi_af = include_multi_af,
+        cytometer = cytometer,
+        seed = seed,
+        save_qc_plots = FALSE
+    )
+
+    V <- attr(M_scc, "variances")
+    if (is.null(V)) {
+        stop("Could not recompute WLS variances from SCC files.")
+    }
+
+    M <- .attach_matching_variances(M, V, source = "recomputed SCC variances")
+
+    if (!is.null(variances_file) && nzchar(trimws(as.character(variances_file)[1]))) {
+        dir.create(dirname(variances_file), showWarnings = FALSE, recursive = TRUE)
+        .save_reference_matrix_csv(attr(M, "variances"), variances_file)
+        message("Saved recomputed WLS variances to: ", variances_file)
+    }
+
+    M
+}
+
+.ensure_wls_variances <- function(M,
+                                  method,
+                                  variances_file = NULL,
+                                  scc_dir = NULL,
+                                  control_file = NULL,
+                                  af_n_bands = 1,
+                                  exclude_af = FALSE,
+                                  include_multi_af = FALSE,
+                                  cytometer = "Aurora",
+                                  seed = NULL) {
+    if (!identical(toupper(method), "WLS") || !is.null(attr(M, "variances"))) {
+        return(M)
+    }
+
+    M_loaded <- .load_variances_for_unmixing(M, variances_file = variances_file)
+    if (!is.null(attr(M_loaded, "variances"))) {
+        return(M_loaded)
+    }
+
+    .recompute_wls_variances_from_scc(
+        M = M,
+        scc_dir = scc_dir,
+        control_file = control_file,
+        variances_file = variances_file,
+        af_n_bands = af_n_bands,
+        exclude_af = exclude_af,
+        include_multi_af = include_multi_af,
+        cytometer = cytometer,
+        seed = seed
+    )
+}
+
 .resolve_secondary_label_map <- function(primary_names, sample_dir) {
     primary_names <- trimws(as.character(primary_names))
     labels <- stats::setNames(primary_names, primary_names)
@@ -431,10 +541,14 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
+#' @param variances_file Optional CSV path to a saved variances matrix. Used
+#'   for WLS unmixing. If the file is missing and `scc_dir` is available,
+#'   variances are recomputed from SCC files and saved to this path.
 #' @param method Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).
 #' @param cytometer Reserved for compatibility with older workflows.
-#' @param scc_dir Directory containing single-color control files. Used to dynamically
-#'   build the reference matrix if `M` and `unmixing_matrix_file` are missing.
+#' @param scc_dir Directory containing single-color control files. Used to
+#'   dynamically build the reference matrix if `M` and `unmixing_matrix_file`
+#'   are missing, and to recompute missing WLS variances.
 #' @param control_file Path to the control mapping CSV.
 #'   Used when dynamically building the reference matrix.
 #' @param af_n_bands Number of AF bands to extract from the unstained control.
@@ -496,6 +610,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 unmix_samples <- function(sample_dir = "samples", 
                           M = NULL, 
                           unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
+                          variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
                           method = "WLS", 
                           cytometer = "Aurora",
                           scc_dir = NULL,
@@ -513,9 +628,11 @@ unmix_samples <- function(sample_dir = "samples",
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")
+        M <- .load_variances_for_unmixing(M, variances_file = variances_file)
     } else if (!is.null(unmixing_matrix_file) && file.exists(unmixing_matrix_file)) {
         M <- .read_unmixing_matrix_csv(unmixing_matrix_file)
         M <- .as_reference_matrix(M, "M")
+        M <- .load_variances_for_unmixing(M, variances_file = variances_file)
     } else {
         # Try to build reference matrix dynamically
         resolved_scc_dir <- if (!is.null(scc_dir)) scc_dir else "scc"
@@ -544,6 +661,18 @@ unmix_samples <- function(sample_dir = "samples",
     if (!(method_upper %in% allowed_methods)) {
         stop("method must be one of: ", paste(allowed_methods, collapse = ", "))
     }
+    M <- .ensure_wls_variances(
+        M = M,
+        method = method_upper,
+        variances_file = variances_file,
+        scc_dir = scc_dir,
+        control_file = control_file,
+        af_n_bands = af_n_bands,
+        exclude_af = exclude_af,
+        include_multi_af = include_multi_af,
+        cytometer = cytometer,
+        seed = seed
+    )
 
     results <- list()
     marker_source_all <- rownames(M)

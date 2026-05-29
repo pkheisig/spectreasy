@@ -187,7 +187,8 @@
         reference_matrix_csv = file.path(output_dir, "scc_reference_matrix.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
         unmixing_matrix_png = file.path(output_dir, "scc_unmixing_matrix.png"),
-        unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png")
+        unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
+        variances_csv = file.path(output_dir, "scc_variances.csv")
     )
 }
 
@@ -230,33 +231,6 @@
     unmixed_list
 }
 
-.estimate_unmix_wls_global_weights <- function(files, detector_names, background_noise = 25, max_events_per_file = 50000) {
-    sums <- rep(0, length(detector_names))
-    counts <- rep(0, length(detector_names))
-
-    for (fp in files) {
-        ff <- flowCore::read.FCS(fp, transformation = FALSE, truncate_max_range = FALSE)
-        raw <- flowCore::exprs(ff)
-        common <- intersect(detector_names, colnames(raw))
-        if (length(common) == 0) next
-
-        y <- raw[, common, drop = FALSE]
-        if (nrow(y) > max_events_per_file) {
-            y <- y[sample.int(nrow(y), max_events_per_file), , drop = FALSE]
-        }
-
-        sig <- colMeans(pmax(y, 0), na.rm = TRUE)
-        idx <- match(common, detector_names)
-        keep <- is.finite(sig)
-        sums[idx[keep]] <- sums[idx[keep]] + sig[keep]
-        counts[idx[keep]] <- counts[idx[keep]] + 1
-    }
-
-    mean_sig <- sums / pmax(counts, 1)
-    mean_sig[!is.finite(mean_sig)] <- 0
-    1 / (pmax(mean_sig, 0) + background_noise)
-}
-
 .derive_unmix_static_matrix <- function(M, fcs_files, unmix_method) {
     # If M has multiple AF bands, only use the base "AF" band (and non-AF markers) for the static unmixing matrix
     # to avoid singularity (since we cannot statically unmix more markers than detectors).
@@ -264,14 +238,21 @@
     extra_af_rows <- grepl("^AF_", marker_names, ignore.case = TRUE)
     if (any(extra_af_rows)) {
         M_static <- M[!extra_af_rows, , drop = FALSE]
+        vars <- attr(M, "variances")
+        if (!is.null(vars)) {
+            attr(M_static, "variances") <- vars[!extra_af_rows, , drop = FALSE]
+        }
     } else {
         M_static <- M
     }
 
     static_unmixing_matrix_method <- toupper(unmix_method)
     if (static_unmixing_matrix_method == "WLS") {
-        wls_weights <- .estimate_unmix_wls_global_weights(fcs_files, colnames(M_static))
-        W <- derive_unmixing_matrix(M_static, method = "WLS", global_weights = wls_weights)
+        vars <- attr(M_static, "variances")
+        if (is.null(vars)) {
+            stop("WLS static unmixing requires SCC-derived variances on the reference matrix.")
+        }
+        W <- derive_unmixing_matrix(M_static, method = "WLS")
     } else {
         W <- derive_unmixing_matrix(M_static, method = static_unmixing_matrix_method)
     }
@@ -434,6 +415,9 @@ unmix_controls <- function(
     if (is.null(M) || nrow(M) == 0) stop("No valid spectra found while building reference matrix.")
 
     .save_reference_matrix_csv(M, output_paths$reference_matrix_csv)
+    if (!is.null(attr(M, "variances"))) {
+        .save_reference_matrix_csv(attr(M, "variances"), output_paths$variances_csv)
+    }
     meta_info <- .read_unmix_metadata_pd(scc_dir)
     p_spectra <- plot_spectra(M, pd = meta_info$pd, output_file = output_paths$spectra_file)
 
@@ -482,6 +466,7 @@ unmix_controls <- function(
         unmixed_list = unmixed_list,
         reference_matrix_file = output_paths$reference_matrix_csv,
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
+        variances_file = output_paths$variances_csv,
         spectra_file = output_paths$spectra_file,
         unmixing_matrix_plot = output_paths$unmixing_matrix_png,
         unmixing_scatter_file = output_paths$unmixing_scatter_png,

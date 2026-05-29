@@ -85,39 +85,24 @@ arma::vec nnls_lawson_hanson_cpp(const arma::mat& A,
     return x;
 }
 
-} // namespace
+arma::vec weighted_lsq_coeffs_cpp(const arma::mat& X,
+                                  const arma::vec& y,
+                                  const arma::vec& weights,
+                                  const double tol = 1e-10) {
+    arma::mat A = X.t();
+    arma::mat X_weighted = X.each_row() % weights.t();
+    arma::mat XWXt = X_weighted * A;
+    arma::vec rhs = X * (weights % y);
 
-// [[Rcpp::export]]
-arma::mat spectreasy_wls_unmix_cpp(const arma::mat& Y,
-                                   const arma::mat& M,
-                                   const double background_noise = 25,
-                                   const double tol = 1e-10) {
-    const arma::uword n_cells = Y.n_rows;
-    const arma::uword n_markers = M.n_rows;
-    arma::mat A(n_cells, n_markers, arma::fill::zeros);
-
-    arma::mat Mt = M.t();
-    arma::mat MMt = M * Mt;
-    arma::mat MMt_inv = safe_inverse_cpp(MMt, tol);
-    arma::mat fallback_linear = MMt_inv * M;
-
-    for (arma::uword i = 0; i < n_cells; ++i) {
-        arma::rowvec y = Y.row(i);
-        arma::rowvec weights = 1.0 / (arma::clamp(y, 0.0, arma::datum::inf) + background_noise);
-        arma::mat M_weighted = M.each_row() % weights;
-        arma::mat MWMt = M_weighted * Mt;
-        arma::vec rhs = M * (weights.t() % y.t());
-
-        arma::vec coeffs;
-        bool solved = arma::solve(coeffs, MWMt, rhs);
-        if (!solved || !coeffs.is_finite()) {
-            coeffs = fallback_linear * y.t();
-        }
-        A.row(i) = coeffs.t();
+    arma::vec coeffs;
+    bool solved = arma::solve(coeffs, XWXt, rhs);
+    if (!solved || !coeffs.is_finite()) {
+        coeffs = safe_inverse_cpp(XWXt, tol) * rhs;
     }
-
-    return A;
+    return coeffs;
 }
+
+} // namespace
 
 // [[Rcpp::export]]
 arma::mat spectreasy_nnls_unmix_cpp(const arma::mat& Y,
@@ -145,7 +130,7 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
                                        const arma::uvec& fluor_idx,
                                        const arma::uvec& af_idx,
                                        const std::string& method,
-                                       const double background_noise = 25,
+                                       const arma::vec& detector_weights,
                                        const double tol = 1e-10,
                                        const int max_outer = 500,
                                        const int max_inner = 500) {
@@ -154,10 +139,14 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
     const arma::uword n_markers = M.n_rows;
     const arma::uword n_fluors = fluor_idx.n_elem;
     const arma::uword n_af = af_idx.n_elem;
+    const bool has_detector_weights = detector_weights.n_elem == n_detectors;
+    if (method == "WLS" && !has_detector_weights) {
+        Rcpp::stop("WLS requires SCC-derived detector weights.");
+    }
 
     arma::mat A_out(n_cells, n_markers, arma::fill::zeros);
 
-    // Precompute projection matrices P_k for each candidate AF band k.
+    // Precompute OLS projection matrices P_k for each candidate AF band k.
     std::vector<arma::mat> P_list(n_af);
     for (arma::uword k = 0; k < n_af; ++k) {
         arma::mat X_k(n_fluors + 1, n_detectors);
@@ -175,15 +164,38 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
     for (arma::uword i = 0; i < n_cells; ++i) {
         arma::vec y = Y.row(i).t();
 
-        // 1. Find the best AF band index k* that minimizes OLS RSS.
+        // 1. Find the best AF band index k*. For WLS, use weighted RSS;
+        // otherwise use the existing OLS projection selection.
         double min_rss = std::numeric_limits<double>::max();
         arma::uword best_k = 0;
+        arma::vec best_coeffs(n_fluors + 1, arma::fill::zeros);
+        bool have_best_coeffs = false;
+
         for (arma::uword k = 0; k < n_af; ++k) {
-            arma::vec resid = y - P_list[k] * y;
-            double rss = arma::dot(resid, resid);
+            double rss;
+            arma::vec coeffs_k(n_fluors + 1, arma::fill::zeros);
+            arma::mat X_k(n_fluors + 1, n_detectors);
+            for (arma::uword f = 0; f < n_fluors; ++f) {
+                X_k.row(f) = M.row(fluor_idx(f));
+            }
+            X_k.row(n_fluors) = M.row(af_idx(k));
+            arma::mat A_k = X_k.t();
+
+            if (method == "WLS") {
+                arma::vec weights = detector_weights;
+                coeffs_k = weighted_lsq_coeffs_cpp(X_k, y, weights, tol);
+                arma::vec resid = y - A_k * coeffs_k;
+                rss = arma::dot(weights % resid, resid);
+            } else {
+                arma::vec resid = y - P_list[k] * y;
+                rss = arma::dot(resid, resid);
+            }
+
             if (rss < min_rss) {
                 min_rss = rss;
                 best_k = k;
+                best_coeffs = coeffs_k;
+                have_best_coeffs = method == "WLS";
             }
         }
 
@@ -201,14 +213,11 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
             arma::mat AtA = A_best.t() * A_best;
             coeffs = safe_inverse_cpp(AtA, tol) * A_best.t() * y;
         } else if (method == "WLS") {
-            arma::vec weights = 1.0 / (arma::clamp(y, 0.0, arma::datum::inf) + background_noise);
-            arma::mat M_weighted = X_best.each_row() % weights.t();
-            arma::mat MWMt = M_weighted * A_best;
-            arma::vec rhs = X_best * (weights % y);
-            bool solved = arma::solve(coeffs, MWMt, rhs);
-            if (!solved || !coeffs.is_finite()) {
-                arma::mat AtA = A_best.t() * A_best;
-                coeffs = safe_inverse_cpp(AtA, tol) * A_best.t() * y;
+            if (have_best_coeffs) {
+                coeffs = best_coeffs;
+            } else {
+                arma::vec weights = detector_weights;
+                coeffs = weighted_lsq_coeffs_cpp(X_best, y, weights, tol);
             }
         } else if (method == "NNLS") {
             coeffs = nnls_lawson_hanson_cpp(A_best, y, tol, max_outer, max_inner);

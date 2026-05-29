@@ -9,7 +9,6 @@ calc_residuals(
   M,
   file_name = NULL,
   method = "OLS",
-  background_noise = 25,
   return_residuals = FALSE
 )
 }
@@ -20,9 +19,7 @@ calc_residuals(
 
 \item{file_name}{Optional file name to add to output}
 
-\item{method}{Unmixing method: "OLS" (default), "NNLS", or "WLS" (per-cell weighted)}
-
-\item{background_noise}{Baseline electronic noise variance (default: 25)}
+\item{method}{Unmixing method: "OLS" (default), "NNLS", or "WLS".}
 
 \item{return_residuals}{Logical. If TRUE, returns a list containing the unmixed
 data and the detector residual matrix.}

@@ -12,11 +12,13 @@
         }
         if (!("fluorophore" %in% colnames(control_df))) control_df$fluorophore <- ""
         if (!("channel" %in% colnames(control_df))) control_df$channel <- ""
+        if (!("control.type" %in% colnames(control_df))) control_df$control.type <- ""
         if (!("universal.negative" %in% colnames(control_df))) control_df$universal.negative <- ""
 
         control_df$filename <- trimws(as.character(control_df$filename))
         control_df$fluorophore <- trimws(as.character(control_df$fluorophore))
         control_df$channel <- trimws(as.character(control_df$channel))
+        control_df$control.type <- tolower(trimws(as.character(control_df$control.type)))
         control_df$universal.negative <- trimws(as.character(control_df$universal.negative))
     }
 
@@ -198,6 +200,17 @@
         }
     }
     list(type = default, pattern = "default")
+}
+
+.resolve_reference_sample_type <- function(filename, row_info, patterns, default) {
+    sample_info <- .get_reference_sample_type(filename, patterns, default)
+    if (nrow(row_info) > 0 && "control.type" %in% colnames(row_info)) {
+        control_type <- tolower(trimws(as.character(row_info$control.type[1])))
+        if (control_type %in% c("beads", "cells")) {
+            sample_info$type <- control_type
+        }
+    }
+    sample_info
 }
 
 .select_reference_bead_population <- function(gmm_result) {
@@ -588,19 +601,120 @@
                                         vals_log,
                                         detector_names,
                                         row_info,
-                                        af_data_raw = NULL) {
+                                        af_data_raw = NULL,
+                                        universal_negatives = NULL) {
     pos_spectrum_raw <- apply(final_gated_data[, detector_names, drop = FALSE], 2, median, na.rm = TRUE)
-    neg_spectrum_raw <- apply(gated_data[peak_vals <= 10^quantile(vals_log, 0.15, na.rm = TRUE), detector_names, drop = FALSE], 2, median, na.rm = TRUE)
+    neg_events <- gated_data[peak_vals <= 10^quantile(vals_log, 0.15, na.rm = TRUE), detector_names, drop = FALSE]
+    neg_spectrum_raw <- apply(neg_events, 2, median, na.rm = TRUE)
     uv_val <- if (nrow(row_info) > 0 && "universal.negative" %in% colnames(row_info)) {
         trimws(as.character(row_info$universal.negative[1]))
     } else {
         ""
     }
-    use_univ <- toupper(uv_val) %in% c("TRUE", "AF")
-    final_neg <- if (use_univ && !is.null(af_data_raw)) af_data_raw else neg_spectrum_raw
+    uv_upper <- toupper(uv_val)
+    uv_key <- tools::file_path_sans_ext(basename(uv_val))
+    use_af_negative <- uv_upper %in% c("TRUE", "AF")
+    use_named_negative <- nzchar(uv_key) &&
+        !uv_upper %in% c("FALSE", "TRUE", "AF") &&
+        !is.null(universal_negatives) &&
+        uv_key %in% names(universal_negatives)
+    final_neg <- if (use_af_negative && !is.null(af_data_raw)) {
+        af_data_raw
+    } else if (use_named_negative) {
+        universal_negatives[[uv_key]]
+    } else {
+        neg_spectrum_raw
+    }
     sig_pure <- pmax(pos_spectrum_raw - final_neg, 0)
-    if (max(sig_pure, na.rm = TRUE) <= 0) sig_pure <- pmax(pos_spectrum_raw, 0)
-    sig_pure / max(sig_pure, na.rm = TRUE)
+    max_val <- max(sig_pure, na.rm = TRUE)
+    if (max_val <= 0) max_val <- max(pos_spectrum_raw, na.rm = TRUE)
+    res <- sig_pure / max_val
+
+    # Compute detector-wise variances for WLS weights
+    pos_var <- apply(final_gated_data[, detector_names, drop = FALSE], 2, stats::var, na.rm = TRUE)
+    neg_var <- apply(neg_events, 2, stats::var, na.rm = TRUE)
+    tot_var <- pos_var + neg_var
+    tot_var[is.na(tot_var) | tot_var <= 0] <- 0
+    if (max_val > 0) {
+        tot_var <- tot_var / (max_val^2)
+    }
+    attr(res, "variance") <- tot_var
+
+    res
+}
+
+.reference_negative_key <- function(x) {
+    tools::file_path_sans_ext(basename(trimws(as.character(x))))
+}
+
+.collect_reference_universal_negatives <- function(control_df,
+                                                   fcs_files,
+                                                   detector_names,
+                                                   sample_patterns,
+                                                   config) {
+    out <- list()
+    if (is.null(control_df) || !is.data.frame(control_df) || !("universal.negative" %in% colnames(control_df))) {
+        return(out)
+    }
+
+    uv_vals <- trimws(as.character(control_df$universal.negative))
+    uv_vals[is.na(uv_vals)] <- ""
+    uv_vals <- unique(uv_vals[nzchar(uv_vals) & !toupper(uv_vals) %in% c("FALSE", "TRUE", "AF")])
+    if (length(uv_vals) == 0) {
+        return(out)
+    }
+
+    file_keys <- .reference_negative_key(fcs_files)
+    names(fcs_files) <- file_keys
+
+    for (uv in uv_vals) {
+        key <- .reference_negative_key(uv)
+        if (!nzchar(key) || !key %in% names(fcs_files)) {
+            next
+        }
+
+        fcs_file <- unname(fcs_files[[key]])
+        sn_ext <- basename(fcs_file)
+        sn <- tools::file_path_sans_ext(sn_ext)
+        row_info <- .get_control_rows_for_reference(control_df, c(sn_ext, sn))
+        sample_info <- .resolve_reference_sample_type(
+            filename = sn,
+            row_info = row_info,
+            patterns = sample_patterns,
+            default = config$default_sample_type
+        )
+
+        ff <- tryCatch(
+            flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
+            error = function(e) NULL
+        )
+        if (is.null(ff)) {
+            warning("Could not read universal.negative file: ", fcs_file)
+            next
+        }
+
+        pd <- flowCore::pData(flowCore::parameters(ff))
+        raw_data <- flowCore::exprs(ff)
+        scatter_info <- .compute_reference_scatter_gate(
+            raw_data = raw_data,
+            pd = pd,
+            sample_type = sample_info$type,
+            outlier_percentile = config$outlier_percentile,
+            debris_percentile = config$debris_percentile,
+            subsample_n = config$subsample_n,
+            max_clusters = config$max_clusters,
+            min_cluster_proportion = config$min_cluster_proportion,
+            gate_contour_beads = config$gate_contour_beads,
+            gate_contour_cells = config$gate_contour_cells,
+            bead_gate_scale = config$bead_gate_scale
+        )
+
+        neg_data <- if (!is.null(scatter_info)) scatter_info$gated_data else raw_data
+        out[[key]] <- apply(neg_data[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
+        message("Using universal negative file for SCC subtraction: ", basename(fcs_file))
+    }
+
+    out
 }
 
 .get_reference_axis_label <- function(ch_name, pd_tbl) {
@@ -658,7 +772,7 @@
         ggplot2::geom_path(data = final_gate, ggplot2::aes(x, y), inherit.aes = FALSE, color = "red", linewidth = 1) +
         ggplot2::labs(title = paste0(sn, " - FSC/SSC"), subtitle = paste0(round(100 * nrow(gated_data) / nrow(raw_data), 1), "% gated"), x = fsc_desc, y = ssc_desc) +
         ggplot2::theme_minimal() +
-        ggplot2::theme(legend.position = "none", panel.grid = ggplot2::element_blank(), panel.background = ggplot2::element_rect(fill = "white", color = NA)) +
+        ggplot2::theme(legend.position = "none", panel.grid = ggplot2::element_blank(), panel.background = ggplot2::element_rect(fill = "white", color = NA), plot.subtitle = ggplot2::element_text(size = 10.6)) +
         ggplot2::coord_cartesian(xlim = c(0, max(fsc_max, ssc_max) * 1.05), ylim = c(0, max(fsc_max, ssc_max) * 1.05))
     ggplot2::ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, width = 5, height = 5, dpi = 300)
 
@@ -669,7 +783,7 @@
         ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.15, fill = "red") +
         ggplot2::labs(title = paste0(sn, " - ", peak_channel), subtitle = paste0(round(100 * nrow(final_gated_data) / nrow(gated_data), 1), "% gated"), x = paste0("log10(", peak_channel, ")")) +
         ggplot2::theme_minimal() +
-        ggplot2::theme(legend.position = "none")
+        ggplot2::theme(legend.position = "none", plot.subtitle = ggplot2::element_text(size = 10.6))
     ggplot2::ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, width = 6.5, height = 4, dpi = 300)
 
     log_mat <- log10(pmax(final_gated_data[, detector_names, drop = FALSE], 1e-3))
@@ -722,7 +836,7 @@
     invisible(NULL)
 }
 
-.process_reference_file <- function(fcs_file, control_df, sample_patterns, metadata, config, af_data_raw = NULL) {
+.process_reference_file <- function(fcs_file, control_df, sample_patterns, metadata, config, af_data_raw = NULL, universal_negatives = NULL) {
     sn_ext <- basename(fcs_file)
     sn <- tools::file_path_sans_ext(sn_ext)
 
@@ -733,7 +847,12 @@
     )
 
     row_info <- .get_control_rows_for_reference(control_df, c(sn_ext, sn))
-    sample_info <- .get_reference_sample_type(sn, sample_patterns, config$default_sample_type)
+    sample_info <- .resolve_reference_sample_type(
+        filename = sn,
+        row_info = row_info,
+        patterns = sample_patterns,
+        default = config$default_sample_type
+    )
 
     fluor_name <- if (nrow(row_info) > 0 && !is.na(row_info$fluorophore[1])) row_info$fluorophore[1] else sample_info$pattern
     marker_name <- if (nrow(row_info) > 0 && "marker" %in% colnames(row_info) && !is.na(row_info$marker[1])) {
@@ -808,6 +927,27 @@
         return(NULL)
     }
 
+    # Stain Index Calculation
+    mfi_pos <- stats::median(final_gated_data[, peak_channel], na.rm = TRUE)
+    neg_idx <- which(peak_vals <= 10^quantile(hist_info$vals_log, 0.15, na.rm = TRUE))
+    if (length(neg_idx) > 0) {
+        neg_vals <- peak_vals[neg_idx]
+        mfi_neg <- stats::median(neg_vals, na.rm = TRUE)
+        sd_neg <- stats::mad(neg_vals, na.rm = TRUE)
+        if (is.na(sd_neg) || sd_neg == 0) {
+            sd_neg <- stats::sd(neg_vals, na.rm = TRUE)
+        }
+        if (is.na(sd_neg) || sd_neg == 0) {
+            sd_neg <- 1e-6
+        }
+        stain_index <- (mfi_pos - mfi_neg) / (2 * sd_neg)
+    } else {
+        stain_index <- NA_real_
+    }
+
+    # Detector Saturation Check
+    any_sat <- any(raw_data[, metadata$detector_names, drop = FALSE] >= 260000, na.rm = TRUE)
+
     spectrum_norm <- .compute_reference_spectrum(
         final_gated_data = final_gated_data,
         gated_data = scatter_info$gated_data,
@@ -815,7 +955,8 @@
         vals_log = hist_info$vals_log,
         detector_names = metadata$detector_names,
         row_info = row_info,
-        af_data_raw = af_data_raw
+        af_data_raw = af_data_raw,
+        universal_negatives = universal_negatives
     )
 
     if (isTRUE(config$save_qc_plots)) {
@@ -863,7 +1004,9 @@
             n_scatter_gated = nrow(scatter_info$gated_data),
             n_final = nrow(final_gated_data),
             scatter_gate_pct = round(100 * nrow(scatter_info$gated_data) / max(nrow(raw_data), 1), 1),
-            histogram_gate_pct = round(100 * nrow(final_gated_data) / max(nrow(scatter_info$gated_data), 1), 1)
+            histogram_gate_pct = round(100 * nrow(final_gated_data) / max(nrow(scatter_info$gated_data), 1), 1),
+            stain_index = round(stain_index, 1),
+            saturated = ifelse(any_sat, "YES", "OK")
         )
     )
 }
@@ -911,6 +1054,14 @@
 
     M <- do.call(rbind, spectra_list)
     colnames(M) <- detector_names
+    V <- do.call(rbind, lapply(spectra_list, function(x) {
+        v <- attr(x, "variance")
+        if (is.null(v)) rep(0, ncol(M)) else v
+    }))
+    rownames(V) <- rownames(M)
+    colnames(V) <- colnames(M)
+    attr(M, "variances") <- V
+
     if (length(qc_summary_list) > 0) {
         attr(M, "qc_summary") <- data.table::rbindlist(qc_summary_list)
     }
@@ -1054,6 +1205,14 @@ build_reference_matrix <- function(
         cytometer = cytometer
     )
 
+    universal_negatives <- .collect_reference_universal_negatives(
+        control_df = control_df,
+        fcs_files = file_info$fcs_files_all,
+        detector_names = metadata$detector_names,
+        sample_patterns = sample_patterns,
+        config = config
+    )
+
     results_list <- list()
     qc_summary_list <- list()
     for (fcs_file in file_info$fcs_files_all) {
@@ -1063,7 +1222,8 @@ build_reference_matrix <- function(
             sample_patterns = sample_patterns,
             metadata = metadata,
             config = config,
-            af_data_raw = af_profiles$af_data_raw
+            af_data_raw = af_profiles$af_data_raw,
+            universal_negatives = universal_negatives
         )
         if (is.null(processed)) {
             next

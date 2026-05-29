@@ -65,6 +65,39 @@
     stop(arg_name, " must be a numeric matrix or a data.frame with detector columns.")
 }
 
+.wls_weights_from_variances <- function(variances, n_detectors = NULL, arg_name = "variances") {
+    if (is.null(variances)) {
+        return(NULL)
+    }
+
+    V <- as.matrix(variances)
+    suppressWarnings(storage.mode(V) <- "numeric")
+    if (!is.numeric(V)) {
+        stop(arg_name, " must be numeric.")
+    }
+    if (!is.null(n_detectors) && ncol(V) != n_detectors) {
+        stop(arg_name, " must have one column per detector.")
+    }
+
+    mean_var <- apply(V, 2, function(x) {
+        x <- x[is.finite(x) & x > 0]
+        if (length(x) == 0) {
+            return(NA_real_)
+        }
+        mean(x)
+    })
+
+    positive_vars <- mean_var[is.finite(mean_var) & mean_var > 0]
+    fallback_var <- if (length(positive_vars) > 0) min(positive_vars) else .Machine$double.eps
+    mean_var[!is.finite(mean_var) | mean_var <= 0] <- fallback_var
+
+    weights <- 1 / mean_var
+    if (any(!is.finite(weights)) || any(weights <= 0)) {
+        stop("Could not derive finite positive WLS weights from ", arg_name, ".")
+    }
+    as.numeric(weights)
+}
+
 .normalize_channel_token <- function(x) {
     out <- toupper(gsub("\\s+", "", trimws(as.character(x))))
     out[is.na(out)] <- ""

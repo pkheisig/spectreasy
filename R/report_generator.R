@@ -1,12 +1,15 @@
 # Internal helpers for QC report generation.
-.draw_qc_report_plot_page <- function(p, square = FALSE) {
+.draw_qc_report_plot_page <- function(p, square = FALSE, height_ratio = 1.0, width_ratio = 1.0) {
     if (is.null(p)) return(invisible(NULL))
     grid::grid.newpage()
     grob <- ggplot2::ggplotGrob(p)
-    if (!isTRUE(square)) {
+    if (!isTRUE(square) && height_ratio == 1.0 && width_ratio == 1.0) {
         grid::grid.draw(grob)
         return(invisible(NULL))
     }
+
+    vp_h <- if (isTRUE(square)) 0.99 else height_ratio
+    vp_w <- if (isTRUE(square)) 0.78 else (0.95 * width_ratio)
 
     grid::grid.draw(
         grid::editGrob(
@@ -14,8 +17,8 @@
             vp = grid::viewport(
                 x = 0.5,
                 y = 0.5,
-                width = 0.78,
-                height = 0.99
+                width = vp_w,
+                height = vp_h
             )
         )
     )
@@ -157,11 +160,18 @@
             x_plot <- pmax(pmin(x_vals, x_lim[2]), x_lim[1])
             y_plot <- pmax(pmin(y_vals, y_lim[2]), y_lim[1])
 
+            if (nrow(d_pair) > 1 && stats::var(x_plot) > 0 && stats::var(y_plot) > 0) {
+                density_color <- grDevices::densCols(x_plot, y_plot, colramp = grDevices::colorRampPalette(c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000")))
+            } else {
+                density_color <- rep("#0000FF", length(x_plot))
+            }
+
             panel_data[[k]] <- data.frame(
                 x = x_plot,
                 y = y_plot,
                 panel_col = xm,
                 panel_row = row_stain,
+                color = density_color,
                 stringsAsFactors = FALSE
             )
             panel_limits[[lim_k]] <- data.frame(
@@ -230,12 +240,12 @@
         ) +
         ggplot2::geom_point(
             data = panel_info$plot_df,
-            ggplot2::aes(x = x, y = y),
-            color = point_color,
+            ggplot2::aes(x = x, y = y, color = color),
             alpha = 0.55,
             size = 0.2,
             stroke = 0
         ) +
+        ggplot2::scale_color_identity() +
         ggplot2::facet_grid(
             panel_row ~ panel_col,
             drop = FALSE,
@@ -250,20 +260,20 @@
             title = paste0("Sample NxN Scatter Matrix: ", sample_name),
             subtitle = paste0("Page ", page_idx, " of ", page_total)
         ) +
-        ggplot2::theme_bw(base_size = 5.2) +
+        ggplot2::theme_bw(base_size = 6.5) +
         ggplot2::theme(
             legend.position = "none",
             panel.grid = ggplot2::element_blank(),
             panel.border = ggplot2::element_rect(color = "grey60", linewidth = 0.2),
             strip.background = ggplot2::element_rect(fill = "grey95", color = "grey80"),
-            strip.text = ggplot2::element_text(size = 4.5, face = "bold"),
+            strip.text = ggplot2::element_text(size = 5.625, face = "bold"),
             axis.title = ggplot2::element_blank(),
             axis.text = ggplot2::element_blank(),
             axis.ticks = ggplot2::element_blank(),
             axis.line = ggplot2::element_blank(),
             panel.spacing = grid::unit(0.25, "mm"),
-            plot.title = ggplot2::element_text(size = 9, face = "bold", hjust = 0.5),
-            plot.subtitle = ggplot2::element_text(size = 6.2, hjust = 0.5),
+            plot.title = ggplot2::element_text(size = 11.25, face = "bold", hjust = 0.5),
+            plot.subtitle = ggplot2::element_text(size = 9.3, hjust = 0.5),
             plot.margin = grid::unit(c(1, 1, 1, 1), "mm")
         )
 }
@@ -443,6 +453,13 @@ generate_sample_report <- function(results,
         }
     }
 
+    if (is.null(res_list) && is.list(results) && !is.data.frame(results)) {
+        has_residuals <- any(vapply(results, function(x) is.list(x) && !is.null(x$residuals), logical(1)))
+        if (has_residuals) {
+            res_list <- results
+        }
+    }
+
     results_df <- .normalize_qc_report_results_df(results)
     if (!("File" %in% colnames(results_df))) {
         stop("results must contain a 'File' column.")
@@ -474,17 +491,24 @@ generate_sample_report <- function(results,
     )
     grid::grid.text(summary_txt, x = 0.5, y = 0.6, just = "center", gp = grid::gpar(fontsize = 15))
 
-    message("  - Adding spectra overlay...")
-    if (nrow(M_no_af) > 0) {
-        .draw_qc_report_plot_page(plot_spectra(M_no_af, pd = pd, output_file = NULL))
+    if (!is.null(res_list)) {
+        message("  - Adding overall RMS residuals page...")
+        .draw_qc_report_plot_page(
+            plot_sample_rms_residuals(res_list, M = M, output_file = NULL),
+            height_ratio = 0.72,
+            width_ratio = 0.72
+        )
     }
 
-    if (!is.null(res_list)) {
-        message("  - Adding detector-level residual diagnostics...")
-        rep_res <- if (!is.null(res_list$residuals)) res_list else res_list[[1]]
-        .draw_qc_report_plot_page(
-            plot_detector_residuals(rep_res, M = if (nrow(M_no_af) > 0) M_no_af else M, top_n = 50, output_file = NULL)
-        )
+    message("  - Adding spectra overlay...")
+    if (nrow(M_no_af) > 0) {
+        .draw_qc_report_plot_page(plot_spectra(M_no_af, pd = pd, output_file = NULL), height_ratio = 0.6)
+    }
+
+    if (nrow(M_no_af) > 1) {
+        message("  - Adding Fluorophore Similarity Matrix...")
+        sim_mat <- calculate_similarity_matrix(M_no_af)
+        .draw_qc_report_plot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
     }
 
     message("  - Adding Spread Matrix...")

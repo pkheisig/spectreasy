@@ -9,6 +9,7 @@ unmix_samples(
   M = NULL,
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
+  variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
   method = "WLS",
   cytometer = "Aurora",
   scc_dir = NULL,
@@ -35,12 +36,17 @@ it is loaded from the CSV path provided in `unmixing_matrix_file`.}
 Used when `M` is not supplied. By default this points to the reference matrix
 produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
+\item{variances_file}{Optional CSV path to a saved variances matrix. Used
+for WLS unmixing. If the file is missing and `scc_dir` is available,
+variances are recomputed from SCC files and saved to this path.}
+
 \item{method}{Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).}
 
 \item{cytometer}{Reserved for compatibility with older workflows.}
 
-\item{scc_dir}{Directory containing single-color control files. Used to dynamically
-build the reference matrix if `M` and `unmixing_matrix_file` are missing.}
+\item{scc_dir}{Directory containing single-color control files. Used to
+dynamically build the reference matrix if `M` and `unmixing_matrix_file`
+are missing, and to recompute missing WLS variances.}
 
 \item{control_file}{Path to the control mapping CSV.
 Used when dynamically building the reference matrix.}

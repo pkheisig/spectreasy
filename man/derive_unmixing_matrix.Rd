@@ -4,23 +4,15 @@
 \alias{derive_unmixing_matrix}
 \title{Derive Unmixing Matrix from Reference Matrix}
 \usage{
-derive_unmixing_matrix(
-  M,
-  method = "OLS",
-  global_weights = NULL,
-  background_noise = 25
-)
+derive_unmixing_matrix(M, method = "OLS", variances = NULL)
 }
 \arguments{
 \item{M}{Reference matrix (Markers x Detectors)}
 
 \item{method}{Unmixing method ("OLS", "WLS", or "NNLS")}
 
-\item{global_weights}{Optional detector weights for WLS (one per detector).
-These are interpreted as inverse variances.}
-
-\item{background_noise}{Fallback noise floor used when `method = "WLS"`
-and `global_weights` is not supplied.}
+\item{variances}{Optional SCC-derived variance matrix with the same detector
+columns as `M`. If `NULL`, `attr(M, "variances")` is used.}
 }
 \value{
 A matrix of unmixing coefficients (Markers x Detectors)
