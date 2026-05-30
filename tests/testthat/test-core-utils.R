@@ -24,7 +24,7 @@ test_that("derive_unmixing_matrix returns finite matrix with expected dims", {
     expect_true(all(is.finite(W)))
 })
 
-test_that("derive_unmixing_matrix requires variances for WLS and supports NNLS proxy", {
+test_that("derive_unmixing_matrix supports static WLS approximation and NNLS proxy", {
     M <- matrix(c(
         1, 0.2, 0.1,
         0.1, 1, 0.3
@@ -32,18 +32,18 @@ test_that("derive_unmixing_matrix requires variances for WLS and supports NNLS p
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B2-A", "YG1-A", "R1-A")
 
-    expect_error(
-        spectreasy::derive_unmixing_matrix(M, method = "WLS"),
-        regexp = "SCC-derived detector variances"
-    )
-
     V <- matrix(c(
         10, 20, 30,
         15, 25, 35
     ), nrow = 2, byrow = TRUE, dimnames = dimnames(M))
+    W_wls_default <- spectreasy::derive_unmixing_matrix(M, method = "WLS")
+    expect_equal(dim(W_wls_default), dim(M))
+    expect_true(all(is.finite(W_wls_default)))
+
     W_wls <- spectreasy::derive_unmixing_matrix(M, method = "WLS", variances = V)
     expect_equal(dim(W_wls), dim(M))
     expect_true(all(is.finite(W_wls)))
+    expect_equal(W_wls, W_wls_default)
 
     expect_warning(
         W_nnls <- spectreasy::derive_unmixing_matrix(M, method = "NNLS"),
@@ -162,14 +162,6 @@ test_that("calc_residuals WLS matches small-matrix reference implementation", {
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B1-A", "YG1-A")
 
-    V <- matrix(c(
-        50, 10,
-        5, 60
-    ), nrow = 2, byrow = TRUE)
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-    attr(M, "variances") <- V
-
     exprs <- matrix(c(
         100,  20,
          10, 120,
@@ -181,10 +173,15 @@ test_that("calc_residuals WLS matches small-matrix reference implementation", {
     res <- spectreasy::calc_residuals(ff, M, method = "WLS")
 
     Mt <- t(M)
-    detector_weights <- spectreasy:::.wls_weights_from_variances(V, n_detectors = ncol(M))
-    Wi <- diag(detector_weights)
     expected <- matrix(0, nrow = nrow(exprs), ncol = nrow(M))
     for (i in seq_len(nrow(exprs))) {
+        detector_weights <- spectreasy:::.wls_event_weights(
+            exprs[i, ],
+            noise_floor = rep(spectreasy:::.default_wls_background_noise(), ncol(M)),
+            signal_scale = rep(1, ncol(M)),
+            max_weight_ratio = 100
+        )
+        Wi <- diag(detector_weights)
         expected[i, ] <- exprs[i, , drop = FALSE] %*% Wi %*% Mt %*% solve(M %*% Wi %*% Mt)
     }
     colnames(expected) <- rownames(M)
@@ -192,7 +189,7 @@ test_that("calc_residuals WLS matches small-matrix reference implementation", {
     expect_equal(as.matrix(res[, rownames(M)]), expected, tolerance = 1e-6)
 })
 
-test_that("calc_residuals WLS errors without SCC-derived variances", {
+test_that("calc_residuals WLS works without SCC-derived variances", {
     M <- matrix(c(
         1, 0.2,
         0.1, 1
@@ -204,9 +201,92 @@ test_that("calc_residuals WLS errors without SCC-derived variances", {
     colnames(exprs) <- c("B1-A", "YG1-A")
     ff <- flowCore::flowFrame(exprs)
 
-    expect_error(
-        spectreasy::calc_residuals(ff, M, method = "WLS"),
-        regexp = "SCC-derived detector variances"
+    res <- spectreasy::calc_residuals(ff, M, method = "WLS")
+    expect_equal(dim(res), c(1, 2))
+    expect_true(all(is.finite(as.matrix(res))))
+})
+
+test_that("WLS detector noise can be estimated from SCC low-signal tails", {
+    scc_dir <- tempfile("scc_noise_")
+    dir.create(scc_dir, showWarnings = FALSE)
+
+    exprs1 <- cbind(
+        "B1-A" = c(seq(10, 90, length.out = 30), seq(500, 2000, length.out = 70)),
+        "YG1-A" = c(seq(20, 120, length.out = 30), seq(600, 2200, length.out = 70)),
+        "FSC-A" = seq(1000, 2000, length.out = 100),
+        "SSC-A" = seq(500, 900, length.out = 100)
+    )
+    exprs2 <- cbind(
+        "B1-A" = c(seq(15, 100, length.out = 30), seq(550, 2100, length.out = 70)),
+        "YG1-A" = c(seq(25, 150, length.out = 30), seq(650, 2300, length.out = 70)),
+        "FSC-A" = seq(1100, 2100, length.out = 100),
+        "SSC-A" = seq(550, 950, length.out = 100)
+    )
+    flowCore::write.FCS(flowCore::flowFrame(exprs1), file.path(scc_dir, "FITC.fcs"))
+    flowCore::write.FCS(flowCore::flowFrame(exprs2), file.path(scc_dir, "PE.fcs"))
+
+    noise <- spectreasy:::.estimate_wls_detector_noise(
+        scc_dir = scc_dir,
+        detectors = c("B1-A", "YG1-A")
+    )
+
+    expect_equal(noise$detector, c("B1-A", "YG1-A"))
+    expect_true(all(is.finite(noise$noise_floor)))
+    expect_true(all(noise$noise_floor > 0))
+    expect_equal(noise$signal_scale, c(1, 1))
+})
+
+test_that("unmix_samples loads sibling SCC detector-noise file for WLS", {
+    M <- matrix(c(
+        1.0, 0.2, 0.1,
+        0.1, 1.0, 0.3
+    ), nrow = 2, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE")
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A")
+
+    matrix_dir <- tempfile("saved_matrix_noise_")
+    dir.create(matrix_dir, showWarnings = FALSE)
+    tmp_ref <- file.path(matrix_dir, "scc_reference_matrix.csv")
+    ref_df <- as.data.frame(M)
+    ref_df$Marker <- rownames(M)
+    ref_df <- ref_df[, c("Marker", colnames(M))]
+    write.csv(ref_df, tmp_ref, row.names = FALSE)
+
+    detector_noise <- data.frame(
+        detector = colnames(M),
+        noise_floor = c(125, 400, 125),
+        signal_scale = c(1, 1, 1)
+    )
+    write.csv(detector_noise, file.path(matrix_dir, "scc_detector_noise.csv"), row.names = FALSE)
+
+    exprs <- matrix(c(
+        100, 20, 40,
+        10, 120, 50
+    ), nrow = 2, byrow = TRUE)
+    colnames(exprs) <- colnames(M)
+    ff <- flowCore::flowFrame(exprs)
+
+    sample_dir <- tempfile("samples_noise_")
+    dir.create(sample_dir, showWarnings = FALSE)
+    flowCore::write.FCS(ff, file.path(sample_dir, "sample.fcs"))
+
+    output_dir <- tempfile("unmixed_noise_")
+    unmixed <- spectreasy::unmix_samples(
+        sample_dir = sample_dir,
+        unmixing_matrix_file = tmp_ref,
+        method = "WLS",
+        output_dir = output_dir,
+        write_fcs = FALSE
+    )
+
+    M_with_noise <- M
+    attr(M_with_noise, "detector_noise") <- detector_noise
+    expected <- spectreasy::calc_residuals(ff, M_with_noise, method = "WLS")
+
+    expect_equal(
+        as.matrix(unmixed$sample$data[, rownames(M)]),
+        as.matrix(expected[, rownames(M)]),
+        tolerance = 1e-6
     )
 })
 
@@ -431,6 +511,92 @@ test_that(".compute_reference_spectrum honors named universal negative files", {
     expect_equal(as.numeric(res), c(1, 50 / 70), tolerance = 1e-6)
 })
 
+test_that("cell population selection applies SSC/FSC ratio only when requested", {
+    gmm_result <- list(
+        main_populations = 1:3,
+        means = matrix(
+            c(
+                100, 100,
+                300, 600,
+                700, 500
+            ),
+            nrow = 2,
+            dimnames = list(c("FSC-A", "SSC-A"), NULL)
+        )
+    )
+
+    with_ratio <- spectreasy:::.select_reference_cell_populations(
+        gmm_result,
+        fsc_min = 80,
+        fsc_max = 800,
+        ssc_max = 800,
+        ratio_max = 1.25
+    )$selected
+    without_ratio <- spectreasy:::.select_reference_cell_populations(
+        gmm_result,
+        fsc_min = 80,
+        fsc_max = 800,
+        ssc_max = 800,
+        ratio_max = Inf
+    )$selected
+
+    expect_equal(with_ratio, c(1, 3))
+    expect_equal(without_ratio, 1:3)
+})
+
+test_that("cell histogram gating keeps full middle negative mode for bright controls", {
+    set.seed(1)
+    vals_log <- c(
+        stats::rnorm(500, 3.12, 0.18),
+        stats::rnorm(500, 3.35, 0.16),
+        stats::rnorm(4000, 6.0, 0.12)
+    )
+
+    gate <- spectreasy:::.compute_reference_histogram_gate(
+        peak_vals = 10^vals_log,
+        sample_type = "cells",
+        histogram_pct_beads = 0.98,
+        histogram_direction_beads = "right",
+        histogram_pct_cells = 0.35,
+        histogram_direction_cells = "right"
+    )
+
+    expect_true(isTRUE(attr(gate$vals_log, "negative_gate_present")))
+    expect_lt(attr(gate$vals_log, "neg_log_min"), 3.0)
+    expect_gt(attr(gate$vals_log, "neg_log_max"), 3.6)
+    expect_gt(log10(gate$gate_min), 5.0)
+})
+
+test_that("reference spectrum uses histogram negative gate attributes", {
+    detector_names <- c("B1-A", "YG1-A")
+    final_gated_data <- matrix(
+        rep(c(10000, 200), each = 20),
+        ncol = 2,
+        dimnames = list(NULL, detector_names)
+    )
+    gated_data <- rbind(
+        matrix(rep(c(10, 5), each = 20), ncol = 2),
+        matrix(rep(c(1000, 20), each = 20), ncol = 2)
+    )
+    colnames(gated_data) <- detector_names
+    peak_vals <- gated_data[, "B1-A"]
+    vals_log <- log10(pmax(peak_vals, 1))
+    attr(vals_log, "negative_gate_present") <- TRUE
+    attr(vals_log, "neg_log_min") <- 2.9
+    attr(vals_log, "neg_log_max") <- 3.1
+
+    res <- spectreasy:::.compute_reference_spectrum(
+        final_gated_data = final_gated_data,
+        gated_data = gated_data,
+        peak_vals = peak_vals,
+        vals_log = vals_log,
+        detector_names = detector_names,
+        row_info = data.frame(universal.negative = "FALSE", stringsAsFactors = FALSE)
+    )
+
+    expect_equal(as.numeric(res), c(1, 180 / 9000), tolerance = 1e-6)
+})
+
 test_that("control.type from control file overrides filename fallback", {
     row_info <- data.frame(
         filename = "Ambiguous Control.fcs",
@@ -450,7 +616,7 @@ test_that("control.type from control file overrides filename fallback", {
     expect_equal(sample_info$type, "cells")
 })
 
-test_that("derive_unmixing_matrix uses variances attribute for WLS", {
+test_that("derive_unmixing_matrix WLS ignores SCC variances and honors detector noise", {
     M <- matrix(c(
         1.0, 0.2, 0.05,
         0.1, 1.0, 0.25
@@ -477,27 +643,24 @@ test_that("derive_unmixing_matrix uses variances attribute for WLS", {
     
     M_no_attr <- M
     attr(M_no_attr, "variances") <- NULL
-    expect_error(
-        spectreasy::derive_unmixing_matrix(M_no_attr, method = "WLS"),
-        regexp = "SCC-derived detector variances"
+    expect_equal(spectreasy::derive_unmixing_matrix(M_no_attr, method = "WLS"), W_wls)
+
+    attr(M_no_attr, "detector_noise") <- data.frame(
+        detector = colnames(M_no_attr),
+        noise_floor = c(125, 200, 125),
+        signal_scale = c(1, 1, 1)
     )
+    W_noise <- spectreasy::derive_unmixing_matrix(M_no_attr, method = "WLS")
+    expect_false(isTRUE(all.equal(W_noise, W_wls)))
 })
 
-test_that("calc_residuals WLS performs global scaling unmixing when variances attribute is present", {
+test_that("calc_residuals WLS performs event-wise noise-model unmixing", {
     M <- matrix(c(
         1, 0.2,
         0.1, 1
     ), nrow = 2, byrow = TRUE)
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B1-A", "YG1-A")
-
-    V <- matrix(c(
-        50, 10,
-        5, 60
-    ), nrow = 2, byrow = TRUE)
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-    attr(M, "variances") <- V
 
     exprs <- matrix(c(
         100,  20,
@@ -511,7 +674,7 @@ test_that("calc_residuals WLS performs global scaling unmixing when variances at
     expect_true(all(is.finite(as.matrix(res))))
 })
 
-test_that("calc_residuals multi-AF WLS uses SCC-derived detector weights", {
+test_that("calc_residuals multi-AF WLS uses event-wise detector weights", {
     M <- matrix(c(
         1.0, 0.2, 0.1, 0.05,
         0.1, 1.0, 0.2, 0.05,
@@ -520,16 +683,6 @@ test_that("calc_residuals multi-AF WLS uses SCC-derived detector weights", {
     ), nrow = 4, byrow = TRUE)
     rownames(M) <- c("FITC", "PE", "AF", "AF_2")
     colnames(M) <- c("B1-A", "YG1-A", "R1-A", "V1-A")
-
-    V <- matrix(c(
-        1, 100, 10, 50,
-        2, 80, 12, 40,
-        0, 0, 0, 0,
-        0, 0, 0, 0
-    ), nrow = 4, byrow = TRUE)
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-    attr(M, "variances") <- V
 
     exprs <- matrix(c(
         100, 10, 50, 0,
@@ -540,13 +693,18 @@ test_that("calc_residuals multi-AF WLS uses SCC-derived detector weights", {
 
     res <- spectreasy::calc_residuals(ff, M, method = "WLS")
 
-    detector_weights <- spectreasy:::.wls_weights_from_variances(V, n_detectors = ncol(M))
     fluor_idx <- which(!grepl("^AF($|_)", rownames(M), ignore.case = TRUE))
     af_idx <- which(grepl("^AF($|_)", rownames(M), ignore.case = TRUE))
     expected <- matrix(0, nrow = nrow(exprs), ncol = nrow(M), dimnames = list(NULL, rownames(M)))
 
     for (i in seq_len(nrow(exprs))) {
         y <- exprs[i, ]
+        detector_weights <- spectreasy:::.wls_event_weights(
+            y,
+            noise_floor = rep(spectreasy:::.default_wls_background_noise(), ncol(M)),
+            signal_scale = rep(1, ncol(M)),
+            max_weight_ratio = 100
+        )
         best_rss <- Inf
         best_coeffs <- NULL
         best_af <- NA_integer_

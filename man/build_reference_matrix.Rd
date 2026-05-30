@@ -22,13 +22,13 @@ build_reference_matrix(
   histogram_pct_cells = 0.35,
   histogram_direction_cells = "both",
   outlier_percentile = 0.02,
-  debris_percentile = 0.02,
+  debris_percentile = 0.08,
   bead_gate_scale = 1.3,
   histogram_min_x_log = 2,
   max_clusters = 6,
   min_cluster_proportion = 0.03,
   gate_contour_beads = 0.95,
-  gate_contour_cells = 0.95,
+  gate_contour_cells = 0.9,
   subsample_n = 5000
 )
 }
@@ -72,7 +72,8 @@ signatures.}
 
 \item{outlier_percentile}{Upper-tail FSC/SSC filtering percentile.}
 
-\item{debris_percentile}{Debris filtering percentile for cell controls.}
+\item{debris_percentile}{Lower FSC range fraction for cell/unstained controls.
+For example, `0.08` excludes events below 8% of the per-file high FSC scale.}
 
 \item{bead_gate_scale}{Ellipse scaling factor for bead FSC/SSC gate.}
 
@@ -89,7 +90,9 @@ signatures.}
 \item{subsample_n}{Maximum number of events used for GMM fitting per file.}
 }
 \value{
-Numeric matrix with rows = fluorophores and columns = detectors (normalized spectra).
+Numeric matrix with rows = fluorophores and columns = detectors
+(normalized spectra). The matrix carries SCC-derived detector noise floors
+in `attr(M, "detector_noise")` for default WLS unmixing.
 }
 \description{
 Reads SCC FCS files, performs FSC/SSC gating and positive-peak histogram gating,

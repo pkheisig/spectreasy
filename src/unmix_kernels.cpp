@@ -102,6 +102,79 @@ arma::vec weighted_lsq_coeffs_cpp(const arma::mat& X,
     return coeffs;
 }
 
+double positive_median_cpp(arma::vec x, const double fallback = 1.0) {
+    std::vector<double> positive_vals;
+    positive_vals.reserve(x.n_elem);
+    for (arma::uword i = 0; i < x.n_elem; ++i) {
+        if (std::isfinite(x(i)) && x(i) > 0) {
+            positive_vals.push_back(x(i));
+        }
+    }
+    if (positive_vals.empty()) {
+        return fallback;
+    }
+    arma::vec vals(positive_vals);
+    double med = arma::median(vals);
+    if (!std::isfinite(med) || med <= 0) {
+        return fallback;
+    }
+    return med;
+}
+
+arma::vec wls_event_weights_cpp(const arma::vec& y,
+                                const arma::vec& noise_floor,
+                                const arma::vec& signal_scale,
+                                const double max_weight_ratio = 100.0) {
+    const arma::uword n_detectors = y.n_elem;
+    if (noise_floor.n_elem != n_detectors || signal_scale.n_elem != n_detectors) {
+        Rcpp::stop("WLS noise_floor and signal_scale must match the number of detectors.");
+    }
+
+    arma::vec denom(n_detectors, arma::fill::zeros);
+    for (arma::uword j = 0; j < n_detectors; ++j) {
+        double floor_j = noise_floor(j);
+        if (!std::isfinite(floor_j) || floor_j <= 0) {
+            floor_j = 125.0;
+        }
+        double scale_j = signal_scale(j);
+        if (!std::isfinite(scale_j) || scale_j < 0) {
+            scale_j = 1.0;
+        }
+        double signal_j = y(j);
+        if (!std::isfinite(signal_j) || signal_j < 0) {
+            signal_j = 0.0;
+        }
+        denom(j) = floor_j + scale_j * signal_j;
+    }
+
+    double fallback = positive_median_cpp(denom, 125.0);
+    arma::vec weights(n_detectors, arma::fill::zeros);
+    for (arma::uword j = 0; j < n_detectors; ++j) {
+        double d = denom(j);
+        if (!std::isfinite(d) || d <= 0) {
+            d = fallback;
+        }
+        weights(j) = 1.0 / d;
+    }
+
+    double med = positive_median_cpp(weights, 1.0);
+    weights /= med;
+
+    if (std::isfinite(max_weight_ratio) && max_weight_ratio > 1.0) {
+        const double half_cap = std::sqrt(max_weight_ratio);
+        const double lo = 1.0 / half_cap;
+        const double hi = half_cap;
+        for (arma::uword j = 0; j < n_detectors; ++j) {
+            if (!std::isfinite(weights(j)) || weights(j) <= 0) {
+                weights(j) = 1.0;
+            }
+            weights(j) = std::min(std::max(weights(j), lo), hi);
+        }
+    }
+
+    return weights;
+}
+
 } // namespace
 
 // [[Rcpp::export]]
@@ -125,12 +198,35 @@ arma::mat spectreasy_nnls_unmix_cpp(const arma::mat& Y,
 }
 
 // [[Rcpp::export]]
+arma::mat spectreasy_wls_unmix_cpp(const arma::mat& Y,
+                                   const arma::mat& M,
+                                   const arma::vec& noise_floor,
+                                   const arma::vec& signal_scale,
+                                   const double max_weight_ratio = 100.0,
+                                   const double tol = 1e-10) {
+    const arma::uword n_cells = Y.n_rows;
+    const arma::uword n_markers = M.n_rows;
+    arma::mat A_out(n_cells, n_markers, arma::fill::zeros);
+
+    for (arma::uword i = 0; i < n_cells; ++i) {
+        arma::vec y = Y.row(i).t();
+        arma::vec weights = wls_event_weights_cpp(y, noise_floor, signal_scale, max_weight_ratio);
+        arma::vec coeffs = weighted_lsq_coeffs_cpp(M, y, weights, tol);
+        A_out.row(i) = coeffs.t();
+    }
+
+    return A_out;
+}
+
+// [[Rcpp::export]]
 arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
                                        const arma::mat& M,
                                        const arma::uvec& fluor_idx,
                                        const arma::uvec& af_idx,
                                        const std::string& method,
-                                       const arma::vec& detector_weights,
+                                       const arma::vec& noise_floor,
+                                       const arma::vec& signal_scale,
+                                       const double max_weight_ratio = 100.0,
                                        const double tol = 1e-10,
                                        const int max_outer = 500,
                                        const int max_inner = 500) {
@@ -139,9 +235,9 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
     const arma::uword n_markers = M.n_rows;
     const arma::uword n_fluors = fluor_idx.n_elem;
     const arma::uword n_af = af_idx.n_elem;
-    const bool has_detector_weights = detector_weights.n_elem == n_detectors;
-    if (method == "WLS" && !has_detector_weights) {
-        Rcpp::stop("WLS requires SCC-derived detector weights.");
+    const bool has_wls_noise = noise_floor.n_elem == n_detectors && signal_scale.n_elem == n_detectors;
+    if (method == "WLS" && !has_wls_noise) {
+        Rcpp::stop("WLS noise_floor and signal_scale must match the number of detectors.");
     }
 
     arma::mat A_out(n_cells, n_markers, arma::fill::zeros);
@@ -163,6 +259,10 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
 
     for (arma::uword i = 0; i < n_cells; ++i) {
         arma::vec y = Y.row(i).t();
+        arma::vec event_weights;
+        if (method == "WLS") {
+            event_weights = wls_event_weights_cpp(y, noise_floor, signal_scale, max_weight_ratio);
+        }
 
         // 1. Find the best AF band index k*. For WLS, use weighted RSS;
         // otherwise use the existing OLS projection selection.
@@ -182,7 +282,7 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
             arma::mat A_k = X_k.t();
 
             if (method == "WLS") {
-                arma::vec weights = detector_weights;
+                arma::vec weights = event_weights;
                 coeffs_k = weighted_lsq_coeffs_cpp(X_k, y, weights, tol);
                 arma::vec resid = y - A_k * coeffs_k;
                 rss = arma::dot(weights % resid, resid);
@@ -216,7 +316,7 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
             if (have_best_coeffs) {
                 coeffs = best_coeffs;
             } else {
-                arma::vec weights = detector_weights;
+                arma::vec weights = event_weights;
                 coeffs = weighted_lsq_coeffs_cpp(X_best, y, weights, tol);
             }
         } else if (method == "NNLS") {

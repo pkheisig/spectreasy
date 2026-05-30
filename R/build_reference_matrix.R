@@ -39,6 +39,10 @@
     list(af_n_bands = af_n_bands, af_max_cells = af_max_cells)
 }
 
+.reference_cell_fsc_upper_fraction <- 0.98
+.reference_cell_ssc_upper_fraction <- 0.98
+.reference_unstained_ssc_fsc_ratio_max <- 1.25
+
 .get_control_rows_for_reference <- function(df, filenames) {
     if (is.null(df) || !("filename" %in% colnames(df))) {
         return(data.frame())
@@ -245,10 +249,27 @@
     list(selected = best)
 }
 
-.select_reference_cell_populations <- function(gmm_result, debris_threshold, detection_limit) {
+.select_reference_cell_populations <- function(gmm_result,
+                                               fsc_min,
+                                               fsc_max = Inf,
+                                               ssc_max = Inf,
+                                               ratio_max = Inf) {
     valid <- c()
+    means <- gmm_result$means
+    fsc <- means[1, ]
+    ssc <- means[2, ]
+    ratio <- ssc / pmax(fsc, 1)
+    if (!is.finite(fsc_max)) fsc_max <- Inf
+    if (!is.finite(ssc_max)) ssc_max <- Inf
+    if (!is.finite(ratio_max)) ratio_max <- Inf
+
     for (k in gmm_result$main_populations) {
-        if (gmm_result$means[1, k] >= debris_threshold && gmm_result$means[1, k] <= detection_limit * 0.8) valid <- c(valid, k)
+        if (fsc[k] >= fsc_min &&
+            fsc[k] <= fsc_max &&
+            ssc[k] <= ssc_max &&
+            ratio[k] <= ratio_max) {
+            valid <- c(valid, k)
+        }
     }
     list(selected = valid)
 }
@@ -270,6 +291,9 @@
     }
     ell$x <- pmax(0, pmin(ell$x, clip_x))
     ell$y <- pmax(0, pmin(ell$y, clip_y))
+    if (nrow(ell) > 0 && (ell$x[1] != ell$x[nrow(ell)] || ell$y[1] != ell$y[nrow(ell)])) {
+        ell <- rbind(ell, ell[1, , drop = FALSE])
+    }
     ell
 }
 
@@ -470,14 +494,24 @@
     data_raw_scatter <- raw_data[, c(fsc, ssc)]
     fsc_max <- quantile(data_raw_scatter[, 1], 1 - outlier_percentile, na.rm = TRUE)
     ssc_max <- quantile(data_raw_scatter[, 2], 1 - outlier_percentile, na.rm = TRUE)
+    fsc_lower_limit <- debris_percentile * fsc_max
+    fsc_upper_limit <- .reference_cell_fsc_upper_fraction * fsc_max
+    ssc_upper_limit <- .reference_cell_ssc_upper_fraction * ssc_max
     valid_idx <- which(data_raw_scatter[, 1] < fsc_max & data_raw_scatter[, 2] < ssc_max & data_raw_scatter[, 1] > 0 & data_raw_scatter[, 2] > 0)
     data_filtered <- data_raw_scatter[valid_idx, ]
     if (sample_type %in% c("cells", "unstained")) {
-        debris_threshold <- quantile(data_filtered[, 1], debris_percentile, na.rm = TRUE)
-        data_filtered <- data_filtered[data_filtered[, 1] >= debris_threshold, ]
+        debris_threshold <- fsc_lower_limit
+        data_filtered <- data_filtered[
+            data_filtered[, 1] >= fsc_lower_limit &
+                data_filtered[, 1] <= fsc_upper_limit &
+                data_filtered[, 2] <= ssc_upper_limit,
+        ]
     } else {
         debris_threshold <- 0
+        fsc_upper_limit <- fsc_max
+        ssc_upper_limit <- ssc_max
     }
+    if (nrow(data_filtered) < 100) return(NULL)
 
     if (!is.null(subsample_n) && nrow(data_filtered) > subsample_n) {
         data_fit <- data_filtered[sample(nrow(data_filtered), subsample_n), ]
@@ -492,7 +526,13 @@
         selected_pops <- .select_reference_bead_population(gmm_result)$selected
         gate_level <- gate_contour_beads
     } else {
-        selected_pops <- .select_reference_cell_populations(gmm_result, debris_threshold, min(fsc_max, ssc_max))$selected
+        selected_pops <- .select_reference_cell_populations(
+            gmm_result,
+            fsc_min = debris_threshold,
+            fsc_max = fsc_upper_limit,
+            ssc_max = ssc_upper_limit,
+            ratio_max = if (sample_type == "unstained") .reference_unstained_ssc_fsc_ratio_max else Inf
+        )$selected
         gate_level <- gate_contour_cells
         if (length(selected_pops) == 0) selected_pops <- .select_reference_bead_population(gmm_result)$selected
     }
@@ -503,11 +543,24 @@
         selected_pops,
         gate_level,
         scale = if (sample_type == "beads") bead_gate_scale else 1.0,
-        clip_x = Inf,
-        clip_y = Inf
+        clip_x = if (sample_type %in% c("cells", "unstained")) fsc_upper_limit else Inf,
+        clip_y = if (sample_type %in% c("cells", "unstained")) ssc_upper_limit else Inf
     )
+    if (sample_type %in% c("cells", "unstained")) {
+        final_gate$x <- pmax(fsc_lower_limit, final_gate$x)
+        if (nrow(final_gate) > 0 && (final_gate$x[1] != final_gate$x[nrow(final_gate)] || final_gate$y[1] != final_gate$y[nrow(final_gate)])) {
+            final_gate <- rbind(final_gate, final_gate[1, , drop = FALSE])
+        }
+    }
 
-    gated_data <- raw_data[sp::point.in.polygon(raw_data[, fsc], raw_data[, ssc], final_gate$x, final_gate$y) > 0, ]
+    inside_gate <- sp::point.in.polygon(raw_data[, fsc], raw_data[, ssc], final_gate$x, final_gate$y) > 0
+    if (sample_type %in% c("cells", "unstained")) {
+        inside_gate <- inside_gate &
+            raw_data[, fsc] >= fsc_lower_limit &
+            raw_data[, fsc] <= fsc_upper_limit &
+            raw_data[, ssc] <= ssc_upper_limit
+    }
+    gated_data <- raw_data[inside_gate, ]
     if (nrow(gated_data) < 100) return(NULL)
 
     list(
@@ -521,11 +574,25 @@
 }
 
 .select_reference_peak_channel <- function(gated_data, detector_names, row_info, channel_alias_map, sn_ext, sn) {
+    is_unstained <- grepl("unstained|autofluorescence|\\bAF\\b", paste(sn_ext, sn), ignore.case = TRUE)
+    if (nrow(row_info) > 0) {
+        is_unstained <- is_unstained || .is_af_control_row(
+            fluorophore = if ("fluorophore" %in% colnames(row_info)) row_info$fluorophore[1] else "",
+            marker = if ("marker" %in% colnames(row_info)) row_info$marker[1] else "",
+            filename = sn_ext
+        )
+    }
+
     q999_by_channel <- apply(
         gated_data[, detector_names, drop = FALSE],
         2,
         function(x) stats::quantile(x, 0.999, na.rm = TRUE)
     )
+    if (is_unstained) {
+        med_by_channel <- apply(gated_data[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
+        return(list(peak_channel = names(which.max(med_by_channel)), q999_by_channel = q999_by_channel))
+    }
+
     inferred_peak_channel <- detector_names[which.max(q999_by_channel)]
     peak_channel <- inferred_peak_channel
 
@@ -571,10 +638,276 @@
                                               histogram_pct_cells,
                                               histogram_direction_cells) {
     vals_log <- log10(pmax(peak_vals, 1))
+    vals_log <- vals_log[is.finite(vals_log)]
+    positive_gate_present <- !(sample_type %in% c("unstained"))
     vals_for_gate <- if (sample_type %in% c("unstained", "cells")) vals_log else .select_reference_hist_peak_population(vals_log)
     pct <- if (sample_type %in% c("unstained", "cells")) histogram_pct_cells else histogram_pct_beads
     dir <- if (sample_type %in% c("unstained", "cells")) histogram_direction_cells else histogram_direction_beads
     pct <- min(max(pct, 0.01), 0.999)
+
+    neg_log_min <- min(vals_log, na.rm = TRUE)
+    neg_log_max <- as.numeric(stats::quantile(vals_log, 0.15, na.rm = TRUE))
+    neg_gate_method <- "density lower-tail fallback"
+    negative_gate_present <- positive_gate_present
+    negative_components <- NULL
+    density_gate <- NULL
+
+    posterior_boundary <- function(fit, left_k, right_k, left_mean, right_mean) {
+        if (!is.finite(left_mean) || !is.finite(right_mean) || right_mean <= left_mean) {
+            return(NA_real_)
+        }
+        grid <- seq(left_mean, right_mean, length.out = 512)
+        pred <- tryCatch(stats::predict(fit, newdata = grid)$z, error = function(e) NULL)
+        if (is.null(pred) || ncol(pred) < max(left_k, right_k)) {
+            return(mean(c(left_mean, right_mean)))
+        }
+        diff_post <- pred[, left_k] - pred[, right_k]
+        cross <- which(diff_post <= 0)
+        if (length(cross) == 0) {
+            return(mean(c(left_mean, right_mean)))
+        }
+        grid[min(cross)]
+    }
+
+    component_stats <- function(x, cls) {
+        comp <- sort(unique(cls))
+        do.call(rbind, lapply(comp, function(k) {
+            xk <- x[cls == k]
+            data.frame(
+                component = k,
+                n = length(xk),
+                prop = length(xk) / length(x),
+                mean = mean(xk, na.rm = TRUE),
+                sd = stats::sd(xk, na.rm = TRUE),
+                q005 = as.numeric(stats::quantile(xk, 0.005, na.rm = TRUE)),
+                q995 = as.numeric(stats::quantile(xk, 0.995, na.rm = TRUE)),
+                stringsAsFactors = FALSE
+            )
+        }))
+    }
+
+    if (positive_gate_present && length(vals_log) >= 80) {
+        d <- stats::density(vals_log, n = 2048)
+        peak_idx <- which(diff(sign(diff(d$y))) == -2) + 1
+        trough_idx <- which(diff(sign(diff(d$y))) == 2) + 1
+        if (length(peak_idx) > 0) {
+            if (sample_type %in% c("cells")) {
+                dominant_peak <- peak_idx[which.max(d$y[peak_idx])]
+                left <- trough_idx[trough_idx < dominant_peak]
+                right <- trough_idx[trough_idx > dominant_peak]
+                bright_dominant <- d$x[dominant_peak] >= stats::median(vals_log, na.rm = TRUE) &&
+                    d$x[dominant_peak] >= max(vals_log, na.rm = TRUE) - 0.75
+                if (bright_dominant) {
+                    sig_left_peaks <- peak_idx[
+                        peak_idx < dominant_peak &
+                            d$y[peak_idx] >= max(d$y, na.rm = TRUE) * 0.03 &
+                            d$x[peak_idx] > 0.75 &
+                            d$x[peak_idx] <= d$x[dominant_peak] - 0.75
+                    ]
+                    neg_peak <- if (length(sig_left_peaks) > 0) sig_left_peaks[which.max(d$x[sig_left_peaks])] else NA_integer_
+                    if (!is.na(neg_peak)) {
+                        neg_group <- neg_peak
+                        prev_peaks <- rev(sig_left_peaks[sig_left_peaks < min(neg_group)])
+                        for (prev_peak in prev_peaks) {
+                            between_troughs <- trough_idx[trough_idx > prev_peak & trough_idx < min(neg_group)]
+                            if (length(between_troughs) == 0) break
+                            valley_y <- min(d$y[between_troughs], na.rm = TRUE)
+                            adjacent_peak_y <- min(d$y[c(prev_peak, min(neg_group))], na.rm = TRUE)
+                            if (is.finite(valley_y) && is.finite(adjacent_peak_y) && valley_y >= adjacent_peak_y * 0.60) {
+                                neg_group <- c(prev_peak, neg_group)
+                            } else {
+                                break
+                            }
+                        }
+                        neg_group <- sort(neg_group)
+                        neg_left <- trough_idx[trough_idx < min(neg_group)]
+                        neg_right <- trough_idx[trough_idx > max(neg_group) & trough_idx < dominant_peak]
+                        neg_log_max <- if (length(neg_right) > 0) d$x[min(neg_right)] else d$x[max(left)]
+                        density_floor <- max(d$y[neg_group], na.rm = TRUE) * 0.10
+                        left_drop <- which(d$x < d$x[min(neg_group)] & d$y <= density_floor)
+                        neg_log_min <- if (length(left_drop) > 0) {
+                            d$x[max(left_drop)]
+                        } else if (length(neg_left) > 0) {
+                            d$x[max(neg_left)]
+                        } else {
+                            as.numeric(stats::quantile(vals_log[vals_log <= neg_log_max], 0.005, na.rm = TRUE))
+                        }
+                        neg_gate_method <- paste0("density middle negative cell mode at ", paste(round(d$x[neg_group], 2), collapse = "/"))
+                    }
+                    pos_lower <- if (length(left) > 0) d$x[max(left)] else as.numeric(stats::quantile(vals_log, 0.005, na.rm = TRUE))
+                    pos_upper <- as.numeric(stats::quantile(vals_log, 0.999, na.rm = TRUE))
+                    if (is.na(neg_peak)) {
+                        neg_gate_method <- paste0("density dominant bright cell peak at ", round(d$x[dominant_peak], 2))
+                    }
+                    density_gate <- list(
+                        pos_lower = pos_lower,
+                        pos_upper = pos_upper,
+                        pos_peak = d$x[dominant_peak],
+                        neg_peak = if (!is.na(neg_peak)) d$x[neg_peak] else NA_real_,
+                        component_means = d$x[peak_idx[d$y[peak_idx] >= max(d$y, na.rm = TRUE) * 0.005]]
+                    )
+                } else {
+                    neg_log_min <- if (length(left) > 0) d$x[max(left)] else as.numeric(stats::quantile(vals_log, 0.005, na.rm = TRUE))
+                    neg_log_max <- if (length(right) > 0) d$x[min(right)] else as.numeric(stats::quantile(vals_log, 0.85, na.rm = TRUE))
+                    pos_lower <- max(
+                        neg_log_max,
+                        as.numeric(stats::quantile(vals_log, 0.95, na.rm = TRUE)),
+                        na.rm = TRUE
+                    )
+                    pos_upper <- as.numeric(stats::quantile(vals_log, 0.999, na.rm = TRUE))
+                    if (is.finite(pos_lower) && is.finite(pos_upper) && pos_upper > pos_lower) {
+                        neg_gate_method <- paste0("density dominant negative peak at ", round(d$x[dominant_peak], 2))
+                        density_gate <- list(
+                            pos_lower = pos_lower,
+                            pos_upper = pos_upper,
+                            pos_peak = d$x[peak_idx[which.max(d$x[peak_idx])]],
+                            neg_peak = d$x[dominant_peak],
+                            component_means = d$x[peak_idx[d$y[peak_idx] >= max(d$y, na.rm = TRUE) * 0.005]]
+                        )
+                    }
+                }
+            }
+
+            keep <- d$y[peak_idx] >= max(d$y, na.rm = TRUE) * 0.03
+            keep <- keep & d$x[peak_idx] > 0.75
+            sig_peaks <- peak_idx[keep]
+            if (is.null(density_gate) && length(sig_peaks) > 1) {
+                grouped <- list()
+                current <- sig_peaks[1]
+                for (idx in sig_peaks[-1]) {
+                    if ((d$x[idx] - d$x[current[length(current)]]) <= 0.35) {
+                        current <- c(current, idx)
+                    } else {
+                        grouped[[length(grouped) + 1L]] <- current
+                        current <- idx
+                    }
+                }
+                grouped[[length(grouped) + 1L]] <- current
+                sig_peaks <- as.integer(vapply(grouped, function(g) g[which.max(d$y[g])], numeric(1)))
+            }
+            if (is.null(density_gate) && length(sig_peaks) >= 1) {
+                sig_peaks <- sig_peaks[order(d$x[sig_peaks])]
+                pos_peak <- sig_peaks[length(sig_peaks)]
+                neg_peak <- if (length(sig_peaks) >= 2) sig_peaks[length(sig_peaks) - 1L] else NA_integer_
+                nearest_left_trough <- function(peak) {
+                    left <- trough_idx[trough_idx < peak]
+                    if (length(left) > 0) d$x[max(left)] else min(vals_log, na.rm = TRUE)
+                }
+                nearest_right_trough <- function(peak) {
+                    right <- trough_idx[trough_idx > peak]
+                    if (length(right) > 0) d$x[min(right)] else max(vals_log, na.rm = TRUE)
+                }
+                pos_vals <- vals_log[vals_log >= nearest_left_trough(pos_peak)]
+                pos_upper <- as.numeric(stats::quantile(pos_vals[pos_vals >= d$x[pos_peak]], 0.999, na.rm = TRUE))
+                pos_right_trough <- nearest_right_trough(pos_peak)
+                if (is.finite(pos_right_trough) && pos_right_trough > d$x[pos_peak] && pos_right_trough < max(vals_log, na.rm = TRUE)) {
+                    pos_upper <- min(pos_upper, pos_right_trough, na.rm = TRUE)
+                }
+                if (!is.na(neg_peak)) {
+                    neg_log_min <- nearest_left_trough(neg_peak)
+                    neg_log_max <- nearest_right_trough(neg_peak)
+                    neg_gate_method <- paste0("density negative peak at ", round(d$x[neg_peak], 2))
+                }
+                density_gate <- list(
+                    pos_lower = d$x[pos_peak],
+                    pos_upper = pos_upper,
+                    pos_peak = d$x[pos_peak],
+                    neg_peak = if (!is.na(neg_peak)) d$x[neg_peak] else NA_real_,
+                    component_means = d$x[sig_peaks]
+                )
+            }
+        }
+    }
+
+    if (positive_gate_present && is.null(density_gate) && length(vals_log) >= 80 && requireNamespace("mclust", quietly = TRUE)) {
+        neg_fit <- tryCatch(
+            mclust::Mclust(vals_log, G = seq_len(min(6, max(1, floor(length(vals_log) / 40)))), verbose = FALSE),
+            error = function(e) NULL
+        )
+        if (!is.null(neg_fit) && !is.null(neg_fit$classification)) {
+            neg_stats <- component_stats(vals_log, neg_fit$classification)
+            negative_components <- neg_stats
+            min_real_prop <- 0.02
+            floor_component <- neg_stats$mean <= 0.1 | neg_stats$q995 <= 0.25
+            high_artifact <- neg_stats$prop < min_real_prop & neg_stats$mean > stats::median(vals_log, na.rm = TRUE)
+            real_idx <- which(!floor_component & !high_artifact & neg_stats$prop >= min_real_prop)
+            if (length(real_idx) >= 2) {
+                positive_row <- real_idx[which.max(neg_stats$mean[real_idx])]
+                negative_candidates <- real_idx[neg_stats$mean[real_idx] < neg_stats$mean[positive_row]]
+                if (length(negative_candidates) > 0) {
+                    negative_row <- negative_candidates[which.max(neg_stats$mean[negative_candidates])]
+                    negative_k <- neg_stats$component[negative_row]
+                    positive_k <- neg_stats$component[positive_row]
+                    left_rows <- which(neg_stats$mean < neg_stats$mean[negative_row])
+                    left_bound <- neg_stats$q005[negative_row]
+                    if (length(left_rows) > 0) {
+                        left_row <- left_rows[which.max(neg_stats$mean[left_rows])]
+                        left_cross <- posterior_boundary(
+                            neg_fit,
+                            neg_stats$component[left_row],
+                            negative_k,
+                            neg_stats$mean[left_row],
+                            neg_stats$mean[negative_row]
+                        )
+                        if (is.finite(left_cross)) left_bound <- max(left_bound, left_cross)
+                    }
+                    right_bound <- neg_stats$q995[negative_row]
+                    right_cross <- posterior_boundary(
+                        neg_fit,
+                        negative_k,
+                        positive_k,
+                        neg_stats$mean[negative_row],
+                        neg_stats$mean[positive_row]
+                    )
+                    if (is.finite(right_cross)) right_bound <- min(right_bound, right_cross)
+                    if (is.finite(left_bound) && is.finite(right_bound) && right_bound > left_bound) {
+                        neg_log_min <- left_bound
+                        neg_log_max <- right_bound
+                        neg_gate_method <- paste0("GMM negative component ", negative_k, " left of positive component ", positive_k)
+                    }
+                }
+            }
+        }
+    }
+
+    fit_vals <- vals_for_gate[is.finite(vals_for_gate)]
+    model_info <- list(method = "quantile fallback", components = negative_components)
+    gmm_upper <- NA_real_
+    if (positive_gate_present && length(fit_vals) >= 80 && requireNamespace("mclust", quietly = TRUE)) {
+        fit <- tryCatch(
+            mclust::Mclust(fit_vals, G = seq_len(min(6, max(1, floor(length(fit_vals) / 40)))), verbose = FALSE),
+            error = function(e) NULL
+        )
+        if (!is.null(fit) && !is.null(fit$classification)) {
+            stats_df <- component_stats(fit_vals, fit$classification)
+            min_real_prop <- 0.02
+            q995_fit <- as.numeric(stats::quantile(fit_vals, 0.995, na.rm = TRUE))
+            q999_fit <- as.numeric(stats::quantile(fit_vals, 0.999, na.rm = TRUE))
+            high_artifact <- (stats_df$prop < min_real_prop & stats_df$mean > stats::median(fit_vals, na.rm = TRUE)) |
+                (stats_df$prop < 0.05 & stats_df$mean >= q995_fit) |
+                (is.finite(stats_df$sd) & stats_df$sd < 0.005 & stats_df$mean >= q999_fit)
+            real_idx <- which(!high_artifact & stats_df$prop >= min_real_prop)
+            if (length(real_idx) == 0) {
+                real_idx <- which(!high_artifact)
+            }
+            if (length(real_idx) > 0) {
+                bright_row <- real_idx[which.max(stats_df$mean[real_idx])]
+                artifact_rows <- which(stats_df$mean > stats_df$mean[bright_row] & high_artifact)
+                if (length(artifact_rows) > 0) {
+                    gmm_upper <- q995_fit
+                }
+                model_info <- list(
+                    method = paste0(
+                        "GMM bright component ", stats_df$component[bright_row],
+                        if (length(artifact_rows) > 0) "; high-end artifact components excluded" else "; no separated high-end artifact detected",
+                        "; negative: ", neg_gate_method
+                    ),
+                    components = if (!is.null(negative_components)) negative_components else stats_df
+                )
+            }
+        }
+    }
+
     if (dir == "right") {
         lq <- 0.5
         uq <- min(1, 0.5 + pct)
@@ -585,14 +918,69 @@
         lq <- 0.5 - pct / 2
         uq <- 0.5 + pct / 2
     }
-    gate_min <- 10^quantile(vals_for_gate, max(0, lq), na.rm = TRUE)
-    gate_max <- 10^quantile(vals_for_gate, min(1, uq), na.rm = TRUE)
-    if (!is.finite(gate_min) || !is.finite(gate_max) || gate_max <= gate_min) {
-        gate_min <- 10^min(vals_for_gate, na.rm = TRUE)
-        gate_max <- 10^max(vals_for_gate, na.rm = TRUE)
+    q_gate <- c(
+        lower = as.numeric(stats::quantile(vals_for_gate, max(0, lq), na.rm = TRUE)),
+        upper = as.numeric(stats::quantile(vals_for_gate, min(1, uq), na.rm = TRUE))
+    )
+    if (!positive_gate_present) {
+        lower_log <- min(vals_log, na.rm = TRUE)
+        upper_log <- max(vals_log, na.rm = TRUE)
+        negative_gate_present <- FALSE
+        model_info <- list(
+            method = "AF/unstained control: scatter-gated only; no positive histogram gate",
+            components = negative_components
+        )
+    } else if (!is.null(density_gate) && is.finite(density_gate$pos_lower) && is.finite(density_gate$pos_upper) && density_gate$pos_upper > density_gate$pos_lower) {
+        lower_log <- density_gate$pos_lower
+        upper_log <- density_gate$pos_upper
+        component_df <- data.frame(
+            component = seq_along(density_gate$component_means),
+            n = NA_integer_,
+            prop = NA_real_,
+            mean = density_gate$component_means,
+            sd = NA_real_,
+            q005 = NA_real_,
+            q995 = NA_real_
+        )
+        model_info <- list(
+            method = paste0(
+                "density/GMM mode gate: positive peak at ", round(density_gate$pos_peak, 2),
+                "; negative: ", neg_gate_method
+            ),
+            components = component_df
+        )
+    } else if (dir == "right") {
+        lower_log <- stats::median(vals_for_gate, na.rm = TRUE)
+        upper_log <- if (is.finite(gmm_upper)) gmm_upper else q_gate[["upper"]]
+    } else if (dir == "left") {
+        lower_log <- q_gate[["lower"]]
+        upper_log <- stats::median(vals_for_gate, na.rm = TRUE)
+    } else {
+        lower_log <- q_gate[["lower"]]
+        upper_log <- min(q_gate[["upper"]], if (is.finite(gmm_upper)) gmm_upper else Inf, na.rm = TRUE)
     }
 
-    list(vals_log = vals_log, gate_min = gate_min, gate_max = gate_max)
+    retained_fraction <- mean(peak_vals >= 10^lower_log & peak_vals <= 10^upper_log, na.rm = TRUE)
+    if (is.null(density_gate) && dir == "right" && (!is.finite(retained_fraction) || retained_fraction < 0.15)) {
+        upper_log <- min(
+            as.numeric(stats::quantile(fit_vals, 0.995, na.rm = TRUE)),
+            q_gate[["upper"]],
+            na.rm = TRUE
+        )
+    }
+    if (!is.finite(lower_log) || !is.finite(upper_log) || upper_log <= lower_log) {
+        lower_log <- q_gate[["lower"]]
+        upper_log <- q_gate[["upper"]]
+    }
+
+    attr(vals_log, "neg_log_min") <- neg_log_min
+    attr(vals_log, "neg_log_max") <- neg_log_max
+    attr(vals_log, "negative_gate_present") <- negative_gate_present
+    attr(vals_log, "positive_gate_present") <- positive_gate_present
+    attr(vals_log, "gate_method") <- model_info$method
+    attr(vals_log, "gmm_components") <- model_info$components
+
+    list(vals_log = vals_log, gate_min = 10^lower_log, gate_max = 10^upper_log)
 }
 
 .compute_reference_spectrum <- function(final_gated_data,
@@ -604,7 +992,29 @@
                                         af_data_raw = NULL,
                                         universal_negatives = NULL) {
     pos_spectrum_raw <- apply(final_gated_data[, detector_names, drop = FALSE], 2, median, na.rm = TRUE)
-    neg_events <- gated_data[peak_vals <= 10^quantile(vals_log, 0.15, na.rm = TRUE), detector_names, drop = FALSE]
+    neg_log_min <- attr(vals_log, "neg_log_min")
+    neg_log_max <- attr(vals_log, "neg_log_max")
+    if (isTRUE(attr(vals_log, "negative_gate_present")) &&
+        is.finite(neg_log_min) && is.finite(neg_log_max) && neg_log_max > neg_log_min) {
+        neg_events <- gated_data[
+            peak_vals >= 10^neg_log_min & peak_vals <= 10^neg_log_max,
+            detector_names,
+            drop = FALSE
+        ]
+    } else {
+        neg_events <- gated_data[
+            peak_vals <= 10^quantile(vals_log, 0.15, na.rm = TRUE),
+            detector_names,
+            drop = FALSE
+        ]
+    }
+    if (nrow(neg_events) < 10) {
+        neg_events <- gated_data[
+            peak_vals <= 10^quantile(vals_log, 0.15, na.rm = TRUE),
+            detector_names,
+            drop = FALSE
+        ]
+    }
     neg_spectrum_raw <- apply(neg_events, 2, median, na.rm = TRUE)
     uv_val <- if (nrow(row_info) > 0 && "universal.negative" %in% colnames(row_info)) {
         trimws(as.character(row_info$universal.negative[1]))
@@ -630,7 +1040,8 @@
     if (max_val <= 0) max_val <- max(pos_spectrum_raw, na.rm = TRUE)
     res <- sig_pure / max_val
 
-    # Compute detector-wise variances for WLS weights
+    # Keep positive/negative population spread as reference QC metadata. These
+    # values are not used as default WLS detector-error weights.
     pos_var <- apply(final_gated_data[, detector_names, drop = FALSE], 2, stats::var, na.rm = TRUE)
     neg_var <- apply(neg_events, 2, stats::var, na.rm = TRUE)
     tot_var <- pos_var + neg_var
@@ -776,14 +1187,44 @@
         ggplot2::coord_cartesian(xlim = c(0, max(fsc_max, ssc_max) * 1.05), ylim = c(0, max(fsc_max, ssc_max) * 1.05))
     ggplot2::ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, width = 5, height = 5, dpi = 300)
 
+    neg_log_min <- attr(vals_log, "neg_log_min")
+    neg_log_max <- attr(vals_log, "neg_log_max")
+    gate_method <- attr(vals_log, "gate_method")
+    negative_gate_present <- isTRUE(attr(vals_log, "negative_gate_present"))
+    positive_gate_present <- isTRUE(attr(vals_log, "positive_gate_present"))
+    comp <- attr(vals_log, "gmm_components")
+    comp_means <- if (!is.null(comp) && nrow(comp) > 0) comp$mean else numeric()
+
     p2 <- ggplot2::ggplot(data.table::data.table(x = vals_log), ggplot2::aes(x)) +
         ggplot2::geom_density(fill = "grey80", color = "grey40") +
-        ggplot2::geom_vline(xintercept = log10(gate_min), color = "red", linewidth = 1) +
-        ggplot2::geom_vline(xintercept = log10(gate_max), color = "red", linewidth = 1) +
-        ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.15, fill = "red") +
-        ggplot2::labs(title = paste0(sn, " - ", peak_channel), subtitle = paste0(round(100 * nrow(final_gated_data) / nrow(gated_data), 1), "% gated"), x = paste0("log10(", peak_channel, ")")) +
+        ggplot2::labs(
+            title = paste0(sn, " - ", peak_channel),
+            subtitle = if (positive_gate_present) {
+                paste0(
+                    round(100 * nrow(final_gated_data) / nrow(gated_data), 1),
+                    "% positive gated | blue = negative gate | red = bright gate\n",
+                    gate_method
+                )
+            } else {
+                paste0("AF/unstained control: scatter-gated only; no positive histogram gate\n", gate_method)
+            },
+            x = paste0("log10(", peak_channel, ")")
+        ) +
         ggplot2::theme_minimal() +
-        ggplot2::theme(legend.position = "none", plot.subtitle = ggplot2::element_text(size = 10.6))
+        ggplot2::theme(legend.position = "none", plot.subtitle = ggplot2::element_text(size = 8.8))
+    if (negative_gate_present && is.finite(neg_log_min) && is.finite(neg_log_max) && neg_log_max > neg_log_min) {
+        p2 <- p2 +
+            ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.15, fill = "#2C7BE5") +
+            ggplot2::geom_vline(xintercept = c(neg_log_min, neg_log_max), color = "#2C7BE5", linewidth = 0.8)
+    }
+    if (positive_gate_present) {
+        p2 <- p2 +
+            ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.18, fill = "#D62728") +
+            ggplot2::geom_vline(xintercept = c(log10(gate_min), log10(gate_max)), color = "#D62728", linewidth = 1)
+    }
+    if (length(comp_means) > 0) {
+        p2 <- p2 + ggplot2::geom_vline(xintercept = comp_means, color = "black", linetype = "dashed", alpha = 0.35, linewidth = 0.5)
+    }
     ggplot2::ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, width = 6.5, height = 4, dpi = 300)
 
     log_mat <- log10(pmax(final_gated_data[, detector_names, drop = FALSE], 1e-3))
@@ -1101,7 +1542,8 @@
 #' @param histogram_pct_cells Histogram gate width for cell controls.
 #' @param histogram_direction_cells Histogram gate direction for cell controls: `"both"`, `"left"`, or `"right"`.
 #' @param outlier_percentile Upper-tail FSC/SSC filtering percentile.
-#' @param debris_percentile Debris filtering percentile for cell controls.
+#' @param debris_percentile Lower FSC range fraction for cell/unstained controls.
+#'   For example, `0.08` excludes events below 8% of the per-file high FSC scale.
 #' @param bead_gate_scale Ellipse scaling factor for bead FSC/SSC gate.
 #' @param histogram_min_x_log Reserved histogram lower x-limit parameter.
 #' @param max_clusters Maximum number of GMM components tested.
@@ -1110,7 +1552,9 @@
 #' @param gate_contour_cells Contour probability for cell gating ellipse/hull.
 #' @param subsample_n Maximum number of events used for GMM fitting per file.
 #'
-#' @return Numeric matrix with rows = fluorophores and columns = detectors (normalized spectra).
+#' @return Numeric matrix with rows = fluorophores and columns = detectors
+#'   (normalized spectra). The matrix carries SCC-derived detector noise floors
+#'   in `attr(M, "detector_noise")` for default WLS unmixing.
 #' @export
 #' @examples
 #' if (interactive()) {
@@ -1145,13 +1589,13 @@ build_reference_matrix <- function(
   histogram_pct_cells = 0.35,
   histogram_direction_cells = "both",
   outlier_percentile = 0.02,
-  debris_percentile = 0.02,
+  debris_percentile = 0.08,
   bead_gate_scale = 1.3,
   histogram_min_x_log = 2,
   max_clusters = 6,
   min_cluster_proportion = 0.03,
   gate_contour_beads = 0.95,
-  gate_contour_cells = 0.95,
+  gate_contour_cells = 0.90,
   subsample_n = 5000
 ) {
     control_df <- .normalize_build_reference_control_df(control_df)
@@ -1232,7 +1676,7 @@ build_reference_matrix <- function(
         qc_summary_list[[processed$sample_name]] <- processed$qc_summary
     }
 
-    .finalize_reference_matrix(
+    M <- .finalize_reference_matrix(
         results_list = results_list,
         qc_summary_list = qc_summary_list,
         af_signatures_norm = af_profiles$af_signatures_norm,
@@ -1241,5 +1685,14 @@ build_reference_matrix <- function(
         pd_meta = metadata$pd_meta,
         save_qc_plots = save_qc_plots,
         out_path = out_path
+    )
+    if (is.null(M)) {
+        return(M)
+    }
+    .attach_estimated_wls_detector_noise(
+        M = M,
+        scc_dir = input_folder,
+        fallback = .default_wls_background_noise(),
+        warn = FALSE
     )
 }

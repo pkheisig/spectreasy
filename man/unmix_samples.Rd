@@ -10,6 +10,7 @@ unmix_samples(
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
   variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
+  detector_noise_file = NULL,
   method = "WLS",
   cytometer = "Aurora",
   scc_dir = NULL,
@@ -37,12 +38,15 @@ it is loaded from the CSV path provided in `unmixing_matrix_file`.}
 Used when `M` is not supplied. By default this points to the reference matrix
 produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
-\item{variances_file}{Optional CSV path to a saved variances matrix. Used
-for WLS unmixing. If the default path is missing and
-`unmixing_matrix_file` points to a saved reference matrix, `unmix_samples()`
-also looks for `scc_variances.csv` beside that reference matrix. If no
-variance file is found and `scc_dir` is available, variances are recomputed
-from SCC files and saved to this path.}
+\item{variances_file}{Optional CSV path to a saved variances matrix. SCC
+variances are loaded as reference QC metadata when available, but the
+default WLS model does not use them as detector weights.}
+
+\item{detector_noise_file}{Optional CSV path to detector-specific WLS noise
+floors, as written by [unmix_controls()] (`"scc_detector_noise.csv"`). If
+omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
+estimates the floors from `scc_dir` when available, and otherwise falls
+back to the built-in scalar noise floor.}
 
 \item{method}{Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).}
 
@@ -50,7 +54,7 @@ from SCC files and saved to this path.}
 
 \item{scc_dir}{Directory containing single-color control files. Used to
 dynamically build the reference matrix if `M` and `unmixing_matrix_file`
-are missing, and to recompute missing WLS variances.}
+are missing.}
 
 \item{control_file}{Path to the control mapping CSV.
 Used when dynamically building the reference matrix.}
@@ -79,7 +83,7 @@ unmixed values are returned in assay `"unmixed"`, with detector residuals in
 `altExp(x, "detector_residuals")` when available.}
 
 \item{verbose}{Logical; if `TRUE`, print progress messages while unmixing
-samples.}
+each sample.}
 }
 \value{
 Either a named list with one element per sample, a `flowSet`, or a

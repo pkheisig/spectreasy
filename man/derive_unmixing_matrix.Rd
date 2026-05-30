@@ -4,15 +4,31 @@
 \alias{derive_unmixing_matrix}
 \title{Derive Unmixing Matrix from Reference Matrix}
 \usage{
-derive_unmixing_matrix(M, method = "OLS", variances = NULL)
+derive_unmixing_matrix(
+  M,
+  method = "OLS",
+  variances = NULL,
+  background_noise = .default_wls_background_noise(),
+  wls_signal_scale = .default_wls_signal_scale(),
+  wls_max_weight_ratio = .default_wls_max_weight_ratio()
+)
 }
 \arguments{
 \item{M}{Reference matrix (Markers x Detectors)}
 
-\item{method}{Unmixing method ("OLS", "WLS", or "NNLS")}
+\item{method}{Unmixing method ("OLS", "WLS", or "NNLS").}
 
-\item{variances}{Optional SCC-derived variance matrix with the same detector
-columns as `M`. If `NULL`, `attr(M, "variances")` is used.}
+\item{variances}{Deprecated. SCC population variances are retained as
+reference QC metadata but are no longer used as WLS detector weights.}
+
+\item{background_noise}{Scalar or detector-length WLS noise floor used for
+the static WLS approximation when `M` does not carry detector-noise metadata;
+the built-in fallback is 125 raw detector units.}
+
+\item{wls_signal_scale}{Scalar or detector-length non-negative event-signal
+multiplier for the WLS variance model.}
+
+\item{wls_max_weight_ratio}{Maximum detector weight ratio allowed per event.}
 }
 \value{
 A matrix of unmixing coefficients (Markers x Detectors)

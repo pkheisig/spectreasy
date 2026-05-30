@@ -140,29 +140,31 @@ The same `unmix_controls()` call then continues and writes the control-stage out
 #> [10] "histogram/FITC (Beads)_histogram.png"           
 #> [11] "histogram/LIVE DEAD NIR (Cells)_histogram.png"  
 #> [12] "histogram/PerCP-Cy5.5 (Beads)_histogram.png"    
-#> [13] "scc_reference_matrix.csv"                       
-#> [14] "scc_spectra.png"                                
-#> [15] "unmixed_fcs/Alexa Fluor 700 (Beads)_unmixed.fcs"
-#> [16] "unmixed_fcs/BUV395 (Beads)_unmixed.fcs"         
-#> [17] "unmixed_fcs/BV510 (Beads)_unmixed.fcs"          
-#> [18] "unmixed_fcs/FITC (Beads)_unmixed.fcs"           
-#> [19] "unmixed_fcs/LIVE DEAD NIR (Cells)_unmixed.fcs"  
-#> [20] "unmixed_fcs/PerCP-Cy5.5 (Beads)_unmixed.fcs"    
-#> [21] "unmixed_fcs/Unstained (Cells)_unmixed.fcs"      
-#> [22] "scc_unmixing_matrix.csv"                        
-#> [23] "scc_unmixing_matrix.png"                        
-#> [24] "scc_unmixing_scatter_matrix.png"                
-#> [25] "spectrum/Alexa Fluor 700 (Beads)_spectrum.png"  
-#> [26] "spectrum/BUV395 (Beads)_spectrum.png"           
-#> [27] "spectrum/BV510 (Beads)_spectrum.png"            
-#> [28] "spectrum/FITC (Beads)_spectrum.png"             
-#> [29] "spectrum/LIVE DEAD NIR (Cells)_spectrum.png"    
-#> [30] "spectrum/PerCP-Cy5.5 (Beads)_spectrum.png"
+#> [13] "scc_detector_noise.csv"
+#> [14] "scc_reference_matrix.csv"
+#> [15] "scc_spectra.png"
+#> [16] "unmixed_fcs/Alexa Fluor 700 (Beads)_unmixed.fcs"
+#> [17] "unmixed_fcs/BUV395 (Beads)_unmixed.fcs"
+#> [18] "unmixed_fcs/BV510 (Beads)_unmixed.fcs"
+#> [19] "unmixed_fcs/FITC (Beads)_unmixed.fcs"
+#> [20] "unmixed_fcs/LIVE DEAD NIR (Cells)_unmixed.fcs"
+#> [21] "unmixed_fcs/PerCP-Cy5.5 (Beads)_unmixed.fcs"
+#> [22] "unmixed_fcs/Unstained (Cells)_unmixed.fcs"
+#> [23] "scc_unmixing_matrix.csv"
+#> [24] "scc_unmixing_matrix.png"
+#> [25] "scc_unmixing_scatter_matrix.png"
+#> [26] "spectrum/Alexa Fluor 700 (Beads)_spectrum.png"
+#> [27] "spectrum/BUV395 (Beads)_spectrum.png"
+#> [28] "spectrum/BV510 (Beads)_spectrum.png"
+#> [29] "spectrum/FITC (Beads)_spectrum.png"
+#> [30] "spectrum/LIVE DEAD NIR (Cells)_spectrum.png"
+#> [31] "spectrum/PerCP-Cy5.5 (Beads)_spectrum.png"
 ```
 
 Key outputs from this step include:
 
 - `fcs_mapping.csv`
+- `spectreasy_outputs/unmix_controls/scc_detector_noise.csv`
 - `spectreasy_outputs/unmix_controls/scc_reference_matrix.csv`
 - `spectreasy_outputs/unmix_controls/scc_variances.csv`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
@@ -192,12 +194,7 @@ The same run creates the NxN scatter matrix for the single-color controls. Each 
 
 ### What WLS Uses
 
-When `method = "WLS"`, `spectreasy` does not guess weights from the reference matrix or from sample brightness. It uses detector-wise variance estimates measured from the single-color controls. In practice, that means WLS needs two pieces:
-
-- the reference spectra in `scc_reference_matrix.csv`
-- the SCC-derived noise estimates in `scc_variances.csv`
-
-`unmix_controls()` writes both files. If `unmix_samples(method = "WLS")` can load the reference matrix but cannot find `scc_variances.csv`, it tries to recompute the missing variances from the SCC files. This is still true WLS, because the weights still come from the controls. If neither a variance file nor the SCC files are available, WLS stops instead of silently falling back to a guess.
+When `method = "WLS"`, `spectreasy` uses an event-wise detector-error model: detectors with higher non-negative signal in an event get lower weight for that event. The detector noise floor is estimated from the low-signal tail of the SCC files and written to `scc_detector_noise.csv`; if no estimate is available, `spectreasy` falls back to a scalar floor of 125. The SCC population variances in `scc_variances.csv` are still written as reference QC metadata, but they are not used as default WLS detector weights.
 
 The `control.type` column in `fcs_mapping.csv` also matters for this step. It tells `spectreasy` whether each control should be gated as `beads` or `cells`. If `control.type` is empty, `spectreasy` falls back to filename-based guessing.
 
@@ -316,7 +313,7 @@ dim(ctrl_noninteractive$M)
 
 You can pass the in-memory reference matrix returned by `unmix_controls()` directly to `unmix_samples()` instead of loading it from the saved CSV file.
 
-For WLS, the in-memory matrix returned by `unmix_controls()` already carries the SCC-derived variances with it. If you save only the matrix CSV and reload it later, keep the matching `scc_variances.csv` next to it or pass it through `variances_file`.
+For WLS, `unmix_samples()` will also load `scc_detector_noise.csv` beside the saved reference matrix when it is available. The optional `scc_variances.csv` remains useful as control-spread QC metadata.
 
 ```r
 fluor_reference_matrix <- ctrl$M

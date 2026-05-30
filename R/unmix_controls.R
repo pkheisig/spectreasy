@@ -185,6 +185,7 @@
         unmixed_dir = file.path(output_dir, "unmixed_fcs"),
         spectra_file = file.path(output_dir, "scc_spectra.png"),
         reference_matrix_csv = file.path(output_dir, "scc_reference_matrix.csv"),
+        detector_noise_csv = file.path(output_dir, "scc_detector_noise.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
         unmixing_matrix_png = file.path(output_dir, "scc_unmixing_matrix.png"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
@@ -242,16 +243,16 @@
         if (!is.null(vars)) {
             attr(M_static, "variances") <- vars[!extra_af_rows, , drop = FALSE]
         }
+        detector_noise <- attr(M, "detector_noise")
+        if (!is.null(detector_noise)) {
+            attr(M_static, "detector_noise") <- detector_noise
+        }
     } else {
         M_static <- M
     }
 
     static_unmixing_matrix_method <- toupper(unmix_method)
     if (static_unmixing_matrix_method == "WLS") {
-        vars <- attr(M_static, "variances")
-        if (is.null(vars)) {
-            stop("WLS static unmixing requires SCC-derived variances on the reference matrix.")
-        }
         W <- derive_unmixing_matrix(M_static, method = "WLS")
     } else {
         W <- derive_unmixing_matrix(M_static, method = static_unmixing_matrix_method)
@@ -298,7 +299,7 @@
 #' 1) validates/creates the control file,
 #' 2) builds the reference matrix from SCCs,
 #' 3) unmixed SCC files,
-#' 4) saves reference/unmixing matrices,
+#' 4) saves reference/unmixing matrices and SCC-derived WLS detector noise floors,
 #' 5) plots spectra, unmixing matrix, SCC unmixing scatter matrix, and optional
 #'    per-control QC PNGs.
 #'
@@ -324,7 +325,8 @@
 #'   histogram, and spectrum PNGs under `output_dir`.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #'
-#' @return List with `M`, `W`, `unmixed_list`, and key output file paths.
+#' @return List with `M`, `W`, `unmixed_list`, and key output file paths,
+#'   including `detector_noise_file` for the SCC-derived WLS noise floors.
 #' @export
 #' @examples
 #' if (interactive()) {
@@ -418,6 +420,7 @@ unmix_controls <- function(
     if (!is.null(attr(M, "variances"))) {
         .save_reference_matrix_csv(attr(M, "variances"), output_paths$variances_csv)
     }
+    .save_detector_noise_csv(attr(M, "detector_noise"), output_paths$detector_noise_csv)
     meta_info <- .read_unmix_metadata_pd(scc_dir)
     p_spectra <- plot_spectra(M, pd = meta_info$pd, output_file = output_paths$spectra_file)
 
@@ -465,6 +468,7 @@ unmix_controls <- function(
         W = W,
         unmixed_list = unmixed_list,
         reference_matrix_file = output_paths$reference_matrix_csv,
+        detector_noise_file = output_paths$detector_noise_csv,
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
         variances_file = output_paths$variances_csv,
         spectra_file = output_paths$spectra_file,

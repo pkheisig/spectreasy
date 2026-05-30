@@ -5,9 +5,15 @@
 #' To unmix data manually: Unmixed_Data = Raw_Data %*% t(W)
 #' 
 #' @param M Reference matrix (Markers x Detectors)
-#' @param method Unmixing method ("OLS", "WLS", or "NNLS")
-#' @param variances Optional SCC-derived variance matrix with the same detector
-#'   columns as `M`. If `NULL`, `attr(M, "variances")` is used.
+#' @param method Unmixing method ("OLS", "WLS", or "NNLS").
+#' @param variances Deprecated. SCC population variances are retained as
+#'   reference QC metadata but are no longer used as WLS detector weights.
+#' @param background_noise Scalar or detector-length WLS noise floor used for
+#'   the static WLS approximation when `M` does not carry detector-noise metadata;
+#'   the built-in fallback is 125 raw detector units.
+#' @param wls_signal_scale Scalar or detector-length non-negative event-signal
+#'   multiplier for the WLS variance model.
+#' @param wls_max_weight_ratio Maximum detector weight ratio allowed per event.
 #' @return A matrix of unmixing coefficients (Markers x Detectors)
 #' @examples
 #' M <- matrix(c(1, 0.2, 0.1, 1), nrow = 2, byrow = TRUE)
@@ -16,7 +22,12 @@
 #' W <- derive_unmixing_matrix(M, method = "OLS")
 #' W
 #' @export
-derive_unmixing_matrix <- function(M, method = "OLS", variances = NULL) {
+derive_unmixing_matrix <- function(M,
+                                   method = "OLS",
+                                   variances = NULL,
+                                   background_noise = .default_wls_background_noise(),
+                                   wls_signal_scale = .default_wls_signal_scale(),
+                                   wls_max_weight_ratio = .default_wls_max_weight_ratio()) {
     M <- .as_reference_matrix(M, "M")
     if (!is.null(variances)) {
         attr(M, "variances") <- .as_reference_matrix(variances, "variances")
@@ -33,22 +44,12 @@ derive_unmixing_matrix <- function(M, method = "OLS", variances = NULL) {
         W <- solve(MMt) %*% M
 
     } else if (method_upper == "WLS") {
-        variances <- attr(M, "variances")
-        if (is.null(variances)) {
-            stop(
-                "WLS requires SCC-derived detector variances. ",
-                "Pass variances = <scc_variances matrix> or use an M returned by build_reference_matrix()."
-            )
-        }
-        detector_weights <- .wls_weights_from_variances(variances, n_detectors = ncol(M))
-
-        detector_weights <- as.numeric(detector_weights)
-        if (length(detector_weights) != ncol(M)) {
-            stop("WLS detector weights length must match number of detectors (", ncol(M), ").")
-        }
-        if (any(!is.finite(detector_weights)) || any(detector_weights <= 0)) {
-            stop("WLS detector weights must be finite and > 0.")
-        }
+        detector_weights <- .wls_static_detector_weights(
+            M = M,
+            background_noise = background_noise,
+            signal_scale = wls_signal_scale,
+            max_weight_ratio = wls_max_weight_ratio
+        )
 
         V_inv <- diag(detector_weights)
         # W = (M V^-1 M^T)^-1 M V^-1

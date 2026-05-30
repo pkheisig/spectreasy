@@ -395,7 +395,7 @@ plot_sample_rms_residuals <- function(results, M = NULL, output_file = NULL, wid
         ggplot2::theme_minimal(base_size = 13.75) +
         ggplot2::theme(
             legend.position = "none",
-            axis.text.x = ggplot2::element_text(size = 9.375),
+            axis.text.x = ggplot2::element_text(size = 9.375, angle = 45, hjust = 1),
             plot.subtitle = ggplot2::element_text(size = 13.2, lineheight = 1.1)
         )
         

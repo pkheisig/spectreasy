@@ -57,14 +57,15 @@ histogram, and spectrum PNGs under `output_dir`.}
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }
 \value{
-List with `M`, `W`, `unmixed_list`, and key output file paths.
+List with `M`, `W`, `unmixed_list`, and key output file paths, including
+`detector_noise_file` for the SCC-derived WLS noise floors.
 }
 \description{
 SCC workflow helper that:
 1) validates/creates the control file,
 2) builds the reference matrix from SCCs,
 3) unmixed SCC files,
-4) saves reference/unmixing matrices,
+4) saves reference/unmixing matrices and SCC-derived WLS detector noise floors,
 5) plots spectra, unmixing matrix, SCC unmixing scatter matrix, and optional
    per-control QC PNGs.
 }

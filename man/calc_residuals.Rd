@@ -8,8 +8,11 @@ calc_residuals(
   flow_frame,
   M,
   file_name = NULL,
-  method = "OLS",
-  return_residuals = FALSE
+  method = "WLS",
+  return_residuals = FALSE,
+  background_noise = .default_wls_background_noise(),
+  wls_signal_scale = .default_wls_signal_scale(),
+  wls_max_weight_ratio = .default_wls_max_weight_ratio()
 )
 }
 \arguments{
@@ -19,10 +22,19 @@ calc_residuals(
 
 \item{file_name}{Optional file name to add to output}
 
-\item{method}{Unmixing method: "OLS" (default), "NNLS", or "WLS".}
+\item{method}{Unmixing method: "WLS" (default), "OLS", or "NNLS".}
 
 \item{return_residuals}{Logical. If TRUE, returns a list containing the unmixed
 data and the detector residual matrix.}
+
+\item{background_noise}{Scalar or detector-length vector used as the WLS noise
+floor when `M` does not carry `attr(M, "detector_noise")`; the built-in
+fallback is 125 raw detector units.}
+
+\item{wls_signal_scale}{Scalar or detector-length vector multiplying the
+non-negative event signal in the WLS variance model.}
+
+\item{wls_max_weight_ratio}{Maximum detector weight ratio allowed per event.}
 }
 \value{
 Data frame with unmixed abundances and retained acquisition parameters

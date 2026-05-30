@@ -153,12 +153,14 @@ test_that("unmix_controls handles WLS output and exclude_af branch", {
     )
 
     expect_equal(ctrl$static_unmixing_matrix_method, "WLS")
+    expect_true(file.exists(ctrl$detector_noise_file))
+    expect_false(is.null(attr(ctrl$M, "detector_noise")))
     expect_false(any(grepl("^AF($|_)", rownames(ctrl$M), ignore.case = TRUE)))
     expect_false(any(grepl("Unstained", names(ctrl$unmixed_list), ignore.case = TRUE)))
     expect_false(file.exists(file.path(output_dir, "unmixed_fcs", "Unstained (Cells)_unmixed.fcs")))
 })
 
-test_that("unmix_samples recomputes missing WLS variances from SCC files", {
+test_that("unmix_samples runs WLS without recomputing missing SCC variances", {
     wf <- make_synthetic_workflow()
     M <- spectreasy::build_reference_matrix(
         input_folder = wf$scc_dir,
@@ -193,7 +195,7 @@ test_that("unmix_samples recomputes missing WLS variances from SCC files", {
     )
 
     expect_s3_class(res, "spectreasy_unmixed_results")
-    expect_true(file.exists(var_file))
+    expect_false(file.exists(var_file))
     expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
 })
 

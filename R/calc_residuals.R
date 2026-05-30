@@ -3,9 +3,15 @@
 #' @param flow_frame A flowFrame object with raw fluorescence data
 #' @param M Reference matrix (fluorophores x detectors)
 #' @param file_name Optional file name to add to output
-#' @param method Unmixing method: "OLS" (default), "NNLS", or "WLS".
+#' @param method Unmixing method: "WLS" (default), "OLS", or "NNLS".
 #' @param return_residuals Logical. If TRUE, returns a list containing the unmixed
 #'   data and the detector residual matrix.
+#' @param background_noise Scalar or detector-length vector used as the WLS noise
+#'   floor when `M` does not carry `attr(M, "detector_noise")`; the built-in
+#'   fallback is 125 raw detector units.
+#' @param wls_signal_scale Scalar or detector-length vector multiplying the
+#'   non-negative event signal in the WLS variance model.
+#' @param wls_max_weight_ratio Maximum detector weight ratio allowed per event.
 #' @return Data frame with unmixed abundances and retained acquisition parameters
 #'   (`Time` plus all `FSC*`/`SSC*` columns, when available).
 #'         If return_residuals=TRUE, returns a list with [[data]] and [[residuals]].
@@ -35,8 +41,14 @@
 #' res <- calc_residuals(ff, M_demo, method = "OLS", return_residuals = TRUE)
 #' head(res$data)
 #' @export
-calc_residuals <- function(flow_frame, M, file_name = NULL, method = "OLS", 
-                          return_residuals = FALSE) {
+calc_residuals <- function(flow_frame,
+                           M,
+                           file_name = NULL,
+                           method = "WLS",
+                           return_residuals = FALSE,
+                           background_noise = .default_wls_background_noise(),
+                           wls_signal_scale = .default_wls_signal_scale(),
+                           wls_max_weight_ratio = .default_wls_max_weight_ratio()) {
     M <- .as_reference_matrix(M, "M")
     full_data <- flowCore::exprs(flow_frame)
     detectors <- colnames(M)
@@ -56,18 +68,15 @@ calc_residuals <- function(flow_frame, M, file_name = NULL, method = "OLS",
     }
 
     af_match <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
-    variances <- attr(M, "variances")
-    wls_detector_weights <- if (method == "WLS" && !is.null(variances)) {
-        .wls_weights_from_variances(variances, n_detectors = ncol(M))
-    } else {
-        numeric(0)
-    }
-    if (method == "WLS" && length(wls_detector_weights) != ncol(M)) {
-        stop(
-            "WLS requires SCC-derived detector variances. ",
-            "Run unmix_controls() first, pass M returned by build_reference_matrix(), ",
-            "or use unmix_samples() with a matching variances_file."
+    wls_noise <- if (method == "WLS") {
+        .resolve_wls_noise_parameters(
+            M = M,
+            background_noise = background_noise,
+            signal_scale = wls_signal_scale,
+            max_weight_ratio = wls_max_weight_ratio
         )
+    } else {
+        list(noise_floor = numeric(0), signal_scale = numeric(0), max_weight_ratio = .default_wls_max_weight_ratio())
     }
 
     if (sum(af_match) > 1) {
@@ -79,7 +88,9 @@ calc_residuals <- function(flow_frame, M, file_name = NULL, method = "OLS",
             fluor_idx = fluor_idx,
             af_idx = af_idx,
             method = method,
-            detector_weights = wls_detector_weights
+            noise_floor = wls_noise$noise_floor,
+            signal_scale = wls_noise$signal_scale,
+            max_weight_ratio = wls_noise$max_weight_ratio
         )
     } else {
         if (method == "OLS") {
@@ -92,18 +103,13 @@ calc_residuals <- function(flow_frame, M, file_name = NULL, method = "OLS",
         } else if (method == "NNLS") {
             A <- spectreasy_nnls_unmix_cpp(Y = Y, M = M)
         } else if (method == "WLS") {
-            w_scale <- sqrt(wls_detector_weights)
-            M_scaled <- M %*% diag(w_scale)
-            colnames(M_scaled) <- colnames(M)
-            rownames(M_scaled) <- rownames(M)
-            Y_scaled <- Y %*% diag(w_scale)
-            colnames(Y_scaled) <- colnames(Y)
-            Mt_scaled <- t(M_scaled)
-            matrix_to_invert <- M_scaled %*% Mt_scaled
-            if (rcond(matrix_to_invert) < 1e-10) {
-                stop("Scaled Reference Matrix is singular.")
-            }
-            A <- Y_scaled %*% Mt_scaled %*% solve(matrix_to_invert)
+            A <- spectreasy_wls_unmix_cpp(
+                Y = Y,
+                M = M,
+                noise_floor = wls_noise$noise_floor,
+                signal_scale = wls_noise$signal_scale,
+                max_weight_ratio = wls_noise$max_weight_ratio
+            )
         }
     }
 

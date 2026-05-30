@@ -8,9 +8,9 @@
 
 ## Changes
 
-- WLS now uses SCC-derived detector variances only; it no longer guesses weights from the reference matrix or sample brightness.
-- `unmix_samples(method = "WLS")` can recompute missing WLS variances from SCC files and save a regenerated `scc_variances.csv`.
-- Multi-AF WLS now uses SCC-derived variances for AF-band selection and coefficient fitting.
+- WLS now uses event-wise detector-error weights with detector-specific noise floors estimated from SCC low-signal tails by default. SCC variances are retained as reference QC metadata.
+- `unmix_controls()` writes `scc_detector_noise.csv`; `unmix_samples(method = "WLS")` loads it beside `scc_reference_matrix.csv`, estimates from `scc_dir` when available, or falls back to a scalar noise floor of 125.
+- Multi-AF WLS now uses the same event-wise detector-error weights for AF-band selection and coefficient fitting.
 - `control.type` in the control mapping now controls bead/cell FSC/SSC gating, with filename guessing used only when the column is empty.
 - `universal.negative` can now point to a specific negative FCS file for SCC subtraction.
 - Removed the unused `background_noise` argument from spectral spread matrix calculation.
