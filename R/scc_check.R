@@ -202,6 +202,8 @@
 #' @param output_file Path to save the PDF report. Defaults to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.
 #' @param control_file Control mapping CSV path.
 #' @param cytometer Cytometer name passed to [build_reference_matrix()].
+#' @param method Unmixing method used for the control scatter matrix
+#'   (`"WLS"`, `"OLS"`, or `"NNLS"`).
 #' @param qc_plot_dir Directory where FSC/SSC, histogram, and spectrum PNGs are written
 #'   when `save_qc_pngs = TRUE`.
 #' @param save_qc_pngs Logical; if `TRUE`, keep the intermediate QC PNG files in
@@ -211,7 +213,7 @@
 #' @param af_dir AF directory forwarded to [build_reference_matrix()].
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
-#' @return Invisibly returns a list with `M`, `qc_summary`, and `qc_plot_dir`.
+#' @return Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`, and `method`.
 #'   `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 #' @examples
 #' if (interactive()) {
@@ -228,6 +230,7 @@ qc_controls <- function(
     output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
     control_file = "fcs_mapping.csv",
     cytometer = "Aurora",
+    method = "WLS",
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
     save_qc_pngs = FALSE,
     include_multi_af = FALSE,
@@ -237,6 +240,10 @@ qc_controls <- function(
 ) {
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the SCC PDF report.", call. = FALSE)
+    }
+    method <- toupper(as.character(method)[1])
+    if (!(method %in% c("WLS", "OLS", "NNLS"))) {
+        stop("method must be one of: WLS, OLS, NNLS", call. = FALSE)
     }
 
     message("Generating SCC QC report...")
@@ -317,6 +324,7 @@ qc_controls <- function(
             "Generated on: ", Sys.time(), "\n",
             "SCC directory: ", normalizePath(scc_dir, mustWork = FALSE), "\n",
             "Controls processed: ", nrow(qc_summary), "\n",
+            "Unmixing method for scatter matrix: ", method, "\n",
             "Workflow intent: review SCC quality before unmix_controls()."
         ),
         x = 0.5,
@@ -353,12 +361,13 @@ qc_controls <- function(
     if (nrow(M_no_af) > 1) {
         sim_mat <- calculate_similarity_matrix(M_no_af)
         .draw_report_ggplot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
-        .draw_report_ggplot_page(plot_ssm(calculate_ssm(M_no_af), output_file = NULL))
+        ssm_method <- if (identical(method, "NNLS")) "OLS" else method
+        .draw_report_ggplot_page(plot_ssm(calculate_ssm(M_no_af, method = ssm_method), output_file = NULL))
 
         unmixed_list <- unmix_samples(
             sample_dir = scc_dir,
             M = M_report,
-            method = "WLS",
+            method = method,
             cytometer = cytometer,
             write_fcs = FALSE,
             verbose = FALSE
@@ -409,5 +418,5 @@ qc_controls <- function(
     }
 
     message("SCC report saved to: ", output_file)
-    invisible(list(M = M_built, qc_summary = qc_summary, qc_plot_dir = retained_qc_plot_dir))
+    invisible(list(M = M_built, qc_summary = qc_summary, qc_plot_dir = retained_qc_plot_dir, method = method))
 }

@@ -1,3 +1,48 @@
+.validate_reference_matrix <- function(M, arg_name = "M") {
+    if (!is.matrix(M) || !is.numeric(M)) {
+        stop(arg_name, " must be a numeric matrix.")
+    }
+    if (nrow(M) == 0 || ncol(M) == 0) {
+        stop(arg_name, " must have at least one marker row and one detector column.")
+    }
+    if (any(!is.finite(M))) {
+        bad <- which(!is.finite(M), arr.ind = TRUE)
+        first <- bad[1, , drop = FALSE]
+        stop(
+            arg_name,
+            " contains non-finite values, first at row ",
+            first[1, "row"],
+            ", column ",
+            first[1, "col"],
+            "."
+        )
+    }
+
+    row_names <- rownames(M)
+    if (is.null(row_names) || length(row_names) != nrow(M) ||
+        any(is.na(row_names)) || any(!nzchar(trimws(row_names)))) {
+        stop(arg_name, " must have non-empty marker names in rownames().")
+    }
+    row_names <- trimws(row_names)
+    if (any(duplicated(row_names))) {
+        stop(arg_name, " contains duplicated marker names: ", paste(unique(row_names[duplicated(row_names)]), collapse = ", "))
+    }
+
+    col_names <- colnames(M)
+    if (is.null(col_names) || length(col_names) != ncol(M) ||
+        any(is.na(col_names)) || any(!nzchar(trimws(col_names)))) {
+        stop(arg_name, " must have non-empty detector names in colnames().")
+    }
+    col_names <- trimws(col_names)
+    if (any(duplicated(col_names))) {
+        stop(arg_name, " contains duplicated detector names: ", paste(unique(col_names[duplicated(col_names)]), collapse = ", "))
+    }
+
+    rownames(M) <- row_names
+    colnames(M) <- col_names
+    M
+}
+
 .as_reference_matrix <- function(M, arg_name = "M") {
     if (is.null(M)) {
         stop(arg_name, " must not be NULL.")
@@ -10,7 +55,7 @@
         if (!is.numeric(M)) {
             stop(arg_name, " must be numeric.")
         }
-        return(M)
+        return(.validate_reference_matrix(M, arg_name = arg_name))
     }
     
     if (inherits(M, "data.frame")) {
@@ -59,7 +104,7 @@
         mat <- as.matrix(as.data.frame(numeric_cols, stringsAsFactors = FALSE))
         rownames(mat) <- marker_names
         colnames(mat) <- colnames(df)
-        return(mat)
+        return(.validate_reference_matrix(mat, arg_name = arg_name))
     }
     
     stop(arg_name, " must be a numeric matrix or a data.frame with detector columns.")
@@ -495,18 +540,22 @@
 }
 
 .get_primary_scatter_channels <- function(col_names) {
-    pick_primary <- function(prefix) {
+    pick_primary <- function(prefix, aliases = character()) {
+        normalized <- toupper(gsub("[^A-Z0-9]", "", col_names))
+        prefixes <- toupper(gsub("[^A-Z0-9]", "", c(prefix, aliases)))
+        is_match <- Reduce(`|`, lapply(prefixes, function(x) startsWith(normalized, x)))
+
         exact <- col_names[toupper(col_names) == paste0(prefix, "-A")]
         if (length(exact) > 0) {
             return(exact[[1]])
         }
 
-        area <- col_names[grepl(paste0("^", prefix, ".*-A$"), col_names, ignore.case = TRUE)]
+        area <- col_names[is_match & grepl("-A$", col_names, ignore.case = TRUE)]
         if (length(area) > 0) {
             return(area[[1]])
         }
 
-        any_match <- col_names[grepl(paste0("^", prefix), col_names, ignore.case = TRUE)]
+        any_match <- col_names[is_match]
         if (length(any_match) > 0) {
             return(any_match[[1]])
         }
@@ -515,8 +564,8 @@
     }
 
     list(
-        fsc = pick_primary("FSC"),
-        ssc = pick_primary("SSC")
+        fsc = pick_primary("FSC", aliases = c("FS", "Forward Scatter")),
+        ssc = pick_primary("SSC", aliases = c("SS", "Side Scatter"))
     )
 }
 

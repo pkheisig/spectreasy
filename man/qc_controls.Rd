@@ -12,6 +12,7 @@ qc_controls(
   output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
+  method = "WLS",
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   save_qc_pngs = FALSE,
   include_multi_af = FALSE,
@@ -36,6 +37,9 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{cytometer}{Cytometer name passed to [build_reference_matrix()].}
 
+\item{method}{Unmixing method used for the control scatter matrix
+(`"WLS"`, `"OLS"`, or `"NNLS"`).}
+
 \item{qc_plot_dir}{Directory where FSC/SSC, histogram, and spectrum PNGs are written
 when `save_qc_pngs = TRUE`.}
 
@@ -52,7 +56,7 @@ for report assembly and removed afterward.}
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }
 \value{
-Invisibly returns a list with `M`, `qc_summary`, and `qc_plot_dir`.
+Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`, and `method`.
   `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 }
 \description{

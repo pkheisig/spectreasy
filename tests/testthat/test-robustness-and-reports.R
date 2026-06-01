@@ -164,6 +164,37 @@ test_that("qc_samples has stable pages and no recommendation page", {
     expect_false(grepl("Good: populations remain compact", txt, fixed = TRUE))
 })
 
+test_that("qc_samples skips negative population spread for NNLS", {
+    skip_if_not_installed("pdftools")
+
+    set.seed(1)
+    n <- 120
+    results <- data.frame(
+        FITC = abs(rnorm(n, 0, 0.3)),
+        PE = abs(rnorm(n, 0, 0.4)),
+        AF = abs(rnorm(n, 0, 0.2)),
+        File = rep(c("SampleA", "SampleB"), each = n / 2),
+        check.names = FALSE
+    )
+
+    M <- matrix(c(
+        1.0, 0.2, 0.1,
+        0.1, 1.0, 0.2,
+        0.2, 0.2, 1.0
+    ), nrow = 3, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE", "AF")
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A")
+
+    pdf_out <- tempfile(fileext = ".pdf")
+    spectreasy::qc_samples(results = results, M = M, output_file = pdf_out, method = "NNLS")
+
+    info <- pdftools::pdf_info(pdf_out)
+    expect_equal(info$pages, 5)
+
+    txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
+    expect_false(grepl("Negative Population Spread", txt, fixed = TRUE))
+})
+
 test_that("qc_samples can include NxN pages for all samples", {
     skip_if_not_installed("pdftools")
 

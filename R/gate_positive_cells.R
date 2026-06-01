@@ -4,9 +4,9 @@
 #' The function returns a logical vector indicating events inside the positive gate.
 #'
 #' @param mat Numeric matrix/data.frame of events x detectors.
-#' @param histogram_pct Fraction of events retained by the histogram gate.
-#' @param histogram_direction Gate direction: `"both"`, `"left"`, or `"right"`.
-#' @param histogram_min_x_log Reserved minimum x value on log10 scale.
+#' @param histogram_pct Quantile width used for the histogram gate.
+#' @param histogram_direction Gate direction: `"right"` starts at the median,
+#'   `"both"` centers on the median, and `"left"` ends at the median.
 #'
 #' @return Logical vector of length `nrow(mat)`, `TRUE` for gated-in events.
 #' @export
@@ -20,8 +20,7 @@
 #' mean(idx)
 gate_positive_cells <- function(mat,
                                 histogram_pct = 0.98,
-                                histogram_direction = "both",
-                                histogram_min_x_log = 2) {
+                                histogram_direction = "right") {
     # Identify peak channel by variance
     peak_channel <- which.max(apply(mat, 2, var))
     peak_vals <- mat[, peak_channel]

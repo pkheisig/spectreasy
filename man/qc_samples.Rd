@@ -10,6 +10,7 @@ qc_samples(
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
   output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
+  method = NULL,
   res_list = NULL,
   png_dir = NULL,
   pd = NULL,
@@ -35,6 +36,10 @@ Used when `M` is not supplied. By default this points to the reference matrix
 produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{output_file}{Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.}
+
+\item{method}{Unmixing method used to create `results` (`"WLS"`, `"OLS"`, or
+`"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
+because constrained NNLS results are non-negative by construction.}
 
 \item{res_list}{Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.}
 

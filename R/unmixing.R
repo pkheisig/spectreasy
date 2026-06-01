@@ -783,6 +783,7 @@ unmix_samples <- function(sample_dir = "samples",
     }
 
     class(results) <- c("spectreasy_unmixed_results", "list")
+    attr(results, "method") <- method_upper
 
     invisible(results)
 }

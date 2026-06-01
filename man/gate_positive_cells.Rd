@@ -7,18 +7,16 @@
 gate_positive_cells(
   mat,
   histogram_pct = 0.98,
-  histogram_direction = "both",
-  histogram_min_x_log = 2
+  histogram_direction = "right"
 )
 }
 \arguments{
 \item{mat}{Numeric matrix/data.frame of events x detectors.}
 
-\item{histogram_pct}{Fraction of events retained by the histogram gate.}
+\item{histogram_pct}{Quantile width used for the histogram gate.}
 
-\item{histogram_direction}{Gate direction: `"both"`, `"left"`, or `"right"`.}
-
-\item{histogram_min_x_log}{Reserved minimum x value on log10 scale.}
+\item{histogram_direction}{Gate direction: `"right"` starts at the median,
+`"both"` centers on the median, and `"left"` ends at the median.}
 }
 \value{
 Logical vector of length `nrow(mat)`, `TRUE` for gated-in events.

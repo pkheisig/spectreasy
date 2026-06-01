@@ -158,6 +158,16 @@
     )
 }
 
+.resolve_reference_scatter_channels <- function(raw_data) {
+    primary <- .get_primary_scatter_channels(colnames(raw_data))
+
+    if (is.na(primary$fsc) || is.na(primary$ssc) || !all(c(primary$fsc, primary$ssc) %in% colnames(raw_data))) {
+        return(NULL)
+    }
+
+    primary
+}
+
 .get_reference_ellipse <- function(mean, sigma, level = 0.95, n = 100, scale = 1.0) {
     chi2_val <- qchisq(level, df = 2)
     eig <- eigen(sigma)
@@ -329,9 +339,10 @@
     pd_af <- flowCore::pData(flowCore::parameters(ff_af))
 
     idx <- seq_len(nrow(raw))
-    fsc <- pd_af$name[grepl("^FSC", pd_af$name) & grepl("-A$", pd_af$name)][1]
-    ssc <- pd_af$name[grepl("^SSC", pd_af$name) & grepl("-A$", pd_af$name)][1]
-    if (!is.na(fsc) && nzchar(fsc) && !is.na(ssc) && nzchar(ssc) && all(c(fsc, ssc) %in% colnames(raw))) {
+    scatter <- .resolve_reference_scatter_channels(raw)
+    if (!is.null(scatter)) {
+        fsc <- scatter$fsc
+        ssc <- scatter$ssc
         fsc_lo <- stats::quantile(raw[, fsc], 0.2, na.rm = TRUE)
         fsc_hi <- stats::quantile(raw[, fsc], 0.8, na.rm = TRUE)
         ssc_lo <- stats::quantile(raw[, ssc], 0.2, na.rm = TRUE)
@@ -488,8 +499,12 @@
                                             gate_contour_beads,
                                             gate_contour_cells,
                                             bead_gate_scale) {
-    fsc <- pd$name[grepl("^FSC", pd$name) & grepl("-A$", pd$name)][1]
-    ssc <- pd$name[grepl("^SSC", pd$name) & grepl("-A$", pd$name)][1]
+    scatter <- .resolve_reference_scatter_channels(raw_data)
+    if (is.null(scatter)) {
+        return(NULL)
+    }
+    fsc <- scatter$fsc
+    ssc <- scatter$ssc
 
     data_raw_scatter <- raw_data[, c(fsc, ssc)]
     fsc_max <- quantile(data_raw_scatter[, 1], 1 - outlier_percentile, na.rm = TRUE)
@@ -1537,15 +1552,16 @@
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used for channel alias resolution (for example `"Aurora"`).
-#' @param histogram_pct_beads Histogram gate width for bead controls.
-#' @param histogram_direction_beads Histogram gate direction for bead controls: `"both"`, `"left"`, or `"right"`.
-#' @param histogram_pct_cells Histogram gate width for cell controls.
-#' @param histogram_direction_cells Histogram gate direction for cell controls: `"both"`, `"left"`, or `"right"`.
+#' @param histogram_pct_beads Quantile width for the bead histogram gate.
+#' @param histogram_direction_beads Histogram gate direction for beads: `"right"` starts at the median,
+#'   `"both"` centers on the median, and `"left"` ends at the median.
+#' @param histogram_pct_cells Quantile width for the cell histogram gate.
+#' @param histogram_direction_cells Histogram gate direction for cells: `"right"` starts at the median,
+#'   `"both"` centers on the median, and `"left"` ends at the median.
 #' @param outlier_percentile Upper-tail FSC/SSC filtering percentile.
 #' @param debris_percentile Lower FSC range fraction for cell/unstained controls.
-#'   For example, `0.08` excludes events below 8% of the per-file high FSC scale.
+#'   For example, `0.08` excludes events below 8\% of the per-file high FSC scale.
 #' @param bead_gate_scale Ellipse scaling factor for bead FSC/SSC gate.
-#' @param histogram_min_x_log Reserved histogram lower x-limit parameter.
 #' @param max_clusters Maximum number of GMM components tested.
 #' @param min_cluster_proportion Minimum population proportion kept from GMM fit.
 #' @param gate_contour_beads Contour probability for bead gating ellipse/hull.
@@ -1585,13 +1601,12 @@ build_reference_matrix <- function(
   default_sample_type = "beads",
   cytometer = "Aurora",
   histogram_pct_beads = 0.98,
-  histogram_direction_beads = "both",
+  histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
-  histogram_direction_cells = "both",
+  histogram_direction_cells = "right",
   outlier_percentile = 0.02,
   debris_percentile = 0.08,
   bead_gate_scale = 1.3,
-  histogram_min_x_log = 2,
   max_clusters = 6,
   min_cluster_proportion = 0.03,
   gate_contour_beads = 0.95,
@@ -1645,7 +1660,6 @@ build_reference_matrix <- function(
         histogram_direction_cells = histogram_direction_cells,
         save_qc_plots = save_qc_plots,
         out_path = out_path,
-        histogram_min_x_log = histogram_min_x_log,
         cytometer = cytometer
     )
 

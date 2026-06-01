@@ -40,12 +40,20 @@
 
 .control_file_preferred_fluors <- function() {
     c(
-        "FITC", "PE", "PE-CF594", "PE-Cy5", "PE-Cy5.5", "PE-Cy7",
-        "APC", "Alexa Fluor 700", "APC-R700", "APC-Cy7",
-        "PerCP", "PerCP-Cy5.5",
+        "FITC", "BB515", "Alexa Fluor 488",
+        "PE", "PE-CF594", "PE-Dazzle 594", "PE-Fire 640", "PE-Fire 700", "PE-Fire 810",
+        "PE-Cy5", "PE-Cy5.5", "PE-Cy7",
+        "APC", "Alexa Fluor 647", "Alexa Fluor 700", "APC-R700", "APC-Cy7", "APC-H7", "APC-Fire 750", "APC-Fire 810",
+        "PerCP", "PerCP-Cy5.5", "BB700",
         "BV421", "BV480", "BV510", "BV570", "BV605", "BV650", "BV661", "BV711", "BV737", "BV750", "BV785",
         "BUV395", "BUV496", "BUV563", "BUV615", "BUV661", "BUV737", "BUV805",
-        "Alexa Fluor 488", "Alexa Fluor 594", "Alexa Fluor 647", "Alexa Fluor 700"
+        "Alexa Fluor 350", "Alexa Fluor 405", "Alexa Fluor 430", "Alexa Fluor 514",
+        "Alexa Fluor 532", "Alexa Fluor 546", "Alexa Fluor 555", "Alexa Fluor 568",
+        "Alexa Fluor 594", "Alexa Fluor 610", "Alexa Fluor 633", "Alexa Fluor 660",
+        "Alexa Fluor 680", "Alexa Fluor 750", "Alexa Fluor 790",
+        "RB545", "RB613", "RB667", "RB705", "RB744", "RB780",
+        "Spark Blue 550", "Spark NIR 685",
+        "Super Bright 436", "Super Bright 600", "Super Bright 645", "Super Bright 702", "Super Bright 780"
     )
 }
 
@@ -60,10 +68,22 @@
     sort(candidates)[1]
 }
 
+.control_file_generated_marker_map <- function(max_cd = 371L) {
+    marker_names <- c(
+        paste0("CD", seq_len(max_cd)),
+        paste0("CD1", letters[1:5]),
+        "CD45RA", "CD45RO"
+    )
+    marker_names <- unique(marker_names)
+    keys <- .control_file_normalize_token(marker_names)
+    keys <- keys[nzchar(keys)]
+    stats::setNames(marker_names[seq_along(keys)], keys)
+}
+
 .load_control_file_shipped_reference <- function(cytometer_name, preferred_fluors = .control_file_preferred_fluors()) {
     fluor_file <- .control_file_extdata_file("fluorophore_dictionary.csv")
     marker_file <- .control_file_extdata_file("marker_dictionary.csv")
-    out <- list(name_map = character(), channel_map = character(), marker_map = character())
+    out <- list(name_map = character(), channel_map = character(), marker_map = character(), marker_names = character())
 
     if (nzchar(fluor_file)) {
         fluor_df <- tryCatch(
@@ -111,15 +131,20 @@
             for (i in seq_len(nrow(marker_df))) {
                 marker <- trimws(as.character(marker_df$marker[i]))
                 if (!nzchar(marker)) next
-                aliases <- unique(c(marker, .control_file_split_semicolon(marker_df$aliases[i])))
-                alias_keys <- .control_file_normalize_token(aliases)
-                alias_keys <- alias_keys[nzchar(alias_keys)]
-                for (k in alias_keys) {
+                out$marker_names <- c(out$marker_names, marker)
+                marker_key <- .control_file_normalize_token(marker)
+                if (nzchar(marker_key)) {
+                    k <- marker_key
                     if (!k %in% names(out$marker_map)) out$marker_map[k] <- marker
                 }
             }
         }
     }
+
+    generated_marker_map <- .control_file_generated_marker_map()
+    out$marker_names <- unique(c(out$marker_names, unname(generated_marker_map)))
+    generated_marker_map <- generated_marker_map[!(names(generated_marker_map) %in% names(out$marker_map))]
+    out$marker_map <- c(out$marker_map, generated_marker_map)
 
     out
 }
@@ -140,6 +165,7 @@
         fluor_name_map = shipped_ref$name_map,
         fluor_channel_map = shipped_ref$channel_map,
         marker_name_map = shipped_ref$marker_map,
+        marker_names = shipped_ref$marker_names,
         preferred_fluors = preferred_fluors
     )
 }
@@ -173,6 +199,23 @@
     unique(out[nzchar(out)])
 }
 
+.control_file_resolve_custom_fluor <- function(fn, custom_fluorophores = NULL) {
+    if (is.null(custom_fluorophores) || length(custom_fluorophores) == 0) return("")
+    custom_names <- names(custom_fluorophores)
+    if (is.null(custom_names)) return("")
+
+    candidates <- unique(c(
+        fn,
+        basename(fn),
+        tools::file_path_sans_ext(fn),
+        tools::file_path_sans_ext(basename(fn))
+    ))
+    idx <- match(candidates, custom_names)
+    idx <- idx[!is.na(idx)]
+    if (length(idx) == 0) return("")
+    as.character(custom_fluorophores[[idx[1]]])
+}
+
 .detect_control_file_alias <- function(stem, alias_map, min_substring_n = 4) {
     if (length(alias_map) == 0) return("")
     stem_norm <- .control_file_normalize_token(stem)
@@ -196,6 +239,31 @@
     ""
 }
 
+.control_file_marker_regex <- function(marker) {
+    chars <- strsplit(marker, "", fixed = TRUE)[[1]]
+    escaped <- vapply(chars, function(ch) {
+        if (grepl("[A-Za-z0-9]", ch)) return(ch)
+        if (grepl("\\s", ch)) return("\\s+")
+        if (ch %in% c("\\", ".", "^", "$", "|", "?", "*", "+", "(", ")", "[", "]", "{", "}")) return(paste0("\\", ch))
+        ch
+    }, character(1))
+    paste0("(^|[^[:alnum:]])", paste0(escaped, collapse = ""), "([^[:alnum:]]|$)")
+}
+
+.detect_control_file_marker <- function(stem, marker_names = character(), marker_name_map = character()) {
+    marker_names <- unique(trimws(as.character(marker_names)))
+    marker_names <- marker_names[nzchar(marker_names)]
+    if (length(marker_names) > 0) {
+        marker_names <- marker_names[order(-nchar(marker_names), marker_names)]
+        for (marker in marker_names) {
+            if (grepl(.control_file_marker_regex(marker), stem, ignore.case = TRUE, perl = TRUE)) {
+                return(marker)
+            }
+        }
+    }
+    .detect_control_file_alias(stem, marker_name_map, min_substring_n = 3)
+}
+
 .infer_control_type_from_filename <- function(fn, fluor_guess = "", marker_guess = "") {
     stem <- tools::file_path_sans_ext(basename(fn))
     tok <- .control_file_split_filename_tokens(stem)
@@ -214,13 +282,22 @@
     stem_norm <- .control_file_normalize_token(stem)
     tok <- .control_file_split_filename_tokens(stem)
 
-    if (any(tok %in% c("live", "dead", "viability"))) return("TRUE")
+    if (any(tok %in% c("live", "dead", "ld", "viability", "viable", "fixviab", "fvd", "fvs", "zombie"))) return("TRUE")
     if (grepl("livedead", stem_norm, fixed = TRUE) ||
-        grepl("fixableviability", stem_norm, fixed = TRUE)) return("TRUE")
+        grepl("fixableviability", stem_norm, fixed = TRUE) ||
+        grepl("fixviab", stem_norm, fixed = TRUE) ||
+        grepl("fvd[0-9]*", stem_norm) ||
+        grepl("fvs[0-9]*", stem_norm)) return("TRUE")
 
     fluor_norm <- .control_file_normalize_token(fluor_guess)
     marker_norm <- .control_file_normalize_token(marker_guess)
-    if (any(c(fluor_norm, marker_norm) %in% c("zombienir", "zombieaqua", "zombieviolet", "zombieuv", "zombiegreen", "zombiered", "zombieyellow"))) {
+    if (any(c(fluor_norm, marker_norm) %in% c(
+        "livedeadnir", "livedeadaqua", "livedeadviolet", "livedeaduv",
+        "livedeadgreen", "livedeadred", "livedeadyellow", "livedeadblue",
+        "livedeadfarred",
+        "zombienir", "zombieaqua", "zombieviolet", "zombieuv",
+        "zombiegreen", "zombiered", "zombieyellow"
+    ))) {
         return("TRUE")
     }
     ""
@@ -230,8 +307,13 @@
     stem <- tools::file_path_sans_ext(basename(fn))
     stem_norm <- .control_file_normalize_token(stem)
 
-    if (!is.null(custom_fluorophores) && fn %in% names(custom_fluorophores)) {
-        return(as.character(custom_fluorophores[fn]))
+    custom_fluor <- .control_file_resolve_custom_fluor(fn, custom_fluorophores = custom_fluorophores)
+    if (nzchar(custom_fluor)) return(custom_fluor)
+
+    alexa_match <- regexec("(alexa(?:fluor)?|af)([0-9]{3})", stem_norm, perl = TRUE)
+    alexa_parts <- regmatches(stem_norm, alexa_match)[[1]]
+    if (length(alexa_parts) >= 3) {
+        return(paste("Alexa Fluor", alexa_parts[3]))
     }
 
     if (grepl("livedeadnir", stem_norm, fixed = TRUE) ||
@@ -277,11 +359,11 @@
     ""
 }
 
-.infer_marker_from_filename <- function(fn, fluor_guess = "", marker_name_map = character()) {
+.infer_marker_from_filename <- function(fn, fluor_guess = "", marker_name_map = character(), marker_names = character()) {
     stem <- tools::file_path_sans_ext(basename(fn))
     stem_lower <- tolower(stem)
     if (grepl("unstained|us_ut|^af($|[-_])", stem_lower)) return("Autofluorescence")
-    marker_guess <- .detect_control_file_alias(stem, marker_name_map, min_substring_n = 3)
+    marker_guess <- .detect_control_file_marker(stem, marker_names = marker_names, marker_name_map = marker_name_map)
     if (!nzchar(marker_guess)) return("")
     if (nzchar(fluor_guess) && .control_file_normalize_token(marker_guess) == .control_file_normalize_token(fluor_guess)) return("")
     marker_guess
@@ -326,6 +408,16 @@
     ""
 }
 
+.control_file_extract_detector_codes <- function(...) {
+    text <- toupper(paste(..., collapse = " "))
+    if (!nzchar(trimws(text))) return(character())
+    matches <- gregexpr("(^|[^A-Z0-9])(UV|YG|[VRB])([0-9]+)(-A)?([^A-Z0-9]|$)", text, perl = TRUE)
+    raw <- regmatches(text, matches)[[1]]
+    if (length(raw) == 1 && raw[1] == "-1") return(character())
+    codes <- sub(".*?(UV|YG|[VRB])([0-9]+)(-A)?.*", "\\1\\2", raw, perl = TRUE)
+    unique(codes[nzchar(codes)])
+}
+
 .control_file_next_af_tag <- function(existing_vals) {
     ex <- trimws(as.character(existing_vals))
     ex <- ex[!is.na(ex) & nzchar(ex)]
@@ -353,7 +445,6 @@
         if (!is.na(direct) && nzchar(direct)) return(as.character(direct))
     }
 
-    token <- toupper(gsub("\\s+", "", paste(channel_name, detector_desc)))
     exact_map <- c(
         "YG1" = "PE",
         "YG3" = "PE-CF594",
@@ -385,21 +476,36 @@
         "UV16" = "BUV805"
     )
 
-    for (k in names(exact_map)) {
-        if (grepl(k, token, fixed = TRUE)) return(exact_map[[k]])
+    detector_codes <- .control_file_extract_detector_codes(channel_name, detector_desc)
+    for (code in detector_codes) {
+        if (code %in% names(exact_map)) return(exact_map[[code]])
     }
-    if (grepl("YG[0-9]", token) || grepl("YELLOWGREEN", token, fixed = TRUE)) return("PE")
-    if (grepl("R[0-9]", token) || grepl("RED", token, fixed = TRUE)) return("APC")
-    if (grepl("V[0-9]", token) || grepl("VIOLET", token, fixed = TRUE)) return("BV421")
-    if (grepl("B[0-9]", token) || grepl("BLUE", token, fixed = TRUE)) return("FITC")
-    if (grepl("UV[0-9]", token) || grepl("ULTRAVIOLET", token, fixed = TRUE)) return("BUV395")
+
+    code_prefix <- sub("[0-9]+$", "", detector_codes)
+    if ("YG" %in% code_prefix) return("PE")
+    if ("R" %in% code_prefix) return("APC")
+    if ("V" %in% code_prefix) return("BV421")
+    if ("B" %in% code_prefix) return("FITC")
+    if ("UV" %in% code_prefix) return("BUV395")
+
+    token <- toupper(gsub("\\s+", "", paste(channel_name, detector_desc)))
+    if (grepl("YELLOWGREEN", token, fixed = TRUE)) return("PE")
+    if (grepl("RED", token, fixed = TRUE)) return("APC")
+    if (grepl("VIOLET", token, fixed = TRUE)) return("BV421")
+    if (grepl("BLUE", token, fixed = TRUE)) return("FITC")
+    if (grepl("ULTRAVIOLET", token, fixed = TRUE)) return("BUV395")
     ""
 }
 
 .control_file_row_from_scc <- function(fn, ref, custom_fluorophores = NULL) {
     fluor <- .infer_fluor_from_filename(fn, ref = ref, custom_fluorophores = custom_fluorophores)
     if (grepl("Unstained|US_UT", fn, ignore.case = TRUE)) fluor <- "AF_Internal"
-    marker <- .infer_marker_from_filename(fn, fluor_guess = fluor, marker_name_map = ref$marker_name_map)
+    marker <- .infer_marker_from_filename(
+        fn,
+        fluor_guess = fluor,
+        marker_name_map = ref$marker_name_map,
+        marker_names = ref$marker_names
+    )
     control_type <- .infer_control_type_from_filename(fn, fluor_guess = fluor, marker_guess = marker)
     viability_flag <- .infer_is_viability_from_filename(fn, fluor_guess = fluor, marker_guess = marker)
 
@@ -615,7 +721,8 @@
             df$marker[i] <- .infer_marker_from_filename(
                 fn,
                 fluor_guess = df$fluorophore[i],
-                marker_name_map = ref$marker_name_map
+                marker_name_map = ref$marker_name_map,
+                marker_names = ref$marker_names
             )
         }
 

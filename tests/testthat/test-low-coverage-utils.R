@@ -48,6 +48,10 @@ test_that("matrix utility helpers cover key coercion and lookup branches", {
     expect_equal(primary$fsc, "FSC-A")
     expect_equal(primary$ssc, "SSC-A")
 
+    primary_alt <- spectreasy:::.get_primary_scatter_channels(c("FS-H", "Side Scatter-A"))
+    expect_equal(primary_alt$fsc, "FS-H")
+    expect_equal(primary_alt$ssc, "Side Scatter-A")
+
     out <- data.frame(FITC = 1:3)
     full_data <- matrix(1:12, nrow = 3)
     colnames(full_data) <- c("B1-A", "Time", "FSC-A", "SSC-A")

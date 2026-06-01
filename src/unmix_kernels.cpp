@@ -13,6 +13,15 @@ arma::mat safe_inverse_cpp(const arma::mat& mat, const double tol = 1e-10) {
     return arma::pinv(mat, tol);
 }
 
+bool normal_system_is_usable_cpp(const arma::mat& mat, const double tol = 1e-10) {
+    if (mat.n_rows == 0 || mat.n_cols == 0 || mat.n_rows != mat.n_cols || !mat.is_finite()) {
+        return false;
+    }
+
+    double rc = arma::rcond(mat);
+    return std::isfinite(rc) && rc >= tol;
+}
+
 arma::vec nnls_lawson_hanson_cpp(const arma::mat& A,
                                  const arma::vec& b,
                                  const double tol = 1e-10,
@@ -242,8 +251,14 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
 
     arma::mat A_out(n_cells, n_markers, arma::fill::zeros);
 
-    // Precompute OLS projection matrices P_k for each candidate AF band k.
+    // Precompute candidate model matrices. OLS also gets fixed projection
+    // matrices after a condition check because candidate conditioning does not
+    // vary by event for unweighted fits.
+    std::vector<arma::mat> X_list(n_af);
+    std::vector<arma::mat> A_list(n_af);
     std::vector<arma::mat> P_list(n_af);
+    std::vector<bool> ols_candidate_ok(n_af, true);
+    int skipped_ols_candidates = 0;
     for (arma::uword k = 0; k < n_af; ++k) {
         arma::mat X_k(n_fluors + 1, n_detectors);
         for (arma::uword f = 0; f < n_fluors; ++f) {
@@ -252,9 +267,23 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
         X_k.row(n_fluors) = M.row(af_idx(k));
 
         arma::mat A_k = X_k.t();
-        arma::mat AtA = A_k.t() * A_k;
-        arma::mat AtA_inv = safe_inverse_cpp(AtA, tol);
-        P_list[k] = A_k * AtA_inv * A_k.t();
+        X_list[k] = X_k;
+        A_list[k] = A_k;
+
+        if (method == "OLS") {
+            arma::mat AtA = A_k.t() * A_k;
+            if (!normal_system_is_usable_cpp(AtA, tol)) {
+                ols_candidate_ok[k] = false;
+                ++skipped_ols_candidates;
+                continue;
+            }
+            arma::mat AtA_inv = safe_inverse_cpp(AtA, tol);
+            P_list[k] = A_k * AtA_inv * A_k.t();
+        }
+    }
+
+    if (method == "OLS" && skipped_ols_candidates == static_cast<int>(n_af)) {
+        Rcpp::stop("No usable AF candidate model for OLS unmixing; all candidate matrices are singular or ill-conditioned.");
     }
 
     for (arma::uword i = 0; i < n_cells; ++i) {
@@ -274,19 +303,21 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
         for (arma::uword k = 0; k < n_af; ++k) {
             double rss;
             arma::vec coeffs_k(n_fluors + 1, arma::fill::zeros);
-            arma::mat X_k(n_fluors + 1, n_detectors);
-            for (arma::uword f = 0; f < n_fluors; ++f) {
-                X_k.row(f) = M.row(fluor_idx(f));
-            }
-            X_k.row(n_fluors) = M.row(af_idx(k));
-            arma::mat A_k = X_k.t();
+            const arma::mat& X_k = X_list[k];
+            const arma::mat& A_k = A_list[k];
 
             if (method == "WLS") {
-                arma::vec weights = event_weights;
-                coeffs_k = weighted_lsq_coeffs_cpp(X_k, y, weights, tol);
+                coeffs_k = weighted_lsq_coeffs_cpp(X_k, y, event_weights, tol);
                 arma::vec resid = y - A_k * coeffs_k;
-                rss = arma::dot(weights % resid, resid);
+                rss = arma::dot(event_weights % resid, resid);
+            } else if (method == "NNLS") {
+                coeffs_k = nnls_lawson_hanson_cpp(A_k, y, tol, max_outer, max_inner);
+                arma::vec resid = y - A_k * coeffs_k;
+                rss = arma::dot(resid, resid);
             } else {
+                if (!ols_candidate_ok[k]) {
+                    continue;
+                }
                 arma::vec resid = y - P_list[k] * y;
                 rss = arma::dot(resid, resid);
             }
@@ -295,17 +326,17 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
                 min_rss = rss;
                 best_k = k;
                 best_coeffs = coeffs_k;
-                have_best_coeffs = method == "WLS";
+                have_best_coeffs = (method == "WLS" || method == "NNLS");
             }
         }
 
         // 2. Build the model matrix X for the selected best_k.
-        arma::mat X_best(n_fluors + 1, n_detectors);
-        for (arma::uword f = 0; f < n_fluors; ++f) {
-            X_best.row(f) = M.row(fluor_idx(f));
+        if (min_rss == std::numeric_limits<double>::max()) {
+            Rcpp::stop("No usable AF candidate model for event %d; all candidate matrices are singular or ill-conditioned.", static_cast<int>(i + 1));
         }
-        X_best.row(n_fluors) = M.row(af_idx(best_k));
-        arma::mat A_best = X_best.t();
+
+        const arma::mat& X_best = X_list[best_k];
+        const arma::mat& A_best = A_list[best_k];
 
         // 3. Unmix the cell using the selected model.
         arma::vec coeffs(n_fluors + 1, arma::fill::zeros);
@@ -328,6 +359,10 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
             A_out(i, fluor_idx(f)) = coeffs(f);
         }
         A_out(i, af_idx(best_k)) = coeffs(n_fluors);
+    }
+
+    if (method == "OLS" && skipped_ols_candidates > 0) {
+        Rcpp::warning("Skipped %d ill-conditioned AF candidate model(s) during OLS AF selection.", skipped_ols_candidates);
     }
 
     return A_out;

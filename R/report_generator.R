@@ -371,6 +371,9 @@
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param output_file Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.
+#' @param method Unmixing method used to create `results` (`"WLS"`, `"OLS"`, or
+#'   `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
+#'   because constrained NNLS results are non-negative by construction.
 #' @param res_list Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.
 #' @param png_dir Deprecated and ignored (kept for backward compatibility).
 #' @param pd Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
@@ -413,6 +416,7 @@ qc_samples <- function(results,
                        M = NULL,
                        unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
                        output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
+                       method = NULL,
                        res_list = NULL,
                        png_dir = NULL,
                        pd = NULL,
@@ -425,6 +429,14 @@ qc_samples <- function(results,
         stop("Please supply output_file to save the QC PDF report.", call. = FALSE)
     }
     sample_nxn_transform <- match.arg(sample_nxn_transform)
+    method_attr <- attr(results, "method")
+    if (is.null(method)) {
+        method <- if (!is.null(method_attr)) method_attr else "WLS"
+    }
+    method <- toupper(as.character(method)[1])
+    if (!(method %in% c("WLS", "OLS", "NNLS"))) {
+        stop("method must be one of: WLS, OLS, NNLS", call. = FALSE)
+    }
 
     message("Generating spectreasy Summary Report...")
     if (!is.null(png_dir)) {
@@ -512,15 +524,20 @@ qc_samples <- function(results,
 
     message("  - Adding Spread Matrix...")
     if (nrow(M_no_af) > 1) {
-        ssm <- calculate_ssm(M_no_af)
+        ssm_method <- if (identical(method, "NNLS")) "OLS" else method
+        ssm <- calculate_ssm(M_no_af, method = ssm_method)
         .draw_qc_report_plot_page(plot_ssm(ssm, output_file = NULL))
     }
 
-    message("  - Adding NPS diagnostics...")
-    nps_scores <- calculate_nps(results_df)
-    nps_scores <- nps_scores[!grepl("^AF($|_)", nps_scores$Marker, ignore.case = TRUE), , drop = FALSE]
-    if (nrow(nps_scores) > 0) {
-        .draw_qc_report_plot_page(plot_nps(nps_scores, output_file = NULL))
+    if (identical(method, "NNLS")) {
+        message("  - Skipping NPS diagnostics for NNLS...")
+    } else {
+        message("  - Adding NPS diagnostics...")
+        nps_scores <- calculate_nps(results_df)
+        nps_scores <- nps_scores[!grepl("^AF($|_)", nps_scores$Marker, ignore.case = TRUE), , drop = FALSE]
+        if (nrow(nps_scores) > 0) {
+            .draw_qc_report_plot_page(plot_nps(nps_scores, output_file = NULL))
+        }
     }
 
     message("  - Adding per-sample NxN scatter pages...")

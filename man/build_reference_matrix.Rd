@@ -18,13 +18,12 @@ build_reference_matrix(
   default_sample_type = "beads",
   cytometer = "Aurora",
   histogram_pct_beads = 0.98,
-  histogram_direction_beads = "both",
+  histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
-  histogram_direction_cells = "both",
+  histogram_direction_cells = "right",
   outlier_percentile = 0.02,
   debris_percentile = 0.08,
   bead_gate_scale = 1.3,
-  histogram_min_x_log = 2,
   max_clusters = 6,
   min_cluster_proportion = 0.03,
   gate_contour_beads = 0.95,
@@ -62,22 +61,22 @@ signatures.}
 
 \item{cytometer}{Cytometer name used for channel alias resolution (for example `"Aurora"`).}
 
-\item{histogram_pct_beads}{Histogram gate width for bead controls.}
+\item{histogram_pct_beads}{Quantile width for the bead histogram gate.}
 
-\item{histogram_direction_beads}{Histogram gate direction for bead controls: `"both"`, `"left"`, or `"right"`.}
+\item{histogram_direction_beads}{Histogram gate direction for beads: `"right"` starts at the median,
+`"both"` centers on the median, and `"left"` ends at the median.}
 
-\item{histogram_pct_cells}{Histogram gate width for cell controls.}
+\item{histogram_pct_cells}{Quantile width for the cell histogram gate.}
 
-\item{histogram_direction_cells}{Histogram gate direction for cell controls: `"both"`, `"left"`, or `"right"`.}
+\item{histogram_direction_cells}{Histogram gate direction for cells: `"right"` starts at the median,
+`"both"` centers on the median, and `"left"` ends at the median.}
 
 \item{outlier_percentile}{Upper-tail FSC/SSC filtering percentile.}
 
 \item{debris_percentile}{Lower FSC range fraction for cell/unstained controls.
-For example, `0.08` excludes events below 8% of the per-file high FSC scale.}
+For example, `0.08` excludes events below 8\% of the per-file high FSC scale.}
 
 \item{bead_gate_scale}{Ellipse scaling factor for bead FSC/SSC gate.}
-
-\item{histogram_min_x_log}{Reserved histogram lower x-limit parameter.}
 
 \item{max_clusters}{Maximum number of GMM components tested.}
 

@@ -2,19 +2,21 @@
 #'
 #' Helper constructor for histogram-gating settings.
 #'
-#' @param histogram_pct_beads Fraction of events retained in bead histogram gate.
-#' @param histogram_direction_beads Gate direction for beads (`"both"`, `"left"`, `"right"`).
-#' @param histogram_pct_cells Fraction of events retained in cell histogram gate.
-#' @param histogram_direction_cells Gate direction for cells (`"both"`, `"left"`, `"right"`).
+#' @param histogram_pct_beads Quantile width for the bead histogram gate.
+#' @param histogram_direction_beads Gate direction for beads: `"right"` starts at the median,
+#'   `"both"` centers on the median, and `"left"` ends at the median.
+#' @param histogram_pct_cells Quantile width for the cell histogram gate.
+#' @param histogram_direction_cells Gate direction for cells: `"right"` starts at the median,
+#'   `"both"` centers on the median, and `"left"` ends at the median.
 #' @return Named list with gating settings.
 #' @examples
 #' opts <- gating_options(histogram_pct_beads = 0.98, histogram_pct_cells = 0.35)
 #' str(opts)
 #' @export
 gating_options <- function(histogram_pct_beads = 0.98,
-                           histogram_direction_beads = "both",
+                           histogram_direction_beads = "right",
                            histogram_pct_cells = 0.35,
-                           histogram_direction_cells = "both") {
+                           histogram_direction_cells = "right") {
     list(
         histogram_pct_beads = histogram_pct_beads,
         histogram_direction_beads = histogram_direction_beads,
@@ -47,22 +49,25 @@ get_fluorophore_patterns <- function() {
             "Alexa 610", "Alexa 633", "Alexa 647", "Alexa 660", "Alexa 680",
             "Alexa 700", "Alexa 750", "Alexa 790",
             # Proteins
-            "FITC", "GFP", "YFP", "CFP", "mCherry", "DsRed", "tdTomato",
+            "FITC", "BB515", "GFP", "YFP", "CFP", "mCherry", "DsRed", "tdTomato",
             "PE-Cy5.5", "PE-Cy5", "PE-Cy7", "PE-CF594", "PE-Texas Red",
             "PE-Dazzle 594", "PE-Fire 640", "PE-Fire 700", "PE-Fire 810", "PE",
             "APC-Cy7", "APC-H7", "APC-R700", "APC-Fire 750", "APC-Fire 810", "APC",
-            "PerCP-Cy5.5", "PerCP-eFluor 710", "PerCP",
+            "PerCP-Cy5.5", "PerCP-eFluor 710", "PerCP", "BB700",
             # Brilliant Violet
-            "BV421", "BV480", "BV510", "BV570", "BV605", "BV650", "BV711", "BV750", "BV785",
+            "BV421", "BV480", "BV510", "BV570", "BV605", "BV650", "BV661", "BV711", "BV737", "BV750", "BV785",
             # Brilliant UltraViolet
             "BUV395", "BUV496", "BUV563", "BUV615", "BUV661", "BUV737", "BUV805",
             # Others
             "Pacific Blue", "Pacific Orange", "Cy5.5", "Cy5", "Cy7", "Cy3",
+            "RB545", "RB613", "RB667", "RB705", "RB744", "RB780",
+            "Spark Blue 550", "Spark NIR 685",
+            "Super Bright 436", "Super Bright 600", "Super Bright 645", "Super Bright 702", "Super Bright 780",
             "eFluor 450", "eFluor 520", "eFluor 660", "V450", "V500",
             "SB436", "SB600", "SB645", "SB702", "SB780"
         ),
         cells = c(
-            "DAPI", "Hoechst", "PI", "7-AAD", "FVD",
+            "DAPI", "Hoechst", "PI", "7-AAD", "FVD", "FVD450", "FVD506", "FVD520", "FVD780", "FVS", "FixViab",
             "eFluor 506", "eFluor 780", "eFluor 455UV",
             "Zombie Aqua", "Zombie NIR", "Zombie UV", "Zombie Violet",
             "Zombie Green", "Zombie Red", "Zombie Yellow",

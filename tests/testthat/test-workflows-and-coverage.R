@@ -242,6 +242,7 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
         scc_dir = wf$scc_dir,
         output_file = output_pdf,
         control_file = control_csv,
+        method = "NNLS",
         qc_plot_dir = qc_plot_dir,
         save_qc_pngs = TRUE,
         seed = 1,
@@ -252,6 +253,7 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
     expect_true(dir.exists(out$qc_plot_dir))
     expect_true(is.matrix(out$M))
     expect_true(is.data.frame(out$qc_summary))
+    expect_equal(out$method, "NNLS")
 
     # Test default output file behavior
     default_pdf <- "spectreasy_outputs/unmix_controls/qc_controls_report.pdf"

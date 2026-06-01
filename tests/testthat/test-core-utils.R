@@ -24,6 +24,26 @@ test_that("derive_unmixing_matrix returns finite matrix with expected dims", {
     expect_true(all(is.finite(W)))
 })
 
+test_that("reference matrices reject non-finite values and duplicated names", {
+    M_bad_value <- matrix(c(1, NA_real_, 0.1, 1), nrow = 2, byrow = TRUE)
+    rownames(M_bad_value) <- c("FITC", "PE")
+    colnames(M_bad_value) <- c("B2-A", "YG1-A")
+
+    expect_error(
+        spectreasy::derive_unmixing_matrix(M_bad_value, method = "OLS"),
+        regexp = "non-finite"
+    )
+
+    M_dup <- matrix(c(1, 0.2, 0.1, 1), nrow = 2, byrow = TRUE)
+    rownames(M_dup) <- c("FITC", "FITC")
+    colnames(M_dup) <- c("B2-A", "YG1-A")
+
+    expect_error(
+        spectreasy::derive_unmixing_matrix(M_dup, method = "OLS"),
+        regexp = "duplicated marker"
+    )
+})
+
 test_that("derive_unmixing_matrix supports static WLS approximation and NNLS proxy", {
     M <- matrix(c(
         1, 0.2, 0.1,
@@ -152,6 +172,45 @@ test_that("calc_residuals NNLS matches per-cell constrained reference fits", {
 
     expect_equal(as.matrix(res[, rownames(M)]), expected, tolerance = 1e-6)
     expect_true(all(as.matrix(res[, rownames(M)]) >= -1e-10))
+})
+
+test_that("calc_residuals multi-AF NNLS selects AF band by constrained residual", {
+    M <- matrix(c(
+        1.00000000, 0.46357026, 0.56448788,
+        0.20952040, 1.00000000, 0.41805212,
+        1.00000000, 0.31610837, 0.64491387
+    ), nrow = 3, byrow = TRUE)
+    rownames(M) <- c("FITC", "AF", "AF_2")
+    colnames(M) <- c("D1-A", "D2-A", "D3-A")
+
+    exprs <- matrix(c(1.19896866, 1.83872848, 0.58991772), nrow = 1)
+    colnames(exprs) <- colnames(M)
+    ff <- flowCore::flowFrame(exprs)
+
+    res <- spectreasy::calc_residuals(ff, M, method = "NNLS", return_residuals = TRUE)
+
+    expect_gt(res$data$AF, 0)
+    expect_equal(res$data$AF_2, 0)
+    expect_lt(sum(res$residuals^2), 0.21)
+})
+
+test_that("calc_residuals multi-AF OLS fails clearly when all candidates are ill-conditioned", {
+    M <- matrix(c(
+        1, 0,
+        2, 0,
+        3, 0
+    ), nrow = 3, byrow = TRUE)
+    rownames(M) <- c("FITC", "AF", "AF_2")
+    colnames(M) <- c("D1-A", "D2-A")
+
+    exprs <- matrix(c(10, 0), nrow = 1)
+    colnames(exprs) <- colnames(M)
+    ff <- flowCore::flowFrame(exprs)
+
+    expect_error(
+        spectreasy::calc_residuals(ff, M, method = "OLS"),
+        regexp = "No usable AF candidate model"
+    )
 })
 
 test_that("calc_residuals WLS matches small-matrix reference implementation", {
@@ -542,6 +601,35 @@ test_that("cell population selection applies SSC/FSC ratio only when requested",
 
     expect_equal(with_ratio, c(1, 3))
     expect_equal(without_ratio, 1:3)
+})
+
+test_that("reference scatter gate accepts non-area scatter channel names", {
+    set.seed(1)
+    raw_data <- cbind(
+        "B1-A" = stats::rlnorm(250, log(100), 0.2),
+        "FS-H" = stats::rnorm(250, 100000, 3000),
+        "Side Scatter-H" = stats::rnorm(250, 45000, 2500)
+    )
+    pd <- data.frame(name = colnames(raw_data), stringsAsFactors = FALSE)
+
+    scatter_info <- spectreasy:::.compute_reference_scatter_gate(
+        raw_data = raw_data,
+        pd = pd,
+        sample_type = "beads",
+        outlier_percentile = 0.02,
+        debris_percentile = 0.08,
+        subsample_n = 250,
+        max_clusters = 3,
+        min_cluster_proportion = 0.03,
+        gate_contour_beads = 0.95,
+        gate_contour_cells = 0.90,
+        bead_gate_scale = 1.3
+    )
+
+    expect_false(is.null(scatter_info))
+    expect_equal(scatter_info$fsc, "FS-H")
+    expect_equal(scatter_info$ssc, "Side Scatter-H")
+    expect_gt(nrow(scatter_info$gated_data), 100)
 })
 
 test_that("cell histogram gating keeps full middle negative mode for bright controls", {

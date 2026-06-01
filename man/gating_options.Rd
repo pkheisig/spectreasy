@@ -6,19 +6,21 @@
 \usage{
 gating_options(
   histogram_pct_beads = 0.98,
-  histogram_direction_beads = "both",
+  histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
-  histogram_direction_cells = "both"
+  histogram_direction_cells = "right"
 )
 }
 \arguments{
-\item{histogram_pct_beads}{Fraction of events retained in bead histogram gate.}
+\item{histogram_pct_beads}{Quantile width for the bead histogram gate.}
 
-\item{histogram_direction_beads}{Gate direction for beads (`"both"`, `"left"`, `"right"`).}
+\item{histogram_direction_beads}{Gate direction for beads: `"right"` starts at the median,
+`"both"` centers on the median, and `"left"` ends at the median.}
 
-\item{histogram_pct_cells}{Fraction of events retained in cell histogram gate.}
+\item{histogram_pct_cells}{Quantile width for the cell histogram gate.}
 
-\item{histogram_direction_cells}{Gate direction for cells (`"both"`, `"left"`, `"right"`).}
+\item{histogram_direction_cells}{Gate direction for cells: `"right"` starts at the median,
+`"both"` centers on the median, and `"left"` ends at the median.}
 }
 \value{
 Named list with gating settings.
