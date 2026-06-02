@@ -15,7 +15,7 @@ unmix_samples(
   cytometer = "Aurora",
   scc_dir = NULL,
   control_file = NULL,
-  af_n_bands = 1,
+  af_n_bands = 10,
   af_bands_per_file = 5,
   exclude_af = FALSE,
   include_multi_af = FALSE,

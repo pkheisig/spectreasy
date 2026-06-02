@@ -62,8 +62,8 @@ histogram, and spectrum PNGs under `output_dir`.}
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }
 \value{
-List with `M`, `W`, `unmixed_list`, and key output file paths, including
-`detector_noise_file` for the SCC-derived WLS noise floors.
+List with `M`, `W`, `unmixed_list`, and key output file paths,
+  including `detector_noise_file` for the SCC-derived WLS noise floors.
 }
 \description{
 SCC workflow helper that:

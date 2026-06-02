@@ -1,3 +1,7 @@
+# Normalizes the control data.frame mapping.
+# Reads the CSV file if a path is provided, validates that the required "filename" column is present,
+# fills in missing columns with defaults, and cleans up string values by trimming whitespace.
+# Returns a standardized data.frame or NULL/empty data.frame.
 .normalize_build_reference_control_df <- function(control_df) {
     if (is.character(control_df) && length(control_df) == 1 && !is.na(control_df)) {
         if (!file.exists(control_df)) stop("control_df file not found: ", control_df)
@@ -25,6 +29,10 @@
     control_df
 }
 
+# Validates the Autofluorescence (AF) modeling parameters.
+# Ensures that the number of AF bands, maximum events per file, and bands per file parameters
+# are positive integers, throwing an error if they are invalid.
+# Returns a validated list containing these parameters.
 .validate_build_reference_af_args <- function(af_n_bands, af_max_cells, af_bands_per_file = 5) {
     af_n_bands <- as.integer(af_n_bands[1])
     if (!is.finite(af_n_bands) || is.na(af_n_bands) || af_n_bands < 1) {
@@ -48,6 +56,9 @@
 .reference_cell_ssc_upper_fraction <- 0.98
 .reference_unstained_ssc_fsc_ratio_max <- 1.25
 
+# Helper to retrieve rows in the control mapping that match the given filenames.
+# Used to query metadata (like fluorophore name or target channel) for specific FCS files.
+# Returns a subset of the control mapping data.frame.
 .get_control_rows_for_reference <- function(df, filenames) {
     if (is.null(df) || !("filename" %in% colnames(df))) {
         return(data.frame())
@@ -56,28 +67,10 @@
     df[fn %in% filenames, ]
 }
 
-.prioritize_aligned_reference_files <- function(fcs_files) {
-    basenames <- tools::file_path_sans_ext(basename(fcs_files))
-    aligned_indices <- grep("_aligned$", basenames)
-
-    if (length(aligned_indices) == 0) {
-        return(fcs_files)
-    }
-
-    kept_files <- fcs_files
-    for (idx in aligned_indices) {
-        aligned_file <- fcs_files[idx]
-        base_original <- sub("_aligned$", "", basenames[idx])
-        dup_idx <- which(basenames == base_original)
-        if (length(dup_idx) > 0) {
-            message("  Using aligned file: ", basename(aligned_file), " (Skipping original)")
-            kept_files <- setdiff(kept_files, fcs_files[dup_idx])
-        }
-    }
-
-    kept_files
-}
-
+# Filters out Autofluorescence (AF) or unstained control files from the main FCS files set.
+# Used when exclude_af is TRUE to ensure only single-color controls (and not unstained files)
+# are processed during reference matrix construction.
+# Returns the filtered FCS file list, stopping if no non-AF files remain.
 .filter_reference_af_files <- function(fcs_files, input_folder, exclude_af = FALSE) {
     if (!isTRUE(exclude_af)) {
         return(fcs_files)
@@ -96,11 +89,14 @@
     fcs_files
 }
 
+# Prepares the complete list of FCS files to be processed.
+# Locates FCS files in the input folder and applies AF filtering,
+# and optionally appends additional AF files from an external directory (af_dir).
+# Returns a list containing 'fcs_files' (standard controls) and 'fcs_files_all' (all controls including AF).
 .prepare_reference_file_set <- function(input_folder, include_multi_af = FALSE, af_dir = "af", exclude_af = FALSE) {
     fcs_files <- list.files(input_folder, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     if (length(fcs_files) == 0) stop("No FCS files found in ", input_folder)
 
-    fcs_files <- .prioritize_aligned_reference_files(fcs_files)
     fcs_files <- .filter_reference_af_files(fcs_files, input_folder = input_folder, exclude_af = exclude_af)
 
     fcs_files_all <- fcs_files
@@ -113,6 +109,10 @@
     list(fcs_files = fcs_files, fcs_files_all = fcs_files_all)
 }
 
+# Prepares and returns the normalized path of the output directory.
+# If save_qc_plots is TRUE, recursively creates subdirectories for FSC/SSC plots,
+# histograms, and spectra.
+# Returns the absolute path string.
 .prepare_reference_output_path <- function(output_folder, save_qc_plots = FALSE) {
     out_path <- normalizePath(output_folder, mustWork = FALSE)
     if (isTRUE(save_qc_plots)) {
@@ -123,12 +123,19 @@
     out_path
 }
 
+# Helper to normalize a channel name by converting to uppercase, removing whitespace,
+# and handling NA values.
+# Returns the normalized character vector.
 .normalize_reference_channel <- function(x) {
     out <- toupper(gsub("\\s+", "", trimws(as.character(x))))
     out[is.na(out)] <- ""
     out
 }
 
+# Resolves a fluorophore's target channel name to an actual detector in the FCS file.
+# Normalizes string cases/whitespace and tries matching the channel name directly, with/without
+# standard suffix/prefix options (e.g., "-A"), or using a cytometer-specific channel alias map.
+# Returns the matched detector name string or an empty string if unresolved.
 .resolve_reference_control_channel <- function(channel_value, det_names, channel_alias_map = character()) {
     if (is.null(channel_value) || is.na(channel_value) || trimws(channel_value) == "") return("")
     if (channel_value %in% det_names) return(channel_value)
@@ -149,6 +156,9 @@
     ""
 }
 
+# Extracts detector information from the first FCS file in the set.
+# Reads the file metadata to determine detector names, labels, and channel mappings.
+# Returns a list containing the parameter data table (pd_meta), sorted detector info, and alias map.
 .prepare_reference_detector_info <- function(first_fcs_file) {
     ff_meta <- flowCore::read.FCS(first_fcs_file, transformation = FALSE, truncate_max_range = FALSE)
     pd_meta <- flowCore::pData(flowCore::parameters(ff_meta))
@@ -163,6 +173,9 @@
     )
 }
 
+# Automatically identifies the primary Forward Scatter (FSC) and Side Scatter (SSC) channels.
+# Matches names in the raw data columns using standard patterns for FSC and SSC.
+# Returns a list with 'fsc' and 'ssc' channel names, or NULL if they cannot be resolved.
 .resolve_reference_scatter_channels <- function(raw_data) {
     primary <- .get_primary_scatter_channels(colnames(raw_data))
 
@@ -173,6 +186,9 @@
     primary
 }
 
+# Computes the 2D ellipse coordinates at a given confidence level.
+# Used for gating populations in FSC/SSC scatter plots based on GMM component mean and variance.
+# Returns a data.table containing the ellipse points.
 .get_reference_ellipse <- function(mean, sigma, level = 0.95, n = 100, scale = 1.0) {
     chi2_val <- qchisq(level, df = 2)
     eig <- eigen(sigma)
@@ -187,6 +203,9 @@
     data.table::data.table(x = rot_x + mean[1], y = rot_y + mean[2])
 }
 
+# Fits a Gaussian Mixture Model (GMM) on scatter data using mclust.
+# Tests components from 1 to max_k to automatically cluster cells or beads based on FSC/SSC density.
+# Returns a list with the model fit, mixture proportions, cluster means, covariances, and main components.
 .fit_reference_gmm_populations <- function(data, max_k = 5, min_prop = 0.05) {
     mclustBIC <- get("mclustBIC", envir = asNamespace("mclust"))
     fit <- mclust::Mclust(data, G = seq_len(max_k), verbose = FALSE)
@@ -209,6 +228,8 @@
     )
 }
 
+# Resolves sample type (cells/beads/unstained) from the FCS filename based on pre-defined regex patterns.
+# Returns a list with the detected type and matching pattern.
 .get_reference_sample_type <- function(filename, patterns, default) {
     for (type in names(patterns)) {
         pats <- patterns[[type]][order(-nchar(patterns[[type]]))]
@@ -221,6 +242,8 @@
     list(type = default, pattern = "default")
 }
 
+# Resolves control sample type, giving priority to control_df metadata over filename heuristics.
+# Returns the final sample type configuration.
 .resolve_reference_sample_type <- function(filename, row_info, patterns, default) {
     sample_info <- .get_reference_sample_type(filename, patterns, default)
     if (nrow(row_info) > 0 && "control.type" %in% colnames(row_info)) {
@@ -232,6 +255,10 @@
     sample_info
 }
 
+# Selects the most likely bead population from GMM components.
+# Uses local density in a normalized FSC/SSC space to identify the actual peak/bead population
+# rather than debris or background.
+# Returns a list with the index of the selected population.
 .select_reference_bead_population <- function(gmm_result) {
     if (length(gmm_result$main_populations) == 0) {
         return(NULL)
@@ -264,6 +291,10 @@
     list(selected = best)
 }
 
+# Selects valid cell populations from GMM components.
+# Filters components using minimum and maximum FSC/SSC thresholds and ratio boundaries
+# to exclude debris and keep only the intact single-cell population.
+# Returns a list with the indices of all valid cell populations.
 .select_reference_cell_populations <- function(gmm_result,
                                                fsc_min,
                                                fsc_max = Inf,
@@ -289,6 +320,10 @@
     list(selected = valid)
 }
 
+# Creates a polygon gate enclosing the selected GMM populations.
+# Computes confidence ellipses at the specified level. If multiple populations are selected,
+# computes the convex hull around the union of their ellipses. Optionally clips the gate boundaries.
+# Returns a data.table of (x, y) coordinates representing the gate polygon.
 .create_reference_merged_gate <- function(gmm_result, populations, level, scale = 1.0, clip_x = Inf, clip_y = Inf) {
     if (length(populations) == 0) {
         return(NULL)
@@ -312,6 +347,10 @@
     ell
 }
 
+# Isolates the peak population from a 1D density distribution of log-transformed values.
+# Detects peaks and troughs in the density curve, selects the rightmost peak exceeding
+# the height cutoff, and extracts values bounded by the adjacent troughs.
+# Returns the vector of values corresponding to this peak population.
 .select_reference_hist_peak_population <- function(vals_log, rel_height_cutoff = 0.15, min_points = 20) {
     vals_log <- vals_log[is.finite(vals_log)]
     if (length(vals_log) < min_points) return(vals_log)
@@ -339,6 +378,10 @@
     peak_vals
 }
 
+# Extracts normalized Autofluorescence (AF) median profiles from gated unstained events.
+# Uses K-means clustering on the scale-free spectral shapes to partition AF signatures.
+# Each centroid is normalized by its peak detector to yield a relative signature from 0 to 1.
+# Returns a list with the raw median spectrum and a matrix of normalized AF basis signatures.
 .extract_reference_af_profiles <- function(ff_af = NULL, detector_names, n_bands = 1, max_cells = 50000, af_events = NULL) {
     if (is.null(af_events)) {
         if (is.null(ff_af)) {
@@ -411,6 +454,9 @@
     list(raw_median = raw_median, signatures = centers)
 }
 
+# Determines the name of the autofluorescence (unstained) control file.
+# Looks it up in the control mapping or falls back to identifying files matching AF file naming heuristics.
+# Returns the AF file basename (without extension) or NULL.
 .resolve_reference_af_name <- function(control_df, fcs_files, exclude_af = FALSE) {
     if (isTRUE(exclude_af)) {
         return(NULL)
@@ -437,6 +483,8 @@
     af_fn
 }
 
+# Safe retriever for key values from the configuration list.
+# Returns the configured value if present, otherwise returns the specified default.
 .get_reference_config_value <- function(config, name, default) {
     if (!is.null(config) && name %in% names(config)) {
         return(config[[name]])
@@ -444,6 +492,9 @@
     default
 }
 
+# Reads and gates an AF / unstained control FCS file.
+# Applies scatter-gating on FSC-SSC to isolate the main cell/bead population from debris.
+# Returns a list containing the gated event data across all spectral detectors and gating metadata.
 .extract_reference_af_gated_events <- function(fcs_file, detector_names, config) {
     ff_af <- tryCatch(
         flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
@@ -493,6 +544,10 @@
     )
 }
 
+# Gathers all autofluorescence and unstained control files and extracts their signatures.
+# Locates primary and extra AF files, loads and gates them, pools events, and computes
+# the specified number of AF basis signatures.
+# Returns a list containing raw medians, normalized basis matrices, and banking metadata.
 .collect_reference_af_profiles <- function(control_df, fcs_files, detector_names, af_n_bands, af_bands_per_file, af_max_cells, exclude_af = FALSE, fcs_files_all = fcs_files, config = NULL) {
     af_data_raw <- NULL
     af_signatures_norm <- NULL
@@ -574,6 +629,9 @@
     list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info)
 }
 
+# Checks if a file path points to an extra autofluorescence file.
+# Specifically checks if the file resides in the designated AF directory and include_multi_af is enabled.
+# Returns TRUE if it is an extra AF file, otherwise FALSE.
 .is_reference_extra_af_file <- function(fcs_file, include_multi_af = FALSE, af_dir = "af") {
     if (!isTRUE(include_multi_af)) {
         return(FALSE)
@@ -585,6 +643,10 @@
     )
 }
 
+# Validates raw FCS data for corruption or extreme values.
+# Ensures the dataset contains no infinite values, fewer than 10% NA values, and no extreme
+# values exceeding 1e9 which indicate file corruption.
+# Returns TRUE if valid, otherwise FALSE.
 .validate_reference_raw_data <- function(raw_data, sn) {
     if (any(is.infinite(raw_data))) {
         message("  Skipping ", sn, ": Contains infinite values.")
@@ -603,6 +665,10 @@
     TRUE
 }
 
+# Computes a 2D scatter gate in FSC-SSC space for a sample.
+# Filters out extreme outliers and debris, fits a Gaussian Mixture Model (GMM) to find clusters,
+# selects the appropriate cell/bead population component(s), and builds a polygon gating boundary.
+# Returns a list containing gated event data, gate coordinates, and scatter parameter bounds.
 .compute_reference_scatter_gate <- function(raw_data,
                                             pd,
                                             sample_type,
@@ -703,6 +769,11 @@
     )
 }
 
+# Identifies the peak/primary channel of high signal for single-color controls.
+# For unstained controls, returns the channel with the highest median. For stained controls,
+# infers the channel via the 99.9% quantile across all detectors, and cross-references/validates
+# it against the target channel in metadata.
+# Returns a list containing the resolved peak channel and 99.9% quantiles for all channels.
 .select_reference_peak_channel <- function(gated_data, detector_names, row_info, channel_alias_map, sn_ext, sn) {
     is_unstained <- grepl("unstained|autofluorescence|\\bAF\\b", paste(sn_ext, sn), ignore.case = TRUE)
     if (nrow(row_info) > 0) {
@@ -761,6 +832,10 @@
     list(peak_channel = peak_channel, q999_by_channel = q999_by_channel)
 }
 
+# Gates positive and negative populations on the log-transformed peak channel.
+# Uses a Gaussian Mixture Model (GMM) or density peaks to robustly separate background/negative
+# events from stained/positive events, allowing flexible gating directions and percentiles.
+# Returns a list of indices/logic indicating which events fall in the negative and positive gates.
 .compute_reference_histogram_gate <- function(peak_vals,
                                               sample_type,
                                               histogram_pct_beads,
@@ -1113,6 +1188,11 @@
     list(vals_log = vals_log, gate_min = 10^lower_log, gate_max = 10^upper_log)
 }
 
+# Computes the normalized spectral signature for a stained control sample.
+# Calculates the median intensity in each detector for the positive and negative gates,
+# subtracts the negative/background control, normalizes the spectrum by the peak signal,
+# and estimates the per-channel variance.
+# Returns a list with the normalized spectrum vector, raw positive/negative medians, and variance vector.
 .compute_reference_spectrum <- function(final_gated_data,
                                         gated_data,
                                         peak_vals,
@@ -1184,10 +1264,16 @@
     res
 }
 
+# Standardizes a file path to its base name without file extension for matching.
+# Returns the cleaned character string/vector.
 .reference_negative_key <- function(x) {
     tools::file_path_sans_ext(basename(trimws(as.character(x))))
 }
 
+# Identifies and loads the universal/marker-specific negative control profiles.
+# If specified in the control mapping, reads the designated negative control files and computes
+# their median spectral profiles to be subtracted from target samples.
+# Returns a list of numeric vectors mapping fluorophore names to their negative control profiles.
 .collect_reference_universal_negatives <- function(control_df,
                                                    fcs_files,
                                                    detector_names,
@@ -1258,6 +1344,9 @@
     out
 }
 
+# Helper to extract the description attribute of a channel for plotting.
+# Falls back to the channel name if no description column or value is found.
+# Returns the description string.
 .get_reference_axis_label <- function(ch_name, pd_tbl) {
     idx <- match(ch_name, as.character(pd_tbl$name))
     if (!is.na(idx) && "desc" %in% colnames(pd_tbl)) {
@@ -1269,6 +1358,10 @@
     ch_name
 }
 
+# Generates and saves PDF quality control (QC) plots for a processed sample.
+# Produces three plots: a 2D density plot of FSC-SSC gating, a 1D density histogram of positive/negative
+# peak gating, and a spectral profile plot of the normalized signature.
+# Writes files to the output folder.
 .save_reference_qc_plots <- function(sn,
                                      raw_data,
                                      gated_data,
@@ -1407,6 +1500,10 @@
     invisible(NULL)
 }
 
+# Processes a single FCS file through the entire reference construction pipeline.
+# Reads the file, performs scatter gating, identifies the peak channel, runs histogram gating
+# to separate positive and negative events, calculates the normalized spectrum, and saves QC plots.
+# Returns a list containing the processed spectrum, QC summary row, and sample name metadata.
 .process_reference_file <- function(fcs_file, control_df, sample_patterns, metadata, config, af_data_raw = NULL, universal_negatives = NULL) {
     sn_ext <- basename(fcs_file)
     sn <- tools::file_path_sans_ext(sn_ext)
@@ -1578,6 +1675,10 @@
     )
 }
 
+# Combines individual sample spectra and AF signatures into a single spillover matrix.
+# Extracts spectra and variances, cleans up row/column names, structures the metadata attributes
+# (such as variances, QC summary, and parameter info), and performs basic sanity checks.
+# Returns the finalized reference matrix.
 .finalize_reference_matrix <- function(results_list,
                                        qc_summary_list,
                                        af_signatures_norm,
@@ -1713,7 +1814,7 @@ build_reference_matrix <- function(
   include_multi_af = FALSE,
   exclude_af = FALSE,
   af_dir = "af",
-  af_n_bands = 1,
+  af_n_bands = 10,
   af_bands_per_file = 5,
   af_max_cells = 50000,
   seed = NULL,

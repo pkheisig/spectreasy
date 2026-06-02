@@ -61,8 +61,8 @@ multiple AF sources are pooled.}
 }
 \value{
 Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
-`af_bank_info`, and `method`. `qc_plot_dir` is `NULL` unless
-`save_qc_pngs = TRUE`.
+  `af_bank_info`, and `method`.
+  `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 }
 \description{
 Builds a reference matrix from single-color controls, assembles a PDF report

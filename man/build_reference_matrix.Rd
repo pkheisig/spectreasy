@@ -12,7 +12,7 @@ build_reference_matrix(
   include_multi_af = FALSE,
   exclude_af = FALSE,
   af_dir = "af",
-  af_n_bands = 1,
+  af_n_bands = 10,
   af_bands_per_file = 5,
   af_max_cells = 50000,
   seed = NULL,
@@ -95,8 +95,8 @@ For example, `0.08` excludes events below 8\% of the per-file high FSC scale.}
 }
 \value{
 Numeric matrix with rows = fluorophores and columns = detectors
-(normalized spectra). The matrix carries SCC-derived detector noise floors
-in `attr(M, "detector_noise")` for default WLS unmixing.
+  (normalized spectra). The matrix carries SCC-derived detector noise floors
+  in `attr(M, "detector_noise")` for default WLS unmixing.
 }
 \description{
 Reads SCC FCS files, performs FSC/SSC gating and positive-peak histogram gating,

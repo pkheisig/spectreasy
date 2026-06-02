@@ -4,11 +4,7 @@
 \alias{gate_positive_cells}
 \title{Gate Positive Events from a Single-Stain Matrix}
 \usage{
-gate_positive_cells(
-  mat,
-  histogram_pct = 0.98,
-  histogram_direction = "right"
-)
+gate_positive_cells(mat, histogram_pct = 0.98, histogram_direction = "right")
 }
 \arguments{
 \item{mat}{Numeric matrix/data.frame of events x detectors.}
