@@ -319,7 +319,10 @@
 #' @param unmix_method SCC unmixing method (`"WLS"`, `"OLS"`, `"NNLS"`).
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
-#' @param af_n_bands Number of AF bands to extract from the unstained control. Default is 10.
+#' @param af_n_bands Number of AF bands to extract from the unstained control
+#'   when only one AF source is available. Default is 10.
+#' @param af_bands_per_file Number of AF bands requested per AF file when
+#'   multiple AF sources are pooled. Default is 5.
 #' @param include_multi_af Logical; whether to include additional AF files from `af_dir`. Default is FALSE.
 #' @param save_qc_plots Logical; whether to write per-control FSC/SSC,
 #'   histogram, and spectrum PNGs under `output_dir`.
@@ -352,6 +355,7 @@ unmix_controls <- function(
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
     af_n_bands = 10,
+    af_bands_per_file = 5,
     include_multi_af = FALSE,
     save_qc_plots = FALSE,
     ...
@@ -410,6 +414,7 @@ unmix_controls <- function(
         cytometer = cytometer,
         exclude_af = exclude_af,
         af_n_bands = af_n_bands,
+        af_bands_per_file = af_bands_per_file,
         include_multi_af = include_multi_af,
         seed = seed,
         ...

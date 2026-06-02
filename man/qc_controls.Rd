@@ -17,6 +17,7 @@ qc_controls(
   save_qc_pngs = FALSE,
   include_multi_af = FALSE,
   af_dir = "af",
+  af_bands_per_file = 5,
   seed = NULL,
   ...
 )
@@ -51,13 +52,17 @@ for report assembly and removed afterward.}
 
 \item{af_dir}{AF directory forwarded to [build_reference_matrix()].}
 
+\item{af_bands_per_file}{Number of AF bands requested per AF file when
+multiple AF sources are pooled.}
+
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }
 \value{
-Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`, and `method`.
-  `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
+Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
+`af_bank_info`, and `method`. `qc_plot_dir` is `NULL` unless
+`save_qc_pngs = TRUE`.
 }
 \description{
 Builds a reference matrix from single-color controls, assembles a PDF report

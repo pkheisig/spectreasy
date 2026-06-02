@@ -26,11 +26,35 @@
 .normalize_gui_dirs <- function(matrix_dir, samples_dir = NULL) {
     matrix_dir <- normalizePath(matrix_dir, mustWork = TRUE)
     if (is.null(samples_dir)) {
-        samples_dir <- file.path(matrix_dir, "samples")
+        samples_dir <- .default_launch_gui_samples_dir()
+        if (is.null(samples_dir)) {
+            samples_dir <- file.path(matrix_dir, "samples")
+        }
     }
     samples_dir <- normalizePath(samples_dir, mustWork = FALSE)
 
     list(matrix_dir = matrix_dir, samples_dir = samples_dir)
+}
+
+.default_launch_gui_matrix_dir <- function() {
+    unmix_controls_dir <- file.path(getwd(), "spectreasy_outputs", "unmix_controls")
+    if (dir.exists(unmix_controls_dir)) {
+        return(unmix_controls_dir)
+    }
+    getwd()
+}
+
+.default_launch_gui_samples_dir <- function() {
+    unmixed_fcs_dir <- file.path(getwd(), "spectreasy_outputs", "unmix_samples", "unmixed_fcs")
+    unmix_samples_dir <- file.path(getwd(), "spectreasy_outputs", "unmix_samples")
+    if (dir.exists(unmixed_fcs_dir)) {
+        return(unmixed_fcs_dir)
+    }
+    if (dir.exists(unmix_samples_dir) &&
+        length(list.files(unmix_samples_dir, pattern = "\\.fcs$", ignore.case = TRUE)) > 0) {
+        return(unmix_samples_dir)
+    }
+    NULL
 }
 
 .resolve_launch_gui_frontend <- function(gui_path, dist_path, port, dev_mode = FALSE, npm_bin = Sys.which("npm")) {
@@ -76,7 +100,7 @@
     system2(
         npm_bin,
         args = c("run", "dev"),
-        env = c(VITE_API_BASE = paste0("http://127.0.0.1:", port)),
+        env = paste0("VITE_API_BASE=http://127.0.0.1:", port),
         wait = FALSE,
         stdout = FALSE,
         stderr = FALSE
@@ -91,8 +115,12 @@
 #' Starts the backend Plumber API for the interactive matrix adjustment interface.
 #' By default, the frontend is served from bundled package assets.
 #'
-#' @param matrix_dir Directory containing matrix CSV files (default: current working directory)
-#' @param samples_dir Directory containing FCS sample files (default: "samples" subfolder of matrix_dir)
+#' @param matrix_dir Directory containing matrix CSV files. If `NULL`, defaults to
+#'   `spectreasy_outputs/unmix_controls` when it exists under the current working
+#'   directory, otherwise the current working directory.
+#' @param samples_dir Directory containing FCS sample files. If `NULL`, defaults to
+#'   `spectreasy_outputs/unmix_samples/unmixed_fcs` when it exists under the
+#'   current working directory, otherwise the `samples` subfolder of `matrix_dir`.
 #' @param port API port (default: 8000)
 #' @param open_browser Logical. Open browser automatically? (default: TRUE)
 #' @param dev_mode Logical. If `FALSE` (default), serves bundled GUI assets from the
@@ -106,7 +134,7 @@
 #'   launch_gui(matrix_dir = "/path/to/my/matrices", open_browser = FALSE)
 #'   launch_gui(dev_mode = TRUE, open_browser = FALSE)
 #' }
-launch_gui <- function(matrix_dir = getwd(), samples_dir = NULL, port = 8000, open_browser = TRUE, dev_mode = FALSE) {
+launch_gui <- function(matrix_dir = NULL, samples_dir = NULL, port = 8000, open_browser = TRUE, dev_mode = FALSE) {
     if (!requireNamespace("plumber", quietly = TRUE)) {
         stop(
             "Package 'plumber' is required for launch_gui(). ",
@@ -116,6 +144,9 @@ launch_gui <- function(matrix_dir = getwd(), samples_dir = NULL, port = 8000, op
     }
 
     paths <- .prepare_launch_gui_paths()
+    if (is.null(matrix_dir)) {
+        matrix_dir <- .default_launch_gui_matrix_dir()
+    }
     dirs <- .normalize_gui_dirs(matrix_dir = matrix_dir, samples_dir = samples_dir)
 
     options(

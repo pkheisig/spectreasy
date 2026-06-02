@@ -16,6 +16,7 @@ unmix_samples(
   scc_dir = NULL,
   control_file = NULL,
   af_n_bands = 1,
+  af_bands_per_file = 5,
   exclude_af = FALSE,
   include_multi_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
@@ -59,7 +60,11 @@ are missing.}
 \item{control_file}{Path to the control mapping CSV.
 Used when dynamically building the reference matrix.}
 
-\item{af_n_bands}{Number of AF bands to extract from the unstained control.}
+\item{af_n_bands}{Number of AF bands to extract from the unstained control
+when only one AF source is available.}
+
+\item{af_bands_per_file}{Number of AF bands requested per AF file when
+multiple AF sources are pooled.}
 
 \item{exclude_af}{Logical; whether to exclude AF from unmixing.}
 

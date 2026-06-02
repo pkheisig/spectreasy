@@ -13,6 +13,7 @@ build_reference_matrix(
   exclude_af = FALSE,
   af_dir = "af",
   af_n_bands = 1,
+  af_bands_per_file = 5,
   af_max_cells = 50000,
   seed = NULL,
   default_sample_type = "beads",
@@ -49,11 +50,15 @@ even when they are present in `control_df`, the SCC folder, or `af_dir`.}
 
 \item{af_dir}{Directory with extra AF controls when `include_multi_af = TRUE`.}
 
-\item{af_n_bands}{Number of AF basis signatures to extract from the primary
-unstained/AF control (`1` = classic single AF signature).}
+\item{af_n_bands}{Number of AF basis signatures to extract from the pooled
+unstained/AF control when only one AF source is available (`1` = classic single AF signature).}
 
-\item{af_max_cells}{Maximum number of AF events used when deriving AF basis
-signatures.}
+\item{af_bands_per_file}{Number of AF basis signatures requested per AF file
+when multiple AF sources are pooled (`5` files with the default `5` yields
+up to `25` shared AF bank signatures).}
+
+\item{af_max_cells}{Maximum number of scatter-gated AF events used when
+deriving AF basis signatures.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

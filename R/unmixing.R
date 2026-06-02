@@ -245,6 +245,7 @@
                                   scc_dir = NULL,
                                   control_file = NULL,
                                   af_n_bands = 1,
+                                  af_bands_per_file = 5,
                                   exclude_af = FALSE,
                                   include_multi_af = FALSE,
                                   cytometer = "Aurora",
@@ -570,7 +571,10 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   are missing.
 #' @param control_file Path to the control mapping CSV.
 #'   Used when dynamically building the reference matrix.
-#' @param af_n_bands Number of AF bands to extract from the unstained control.
+#' @param af_n_bands Number of AF bands to extract from the unstained control
+#'   when only one AF source is available.
+#' @param af_bands_per_file Number of AF bands requested per AF file when
+#'   multiple AF sources are pooled.
 #' @param exclude_af Logical; whether to exclude AF from unmixing.
 #' @param include_multi_af Logical; whether to include multi-AF controls.
 #' @param output_dir Directory to save unmixed FCS files when `write_fcs = TRUE`.
@@ -638,6 +642,7 @@ unmix_samples <- function(sample_dir = "samples",
                           scc_dir = NULL,
                           control_file = NULL,
                           af_n_bands = 1,
+                          af_bands_per_file = 5,
                           exclude_af = FALSE,
                           include_multi_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
@@ -682,6 +687,7 @@ unmix_samples <- function(sample_dir = "samples",
                 input_folder = resolved_scc_dir,
                 control_df = control_file,
                 af_n_bands = af_n_bands,
+                af_bands_per_file = af_bands_per_file,
                 exclude_af = exclude_af,
                 include_multi_af = include_multi_af,
                 cytometer = cytometer
@@ -713,6 +719,7 @@ unmix_samples <- function(sample_dir = "samples",
         scc_dir = scc_dir,
         control_file = control_file,
         af_n_bands = af_n_bands,
+        af_bands_per_file = af_bands_per_file,
         exclude_af = exclude_af,
         include_multi_af = include_multi_af,
         cytometer = cytometer,

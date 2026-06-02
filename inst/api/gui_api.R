@@ -372,6 +372,10 @@ function(matrix_json, raw_data_json, type = "reference") {
     # Matching columns
     common_dets <- intersect(colnames(Y), colnames(mat))
     if (length(common_dets) == 0) {
+        marker_cols <- intersect(colnames(Y), markers)
+        if (length(marker_cols) > 0) {
+            return(as.data.frame(Y[, marker_cols, drop = FALSE]))
+        }
         return(list(error = "No matching detectors found between data and matrix"))
     }
 

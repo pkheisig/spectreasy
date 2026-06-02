@@ -632,6 +632,100 @@ test_that("reference scatter gate accepts non-area scatter channel names", {
     expect_gt(nrow(scatter_info$gated_data), 100)
 })
 
+test_that("AF profile extraction clusters pooled AF phenotypes", {
+    detector_names <- c("B1-A", "YG1-A", "V1-A")
+    af_events <- rbind(
+        matrix(rep(c(100, 15, 5), 120), ncol = 3, byrow = TRUE),
+        matrix(rep(c(10, 90, 20), 120), ncol = 3, byrow = TRUE)
+    )
+    colnames(af_events) <- detector_names
+
+    profiles <- spectreasy:::.extract_reference_af_profiles(
+        detector_names = detector_names,
+        n_bands = 2,
+        max_cells = 500,
+        af_events = af_events
+    )
+
+    expect_equal(nrow(profiles$signatures), 2)
+    expect_equal(colnames(profiles$signatures), detector_names)
+    expect_equal(rownames(profiles$signatures), c("AF", "AF_2"))
+
+    expected_shapes <- rbind(
+        c("B1-A" = 1, "YG1-A" = 0.15, "V1-A" = 0.05),
+        c("B1-A" = 10 / 90, "YG1-A" = 1, "V1-A" = 20 / 90)
+    )
+    matched_shapes <- profiles$signatures[
+        c(
+            which.max(profiles$signatures[, "B1-A"]),
+            which.max(profiles$signatures[, "YG1-A"])
+        ),
+        ,
+        drop = FALSE
+    ]
+    expect_equal(unname(matched_shapes), unname(expected_shapes), tolerance = 1e-6)
+    expect_equal(profiles$raw_median, c("B1-A" = 55, "YG1-A" = 52.5, "V1-A" = 12.5), tolerance = 1e-6)
+})
+
+test_that("AF profile extraction handles empty and all-zero AF events", {
+    detector_names <- c("B1-A", "YG1-A")
+
+    empty_profiles <- spectreasy:::.extract_reference_af_profiles(
+        detector_names = detector_names,
+        af_events = matrix(numeric(), nrow = 0, ncol = 2, dimnames = list(NULL, detector_names))
+    )
+    expect_null(empty_profiles$raw_median)
+    expect_null(empty_profiles$signatures)
+
+    zero_profiles <- spectreasy:::.extract_reference_af_profiles(
+        detector_names = detector_names,
+        af_events = matrix(0, nrow = 5, ncol = 2, dimnames = list(NULL, detector_names))
+    )
+    expect_equal(zero_profiles$raw_median, c("B1-A" = 0, "YG1-A" = 0))
+    expect_equal(dim(zero_profiles$signatures), c(1, 2))
+    expect_equal(rownames(zero_profiles$signatures), "AF")
+    expect_equal(zero_profiles$signatures[1, ], c("B1-A" = 0, "YG1-A" = 0))
+})
+
+test_that("AF argument validation supports multi-AF bands per file", {
+    args <- spectreasy:::.validate_build_reference_af_args(
+        af_n_bands = 2,
+        af_bands_per_file = 5,
+        af_max_cells = 500
+    )
+
+    expect_equal(args$af_n_bands, 2L)
+    expect_equal(args$af_bands_per_file, 5L)
+    expect_equal(args$af_max_cells, 500L)
+    expect_error(
+        spectreasy:::.validate_build_reference_af_args(2, 500, af_bands_per_file = 0),
+        "af_bands_per_file"
+    )
+    expect_error(
+        spectreasy:::.validate_build_reference_af_args(0, 500, af_bands_per_file = 1),
+        "af_n_bands"
+    )
+    expect_error(
+        spectreasy:::.validate_build_reference_af_args(2, 99, af_bands_per_file = 1),
+        "af_max_cells"
+    )
+})
+
+test_that("extra AF files are banked centrally, not processed as one averaged SCC row", {
+    af_file <- file.path(tempdir(), "af", "mixed_af.fcs")
+    config <- list(include_multi_af = TRUE, af_dir = dirname(af_file), exclude_af = FALSE)
+
+    processed <- spectreasy:::.process_reference_file(
+        fcs_file = af_file,
+        control_df = NULL,
+        sample_patterns = spectreasy::get_fluorophore_patterns(),
+        metadata = list(detector_names = c("B1-A")),
+        config = config
+    )
+
+    expect_null(processed)
+})
+
 test_that("cell histogram gating keeps full middle negative mode for bright controls", {
     set.seed(1)
     vals_log <- c(

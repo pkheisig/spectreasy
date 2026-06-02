@@ -111,6 +111,31 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
     expect_equal(dirs$matrix_dir, normalizePath(tmp_matrix_dir))
     expect_match(dirs$samples_dir, "samples$")
 
+    old_wd <- getwd()
+    tmp_wd <- tempfile("spectreasy_gui_default_")
+    dir.create(file.path(tmp_wd, "spectreasy_outputs", "unmix_controls"), recursive = TRUE, showWarnings = FALSE)
+    dir.create(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "unmixed_fcs"), recursive = TRUE, showWarnings = FALSE)
+    on.exit(setwd(old_wd), add = TRUE)
+    setwd(tmp_wd)
+    expect_equal(
+        spectreasy:::.default_launch_gui_matrix_dir(),
+        normalizePath(file.path(tmp_wd, "spectreasy_outputs", "unmix_controls"))
+    )
+    expect_equal(
+        spectreasy:::.default_launch_gui_samples_dir(),
+        normalizePath(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "unmixed_fcs"))
+    )
+    expect_equal(
+        spectreasy:::.normalize_gui_dirs(spectreasy:::.default_launch_gui_matrix_dir())$samples_dir,
+        normalizePath(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "unmixed_fcs"))
+    )
+    unlink(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "unmixed_fcs"), recursive = TRUE)
+    writeLines("", file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "sample_unmixed.fcs"))
+    expect_equal(
+        spectreasy:::.default_launch_gui_samples_dir(),
+        normalizePath(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples"))
+    )
+
     frontend_bundled <- spectreasy:::.resolve_launch_gui_frontend(
         gui_path = paths$gui_path,
         dist_path = paths$dist_path,
@@ -140,4 +165,63 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
         ),
         regexp = "requires npm"
     )
+
+    tmp_gui_path <- tempfile("spectreasy_gui_dev_")
+    dir.create(tmp_gui_path, recursive = TRUE, showWarnings = FALSE)
+    expect_error(
+        spectreasy:::.resolve_launch_gui_frontend(
+            gui_path = tmp_gui_path,
+            dist_path = paths$dist_path,
+            port = 9000,
+            dev_mode = TRUE,
+            npm_bin = "npm"
+        ),
+        regexp = "requires GUI dependencies"
+    )
+
+    dir.create(file.path(tmp_gui_path, "node_modules"), recursive = TRUE, showWarnings = FALSE)
+    frontend_dev <- spectreasy:::.resolve_launch_gui_frontend(
+        gui_path = tmp_gui_path,
+        dist_path = paths$dist_path,
+        port = 9000,
+        dev_mode = TRUE,
+        npm_bin = "npm"
+    )
+    expect_equal(frontend_dev$mode, "dev")
+    expect_equal(frontend_dev$frontend_url, "http://127.0.0.1:5174")
+    expect_equal(frontend_dev$npm_bin, "npm")
+})
+
+test_that("launch_gui dev-server helper starts npm with API base and restores working directory", {
+    tmp_gui_path <- tempfile("spectreasy_gui_dev_server_")
+    dir.create(tmp_gui_path, recursive = TRUE, showWarnings = FALSE)
+
+    fake_npm <- tempfile("fake_npm_")
+    fake_npm_log <- tempfile("fake_npm_log_")
+    writeLines(
+        c(
+            "#!/bin/sh",
+            "{",
+            "  printf 'pwd=%s\\n' \"$PWD\"",
+            "  printf 'args=%s\\n' \"$*\"",
+            "  printf 'api=%s\\n' \"$VITE_API_BASE\"",
+            paste0("} > ", shQuote(fake_npm_log))
+        ),
+        fake_npm
+    )
+    Sys.chmod(fake_npm, "0755")
+
+    old_wd <- getwd()
+    on.exit({
+        setwd(old_wd)
+    }, add = TRUE)
+
+    expect_null(spectreasy:::.start_launch_gui_dev_server(tmp_gui_path, port = 8123, npm_bin = fake_npm))
+    expect_equal(getwd(), old_wd)
+    expect_true(file.exists(fake_npm_log))
+
+    log_lines <- readLines(fake_npm_log, warn = FALSE)
+    expect_equal(normalizePath(sub("^pwd=", "", log_lines[1])), normalizePath(tmp_gui_path))
+    expect_equal(log_lines[2], "args=run dev")
+    expect_equal(log_lines[3], "api=http://127.0.0.1:8123")
 })

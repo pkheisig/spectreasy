@@ -31,6 +31,7 @@ Rplots.pdf
 
 # Directory-based ignores
 gating_and_spectrum_plots/
+workflow-checks/
 samples_unmixed/
 samples_unmixed_qc/
 scc_unmixed/

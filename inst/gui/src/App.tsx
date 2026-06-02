@@ -38,22 +38,22 @@ const pickPreferredMatrix = (files: string[], current: string) => {
     if (current && files.includes(current)) return current;
 
     const preferredNames = [
-        'scc_unmixing_matrix.csv',
-        'refined_unmixing_matrix.csv',
         'scc_reference_matrix.csv',
         'reference_matrix.csv',
-        'refined_reference_matrix.csv'
+        'refined_reference_matrix.csv',
+        'scc_unmixing_matrix.csv',
+        'refined_unmixing_matrix.csv'
     ];
     for (const name of preferredNames) {
         const hit = files.find(f => f.toLowerCase() === name);
         if (hit) return hit;
     }
 
-    const unmixingHit = files.find(isUnmixingFilename);
-    if (unmixingHit) return unmixingHit;
-
     const referenceHit = files.find(f => f.toLowerCase().includes('reference'));
     if (referenceHit) return referenceHit;
+
+    const unmixingHit = files.find(isUnmixingFilename);
+    if (unmixingHit) return unmixingHit;
 
     return files[0];
 };
@@ -125,13 +125,18 @@ const App = () => {
             ? `?sample_name=${encodeURIComponent(sampleName)}`
             : '';
         const resData = await axios.get(`${API_BASE}/data${q}`);
-        if (!resData.data.error) {
-            const raw = resData.data.raw_data;
-            setRawData(raw);
-            setDetectorLabels(resData.data.detector_labels || detNames);
-            if (resData.data.sample_name) setCurrentSample(resData.data.sample_name);
-            await runUnmix(matrixData, raw, filenameForType);
+        if (resData.data.error) {
+            setRawData([]);
+            setUnmixedData([]);
+            setSampleImportStatus('error');
+            setSampleImportMessage(String(resData.data.error));
+            return;
         }
+        const raw = resData.data.raw_data;
+        setRawData(raw);
+        setDetectorLabels(resData.data.detector_labels || detNames);
+        if (resData.data.sample_name) setCurrentSample(resData.data.sample_name);
+        await runUnmix(matrixData, raw, filenameForType);
     };
 
     const fetchData = async (filename = currentFile, sampleName = currentSample) => {
@@ -184,7 +189,7 @@ const App = () => {
     const runUnmix = async (currentM: any[], currentRaw: any[], filename = currentFile) => {
         if (!Array.isArray(currentM) || currentM.length === 0 || !Array.isArray(currentRaw) || currentRaw.length === 0) {
             setUnmixedData([]);
-            return;
+            return false;
         }
         const M_obj: any = {};
         currentM.forEach(row => {
@@ -204,9 +209,17 @@ const App = () => {
         });
         if (Array.isArray(res.data)) {
             setUnmixedData(res.data);
+            setSampleImportStatus('idle');
+            setSampleImportMessage('');
+            return true;
+        } else if (res.data?.error) {
+            setUnmixedData([]);
+            setSampleImportStatus('error');
+            setSampleImportMessage(String(res.data.error));
         } else {
             setUnmixedData([]);
         }
+        return false;
     };
 
     const handleResidualAdjust = (xMarker: string, yMarker: string, alpha: number) => {
@@ -401,8 +414,7 @@ const App = () => {
 
     // iOS 26 Glassy Theme
     const glassyTheme = theme === 'dark' ? {
-        // Gentle gradient background - softer than before
-        bgGradient: 'linear-gradient(135deg, #1a1f35 0%, #0f172a 25%, #1e1b4b 50%, #1f2937 75%, #111827 100%)',
+        bgGradient: '#111827',
         // Glass panel styles
         glassBg: 'rgba(255, 255, 255, 0.03)',
         glassBorder: 'rgba(255, 255, 255, 0.08)',
@@ -420,7 +432,7 @@ const App = () => {
         // Grid
         gridLine: 'rgba(100, 116, 139, 0.15)',
     } : {
-        bgGradient: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 25%, #f1f5f9 50%, #e5e7eb 75%, #f9fafb 100%)',
+        bgGradient: '#f1f5f9',
         glassBg: 'rgba(255, 255, 255, 0.7)',
         glassBorder: 'rgba(0, 0, 0, 0.08)',
         glassHighlight: 'rgba(255, 255, 255, 0.9)',

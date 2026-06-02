@@ -25,10 +25,15 @@
     control_df
 }
 
-.validate_build_reference_af_args <- function(af_n_bands, af_max_cells) {
+.validate_build_reference_af_args <- function(af_n_bands, af_max_cells, af_bands_per_file = 5) {
     af_n_bands <- as.integer(af_n_bands[1])
     if (!is.finite(af_n_bands) || is.na(af_n_bands) || af_n_bands < 1) {
         stop("af_n_bands must be an integer >= 1.")
+    }
+
+    af_bands_per_file <- as.integer(af_bands_per_file[1])
+    if (!is.finite(af_bands_per_file) || is.na(af_bands_per_file) || af_bands_per_file < 1) {
+        stop("af_bands_per_file must be an integer >= 1.")
     }
 
     af_max_cells <- as.integer(af_max_cells[1])
@@ -36,7 +41,7 @@
         stop("af_max_cells must be an integer >= 100.")
     }
 
-    list(af_n_bands = af_n_bands, af_max_cells = af_max_cells)
+    list(af_n_bands = af_n_bands, af_bands_per_file = af_bands_per_file, af_max_cells = af_max_cells)
 }
 
 .reference_cell_fsc_upper_fraction <- 0.98
@@ -334,27 +339,15 @@
     peak_vals
 }
 
-.extract_reference_af_profiles <- function(ff_af, detector_names, n_bands = 1, max_cells = 50000) {
-    raw <- flowCore::exprs(ff_af)
-    pd_af <- flowCore::pData(flowCore::parameters(ff_af))
-
-    idx <- seq_len(nrow(raw))
-    scatter <- .resolve_reference_scatter_channels(raw)
-    if (!is.null(scatter)) {
-        fsc <- scatter$fsc
-        ssc <- scatter$ssc
-        fsc_lo <- stats::quantile(raw[, fsc], 0.2, na.rm = TRUE)
-        fsc_hi <- stats::quantile(raw[, fsc], 0.8, na.rm = TRUE)
-        ssc_lo <- stats::quantile(raw[, ssc], 0.2, na.rm = TRUE)
-        ssc_hi <- stats::quantile(raw[, ssc], 0.8, na.rm = TRUE)
-        idx_gate <- which(
-            raw[, fsc] >= fsc_lo & raw[, fsc] <= fsc_hi &
-                raw[, ssc] >= ssc_lo & raw[, ssc] <= ssc_hi
-        )
-        if (length(idx_gate) >= 200) idx <- idx_gate
+.extract_reference_af_profiles <- function(ff_af = NULL, detector_names, n_bands = 1, max_cells = 50000, af_events = NULL) {
+    if (is.null(af_events)) {
+        if (is.null(ff_af)) {
+            stop("Either ff_af or af_events must be provided.")
+        }
+        raw <- flowCore::exprs(ff_af)
+        af_events <- raw[, detector_names, drop = FALSE]
     }
 
-    af_events <- raw[idx, detector_names, drop = FALSE]
     af_events <- af_events[stats::complete.cases(af_events), , drop = FALSE]
     if (nrow(af_events) == 0) {
         return(list(raw_median = NULL, signatures = NULL))
@@ -371,7 +364,13 @@
     keep <- is.finite(row_scale) & row_scale > 0
     if (!any(keep)) {
         sig <- pmax(raw_median, 0)
-        sig <- sig / max(sig, na.rm = TRUE)
+        sig_max <- max(sig, na.rm = TRUE)
+        if (is.finite(sig_max) && sig_max > 0) {
+            sig <- sig / sig_max
+        } else {
+            sig <- rep(0, length(sig))
+            names(sig) <- detector_names
+        }
         sig_mat <- matrix(sig, nrow = 1)
         rownames(sig_mat) <- "AF"
         colnames(sig_mat) <- detector_names
@@ -381,6 +380,8 @@
     af_shape <- af_pos[keep, , drop = FALSE] / row_scale[keep]
     n_eff <- min(as.integer(n_bands), nrow(af_shape))
     if (n_eff < 1) n_eff <- 1
+    distinct_n <- nrow(unique(as.data.frame(round(af_shape, digits = 6))))
+    n_eff <- min(n_eff, max(distinct_n, 1L))
 
     if (n_eff == 1) {
         centers <- matrix(colMeans(af_shape, na.rm = TRUE), nrow = 1)
@@ -436,27 +437,141 @@
     af_fn
 }
 
-.collect_reference_af_profiles <- function(control_df, fcs_files, detector_names, af_n_bands, af_max_cells, exclude_af = FALSE) {
-    af_data_raw <- NULL
-    af_signatures_norm <- NULL
-    af_fn <- .resolve_reference_af_name(control_df = control_df, fcs_files = fcs_files, exclude_af = exclude_af)
+.get_reference_config_value <- function(config, name, default) {
+    if (!is.null(config) && name %in% names(config)) {
+        return(config[[name]])
+    }
+    default
+}
 
-    if (is.null(af_fn)) {
-        return(list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm))
+.extract_reference_af_gated_events <- function(fcs_file, detector_names, config) {
+    ff_af <- tryCatch(
+        flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
+        error = function(e) NULL
+    )
+    if (is.null(ff_af)) {
+        warning("Could not read AF control file: ", fcs_file)
+        return(NULL)
     }
 
-    af_path <- fcs_files[grep(af_fn, fcs_files, fixed = TRUE)]
-    if (length(af_path) > 0) {
-        ff_af <- flowCore::read.FCS(af_path[1], transformation = FALSE, truncate_max_range = FALSE)
-        af_profiles <- .extract_reference_af_profiles(ff_af, detector_names, n_bands = af_n_bands, max_cells = af_max_cells)
+    pd_af <- flowCore::pData(flowCore::parameters(ff_af))
+    raw_af <- flowCore::exprs(ff_af)
+    sn <- tools::file_path_sans_ext(basename(fcs_file))
+    if (!.validate_reference_raw_data(raw_af, sn)) {
+        return(NULL)
+    }
+
+    scatter_info <- .compute_reference_scatter_gate(
+        raw_data = raw_af,
+        pd = pd_af,
+        sample_type = "unstained",
+        outlier_percentile = .get_reference_config_value(config, "outlier_percentile", 0.02),
+        debris_percentile = .get_reference_config_value(config, "debris_percentile", 0.08),
+        subsample_n = .get_reference_config_value(config, "subsample_n", 5000),
+        max_clusters = .get_reference_config_value(config, "max_clusters", 6),
+        min_cluster_proportion = .get_reference_config_value(config, "min_cluster_proportion", 0.03),
+        gate_contour_beads = .get_reference_config_value(config, "gate_contour_beads", 0.95),
+        gate_contour_cells = .get_reference_config_value(config, "gate_contour_cells", 0.90),
+        bead_gate_scale = .get_reference_config_value(config, "bead_gate_scale", 1.3)
+    )
+    if (is.null(scatter_info)) {
+        message("  Skipping AF control ", basename(fcs_file), ": scatter gate found too few valid cells.")
+        return(NULL)
+    }
+
+    list(
+        events = scatter_info$gated_data[, detector_names, drop = FALSE],
+        source = data.table::data.table(
+            file = basename(fcs_file),
+            path = normalizePath(fcs_file, mustWork = FALSE),
+            n_total = nrow(raw_af),
+            n_scatter_gated = nrow(scatter_info$gated_data),
+            scatter_gate_pct = round(100 * nrow(scatter_info$gated_data) / max(nrow(raw_af), 1), 1),
+            fsc_channel = scatter_info$fsc,
+            ssc_channel = scatter_info$ssc
+        )
+    )
+}
+
+.collect_reference_af_profiles <- function(control_df, fcs_files, detector_names, af_n_bands, af_bands_per_file, af_max_cells, exclude_af = FALSE, fcs_files_all = fcs_files, config = NULL) {
+    af_data_raw <- NULL
+    af_signatures_norm <- NULL
+    af_bank_info <- NULL
+    af_fn <- .resolve_reference_af_name(control_df = control_df, fcs_files = fcs_files, exclude_af = exclude_af)
+
+    if (isTRUE(exclude_af)) {
+        return(list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info))
+    }
+
+    af_paths <- character()
+    af_source_types <- character()
+    if (!is.null(af_fn)) {
+        af_path <- fcs_files[grep(af_fn, fcs_files, fixed = TRUE)]
+        if (length(af_path) > 0) {
+            af_paths <- c(af_paths, af_path[1])
+            af_source_types <- c(af_source_types, "primary_unstained")
+        }
+    }
+    extra_af_paths <- fcs_files_all[vapply(
+        fcs_files_all,
+        .is_reference_extra_af_file,
+        logical(1),
+        include_multi_af = .get_reference_config_value(config, "include_multi_af", FALSE),
+        af_dir = .get_reference_config_value(config, "af_dir", "af")
+    )]
+    af_paths <- c(af_paths, extra_af_paths)
+    af_source_types <- c(af_source_types, rep("extra_af", length(extra_af_paths)))
+    keep_unique <- !duplicated(normalizePath(af_paths, mustWork = FALSE))
+    af_paths <- af_paths[keep_unique]
+    af_source_types <- af_source_types[keep_unique]
+
+    if (length(af_paths) > 0) {
+        af_gated_list <- lapply(af_paths, .extract_reference_af_gated_events, detector_names = detector_names, config = config)
+        keep_gated <- vapply(af_gated_list, function(x) !is.null(x) && !is.null(x$events) && nrow(x$events) > 0, logical(1))
+        af_gated_list <- af_gated_list[keep_gated]
+        af_source_types <- af_source_types[keep_gated]
+        if (length(af_gated_list) == 0) {
+            return(list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info))
+        }
+
+        af_events <- do.call(rbind, lapply(af_gated_list, `[[`, "events"))
+        n_af_sources <- length(af_gated_list)
+        requested_bands <- if (n_af_sources > 1) {
+            n_af_sources * af_bands_per_file
+        } else {
+            af_n_bands
+        }
+        af_profiles <- .extract_reference_af_profiles(
+            detector_names = detector_names,
+            n_bands = requested_bands,
+            max_cells = af_max_cells,
+            af_events = af_events
+        )
         af_data_raw <- af_profiles$raw_median
         af_signatures_norm <- af_profiles$signatures
+        af_sources <- data.table::rbindlist(lapply(af_gated_list, `[[`, "source"))
+        af_sources$source_type <- af_source_types
+        data.table::setcolorder(af_sources, c("file", "source_type", "n_total", "n_scatter_gated", "scatter_gate_pct", "fsc_channel", "ssc_channel", "path"))
+        af_bank_info <- list(
+            source_count = n_af_sources,
+            sources = af_sources,
+            pooled_events = nrow(af_events),
+            requested_bands = requested_bands,
+            af_bands_per_file = if (n_af_sources > 1) af_bands_per_file else NA_integer_,
+            derived_bands = if (!is.null(af_signatures_norm)) nrow(af_signatures_norm) else 0L,
+            mode = if (n_af_sources > 1) "pooled_multi_af_per_file_scaled" else "single_af"
+        )
         if (!is.null(af_signatures_norm)) {
-            message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from primary unstained control.")
+            msg <- if (n_af_sources == 1) {
+                "primary unstained control"
+            } else {
+                paste0(n_af_sources, " pooled AF control files")
+            }
+            message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from ", msg, ".")
         }
     }
 
-    list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm)
+    list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info)
 }
 
 .is_reference_extra_af_file <- function(fcs_file, include_multi_af = FALSE, af_dir = "af") {
@@ -1317,17 +1432,13 @@
         ""
     }
 
-    if (is_extra_af) {
-        if (nrow(row_info) == 0) {
-            fluor_name <- paste0("AF_", sn)
-        }
-        sample_info$type <- "cells"
-    }
-
     if (isTRUE(config$exclude_af) && (.is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext) || is_extra_af)) {
         return(NULL)
     }
-    if (fluor_name == "AF" && !is_extra_af) {
+    if (is_extra_af) {
+        return(NULL)
+    }
+    if (.is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext)) {
         return(NULL)
     }
 
@@ -1471,6 +1582,7 @@
                                        qc_summary_list,
                                        af_signatures_norm,
                                        af_data_raw,
+                                       af_bank_info,
                                        detector_names,
                                        pd_meta,
                                        save_qc_plots = FALSE,
@@ -1524,6 +1636,9 @@
     if (isTRUE(save_qc_plots)) {
         attr(M, "qc_plot_dir") <- out_path
     }
+    if (!is.null(af_bank_info)) {
+        attr(M, "af_bank_info") <- af_bank_info
+    }
     attr(M, "detector_pd") <- pd_meta
     M
 }
@@ -1545,10 +1660,13 @@
 #' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls entirely,
 #'   even when they are present in `control_df`, the SCC folder, or `af_dir`.
 #' @param af_dir Directory with extra AF controls when `include_multi_af = TRUE`.
-#' @param af_n_bands Number of AF basis signatures to extract from the primary
-#'   unstained/AF control (`1` = classic single AF signature).
-#' @param af_max_cells Maximum number of AF events used when deriving AF basis
-#'   signatures.
+#' @param af_n_bands Number of AF basis signatures to extract from the pooled
+#'   unstained/AF control when only one AF source is available (`1` = classic single AF signature).
+#' @param af_bands_per_file Number of AF basis signatures requested per AF file
+#'   when multiple AF sources are pooled (`5` files with the default `5` yields
+#'   up to `25` shared AF bank signatures).
+#' @param af_max_cells Maximum number of scatter-gated AF events used when
+#'   deriving AF basis signatures.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used for channel alias resolution (for example `"Aurora"`).
@@ -1596,6 +1714,7 @@ build_reference_matrix <- function(
   exclude_af = FALSE,
   af_dir = "af",
   af_n_bands = 1,
+  af_bands_per_file = 5,
   af_max_cells = 50000,
   seed = NULL,
   default_sample_type = "beads",
@@ -1614,8 +1733,9 @@ build_reference_matrix <- function(
   subsample_n = 5000
 ) {
     control_df <- .normalize_build_reference_control_df(control_df)
-    af_args <- .validate_build_reference_af_args(af_n_bands = af_n_bands, af_max_cells = af_max_cells)
+    af_args <- .validate_build_reference_af_args(af_n_bands = af_n_bands, af_max_cells = af_max_cells, af_bands_per_file = af_bands_per_file)
     af_n_bands <- af_args$af_n_bands
+    af_bands_per_file <- af_args$af_bands_per_file
     af_max_cells <- af_args$af_max_cells
 
     .with_optional_seed(seed)
@@ -1629,17 +1749,6 @@ build_reference_matrix <- function(
     )
     out_path <- .prepare_reference_output_path(output_folder = output_folder, save_qc_plots = save_qc_plots)
     metadata <- .prepare_reference_detector_info(file_info$fcs_files[1])
-
-    message("Found ", length(metadata$detector_names), " spectral detectors. Sorting by laser...")
-
-    af_profiles <- .collect_reference_af_profiles(
-        control_df = control_df,
-        fcs_files = file_info$fcs_files,
-        detector_names = metadata$detector_names,
-        af_n_bands = af_n_bands,
-        af_max_cells = af_max_cells,
-        exclude_af = exclude_af
-    )
 
     config <- list(
         include_multi_af = include_multi_af,
@@ -1661,6 +1770,20 @@ build_reference_matrix <- function(
         save_qc_plots = save_qc_plots,
         out_path = out_path,
         cytometer = cytometer
+    )
+
+    message("Found ", length(metadata$detector_names), " spectral detectors. Sorting by laser...")
+
+    af_profiles <- .collect_reference_af_profiles(
+        control_df = control_df,
+        fcs_files = file_info$fcs_files,
+        fcs_files_all = file_info$fcs_files_all,
+        detector_names = metadata$detector_names,
+        af_n_bands = af_n_bands,
+        af_bands_per_file = af_bands_per_file,
+        af_max_cells = af_max_cells,
+        exclude_af = exclude_af,
+        config = config
     )
 
     universal_negatives <- .collect_reference_universal_negatives(
@@ -1695,6 +1818,7 @@ build_reference_matrix <- function(
         qc_summary_list = qc_summary_list,
         af_signatures_norm = af_profiles$af_signatures_norm,
         af_data_raw = af_profiles$af_data_raw,
+        af_bank_info = af_profiles$af_bank_info,
         detector_names = metadata$detector_names,
         pd_meta = metadata$pd_meta,
         save_qc_plots = save_qc_plots,

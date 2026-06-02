@@ -188,6 +188,89 @@
     invisible(NULL)
 }
 
+.format_af_bank_summary_lines <- function(af_bank_info) {
+    if (is.null(af_bank_info) || is.null(af_bank_info$sources) || nrow(af_bank_info$sources) == 0) {
+        return("No AF bank source metadata available.")
+    }
+    sources <- as.data.frame(af_bank_info$sources, stringsAsFactors = FALSE)
+    headers <- c("File", "Source", "Events", "Gated", "Scatter%", "FSC", "SSC")
+    widths <- c(30, 18, 8, 8, 9, 10, 10)
+
+    trim_to <- function(x, w) {
+        x <- as.character(x)
+        x[is.na(x)] <- ""
+        vapply(x, function(s) {
+            if (nchar(s, type = "width") > w) {
+                paste0(substr(s, 1, max(1, w - 3)), "...")
+            } else {
+                s
+            }
+        }, character(1))
+    }
+    fmt_num <- function(x, digits = 1) {
+        out <- ifelse(is.na(x), "", format(round(as.numeric(x), digits), nsmall = digits, trim = TRUE))
+        as.character(out)
+    }
+    make_line <- function(parts) {
+        paste(vapply(seq_along(parts), function(i) sprintf(paste0("%-", widths[i], "s"), parts[[i]]), character(1)), collapse = " ")
+    }
+
+    vals <- list(
+        trim_to(sources$file, widths[1]),
+        trim_to(sources$source_type, widths[2]),
+        trim_to(sources$n_total, widths[3]),
+        trim_to(sources$n_scatter_gated, widths[4]),
+        trim_to(fmt_num(sources$scatter_gate_pct, 1), widths[5]),
+        trim_to(sources$fsc_channel, widths[6]),
+        trim_to(sources$ssc_channel, widths[7])
+    )
+
+    c(
+        make_line(as.list(headers)),
+        paste(vapply(widths, function(w) paste(rep("-", w), collapse = ""), character(1)), collapse = " "),
+        vapply(seq_len(nrow(sources)), function(i) make_line(lapply(vals, `[[`, i)), character(1))
+    )
+}
+
+.draw_af_bank_qc_pages <- function(M, af_bank_info, pd = NULL) {
+    if (is.null(af_bank_info) || is.null(af_bank_info$source_count) || af_bank_info$source_count <= 1) {
+        return(invisible(NULL))
+    }
+
+    af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
+    grid::grid.newpage()
+    grid::grid.text("AF Bank QC", x = 0.05, y = 0.95, just = c("left", "top"), gp = grid::gpar(fontsize = 16, fontface = "bold"))
+    grid::grid.text(
+        paste0(
+            "AF sources pooled: ", af_bank_info$source_count, "\n",
+            "Pooled scatter-gated AF events: ", af_bank_info$pooled_events, "\n",
+            "Bands requested: ", af_bank_info$requested_bands, "\n",
+            "Bands derived: ", af_bank_info$derived_bands, "\n",
+            "Bands per file: ", af_bank_info$af_bands_per_file, "\n",
+            "Mode: ", af_bank_info$mode
+        ),
+        x = 0.05,
+        y = 0.88,
+        just = c("left", "top"),
+        gp = grid::gpar(fontsize = 11, lineheight = 1.25)
+    )
+    grid::grid.text(
+        paste(.format_af_bank_summary_lines(af_bank_info), collapse = "\n"),
+        x = 0.05,
+        y = 0.68,
+        just = c("left", "top"),
+        gp = grid::gpar(fontsize = 8.5, fontfamily = "mono", lineheight = 1.15)
+    )
+
+    if (any(af_rows)) {
+        af_plot <- plot_spectra(M[af_rows, , drop = FALSE], pd = pd, output_file = NULL) +
+            ggplot2::labs(title = "Autofluorescence Band Spectra Overlay")
+        .draw_report_ggplot_page(af_plot, height_ratio = 0.72)
+    }
+
+    invisible(NULL)
+}
+
 #' Generate SCC QC Report
 #'
 #' Builds a reference matrix from single-color controls, assembles a PDF report
@@ -211,9 +294,12 @@
 #'   for report assembly and removed afterward.
 #' @param include_multi_af Logical; forward to [build_reference_matrix()].
 #' @param af_dir AF directory forwarded to [build_reference_matrix()].
+#' @param af_bands_per_file Number of AF bands requested per AF file when
+#'   multiple AF sources are pooled.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
-#' @return Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`, and `method`.
+#' @return Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
+#'   `af_bank_info`, and `method`.
 #'   `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 #' @examples
 #' if (interactive()) {
@@ -235,6 +321,7 @@ qc_controls <- function(
     save_qc_pngs = FALSE,
     include_multi_af = FALSE,
     af_dir = "af",
+    af_bands_per_file = 5,
     seed = NULL,
     ...
 ) {
@@ -267,6 +354,7 @@ qc_controls <- function(
         control_df = control_input,
         include_multi_af = include_multi_af,
         af_dir = af_dir,
+        af_bands_per_file = af_bands_per_file,
         cytometer = cytometer,
         seed = seed,
         ...
@@ -351,6 +439,8 @@ qc_controls <- function(
         }
     }
 
+    .draw_af_bank_qc_pages(M_built, attr(M_built, "af_bank_info"), pd = pd)
+
     keep_non_af <- !grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
     M_no_af <- M_report[keep_non_af, , drop = FALSE]
 
@@ -418,5 +508,5 @@ qc_controls <- function(
     }
 
     message("SCC report saved to: ", output_file)
-    invisible(list(M = M_built, qc_summary = qc_summary, qc_plot_dir = retained_qc_plot_dir, method = method))
+    invisible(list(M = M_built, qc_summary = qc_summary, qc_plot_dir = retained_qc_plot_dir, af_bank_info = attr(M_built, "af_bank_info"), method = method))
 }

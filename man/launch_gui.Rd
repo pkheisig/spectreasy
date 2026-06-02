@@ -5,7 +5,7 @@
 \title{Launch spectreasy Interactive Adjustment GUI}
 \usage{
 launch_gui(
-  matrix_dir = getwd(),
+  matrix_dir = NULL,
   samples_dir = NULL,
   port = 8000,
   open_browser = TRUE,
@@ -13,9 +13,14 @@ launch_gui(
 )
 }
 \arguments{
-\item{matrix_dir}{Directory containing matrix CSV files (default: current working directory)}
+\item{matrix_dir}{Directory containing matrix CSV files. If `NULL`, defaults to
+`spectreasy_outputs/unmix_controls` when it exists under the current working
+directory, otherwise the current working directory.}
 
-\item{samples_dir}{Directory containing FCS sample files (default: "samples" subfolder of matrix_dir)}
+\item{samples_dir}{Directory containing FCS sample files. If `NULL`, defaults to
+`spectreasy_outputs/unmix_samples/unmixed_fcs` when it exists under the
+current working directory, then falls back to `spectreasy_outputs/unmix_samples`
+when it contains FCS files, otherwise the `samples` subfolder of `matrix_dir`.}
 
 \item{port}{API port (default: 8000)}
 
