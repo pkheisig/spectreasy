@@ -25,6 +25,112 @@
     invisible(NULL)
 }
 
+.split_qc_report_batches <- function(values, max_per_page = 15) {
+    values <- as.character(values)
+    values <- values[!is.na(values) & values != ""]
+    if (length(values) == 0) {
+        return(list())
+    }
+
+    max_per_page <- suppressWarnings(as.integer(max_per_page[1]))
+    if (!is.finite(max_per_page) || max_per_page <= 0) {
+        max_per_page <- 15L
+    }
+
+    split(values, ceiling(seq_along(values) / max_per_page))
+}
+
+.label_qc_report_batch_page <- function(p, page_idx, page_total, item_label = "Batch") {
+    if (is.null(p) || page_total <= 1) {
+        return(p)
+    }
+
+    p + ggplot2::labs(caption = paste0(item_label, " ", page_idx, " of ", page_total))
+}
+
+.build_qc_report_rms_pages <- function(res_list, M = NULL, max_files_per_page = 15) {
+    if (!is.list(res_list) || length(res_list) == 0) {
+        return(list())
+    }
+
+    sample_names <- names(res_list)
+    if (is.null(sample_names) || any(sample_names == "")) {
+        p <- plot_sample_rms_residuals(res_list, M = M, output_file = NULL)
+        return(if (is.null(p)) list() else list(p))
+    }
+
+    batches <- .split_qc_report_batches(sample_names, max_per_page = max_files_per_page)
+    pages <- list()
+    k <- 1L
+    for (page_idx in seq_along(batches)) {
+        p <- plot_sample_rms_residuals(res_list[batches[[page_idx]]], M = M, output_file = NULL)
+        if (is.null(p)) next
+        pages[[k]] <- .label_qc_report_batch_page(
+            p,
+            page_idx = page_idx,
+            page_total = length(batches),
+            item_label = "Files"
+        )
+        k <- k + 1L
+    }
+
+    pages
+}
+
+.build_qc_report_nps_pages <- function(nps_scores, max_files_per_page = 15) {
+    if (!is.data.frame(nps_scores) || !("File" %in% colnames(nps_scores)) || nrow(nps_scores) == 0) {
+        return(list())
+    }
+
+    batches <- .split_qc_report_batches(unique(as.character(nps_scores$File)), max_per_page = max_files_per_page)
+    pages <- list()
+    k <- 1L
+    for (page_idx in seq_along(batches)) {
+        page_scores <- nps_scores[nps_scores$File %in% batches[[page_idx]], , drop = FALSE]
+        if (nrow(page_scores) == 0) next
+        p <- plot_nps(page_scores, output_file = NULL)
+        pages[[k]] <- .label_qc_report_batch_page(
+            p,
+            page_idx = page_idx,
+            page_total = length(batches),
+            item_label = "Files"
+        )
+        k <- k + 1L
+    }
+
+    pages
+}
+
+.build_qc_report_matrix_pages <- function(mat, plot_fun, max_markers_per_page = 15, item_label = "Markers") {
+    if (is.null(mat) || nrow(mat) == 0 || ncol(mat) == 0) {
+        return(list())
+    }
+
+    marker_names <- rownames(mat)
+    if (is.null(marker_names) || any(marker_names == "")) {
+        marker_names <- seq_len(nrow(mat))
+    }
+
+    batches <- .split_qc_report_batches(marker_names, max_per_page = max_markers_per_page)
+    pages <- list()
+    k <- 1L
+    for (page_idx in seq_along(batches)) {
+        markers <- batches[[page_idx]]
+        markers <- intersect(markers, intersect(rownames(mat), colnames(mat)))
+        if (length(markers) == 0) next
+        p <- plot_fun(mat[markers, markers, drop = FALSE], output_file = NULL)
+        pages[[k]] <- .label_qc_report_batch_page(
+            p,
+            page_idx = page_idx,
+            page_total = length(batches),
+            item_label = item_label
+        )
+        k <- k + 1L
+    }
+
+    pages
+}
+
 .normalize_qc_report_results_df <- function(results_df) {
     if (is.data.frame(results_df)) {
         return(as.data.frame(results_df, stringsAsFactors = FALSE, check.names = FALSE))
@@ -446,6 +552,10 @@
 #' @param max_events_per_sample Maximum events per sample used for report-wide
 #'   plots and diagnostics. Defaults to 10000 to keep large FCS reports
 #'   responsive. Set `NULL` to use all events.
+#' @param overview_files_per_page Maximum files shown on each RMS residual and
+#'   NPS overview page.
+#' @param matrix_markers_per_page Maximum markers shown on each similarity and
+#'   spread matrix page.
 #' @param sample_nxn_rows_per_page Number of marker rows and columns to show per per-sample NxN page block.
 #'   Defaults to 10, which standardizes geometry across pages and samples.
 #' @param sample_nxn_max_points Maximum cells sampled per sample for each NxN page.
@@ -489,6 +599,8 @@ qc_samples <- function(results,
                        png_dir = NULL,
                        pd = NULL,
                        max_events_per_sample = 10000,
+                       overview_files_per_page = 15,
+                       matrix_markers_per_page = 15,
                        sample_nxn_rows_per_page = 10,
                        sample_nxn_max_points = max_events_per_sample,
                        sample_nxn_transform = c("none", "asinh"),
@@ -595,11 +707,18 @@ qc_samples <- function(results,
 
     if (!is.null(res_list)) {
         message("  - Adding overall RMS residuals page...")
-        .draw_qc_report_plot_page(
-            plot_sample_rms_residuals(res_list, M = M, output_file = NULL),
-            height_ratio = 0.72,
-            width_ratio = 0.72
+        rms_pages <- .build_qc_report_rms_pages(
+            res_list,
+            M = M,
+            max_files_per_page = overview_files_per_page
         )
+        for (p in rms_pages) {
+            .draw_qc_report_plot_page(
+                p,
+                height_ratio = 0.72,
+                width_ratio = 0.72
+            )
+        }
     }
 
     message("  - Adding spectra overlay...")
@@ -610,14 +729,30 @@ qc_samples <- function(results,
     if (nrow(M_no_af) > 1) {
         message("  - Adding Fluorophore Similarity Matrix...")
         sim_mat <- calculate_similarity_matrix(M_no_af)
-        .draw_qc_report_plot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
+        sim_pages <- .build_qc_report_matrix_pages(
+            sim_mat,
+            plot_fun = plot_similarity_matrix,
+            max_markers_per_page = matrix_markers_per_page,
+            item_label = "Markers"
+        )
+        for (p in sim_pages) {
+            .draw_qc_report_plot_page(p)
+        }
     }
 
     message("  - Adding Spread Matrix...")
     if (nrow(M_no_af) > 1) {
         ssm_method <- if (identical(method, "NNLS")) "OLS" else method
         ssm <- calculate_ssm(M_no_af, method = ssm_method)
-        .draw_qc_report_plot_page(plot_ssm(ssm, output_file = NULL))
+        ssm_pages <- .build_qc_report_matrix_pages(
+            ssm,
+            plot_fun = plot_ssm,
+            max_markers_per_page = matrix_markers_per_page,
+            item_label = "Markers"
+        )
+        for (p in ssm_pages) {
+            .draw_qc_report_plot_page(p)
+        }
     }
 
     if (identical(method, "NNLS")) {
@@ -627,7 +762,13 @@ qc_samples <- function(results,
         nps_scores <- calculate_nps(results_df)
         nps_scores <- nps_scores[!grepl("^AF($|_)", nps_scores$Marker, ignore.case = TRUE), , drop = FALSE]
         if (nrow(nps_scores) > 0) {
-            .draw_qc_report_plot_page(plot_nps(nps_scores, output_file = NULL))
+            nps_pages <- .build_qc_report_nps_pages(
+                nps_scores,
+                max_files_per_page = overview_files_per_page
+            )
+            for (p in nps_pages) {
+                .draw_qc_report_plot_page(p)
+            }
         }
     }
 

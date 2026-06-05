@@ -232,6 +232,40 @@ test_that("qc_samples can include NxN pages for all samples", {
     expect_true(grepl("Sample NxN Scatter Matrix: SampleB", txt, fixed = TRUE))
 })
 
+test_that("qc_samples overview and matrix pages batch after 15 items", {
+    marker_names <- paste0("M", seq_len(16))
+    detector_names <- paste0("D", seq_len(16), "-A")
+    M <- diag(16)
+    rownames(M) <- marker_names
+    colnames(M) <- detector_names
+
+    res_list <- lapply(seq_len(16), function(i) {
+        data <- as.data.frame(matrix(rnorm(20 * 16), nrow = 20))
+        colnames(data) <- marker_names
+        data$File <- paste0("Sample", i)
+        list(
+            data = data,
+            residuals = matrix(rnorm(20 * 16, sd = 0.1), nrow = 20, dimnames = list(NULL, detector_names))
+        )
+    })
+    names(res_list) <- paste0("Sample", seq_len(16))
+
+    results_df <- do.call(rbind, lapply(res_list, function(x) x$data))
+    nps_scores <- spectreasy::calculate_nps(results_df)
+    sim_mat <- spectreasy:::calculate_similarity_matrix(M)
+    ssm <- spectreasy::calculate_ssm(M)
+
+    rms_pages <- spectreasy:::.build_qc_report_rms_pages(res_list, M = M)
+    nps_pages <- spectreasy:::.build_qc_report_nps_pages(nps_scores)
+    sim_pages <- spectreasy:::.build_qc_report_matrix_pages(sim_mat, plot_fun = spectreasy:::plot_similarity_matrix)
+    ssm_pages <- spectreasy:::.build_qc_report_matrix_pages(ssm, plot_fun = spectreasy::plot_ssm)
+
+    expect_equal(length(rms_pages), 2)
+    expect_equal(length(nps_pages), 2)
+    expect_equal(length(sim_pages), 2)
+    expect_equal(length(ssm_pages), 2)
+})
+
 test_that("qc_samples loads M from unmixing_matrix_file", {
     set.seed(1)
     n <- 120

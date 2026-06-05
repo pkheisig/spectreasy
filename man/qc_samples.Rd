@@ -15,6 +15,8 @@ qc_samples(
   png_dir = NULL,
   pd = NULL,
   max_events_per_sample = 10000,
+  overview_files_per_page = 15,
+  matrix_markers_per_page = 15,
   sample_nxn_rows_per_page = 10,
   sample_nxn_max_points = max_events_per_sample,
   sample_nxn_transform = c("none", "asinh"),
@@ -52,6 +54,12 @@ If omitted, `attr(M, "detector_pd")` is used when available.}
 \item{max_events_per_sample}{Maximum events per sample used for report-wide
 plots and diagnostics. Defaults to 10000 to keep large FCS reports
 responsive. Set `NULL` to use all events.}
+
+\item{overview_files_per_page}{Maximum files shown on each RMS residual and
+NPS overview page.}
+
+\item{matrix_markers_per_page}{Maximum markers shown on each similarity and
+spread matrix page.}
 
 \item{sample_nxn_rows_per_page}{Number of marker rows and columns to show per per-sample NxN page block.
 Defaults to 10, which standardizes geometry across pages and samples.}
