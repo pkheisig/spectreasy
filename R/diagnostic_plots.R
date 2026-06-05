@@ -389,7 +389,7 @@ plot_sample_rms_residuals <- function(results, M = NULL, output_file = NULL, wid
         ) +
         ggplot2::labs(
             title = "Overall Unmixing Error (RMS Residuals)",
-            subtitle = "Y-axis: RMS of residuals per cell (pseudo-log scale).\nX-axis: Median RMS & Error % (relative to peak signal).\nGood unmixing: Error < 1.0%.",
+            subtitle = "Y-axis: RMS of residuals per cell (pseudo-log scale).\nX-axis: Median RMS & Error % (relative to peak signal).\nGood: <1.0%, Moderate: 1.0-3.0%.",
             x = "Sample", y = "RMS Residual"
         ) +
         ggplot2::theme_minimal(base_size = 13.75) +

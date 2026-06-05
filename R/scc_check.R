@@ -233,7 +233,15 @@
 }
 
 .draw_af_bank_qc_pages <- function(M, af_bank_info, pd = NULL) {
-    if (is.null(af_bank_info) || is.null(af_bank_info$source_count) || af_bank_info$source_count <= 1) {
+    if (is.null(af_bank_info)) {
+        return(invisible(NULL))
+    }
+    source_count <- af_bank_info$source_count
+    if (is.null(source_count)) source_count <- 1
+    derived_bands <- af_bank_info$derived_bands
+    if (is.null(derived_bands)) derived_bands <- 1
+
+    if (source_count <= 1 && derived_bands <= 1) {
         return(invisible(NULL))
     }
 

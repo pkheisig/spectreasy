@@ -3,7 +3,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 interface ResidualPlotProps {
   xKey: string;
   yKey: string;
-  data: any[];
+  data: Record<string, unknown>[];
   size: number;
   pointColor: string;
   pointOpacity: number;
@@ -28,8 +28,14 @@ const ResidualPlot: React.FC<ResidualPlotProps> = ({
   const [dragStart, setDragStart] = useState<{ x: number, y: number, dataX: number, dataY: number } | null>(null);
   const [dragCurrent, setDragCurrent] = useState<{ x: number, y: number } | null>(null);
 
+  const clearDrag = useCallback(() => {
+    setIsDragging(false);
+    setDragStart(null);
+    setDragCurrent(null);
+  }, []);
+
   // Helper to get ranges (memoize in real app, but fast enough for 5k points here)
-  const getRanges = () => {
+  const getRanges = useCallback(() => {
     if (data.length === 0) return { xMin: 0, xMax: 1, yMin: 0, yMax: 1 };
 
     // We want a stable range, but for residuals it might change.
@@ -59,7 +65,7 @@ const ResidualPlot: React.FC<ResidualPlotProps> = ({
       yMin: yMin - yPad,
       yMax: yMax + yPad
     };
-  };
+  }, [data, xKey, yKey]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -112,6 +118,7 @@ const ResidualPlot: React.FC<ResidualPlotProps> = ({
 
     // Draw Drag Overlay
     if (isDragging && dragStart && dragCurrent) {
+      ctx.globalAlpha = 1;
       ctx.strokeStyle = '#ef4444'; // red-500
       ctx.lineWidth = 2;
       ctx.setLineDash([4, 2]);
@@ -129,20 +136,22 @@ const ResidualPlot: React.FC<ResidualPlotProps> = ({
       // Maybe simpler: just show visual line
     }
 
-  }, [data, xKey, yKey, pointColor, pointOpacity, pointSize, isDragging, dragStart, dragCurrent]);
+  }, [data, xKey, yKey, pointColor, pointOpacity, pointSize, isDragging, dragStart, dragCurrent, getRanges]);
 
   useEffect(() => {
     draw();
   }, [draw]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     // Only allow dragging if X and Y are different
     if (xKey === yKey) return;
 
-    const rect = canvasRef.current?.getBoundingClientRect();
+    const canvas = canvasRef.current;
+    const rect = canvas?.getBoundingClientRect();
     if (!rect) return;
     const ex = e.clientX - rect.left;
     const ey = e.clientY - rect.top;
+    canvas?.setPointerCapture(e.pointerId);
 
     // Map click to data space
     const { xMin, xMax, yMin, yMax } = getRanges();
@@ -157,18 +166,24 @@ const ResidualPlot: React.FC<ResidualPlotProps> = ({
     setDragCurrent({ x: ex, y: ey });
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDragging) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     setDragCurrent({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-    draw(); // Re-draw to show line
   };
 
-  const handleMouseUp = (e: React.MouseEvent) => {
+  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDragging || !dragStart) return;
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    const canvas = canvasRef.current;
+    const rect = canvas?.getBoundingClientRect();
+    if (!rect) {
+      clearDrag();
+      return;
+    }
+    if (canvas?.hasPointerCapture(e.pointerId)) {
+      canvas.releasePointerCapture(e.pointerId);
+    }
 
     const endX = e.clientX - rect.left;
     const endY = e.clientY - rect.top;
@@ -177,13 +192,8 @@ const ResidualPlot: React.FC<ResidualPlotProps> = ({
     const pixelDeltaX = endX - dragStart.x;
     const pixelDeltaY = endY - dragStart.y;
 
-    // Map to data space
-    const { xMin, xMax, yMin, yMax } = getRanges();
     const w = rect.width;
     const h = rect.height;
-
-    const dataDeltaX = (pixelDeltaX / w) * (xMax - xMin);
-    const dataDeltaY = -(pixelDeltaY / h) * (yMax - yMin); // Negative because canvas Y is inverted
 
     // Determine drag direction:
     // horizontal drag should feel like Y-axis correction,
@@ -194,29 +204,23 @@ const ResidualPlot: React.FC<ResidualPlotProps> = ({
 
     // Minimum drag threshold
     if (absX < 5 && absY < 5) {
-      setIsDragging(false);
-      setDragStart(null);
-      setDragCurrent(null);
+      clearDrag();
       return;
     }
 
-    // Apply user sensitivity multiplier.
-    const baseAlpha = 0.00005 * sensitivity;
-
+    // Scale by the fraction of the panel dragged, so the same gesture has the
+    // same strength regardless of marker units or plot zoom.
     if (absX > absY) {
       // Keep original axis mapping, but invert sign so drag direction is not reversed.
-      const alpha = -dataDeltaX * baseAlpha;
+      const alpha = -(pixelDeltaX / w) * sensitivity;
       onAdjust(xKey, yKey, alpha);
     } else {
       // Keep original axis mapping, but invert sign so drag direction is not reversed.
-      const alpha = -dataDeltaY * baseAlpha;
+      const alpha = (pixelDeltaY / h) * sensitivity;
       onAdjust(yKey, xKey, alpha);
     }
 
-    setIsDragging(false);
-    setDragStart(null);
-    setDragCurrent(null);
-    draw();
+    clearDrag();
   };
 
   return (
@@ -225,10 +229,13 @@ const ResidualPlot: React.FC<ResidualPlotProps> = ({
       width={size}
       height={size}
       className={`w-full h-full touch-none ${xKey !== yKey ? 'cursor-crosshair hover:ring-1 hover:ring-blue-400' : 'cursor-default'}`}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={() => { if (isDragging) { setIsDragging(false); setDragStart(null); draw(); } }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={clearDrag}
+      onLostPointerCapture={() => {
+        if (isDragging) clearDrag();
+      }}
     />
   );
 };

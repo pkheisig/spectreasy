@@ -16,7 +16,7 @@
     out <- tools::file_path_sans_ext(basename(out))
 
     grepl(
-        "(^|[^[:alnum:]])US_UT([^[:alnum:]]|$)|UNSTAINED|AF[ _-]?ONLY|AUTOFLUORESCENCE|(^|[^[:alnum:]])BLANK([^[:alnum:]]|$)",
+        "(^|[^[:alnum:]])US(_UT)?([^[:alnum:]]|$)|UNSTAINED|AF[ _-]?ONLY|AUTOFLUORESCENCE|(^|[^[:alnum:]])BLANK([^[:alnum:]]|$)",
         out,
         ignore.case = TRUE
     )

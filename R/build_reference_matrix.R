@@ -432,6 +432,10 @@
         km <- stats::kmeans(af_shape, centers = n_eff, nstart = 10, iter.max = 100)
         centers <- km$centers
         cluster_sizes <- as.numeric(table(factor(km$cluster, levels = seq_len(n_eff))))
+        keep_idx <- which(cluster_sizes >= 20)
+        if (length(keep_idx) == 0) keep_idx <- which.max(cluster_sizes)
+        centers <- centers[keep_idx, , drop = FALSE]
+        cluster_sizes <- cluster_sizes[keep_idx]
         ord <- order(cluster_sizes, decreasing = TRUE)
         centers <- centers[ord, , drop = FALSE]
     }
@@ -519,7 +523,7 @@
         outlier_percentile = .get_reference_config_value(config, "outlier_percentile", 0.02),
         debris_percentile = .get_reference_config_value(config, "debris_percentile", 0.08),
         subsample_n = .get_reference_config_value(config, "subsample_n", 5000),
-        max_clusters = .get_reference_config_value(config, "max_clusters", 6),
+        max_clusters = .get_reference_config_value(config, "max_clusters", 10),
         min_cluster_proportion = .get_reference_config_value(config, "min_cluster_proportion", 0.03),
         gate_contour_beads = .get_reference_config_value(config, "gate_contour_beads", 0.95),
         gate_contour_cells = .get_reference_config_value(config, "gate_contour_cells", 0.90),
@@ -1827,7 +1831,7 @@ build_reference_matrix <- function(
   outlier_percentile = 0.02,
   debris_percentile = 0.08,
   bead_gate_scale = 1.3,
-  max_clusters = 6,
+  max_clusters = 10,
   min_cluster_proportion = 0.03,
   gate_contour_beads = 0.95,
   gate_contour_cells = 0.90,

@@ -34,7 +34,7 @@ remotes::install_github("pkheisig/spectreasy")
 
 # Example workflow
 
-This walkthrough demonstrates the primary `spectreasy` workflow on the packaged example dataset. The example project contains:
+This walkthrough demonstrates the primary `spectreasy` workflow on the release-hosted example dataset. The example project contains:
 
 - single-color controls in `scc/`
 - one experimental sample in `sample/sample.fcs`

@@ -48,6 +48,71 @@
     as.data.frame(results_df, stringsAsFactors = FALSE, check.names = FALSE)
 }
 
+.qc_report_cap_indices <- function(n, max_events_per_sample = NULL) {
+    if (is.null(max_events_per_sample)) {
+        return(seq_len(n))
+    }
+    cap <- suppressWarnings(as.integer(max_events_per_sample[1]))
+    if (!is.finite(cap) || cap <= 0 || n <= cap) {
+        return(seq_len(n))
+    }
+    unique(as.integer(round(seq(1, n, length.out = cap))))
+}
+
+.cap_qc_report_results_df <- function(results_df, max_events_per_sample = NULL) {
+    if (is.null(max_events_per_sample) || !("File" %in% colnames(results_df))) {
+        return(results_df)
+    }
+
+    groups <- split(seq_len(nrow(results_df)), results_df$File, drop = TRUE)
+    keep <- unlist(lapply(groups, function(idx) {
+        idx[.qc_report_cap_indices(length(idx), max_events_per_sample)]
+    }), use.names = FALSE)
+    results_df[sort(keep), , drop = FALSE]
+}
+
+.cap_qc_report_results_list <- function(results, max_events_per_sample = NULL) {
+    if (is.null(max_events_per_sample) || !is.list(results) || is.data.frame(results)) {
+        return(results)
+    }
+
+    lapply(results, function(res_obj) {
+        if (!is.list(res_obj) || !is.data.frame(res_obj$data)) {
+            return(res_obj)
+        }
+        idx <- .qc_report_cap_indices(nrow(res_obj$data), max_events_per_sample)
+        res_obj$data <- res_obj$data[idx, , drop = FALSE]
+        if (!is.null(res_obj$residuals) && nrow(res_obj$residuals) >= max(idx)) {
+            res_obj$residuals <- res_obj$residuals[idx, , drop = FALSE]
+        }
+        res_obj
+    })
+}
+
+.qc_report_file_counts <- function(results) {
+    if (is.data.frame(results)) {
+        if ("File" %in% colnames(results)) {
+            return(table(results$File))
+        }
+        return(integer(0))
+    }
+
+    if (is.list(results) && length(results) > 0) {
+        looks_like_unmixed <- all(vapply(
+            results,
+            function(x) is.list(x) && is.data.frame(x$data),
+            logical(1)
+        ))
+        if (looks_like_unmixed) {
+            counts <- vapply(results, function(x) nrow(x$data), integer(1))
+            names(counts) <- names(results)
+            return(counts)
+        }
+    }
+
+    integer(0)
+}
+
 .get_qc_report_marker_labels <- function(markers) {
     stats::setNames(markers, markers)
 }
@@ -378,6 +443,9 @@
 #' @param png_dir Deprecated and ignored (kept for backward compatibility).
 #' @param pd Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
 #'   If omitted, `attr(M, "detector_pd")` is used when available.
+#' @param max_events_per_sample Maximum events per sample used for report-wide
+#'   plots and diagnostics. Defaults to 10000 to keep large FCS reports
+#'   responsive. Set `NULL` to use all events.
 #' @param sample_nxn_rows_per_page Number of marker rows and columns to show per per-sample NxN page block.
 #'   Defaults to 10, which standardizes geometry across pages and samples.
 #' @param sample_nxn_max_points Maximum cells sampled per sample for each NxN page.
@@ -420,8 +488,9 @@ qc_samples <- function(results,
                        res_list = NULL,
                        png_dir = NULL,
                        pd = NULL,
+                       max_events_per_sample = 10000,
                        sample_nxn_rows_per_page = 10,
-                       sample_nxn_max_points = 3000,
+                       sample_nxn_max_points = max_events_per_sample,
                        sample_nxn_transform = c("none", "asinh"),
                        sample_nxn_asinh_cofactor = 150,
                        nxn_all_samples = FALSE) {
@@ -464,14 +533,23 @@ qc_samples <- function(results,
         }
     }
 
-    if (is.null(res_list) && is.list(results) && !is.data.frame(results)) {
-        has_residuals <- any(vapply(results, function(x) is.list(x) && !is.null(x$residuals), logical(1)))
-        if (has_residuals) {
-            res_list <- results
-        }
+    report_results <- if (is.data.frame(results)) {
+        .cap_qc_report_results_df(results, max_events_per_sample = max_events_per_sample)
+    } else {
+        .cap_qc_report_results_list(results, max_events_per_sample = max_events_per_sample)
     }
 
-    results_df <- .normalize_qc_report_results_df(results)
+    if (is.null(res_list) && is.list(report_results) && !is.data.frame(report_results)) {
+        has_residuals <- any(vapply(report_results, function(x) is.list(x) && !is.null(x$residuals), logical(1)))
+        if (has_residuals) {
+            res_list <- report_results
+        }
+    } else if (!is.null(res_list)) {
+        res_list <- .cap_qc_report_results_list(res_list, max_events_per_sample = max_events_per_sample)
+    }
+
+    file_counts <- .qc_report_file_counts(results)
+    results_df <- .normalize_qc_report_results_df(report_results)
     if (!("File" %in% colnames(results_df))) {
         stop("results must contain a 'File' column.")
     }
@@ -483,11 +561,23 @@ qc_samples <- function(results,
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
 
     grid::grid.newpage()
-    file_counts <- table(results_df$File)
+    report_file_counts <- table(results_df$File)
     median_events_txt <- if (length(file_counts) > 0) {
         as.character(stats::median(as.numeric(file_counts)))
     } else {
         "NA"
+    }
+    median_report_events_txt <- if (length(report_file_counts) > 0) {
+        as.character(stats::median(as.numeric(report_file_counts)))
+    } else {
+        "NA"
+    }
+    if (!is.null(max_events_per_sample) && any(as.numeric(file_counts) > as.numeric(max_events_per_sample)[1], na.rm = TRUE)) {
+        message(
+            "  - Report diagnostics capped at ",
+            as.integer(max_events_per_sample[1]),
+            " events per sample. Set max_events_per_sample = NULL to use all events."
+        )
     }
 
     keep_non_af <- !grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
@@ -498,7 +588,8 @@ qc_samples <- function(results,
         "Generated on: ", Sys.time(), "\n\n",
         "Files Processed: ", length(unique(results_df$File)), "\n",
         "Total Markers (non-AF): ", nrow(M_no_af), "\n",
-        "Median Events per File: ", median_events_txt
+        "Median Events per File: ", median_events_txt, "\n",
+        "Median Events Used per File in Report: ", median_report_events_txt
     )
     grid::grid.text(summary_txt, x = 0.5, y = 0.6, just = "center", gp = grid::gpar(fontsize = 15))
 

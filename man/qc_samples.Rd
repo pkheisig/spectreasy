@@ -14,8 +14,9 @@ qc_samples(
   res_list = NULL,
   png_dir = NULL,
   pd = NULL,
+  max_events_per_sample = 10000,
   sample_nxn_rows_per_page = 10,
-  sample_nxn_max_points = 3000,
+  sample_nxn_max_points = max_events_per_sample,
   sample_nxn_transform = c("none", "asinh"),
   sample_nxn_asinh_cofactor = 150,
   nxn_all_samples = FALSE
@@ -47,6 +48,10 @@ because constrained NNLS results are non-negative by construction.}
 
 \item{pd}{Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
 If omitted, `attr(M, "detector_pd")` is used when available.}
+
+\item{max_events_per_sample}{Maximum events per sample used for report-wide
+plots and diagnostics. Defaults to 10000 to keep large FCS reports
+responsive. Set `NULL` to use all events.}
 
 \item{sample_nxn_rows_per_page}{Number of marker rows and columns to show per per-sample NxN page block.
 Defaults to 10, which standardizes geometry across pages and samples.}
