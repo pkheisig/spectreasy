@@ -630,6 +630,7 @@ qc_samples <- function(results,
         if (!file.exists(unmixing_matrix_file)) {
             stop("unmixing_matrix_file not found: ", unmixing_matrix_file)
         }
+        .stop_if_static_unmixing_matrix_path(unmixing_matrix_file, arg_name = "unmixing_matrix_file")
         M <- .read_unmixing_matrix_csv(unmixing_matrix_file)
         M <- .as_reference_matrix(M, "M")
     }

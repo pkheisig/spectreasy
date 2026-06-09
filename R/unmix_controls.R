@@ -183,12 +183,12 @@
 .unmix_output_paths <- function(output_dir) {
     list(
         unmixed_dir = file.path(output_dir, "unmixed_fcs"),
-        spectra_file = file.path(output_dir, "scc_spectra.png"),
+        spectra_file = file.path(output_dir, "scc_spectra.pdf"),
+        af_spectra_file = file.path(output_dir, "scc_af_spectra.pdf"),
         reference_matrix_csv = file.path(output_dir, "scc_reference_matrix.csv"),
         detector_noise_csv = file.path(output_dir, "scc_detector_noise.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
-        unmixing_matrix_png = file.path(output_dir, "scc_unmixing_matrix.png"),
-        unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
+        unmixing_scatter_pdf = file.path(output_dir, "scc_unmixing_scatter_matrix.pdf"),
         variances_csv = file.path(output_dir, "scc_variances.csv")
     )
 }
@@ -300,8 +300,8 @@
 #' 2) builds the reference matrix from SCCs,
 #' 3) unmixed SCC files,
 #' 4) saves reference/unmixing matrices and SCC-derived WLS detector noise floors,
-#' 5) plots spectra, unmixing matrix, SCC unmixing scatter matrix, and optional
-#'    per-control QC PNGs.
+#' 5) saves spectra and SCC unmixing scatter plots, returns the unmixing matrix
+#'    plot object, and optionally writes per-control QC PNGs.
 #'
 #' This function is intended as the control-stage step before GUI adjustment
 #' and downstream sample unmixing.
@@ -388,19 +388,6 @@ unmix_controls <- function(
     }
 
     preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af, include_multi_af = include_multi_af)
-    if (!preflight$ok && isTRUE(auto_create_control)) {
-        regenerated <- .unmix_regenerate_control_df(
-            control_file = control_file,
-            scc_dir = scc_dir,
-            cytometer = cytometer,
-            auto_default_control_type = auto_default_control_type,
-            auto_unknown_fluor_policy = auto_unknown_fluor_policy,
-            exclude_af = exclude_af
-        )
-        control_df <- regenerated$control_df
-        excluded_af_filenames <- unique(c(excluded_af_filenames, regenerated$excluded_af_filenames))
-        preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af, include_multi_af = include_multi_af)
-    }
     if (!preflight$ok) {
         .stop_unmix_preflight(preflight, auto_unknown_fluor_policy = auto_unknown_fluor_policy)
     }
@@ -427,7 +414,23 @@ unmix_controls <- function(
     }
     .save_detector_noise_csv(attr(M, "detector_noise"), output_paths$detector_noise_csv)
     meta_info <- .read_unmix_metadata_pd(scc_dir)
-    p_spectra <- plot_spectra(M, pd = meta_info$pd, output_file = output_paths$spectra_file)
+
+    # Split M into fluorophore rows and AF/autofluorescence rows to plot separately
+    af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
+    M_fluor <- M[!af_rows, , drop = FALSE]
+    M_af <- M[af_rows, , drop = FALSE]
+
+    p_spectra <- if (nrow(M_fluor) > 0) {
+        plot_spectra(M_fluor, pd = meta_info$pd, output_file = output_paths$spectra_file)
+    } else {
+        NULL
+    }
+
+    p_af_spectra <- if (nrow(M_af) > 0) {
+        plot_spectra(M_af, pd = meta_info$pd, output_file = output_paths$af_spectra_file)
+    } else {
+        NULL
+    }
 
     unmixed_list <- unmix_samples(
         sample_dir = scc_dir,
@@ -450,7 +453,6 @@ unmix_controls <- function(
     save_unmixing_matrix(W, output_paths$unmixing_matrix_csv)
 
     p_unmix <- plot_unmixing_matrix(W, pd = meta_info$pd)
-    ggplot2::ggsave(output_paths$unmixing_matrix_png, p_unmix, width = 220, height = 140, units = "mm", dpi = 300)
 
     marker_mapping <- .resolve_unmix_marker_mappings(control_df)
     scatter_markers <- rownames(M)
@@ -462,7 +464,7 @@ unmix_controls <- function(
         sample_to_marker = marker_mapping$sample_to_marker,
         markers = scatter_markers,
         marker_display = NULL,
-        output_file = output_paths$unmixing_scatter_png,
+        output_file = output_paths$unmixing_scatter_pdf,
         transform = "none",
         panel_size_mm = unmix_scatter_panel_size_mm,
         seed = seed
@@ -477,11 +479,13 @@ unmix_controls <- function(
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
         variances_file = output_paths$variances_csv,
         spectra_file = output_paths$spectra_file,
-        unmixing_matrix_plot = output_paths$unmixing_matrix_png,
-        unmixing_scatter_file = output_paths$unmixing_scatter_png,
+        af_spectra_file = if (nrow(M_af) > 0) output_paths$af_spectra_file else NULL,
+        unmixing_matrix_plot = NULL,
+        unmixing_scatter_file = output_paths$unmixing_scatter_pdf,
         qc_plot_dir = if (isTRUE(save_qc_plots)) output_dir else NULL,
         static_unmixing_matrix_method = static_info$static_unmixing_matrix_method,
         spectra_plot = p_spectra,
+        af_spectra_plot = p_af_spectra,
         unmixing_plot = p_unmix,
         unmixing_scatter_plot = p_scatter
     ))

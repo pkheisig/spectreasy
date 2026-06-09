@@ -133,7 +133,7 @@ double positive_median_cpp(arma::vec x, const double fallback = 1.0) {
 arma::vec wls_event_weights_cpp(const arma::vec& y,
                                 const arma::vec& noise_floor,
                                 const arma::vec& signal_scale,
-                                const double max_weight_ratio = 100.0) {
+                                const double max_weight_ratio = 1600.0) {
     const arma::uword n_detectors = y.n_elem;
     if (noise_floor.n_elem != n_detectors || signal_scale.n_elem != n_detectors) {
         Rcpp::stop("WLS noise_floor and signal_scale must match the number of detectors.");
@@ -211,7 +211,7 @@ arma::mat spectreasy_wls_unmix_cpp(const arma::mat& Y,
                                    const arma::mat& M,
                                    const arma::vec& noise_floor,
                                    const arma::vec& signal_scale,
-                                   const double max_weight_ratio = 100.0,
+                                   const double max_weight_ratio = 1600.0,
                                    const double tol = 1e-10) {
     const arma::uword n_cells = Y.n_rows;
     const arma::uword n_markers = M.n_rows;
@@ -235,7 +235,7 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
                                        const std::string& method,
                                        const arma::vec& noise_floor,
                                        const arma::vec& signal_scale,
-                                       const double max_weight_ratio = 100.0,
+                                       const double max_weight_ratio = 1600.0,
                                        const double tol = 1e-10,
                                        const int max_outer = 500,
                                        const int max_inner = 500) {

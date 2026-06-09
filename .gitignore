@@ -74,3 +74,8 @@ spectreasy.BiocCheck/
 backtup/
 /doc/
 /Meta/
+
+# Local scratch and check folders
+scratch/
+check/
+

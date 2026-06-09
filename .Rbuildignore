@@ -46,3 +46,7 @@
 ^backtup$
 ^doc$
 ^Meta$
+^scratch$
+^check$
+^unmixing\.qmd$
+^spectreasy_outputs$

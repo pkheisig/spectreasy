@@ -664,6 +664,7 @@ unmix_samples <- function(sample_dir = "samples",
             scc_dir = scc_dir
         )
     } else if (!is.null(unmixing_matrix_file) && file.exists(unmixing_matrix_file)) {
+        .stop_if_static_unmixing_matrix_path(unmixing_matrix_file, arg_name = "unmixing_matrix_file")
         M <- .read_unmixing_matrix_csv(unmixing_matrix_file)
         M <- .as_reference_matrix(M, "M")
         variances_file <- .resolve_variances_file_for_unmixing(

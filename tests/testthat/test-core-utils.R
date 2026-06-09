@@ -238,7 +238,7 @@ test_that("calc_residuals WLS matches small-matrix reference implementation", {
             exprs[i, ],
             noise_floor = rep(spectreasy:::.default_wls_background_noise(), ncol(M)),
             signal_scale = rep(1, ncol(M)),
-            max_weight_ratio = 100
+            max_weight_ratio = spectreasy:::.default_wls_max_weight_ratio()
         )
         Wi <- diag(detector_weights)
         expected[i, ] <- exprs[i, , drop = FALSE] %*% Wi %*% Mt %*% solve(M %*% Wi %*% Mt)
@@ -346,6 +346,38 @@ test_that("unmix_samples loads sibling SCC detector-noise file for WLS", {
         as.matrix(unmixed$sample$data[, rownames(M)]),
         as.matrix(expected[, rownames(M)]),
         tolerance = 1e-6
+    )
+})
+
+test_that("saved static unmixing matrices are rejected where reference matrices are expected", {
+    W <- matrix(c(
+        1.0, -0.2,
+        -0.1, 1.0
+    ), nrow = 2, byrow = TRUE)
+    rownames(W) <- c("FITC", "PE")
+    colnames(W) <- c("B1-A", "YG1-A")
+
+    matrix_dir <- tempfile("saved_static_matrix_")
+    dir.create(matrix_dir, showWarnings = FALSE)
+    static_file <- file.path(matrix_dir, "scc_unmixing_matrix.csv")
+    W_df <- as.data.frame(W, check.names = FALSE)
+    W_df$Marker <- rownames(W)
+    W_df <- W_df[, c("Marker", colnames(W)), drop = FALSE]
+    write.csv(W_df, static_file, row.names = FALSE)
+
+    exprs <- matrix(c(100, 20), nrow = 1)
+    colnames(exprs) <- colnames(W)
+    sample_dir <- tempfile("samples_static_matrix_")
+    dir.create(sample_dir, showWarnings = FALSE)
+    flowCore::write.FCS(flowCore::flowFrame(exprs), file.path(sample_dir, "sample.fcs"))
+
+    expect_error(
+        spectreasy::unmix_samples(
+            sample_dir = sample_dir,
+            unmixing_matrix_file = static_file,
+            write_fcs = FALSE
+        ),
+        regexp = "static unmixing matrix"
     )
 })
 
@@ -749,6 +781,39 @@ test_that("cell histogram gating keeps full middle negative mode for bright cont
     expect_gt(log10(gate$gate_min), 5.0)
 })
 
+test_that("histogram gating cutoff detection extends right gate leftwards", {
+    # 1. Test .compute_reference_histogram_gate density-based cutoff
+    set.seed(42)
+    # Generate a peak cut-off on the right: positive peak truncated at 5.4
+    vals_log <- c(
+        stats::rnorm(100, 2.0, 0.2), # negative peak
+        pmin(stats::rnorm(1000, 5.35, 0.15), 5.4) # positive peak, truncated at 5.4
+    )
+    
+    gate_right <- spectreasy:::.compute_reference_histogram_gate(
+        peak_vals = 10^vals_log,
+        sample_type = "cells",
+        histogram_pct_beads = 0.98,
+        histogram_direction_beads = "right",
+        histogram_pct_cells = 0.35,
+        histogram_direction_cells = "right"
+    )
+    
+    # Without the cutoff fix, a right-gate would start near the peak (~5.35).
+    # With the fix, it should extend to the left trough (around 3.0 - 4.5).
+    expect_lt(log10(gate_right$gate_min), 4.8)
+    
+    # 2. Test gate_positive_cells utility function
+    mat <- matrix(pmin(stats::rnorm(1000, 5.35, 0.15), 5.4), ncol = 1)
+    
+    idx_right <- gate_positive_cells(mat, histogram_pct = 0.35, histogram_direction = "right")
+    # If the cutoff fix kicked in, it should behave like "both", which sets lower_q = 0.5 - pct/2 = 0.325.
+    # Since the distribution is truncated on the right, upper_q (0.675) lands on the maximum value (5.4).
+    # Therefore, the gated fraction is approximately 1 - 0.325 = 0.675 (67.5%).
+    expect_gt(mean(idx_right), 0.60)
+    expect_lt(mean(idx_right), 0.75)
+})
+
 test_that("reference spectrum uses histogram negative gate attributes", {
     detector_names <- c("B1-A", "YG1-A")
     final_gated_data <- matrix(
@@ -885,7 +950,7 @@ test_that("calc_residuals multi-AF WLS uses event-wise detector weights", {
             y,
             noise_floor = rep(spectreasy:::.default_wls_background_noise(), ncol(M)),
             signal_scale = rep(1, ncol(M)),
-            max_weight_ratio = 100
+            max_weight_ratio = spectreasy:::.default_wls_max_weight_ratio()
         )
         best_rss <- Inf
         best_coeffs <- NULL

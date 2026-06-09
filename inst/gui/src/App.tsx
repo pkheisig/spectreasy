@@ -15,8 +15,24 @@ const API_BASE = (() => {
 
 interface MatrixRow {
     Marker: string;
-    [key: string]: any;
+    [key: string]: string | number | null | undefined;
 }
+
+type DataRow = Record<string, string | number | null | undefined>;
+type MatrixPayload = Record<string, Record<string, string | number | null | undefined>>;
+type ViewConfig = {
+    lineWidth?: number;
+    lineOpacity?: number;
+    colorPalette?: string;
+    showControls?: boolean;
+    signatureHeight?: number;
+    signatureDetWidth?: number;
+    residualCellSize?: number;
+    pointSize?: number;
+    pointOpacity?: number;
+    pointColor?: string;
+    dragSensitivity?: number;
+};
 
 const COLOR_PALETTES = {
     default: ['#60a5fa', '#f472b6', '#34d399', '#fbbf24', '#a78bfa', '#fb7185', '#38bdf8', '#4ade80', '#facc15', '#c084fc'],
@@ -72,8 +88,8 @@ const App = () => {
     const [detectors, setDetectors] = useState<string[]>([]);
     const [detectorLabels, setDetectorLabels] = useState<string[]>([]);
     const [selectedMarkers, setSelectedMarkers] = useState<string[]>([]);
-    const [unmixedData, setUnmixedData] = useState<any[]>([]);
-    const [rawData, setRawData] = useState<any[]>([]);
+    const [unmixedData, setUnmixedData] = useState<DataRow[]>([]);
+    const [rawData, setRawData] = useState<DataRow[]>([]);
     const [isDragging, setIsDragging] = useState(false);
     const [isUnmixingMatrix, setIsUnmixingMatrix] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -120,7 +136,7 @@ const App = () => {
         return list;
     };
 
-    const fetchSampleData = async (sampleName: string, matrixData: any[], filenameForType: string, detNames: string[]) => {
+    const fetchSampleData = async (sampleName: string, matrixData: MatrixRow[], filenameForType: string, detNames: string[]) => {
         const q = sampleName && sampleName.length > 0
             ? `?sample_name=${encodeURIComponent(sampleName)}`
             : '';
@@ -132,7 +148,7 @@ const App = () => {
             setSampleImportMessage(String(resData.data.error));
             return;
         }
-        const raw = resData.data.raw_data;
+        const raw = Array.isArray(resData.data.raw_data) ? resData.data.raw_data as DataRow[] : [];
         setRawData(raw);
         setDetectorLabels(resData.data.detector_labels || detNames);
         if (resData.data.sample_name) setCurrentSample(resData.data.sample_name);
@@ -147,7 +163,7 @@ const App = () => {
         setLoading(true);
         const resMatrix = await axios.get(`${API_BASE}/load_matrix?filename=${encodeURIComponent(filename)}`);
         if (!resMatrix.data.error) {
-            const matrixData = Array.isArray(resMatrix.data) ? resMatrix.data : [];
+            const matrixData = Array.isArray(resMatrix.data) ? resMatrix.data as MatrixRow[] : [];
             if (matrixData.length === 0) {
                 setMatrix([]);
                 setDetectors([]);
@@ -161,7 +177,7 @@ const App = () => {
             setIsUnmixingMatrix(isUnmixingFilename(filename));
             const detNames = Object.keys(matrixData[0]).filter(k => k !== 'Marker');
             setDetectors(detNames);
-            const allMarkers = matrixData.map((r: any) => r.Marker).filter((m: string) => !!m);
+            const allMarkers = matrixData.map((r: MatrixRow) => r.Marker).filter((m: string) => !!m);
             setSelectedMarkers(allMarkers);
             const activeSample = sampleName && sampleName.length > 0 ? sampleName : (sampleFiles[0] || '');
             await fetchSampleData(activeSample, matrixData, filename, detNames);
@@ -184,14 +200,16 @@ const App = () => {
             }
         };
         init();
+        // Initial boot should run once; the called helpers intentionally read their current defaults.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const runUnmix = async (currentM: any[], currentRaw: any[], filename = currentFile) => {
+    const runUnmix = async (currentM: MatrixRow[], currentRaw: DataRow[], filename: string | boolean = currentFile) => {
         if (!Array.isArray(currentM) || currentM.length === 0 || !Array.isArray(currentRaw) || currentRaw.length === 0) {
             setUnmixedData([]);
             return false;
         }
-        const M_obj: any = {};
+        const M_obj: MatrixPayload = {};
         currentM.forEach(row => {
             M_obj[row.Marker] = { ...row };
             delete M_obj[row.Marker].Marker;
@@ -205,10 +223,12 @@ const App = () => {
         const res = await axios.post(`${API_BASE}/unmix`, {
             matrix_json: M_obj,
             raw_data_json: currentRaw,
-            type: useType
+            type: useType,
+            matrix_filename: typeof filename === 'string' ? filename : currentFile,
+            method: 'WLS'
         });
         if (Array.isArray(res.data)) {
-            setUnmixedData(res.data);
+            setUnmixedData(res.data as DataRow[]);
             setSampleImportStatus('idle');
             setSampleImportMessage('');
             return true;
@@ -238,7 +258,7 @@ const App = () => {
             return row;
         });
         setMatrix(newMatrix);
-        runUnmix(newMatrix, rawData, isUnmixingMatrix as any);
+        runUnmix(newMatrix, rawData, isUnmixingMatrix);
     };
 
     const saveMatrix = async () => {
@@ -246,6 +266,7 @@ const App = () => {
         const newName = currentFile.replace('.csv', '_adjusted.csv');
         const result = await axios.post(`${API_BASE}/save_matrix`, {
             filename: newName,
+            source_filename: currentFile,
             matrix_json: matrix
         }).catch(() => null);
         if (result) {
@@ -257,22 +278,23 @@ const App = () => {
         }
     };
 
-    const applyConfig = (cfg: any) => {
+    const applyConfig = (cfg: unknown) => {
         if (!cfg || typeof cfg !== 'object') return;
-        if (typeof cfg.lineWidth === 'number') setLineWidth(cfg.lineWidth);
-        if (typeof cfg.lineOpacity === 'number') setLineOpacity(cfg.lineOpacity);
-        if (typeof cfg.colorPalette === 'string' && cfg.colorPalette in COLOR_PALETTES) {
-            setColorPalette(cfg.colorPalette as keyof typeof COLOR_PALETTES);
+        const viewConfig = cfg as ViewConfig;
+        if (typeof viewConfig.lineWidth === 'number') setLineWidth(viewConfig.lineWidth);
+        if (typeof viewConfig.lineOpacity === 'number') setLineOpacity(viewConfig.lineOpacity);
+        if (typeof viewConfig.colorPalette === 'string' && viewConfig.colorPalette in COLOR_PALETTES) {
+            setColorPalette(viewConfig.colorPalette as keyof typeof COLOR_PALETTES);
         }
-        if (typeof cfg.showControls === 'boolean') setShowControls(cfg.showControls);
-        if (typeof cfg.signatureHeight === 'number') setSignatureHeight(cfg.signatureHeight);
-        if (typeof cfg.signatureDetWidth === 'number') setSignatureDetWidth(cfg.signatureDetWidth);
-        if (typeof cfg.residualCellSize === 'number') setResidualCellSize(cfg.residualCellSize);
-        if (typeof cfg.pointSize === 'number') setPointSize(cfg.pointSize);
-        if (typeof cfg.pointOpacity === 'number') setPointOpacity(cfg.pointOpacity);
-        if (typeof cfg.pointColor === 'string') setPointColor(cfg.pointColor);
-        if (typeof cfg.dragSensitivity === 'number') {
-            setDragSensitivity(Math.max(0.01, Math.min(0.1, cfg.dragSensitivity)));
+        if (typeof viewConfig.showControls === 'boolean') setShowControls(viewConfig.showControls);
+        if (typeof viewConfig.signatureHeight === 'number') setSignatureHeight(viewConfig.signatureHeight);
+        if (typeof viewConfig.signatureDetWidth === 'number') setSignatureDetWidth(viewConfig.signatureDetWidth);
+        if (typeof viewConfig.residualCellSize === 'number') setResidualCellSize(viewConfig.residualCellSize);
+        if (typeof viewConfig.pointSize === 'number') setPointSize(viewConfig.pointSize);
+        if (typeof viewConfig.pointOpacity === 'number') setPointOpacity(viewConfig.pointOpacity);
+        if (typeof viewConfig.pointColor === 'string') setPointColor(viewConfig.pointColor);
+        if (typeof viewConfig.dragSensitivity === 'number') {
+            setDragSensitivity(Math.max(0.01, Math.min(0.1, viewConfig.dragSensitivity)));
         }
     };
 
@@ -405,7 +427,7 @@ const App = () => {
             return row;
         });
         setMatrix(nextMatrix);
-        runUnmix(nextMatrix, rawData, isUnmixingMatrix as any);
+        runUnmix(nextMatrix, rawData, isUnmixingMatrix);
     };
 
     const colors = COLOR_PALETTES[colorPalette];

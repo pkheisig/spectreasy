@@ -669,6 +669,125 @@
     TRUE
 }
 
+.validate_reference_detector_consistency <- function(fcs_files, detector_names) {
+    if (length(fcs_files) == 0 || length(detector_names) == 0) {
+        return(invisible(TRUE))
+    }
+
+    mismatches <- character()
+    for (fcs_file in fcs_files) {
+        ff <- tryCatch(
+            flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
+            error = function(e) {
+                stop("Could not read FCS file while checking detector consistency: ", fcs_file, call. = FALSE)
+            }
+        )
+        pd <- flowCore::pData(flowCore::parameters(ff))
+        current_detectors <- tryCatch(
+            get_sorted_detectors(pd)$names,
+            error = function(e) character()
+        )
+        if (length(current_detectors) == 0) {
+            current_detectors <- intersect(detector_names, colnames(flowCore::exprs(ff)))
+        }
+        missing <- setdiff(detector_names, current_detectors)
+        extra <- setdiff(current_detectors, detector_names)
+        if (length(missing) > 0 || length(extra) > 0) {
+            mismatches <- c(
+                mismatches,
+                paste0(
+                    basename(fcs_file),
+                    if (length(missing) > 0) paste0(" is missing: ", paste(missing, collapse = ", ")) else "",
+                    if (length(missing) > 0 && length(extra) > 0) "; " else "",
+                    if (length(extra) > 0) paste0("has extra detectors: ", paste(extra, collapse = ", ")) else ""
+                )
+            )
+        }
+    }
+
+    if (length(mismatches) > 0) {
+        stop(
+            paste(
+                c(
+                    "Detector set mismatch across SCC/AF files.",
+                    "All files used to build a reference matrix must contain the detectors found in the first SCC file.",
+                    paste0(" - ", mismatches)
+                ),
+                collapse = "\n"
+            ),
+            call. = FALSE
+        )
+    }
+
+    invisible(TRUE)
+}
+
+.active_reference_control_rows <- function(control_df, fcs_files_all, exclude_af = FALSE) {
+    if (is.null(control_df) || !is.data.frame(control_df) || nrow(control_df) == 0 ||
+        !all(c("filename", "fluorophore") %in% colnames(control_df))) {
+        return(data.frame())
+    }
+
+    known_files <- basename(fcs_files_all)
+    known_keys <- tools::file_path_sans_ext(known_files)
+    control_keys <- tools::file_path_sans_ext(basename(as.character(control_df$filename)))
+    active <- as.character(control_df$filename) %in% known_files | control_keys %in% known_keys
+    is_af <- .is_af_control_row(
+        fluorophore = control_df$fluorophore,
+        marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
+        filename = control_df$filename
+    )
+    if (isTRUE(exclude_af)) {
+        active <- active & !is_af
+    } else {
+        active <- active & !is_af
+    }
+
+    control_df[active, , drop = FALSE]
+}
+
+.validate_reference_complete_controls <- function(control_df, fcs_files_all, processed_results, exclude_af = FALSE) {
+    active_rows <- .active_reference_control_rows(
+        control_df = control_df,
+        fcs_files_all = fcs_files_all,
+        exclude_af = exclude_af
+    )
+    if (nrow(active_rows) == 0) {
+        return(invisible(TRUE))
+    }
+
+    processed_fluors <- if (length(processed_results) > 0) {
+        trimws(as.character(vapply(processed_results, function(x) x$fluorophore[[1]], character(1))))
+    } else {
+        character()
+    }
+    expected_fluors <- trimws(as.character(active_rows$fluorophore))
+    expected_fluors <- expected_fluors[nzchar(expected_fluors)]
+    missing <- setdiff(unique(expected_fluors), unique(processed_fluors))
+    if (length(missing) == 0) {
+        return(invisible(TRUE))
+    }
+
+    missing_rows <- active_rows[trimws(as.character(active_rows$fluorophore)) %in% missing, , drop = FALSE]
+    details <- paste0(
+        as.character(missing_rows$filename),
+        " -> ",
+        as.character(missing_rows$fluorophore)
+    )
+    stop(
+        paste(
+            c(
+                "Reference matrix construction did not produce spectra for all mapped non-AF controls.",
+                "This usually means one or more controls failed reading, scatter gating, or histogram gating.",
+                paste0(" - ", unique(details)),
+                "Fix the listed controls or remove them from the control file before continuing."
+            ),
+            collapse = "\n"
+        ),
+        call. = FALSE
+    )
+}
+
 # Computes a 2D scatter gate in FSC-SSC space for a sample.
 # Filters out extreme outliers and debris, fits a Gaussian Mixture Model (GMM) to find clusters,
 # selects the appropriate cell/bead population component(s), and builds a polygon gating boundary.
@@ -845,7 +964,8 @@
                                               histogram_pct_beads,
                                               histogram_direction_beads,
                                               histogram_pct_cells,
-                                              histogram_direction_cells) {
+                                              histogram_direction_cells,
+                                              is_viability = FALSE) {
     vals_log <- log10(pmax(peak_vals, 1))
     vals_log <- vals_log[is.finite(vals_log)]
     positive_gate_present <- !(sample_type %in% c("unstained"))
@@ -900,7 +1020,48 @@
         peak_idx <- which(diff(sign(diff(d$y))) == -2) + 1
         trough_idx <- which(diff(sign(diff(d$y))) == 2) + 1
         if (length(peak_idx) > 0) {
-            if (sample_type %in% c("cells")) {
+            if (sample_type %in% c("cells") && isTRUE(is_viability)) {
+                sig_peaks <- peak_idx[
+                    d$y[peak_idx] >= max(d$y, na.rm = TRUE) * 0.03 &
+                        d$x[peak_idx] > 0.75
+                ]
+                sig_peaks <- sig_peaks[order(d$x[sig_peaks])]
+                if (length(sig_peaks) >= 2) {
+                    neg_peak <- sig_peaks[length(sig_peaks) - 1L]
+                    pos_peak <- sig_peaks[length(sig_peaks)]
+                    boundary_candidates <- trough_idx[trough_idx > neg_peak & trough_idx < pos_peak]
+                    boundary <- if (length(boundary_candidates) > 0) {
+                        d$x[boundary_candidates[which.min(d$y[boundary_candidates])]]
+                    } else {
+                        mean(c(d$x[neg_peak], d$x[pos_peak]))
+                    }
+                    neg_left <- trough_idx[trough_idx < neg_peak]
+                    neg_log_min <- if (length(neg_left) > 0) {
+                        d$x[max(neg_left)]
+                    } else {
+                        as.numeric(stats::quantile(vals_log[vals_log <= boundary], 0.005, na.rm = TRUE))
+                    }
+                    neg_log_max <- boundary
+                    pos_lower <- boundary
+                    pos_upper <- as.numeric(stats::quantile(vals_log[vals_log >= boundary], 0.999, na.rm = TRUE))
+                    if (is.finite(pos_lower) && is.finite(pos_upper) && pos_upper > pos_lower &&
+                        is.finite(neg_log_min) && is.finite(neg_log_max) && neg_log_max > neg_log_min) {
+                        neg_gate_method <- paste0(
+                            "viability gate: negative low mode at ", round(d$x[neg_peak], 2),
+                            "; positive high mode at ", round(d$x[pos_peak], 2)
+                        )
+                        density_gate <- list(
+                            pos_lower = pos_lower,
+                            pos_upper = pos_upper,
+                            pos_peak = d$x[pos_peak],
+                            neg_peak = d$x[neg_peak],
+                            component_means = d$x[sig_peaks]
+                        )
+                    }
+                }
+            }
+
+            if (sample_type %in% c("cells") && is.null(density_gate)) {
                 dominant_peak <- peak_idx[which.max(d$y[peak_idx])]
                 left <- trough_idx[trough_idx < dominant_peak]
                 right <- trough_idx[trough_idx > dominant_peak]
@@ -1017,10 +1178,21 @@
                     neg_log_max <- nearest_right_trough(neg_peak)
                     neg_gate_method <- paste0("density negative peak at ", round(d$x[neg_peak], 2))
                 }
+                pos_peak_val <- d$x[pos_peak]
+                left_trough_val <- nearest_left_trough(pos_peak)
+                max_val_log <- max(vals_log, na.rm = TRUE)
+                is_cut_off <- (max_val_log - pos_peak_val) < 0.25
+
+                if (dir == "right" && !is_cut_off) {
+                    pos_lower <- pos_peak_val
+                } else {
+                    pos_lower <- left_trough_val
+                }
+
                 density_gate <- list(
-                    pos_lower = d$x[pos_peak],
+                    pos_lower = pos_lower,
                     pos_upper = pos_upper,
-                    pos_peak = d$x[pos_peak],
+                    pos_peak = pos_peak_val,
                     neg_peak = if (!is.na(neg_peak)) d$x[neg_peak] else NA_real_,
                     component_means = d$x[sig_peaks]
                 )
@@ -1159,8 +1331,16 @@
             components = component_df
         )
     } else if (dir == "right") {
-        lower_log <- stats::median(vals_for_gate, na.rm = TRUE)
-        upper_log <- if (is.finite(gmm_upper)) gmm_upper else q_gate[["upper"]]
+        max_val_log <- max(vals_for_gate, na.rm = TRUE)
+        med_val_log <- stats::median(vals_for_gate, na.rm = TRUE)
+        is_cut_off <- (max_val_log - med_val_log) < 0.25
+        if (is_cut_off) {
+            lower_log <- as.numeric(stats::quantile(vals_for_gate, max(0, 0.5 - pct / 2), na.rm = TRUE))
+            upper_log <- min(as.numeric(stats::quantile(vals_for_gate, min(1, 0.5 + pct / 2), na.rm = TRUE)), if (is.finite(gmm_upper)) gmm_upper else Inf, na.rm = TRUE)
+        } else {
+            lower_log <- med_val_log
+            upper_log <- if (is.finite(gmm_upper)) gmm_upper else q_gate[["upper"]]
+        }
     } else if (dir == "left") {
         lower_log <- q_gate[["lower"]]
         upper_log <- stats::median(vals_for_gate, na.rm = TRUE)
@@ -1422,23 +1602,31 @@
     comp <- attr(vals_log, "gmm_components")
     comp_means <- if (!is.null(comp) && nrow(comp) > 0) comp$mean else numeric()
 
+    hist_subtitle_lines <- if (positive_gate_present) {
+        c(
+            paste0(
+                round(100 * nrow(final_gated_data) / nrow(gated_data), 1),
+                "% positive gated | blue = negative gate | red = bright gate"
+            ),
+            gate_method
+        )
+    } else {
+        c("AF/unstained control: scatter-gated only; no positive histogram gate", gate_method)
+    }
+    hist_subtitle <- paste(
+        unlist(lapply(hist_subtitle_lines, strwrap, width = 95), use.names = FALSE),
+        collapse = "\n"
+    )
+
     p2 <- ggplot2::ggplot(data.table::data.table(x = vals_log), ggplot2::aes(x)) +
         ggplot2::geom_density(fill = "grey80", color = "grey40") +
         ggplot2::labs(
             title = paste0(sn, " - ", peak_channel),
-            subtitle = if (positive_gate_present) {
-                paste0(
-                    round(100 * nrow(final_gated_data) / nrow(gated_data), 1),
-                    "% positive gated | blue = negative gate | red = bright gate\n",
-                    gate_method
-                )
-            } else {
-                paste0("AF/unstained control: scatter-gated only; no positive histogram gate\n", gate_method)
-            },
+            subtitle = hist_subtitle,
             x = paste0("log10(", peak_channel, ")")
         ) +
         ggplot2::theme_minimal() +
-        ggplot2::theme(legend.position = "none", plot.subtitle = ggplot2::element_text(size = 8.8))
+        ggplot2::theme(legend.position = "none", plot.subtitle = ggplot2::element_text(size = 8.4, lineheight = 1.05))
     if (negative_gate_present && is.finite(neg_log_min) && is.finite(neg_log_max) && neg_log_max > neg_log_min) {
         p2 <- p2 +
             ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.15, fill = "#2C7BE5") +
@@ -1587,7 +1775,10 @@
         histogram_pct_beads = config$histogram_pct_beads,
         histogram_direction_beads = config$histogram_direction_beads,
         histogram_pct_cells = config$histogram_pct_cells,
-        histogram_direction_cells = config$histogram_direction_cells
+        histogram_direction_cells = config$histogram_direction_cells,
+        is_viability = nrow(row_info) > 0 &&
+            "is.viability" %in% colnames(row_info) &&
+            toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
     )
 
     final_gated_data <- scatter_info$gated_data[peak_vals >= hist_info$gate_min & peak_vals <= hist_info$gate_max, ]
@@ -1878,6 +2069,10 @@ build_reference_matrix <- function(
     )
 
     message("Found ", length(metadata$detector_names), " spectral detectors. Sorting by laser...")
+    .validate_reference_detector_consistency(
+        fcs_files = file_info$fcs_files_all,
+        detector_names = metadata$detector_names
+    )
 
     af_profiles <- .collect_reference_af_profiles(
         control_df = control_df,
@@ -1917,6 +2112,12 @@ build_reference_matrix <- function(
         results_list[[processed$sample_name]] <- processed$result
         qc_summary_list[[processed$sample_name]] <- processed$qc_summary
     }
+    .validate_reference_complete_controls(
+        control_df = control_df,
+        fcs_files_all = file_info$fcs_files_all,
+        processed_results = results_list,
+        exclude_af = exclude_af
+    )
 
     M <- .finalize_reference_matrix(
         results_list = results_list,

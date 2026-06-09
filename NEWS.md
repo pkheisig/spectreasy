@@ -9,6 +9,7 @@
 ## Changes
 
 - WLS now uses event-wise detector-error weights with detector-specific noise floors estimated from SCC low-signal tails by default. SCC variances are retained as reference QC metadata.
+- Increased the default WLS maximum detector weight ratio from 100 to 1600 based on cross-dataset benchmark results.
 - `unmix_controls()` writes `scc_detector_noise.csv`; `unmix_samples(method = "WLS")` loads it beside `scc_reference_matrix.csv`, estimates from `scc_dir` when available, or falls back to a scalar noise floor of 125.
 - Multi-AF WLS now uses the same event-wise detector-error weights for AF-band selection and coefficient fitting.
 - `control.type` in the control mapping now controls bead/cell FSC/SSC gating, with filename guessing used only when the column is empty.

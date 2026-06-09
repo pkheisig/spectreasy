@@ -112,6 +112,100 @@ test_that("build_reference_matrix works on synthetic SCC files", {
     expect_equal(nrow(qc_summary), 2)
 })
 
+test_that("build_reference_matrix fails when a mapped SCC cannot produce a spectrum", {
+    wf <- make_synthetic_workflow()
+    bad_ff <- flowCore::flowFrame(cbind(
+        "B1-A" = rnorm(50, mean = 100, sd = 5),
+        "YG1-A" = rnorm(50, mean = 20, sd = 2),
+        "FSC-A" = rnorm(50, mean = 90000, sd = 3000),
+        "SSC-A" = rnorm(50, mean = 45000, sd = 2000)
+    ))
+    flowCore::write.FCS(bad_ff, file.path(wf$scc_dir, "APC (Beads).fcs"))
+    wf$control_df <- rbind(
+        wf$control_df,
+        data.frame(
+            filename = "APC (Beads).fcs",
+            fluorophore = "APC",
+            marker = "CD3",
+            channel = "B1-A",
+            control.type = "beads",
+            universal.negative = "",
+            large.gate = "",
+            is.viability = "",
+            stringsAsFactors = FALSE
+        )
+    )
+
+    expect_error(
+        spectreasy::build_reference_matrix(
+            input_folder = wf$scc_dir,
+            control_df = wf$control_df,
+            save_qc_plots = FALSE,
+            seed = 1,
+            subsample_n = 400
+        ),
+        regexp = "did not produce spectra for all mapped non-AF controls"
+    )
+})
+
+test_that("build_reference_matrix fails early on SCC detector mismatches", {
+    wf <- make_synthetic_workflow()
+    mismatch_ff <- flowCore::flowFrame(cbind(
+        "B1-A" = rnorm(800, mean = 1200, sd = 50),
+        "FSC-A" = rnorm(800, mean = 90000, sd = 3000),
+        "SSC-A" = rnorm(800, mean = 45000, sd = 2000)
+    ))
+    flowCore::write.FCS(mismatch_ff, file.path(wf$scc_dir, "APC (Beads).fcs"))
+    wf$control_df <- rbind(
+        wf$control_df,
+        data.frame(
+            filename = "APC (Beads).fcs",
+            fluorophore = "APC",
+            marker = "CD3",
+            channel = "B1-A",
+            control.type = "beads",
+            universal.negative = "",
+            large.gate = "",
+            is.viability = "",
+            stringsAsFactors = FALSE
+        )
+    )
+
+    expect_error(
+        spectreasy::build_reference_matrix(
+            input_folder = wf$scc_dir,
+            control_df = wf$control_df,
+            save_qc_plots = FALSE,
+            seed = 1,
+            subsample_n = 400
+        ),
+        regexp = "Detector set mismatch"
+    )
+})
+
+test_that("unmix_controls does not overwrite an existing invalid control file", {
+    wf <- make_synthetic_workflow()
+    output_dir <- tempfile("spectreasy_no_overwrite_")
+    control_csv <- tempfile(fileext = ".csv")
+    bad_df <- wf$control_df
+    bad_df$channel[1] <- "NOT_A_CHANNEL"
+    utils::write.csv(bad_df, control_csv, row.names = FALSE, quote = TRUE)
+    before <- readLines(control_csv, warn = FALSE)
+
+    expect_error(
+        spectreasy::unmix_controls(
+            scc_dir = wf$scc_dir,
+            control_file = control_csv,
+            auto_create_control = TRUE,
+            output_dir = output_dir,
+            seed = 1,
+            subsample_n = 400
+        ),
+        regexp = "preflight failed"
+    )
+    expect_equal(readLines(control_csv, warn = FALSE), before)
+})
+
 test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     wf <- make_synthetic_workflow()
     output_dir <- tempfile("spectreasy_covr_auto_")
@@ -130,7 +224,7 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     expect_true(file.exists(ctrl$reference_matrix_file))
     expect_true(file.exists(ctrl$unmixing_matrix_file))
     expect_true(file.exists(ctrl$spectra_file))
-    expect_true(file.exists(ctrl$unmixing_matrix_plot))
+    expect_null(ctrl$unmixing_matrix_plot)
     expect_true(file.exists(ctrl$unmixing_scatter_file))
     expect_s3_class(ctrl$unmixing_scatter_plot, "ggplot")
     expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))

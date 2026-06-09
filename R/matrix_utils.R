@@ -114,7 +114,7 @@
 
 .default_wls_signal_scale <- function() 1
 
-.default_wls_max_weight_ratio <- function() 100
+.default_wls_max_weight_ratio <- function() 1600
 
 .default_wls_noise_tail_fraction <- function() 0.20
 
@@ -575,6 +575,28 @@
         return(path)
     }
     path
+}
+
+.is_static_unmixing_matrix_path <- function(path) {
+    if (is.null(path) || length(path) == 0 || is.na(path[1])) {
+        return(FALSE)
+    }
+    name <- tolower(basename(as.character(path[1])))
+    grepl("(^|_)unmixing(_|-)matrix|scc_unmixing_matrix|refined_unmixing_matrix", name)
+}
+
+.stop_if_static_unmixing_matrix_path <- function(path, arg_name = "unmixing_matrix_file") {
+    if (!.is_static_unmixing_matrix_path(path)) {
+        return(invisible(FALSE))
+    }
+    stop(
+        arg_name,
+        " points to a static unmixing matrix CSV: ",
+        path,
+        "\nUse the saved reference matrix instead, usually 'scc_reference_matrix.csv'. ",
+        "Static unmixing matrices are for inspection/export and must not be loaded as reference spectra.",
+        call. = FALSE
+    )
 }
 
 .with_optional_seed <- function(seed = NULL, .local_envir = parent.frame()) {

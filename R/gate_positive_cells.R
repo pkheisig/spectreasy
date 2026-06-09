@@ -27,9 +27,18 @@ gate_positive_cells <- function(mat,
     vals_log <- log10(pmax(peak_vals, 1))
 
     # Calculate gate thresholds based on direction
+    max_val <- max(vals_log, na.rm = TRUE)
+    med_val <- median(vals_log, na.rm = TRUE)
+    is_cut_off <- (max_val - med_val) < 0.25
+
     if (histogram_direction == "right") {
-        lower_q <- 0.5
-        upper_q <- 0.5 + histogram_pct
+        if (is_cut_off) {
+            lower_q <- 0.5 - histogram_pct / 2
+            upper_q <- 0.5 + histogram_pct / 2
+        } else {
+            lower_q <- 0.5
+            upper_q <- 0.5 + histogram_pct
+        }
     } else if (histogram_direction == "left") {
         lower_q <- 0.5 - histogram_pct
         upper_q <- 0.5

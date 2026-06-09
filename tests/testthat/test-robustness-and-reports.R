@@ -518,6 +518,7 @@ test_that("Plumber gui_api load_matrix and save_matrix filter and merge AF rows"
         Marker = c("FITC", "PE", "AF", "AF_2"),
         "B1-A" = c(1, 0.1, 0.05, 0.06),
         "YG1-A" = c(0.05, 1, 0.04, 0.03),
+        "R1-A" = c(0.02, 0.03, 1, 0.7),
         check.names = FALSE,
         stringsAsFactors = FALSE
     )
@@ -546,6 +547,38 @@ test_that("Plumber gui_api load_matrix and save_matrix filter and merge AF rows"
     expect_equal(saved_df[saved_df$Marker == "PE", "B1-A"], 0.15)
     expect_equal(saved_df[saved_df$Marker == "AF", "B1-A"], 0.05)
     expect_equal(saved_df[saved_df$Marker == "AF_2", "YG1-A"], 0.03)
+
+    req_adjusted <- new.env()
+    req_adjusted$postBody <- jsonlite::toJSON(list(
+        filename = "ref_matrix_adjusted.csv",
+        source_filename = "ref_matrix.csv",
+        matrix_json = loaded_df
+    ), auto_unbox = TRUE)
+
+    adjusted_res <- save_matrix_fn(req_adjusted)
+    expect_true(adjusted_res$success)
+    adjusted_df <- read.csv(file.path(tmp_matrix_dir, "ref_matrix_adjusted.csv"), stringsAsFactors = FALSE, check.names = FALSE)
+    expect_true(all(c("FITC", "PE", "AF", "AF_2") %in% adjusted_df$Marker))
+    expect_equal(adjusted_df[adjusted_df$Marker == "AF", "R1-A"], 1)
+
+    unmix_fn <- pr$routes$unmix[[2]]$getFunc()
+    matrix_json <- list(
+        FITC = as.list(loaded_df[loaded_df$Marker == "FITC", setdiff(colnames(loaded_df), "Marker"), drop = FALSE]),
+        PE = as.list(loaded_df[loaded_df$Marker == "PE", setdiff(colnames(loaded_df), "Marker"), drop = FALSE])
+    )
+    raw_data_json <- list(
+        list("B1-A" = 100, "YG1-A" = 20, "R1-A" = 50),
+        list("B1-A" = 10, "YG1-A" = 120, "R1-A" = 40)
+    )
+    preview <- unmix_fn(
+        matrix_json = matrix_json,
+        raw_data_json = raw_data_json,
+        type = "reference",
+        matrix_filename = "ref_matrix.csv",
+        method = "OLS"
+    )
+    expect_true(is.data.frame(preview))
+    expect_true("AF" %in% colnames(preview))
 })
 
 test_that("unmix_samples supports in-memory subsampling via subsample_n", {

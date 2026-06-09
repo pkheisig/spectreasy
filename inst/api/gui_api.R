@@ -54,6 +54,65 @@ is_probably_matrix_csv <- function(path) {
     mean(numeric_ok) >= 0.8
 }
 
+matrix_path <- function(filename) {
+    file.path(get_matrix_dir(), basename(trimws(as.character(filename)[1])))
+}
+
+read_matrix_csv <- function(path) {
+    df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+    if (ncol(df) > 0 && colnames(df)[1] %in% c("V1", "")) {
+        colnames(df)[1] <- "Marker"
+    } else if (ncol(df) > 0 && colnames(df)[1] != "Marker" && is.character(df[[1]])) {
+        colnames(df)[1] <- "Marker"
+    }
+    df
+}
+
+is_af_matrix_row <- function(df) {
+    if (!is.data.frame(df) || ncol(df) == 0) return(logical(0))
+    grepl("^AF($|_)", as.character(df[[1]]), ignore.case = TRUE)
+}
+
+merge_hidden_af_rows <- function(df, source_paths = character()) {
+    if (!is.data.frame(df) || ncol(df) == 0) {
+        return(df)
+    }
+    if (any(is_af_matrix_row(df))) {
+        return(df)
+    }
+
+    source_paths <- unique(source_paths[file.exists(source_paths)])
+    for (source_path in source_paths) {
+        existing_df <- read_matrix_csv(source_path)
+        af_rows <- existing_df[is_af_matrix_row(existing_df), , drop = FALSE]
+        if (nrow(af_rows) == 0) next
+
+        colnames(af_rows)[1] <- colnames(df)[1]
+        af_rows_aligned <- af_rows[, intersect(colnames(df), colnames(af_rows)), drop = FALSE]
+        missing_cols <- setdiff(colnames(df), colnames(af_rows_aligned))
+        for (m_col in missing_cols) {
+            af_rows_aligned[[m_col]] <- 0
+        }
+        af_rows_aligned <- af_rows_aligned[, colnames(df), drop = FALSE]
+        return(rbind(df, af_rows_aligned))
+    }
+
+    df
+}
+
+raw_data_to_df <- function(raw_data_json) {
+    if (is.data.frame(raw_data_json)) {
+        return(as.data.frame(raw_data_json, check.names = FALSE))
+    }
+    if (is.list(raw_data_json) && length(raw_data_json) > 0 && all(vapply(raw_data_json, is.list, logical(1)))) {
+        rows <- lapply(raw_data_json, function(row) {
+            as.data.frame(row, check.names = FALSE, stringsAsFactors = FALSE)
+        })
+        return(do.call(rbind, rows))
+    }
+    as.data.frame(raw_data_json, check.names = FALSE)
+}
+
 #* @filter logger
 function(req) {
     cat(as.character(Sys.time()), "-", req$REQUEST_METHOD, req$PATH_INFO, "\n")
@@ -192,25 +251,15 @@ function(req) {
 #* @get /load_matrix
 #* @param filename
 function(filename) {
-    path <- file.path(get_matrix_dir(), filename)
+    path <- matrix_path(filename)
     if (!file.exists(path)) {
         return(list(error = paste("File not found:", path)))
     }
 
-    df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
-
-    # Ensure the first column is named 'Marker' for the frontend
-    if (colnames(df)[1] %in% c("V1", "")) {
-        colnames(df)[1] <- "Marker"
-    } else if (colnames(df)[1] != "Marker") {
-        if (is.character(df[[1]])) {
-            colnames(df)[1] <- "Marker"
-        }
-    }
+    df <- read_matrix_csv(path)
 
     # Filter out AF rows (matching ^AF($|_) case-insensitively)
-    is_af <- grepl("^AF($|_)", as.character(df[[1]]), ignore.case = TRUE)
-    df <- df[!is_af, , drop = FALSE]
+    df <- df[!is_af_matrix_row(df), , drop = FALSE]
 
     return(df)
 }
@@ -220,26 +269,19 @@ function(filename) {
 function(req) {
     body <- jsonlite::fromJSON(req$postBody)
     filename <- body$filename
+    source_filename <- body$source_filename
     matrix_data <- body$matrix_json
     df <- as.data.frame(matrix_data, check.names = FALSE)
-    path <- file.path(get_matrix_dir(), filename)
-
-    # If the file exists, retrieve and merge back any AF rows
-    if (file.exists(path)) {
-        existing_df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
-        is_af <- grepl("^AF($|_)", as.character(existing_df[[1]]), ignore.case = TRUE)
-        af_rows <- existing_df[is_af, , drop = FALSE]
-        if (nrow(af_rows) > 0) {
-            colnames(af_rows)[1] <- colnames(df)[1]
-            af_rows_aligned <- af_rows[, intersect(colnames(df), colnames(af_rows)), drop = FALSE]
-            missing_cols <- setdiff(colnames(df), colnames(af_rows_aligned))
-            for (m_col in missing_cols) {
-                af_rows_aligned[[m_col]] <- 0
-            }
-            af_rows_aligned <- af_rows_aligned[, colnames(df), drop = FALSE]
-            df <- rbind(df, af_rows_aligned)
+    path <- matrix_path(filename)
+    source_paths <- c(
+        path,
+        if (!is.null(source_filename) && nzchar(trimws(as.character(source_filename)[1]))) {
+            matrix_path(source_filename)
+        } else {
+            character()
         }
-    }
+    )
+    df <- merge_hidden_af_rows(df, source_paths = source_paths)
 
     utils::write.csv(df, path, row.names = FALSE, quote = TRUE)
     return(list(success = TRUE, path = path))
@@ -275,7 +317,7 @@ function(res) {
 #* @param filename The filename
 #* @param content The CSV content as text
 function(filename, content) {
-    dest <- file.path(get_matrix_dir(), filename)
+    dest <- matrix_path(filename)
     writeLines(content, dest)
     return(list(success = TRUE, filename = filename))
 }
@@ -355,7 +397,7 @@ function(res) {
 #* @param matrix_json The matrix (M or W)
 #* @param raw_data_json The raw data
 #* @param type "reference" (M) or "unmixing" (W)
-function(matrix_json, raw_data_json, type = "reference") {
+function(matrix_json, raw_data_json, type = "reference", matrix_filename = "", method = "WLS") {
     # matrix_json format: {MarkerName: {det1: val, det2: val, ...}, ...}
     markers <- names(matrix_json)
     detectors <- names(matrix_json[[1]])
@@ -367,7 +409,21 @@ function(matrix_json, raw_data_json, type = "reference") {
     rownames(mat) <- markers
     colnames(mat) <- detectors
 
-    Y <- as.matrix(as.data.frame(raw_data_json))
+    Y <- as.matrix(raw_data_to_df(raw_data_json))
+    suppressWarnings(storage.mode(Y) <- "numeric")
+
+    if (!grepl("unmixing", tolower(type)) &&
+        !is.null(matrix_filename) &&
+        nzchar(trimws(as.character(matrix_filename)[1]))) {
+        mat_df <- as.data.frame(mat, check.names = FALSE)
+        mat_df$Marker <- rownames(mat)
+        mat_df <- mat_df[, c("Marker", colnames(mat)), drop = FALSE]
+        mat_df <- merge_hidden_af_rows(mat_df, source_paths = matrix_path(matrix_filename))
+        markers <- as.character(mat_df[[1]])
+        mat <- as.matrix(mat_df[, -1, drop = FALSE])
+        storage.mode(mat) <- "numeric"
+        rownames(mat) <- markers
+    }
 
     # Matching columns
     common_dets <- intersect(colnames(Y), colnames(mat))
@@ -388,28 +444,21 @@ function(matrix_json, raw_data_json, type = "reference") {
         # Unmixed = Raw * t(W)
         unmixed <- Y_sub %*% t(mat_sub)
     } else {
-        # Provided matrix IS the reference matrix (M), derive W via OLS
-        # W = (M M^t)^-1 M  ? No.
-        # Simple OLS: Y ~ U * M  => U = Y * M^T * (M * M^T)^-1 ??
-        # Standard OLS unmixing: U = Y * pseudoinverse(M)
-        # U = Y * pinv(M) = Y * t(M) * (M * t(M))^-1  (if M is tall? No M is Markers x Detectors, usually Fat)
-        # Actually in spectral: Y (Cells x Dets) = U (Cells x Markers) * M (Markers x Dets)
-        # U = Y * M_pinv
-        # M_pinv = M^T (M M^T)^-1
-        # So W^T = M^T (M M^T)^-1
-        # W = (M M^T)^-1 M
-
-        W <- tryCatch(
-            {
-                spectreasy::derive_unmixing_matrix(mat_sub, method = "OLS")
-            },
+        method_upper <- toupper(trimws(as.character(method)[1]))
+        if (!method_upper %in% c("WLS", "OLS", "NNLS")) {
+            method_upper <- "WLS"
+        }
+        ff <- flowCore::flowFrame(Y_sub)
+        res <- tryCatch(
+            spectreasy::calc_residuals(ff, mat_sub, method = method_upper),
             error = function(e) {
-                # Fallback OLS
-                t(MASS::ginv(t(mat_sub)))
+                return(list(error = conditionMessage(e)))
             }
         )
-
-        unmixed <- Y_sub %*% t(W)
+        if (is.list(res) && !is.data.frame(res) && !is.null(res$error)) {
+            return(res)
+        }
+        unmixed <- as.matrix(res[, rownames(mat_sub), drop = FALSE])
     }
 
     return(as.data.frame(unmixed))

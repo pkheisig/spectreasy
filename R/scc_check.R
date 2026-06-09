@@ -390,6 +390,7 @@ qc_controls <- function(
         M_report <- .as_reference_matrix(M, "M")
     } else if (!is.null(unmixing_matrix_file)) {
         if (file.exists(unmixing_matrix_file)) {
+            .stop_if_static_unmixing_matrix_path(unmixing_matrix_file, arg_name = "unmixing_matrix_file")
             M_report <- .read_unmixing_matrix_csv(unmixing_matrix_file)
             M_report <- .as_reference_matrix(M_report, "M")
         }
@@ -413,12 +414,14 @@ qc_controls <- function(
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
 
+    scc_dir_line <- paste(strwrap(paste0("SCC directory: ", normalizePath(scc_dir, mustWork = FALSE)), width = 85), collapse = "\n")
+
     grid::grid.newpage()
     grid::grid.text("spectreasy: Single-Color Control Review", x = 0.5, y = 0.7, gp = grid::gpar(fontsize = 20, fontface = "bold"))
     grid::grid.text(
         paste0(
             "Generated on: ", Sys.time(), "\n",
-            "SCC directory: ", normalizePath(scc_dir, mustWork = FALSE), "\n",
+            scc_dir_line, "\n",
             "Controls processed: ", nrow(qc_summary), "\n",
             "Unmixing method for scatter matrix: ", method, "\n",
             "Workflow intent: review SCC quality before unmix_controls()."
