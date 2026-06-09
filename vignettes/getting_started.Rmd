@@ -202,9 +202,10 @@ Key outputs from this step include:
 - `spectreasy_outputs/unmix_controls/scc_detector_noise.csv`
 - `spectreasy_outputs/unmix_controls/scc_reference_matrix.csv`
 - `spectreasy_outputs/unmix_controls/scc_variances.csv`
-- `spectreasy_outputs/unmix_controls/scc_spectra.pdf`
+- `spectreasy_outputs/unmix_controls/scc_spectra.png`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
-- `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.pdf`
+- `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.png`
+- `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
 - `spectreasy_outputs/unmix_controls/fsc_ssc/*.png`
 - `spectreasy_outputs/unmix_controls/histogram/*.png`
 - `spectreasy_outputs/unmix_controls/spectrum/*.png`

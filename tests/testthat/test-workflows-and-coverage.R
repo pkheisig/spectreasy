@@ -224,7 +224,7 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     expect_true(file.exists(ctrl$reference_matrix_file))
     expect_true(file.exists(ctrl$unmixing_matrix_file))
     expect_true(file.exists(ctrl$spectra_file))
-    expect_null(ctrl$unmixing_matrix_plot)
+    expect_true(file.exists(ctrl$unmixing_matrix_plot))
     expect_true(file.exists(ctrl$unmixing_scatter_file))
     expect_s3_class(ctrl$unmixing_scatter_plot, "ggplot")
     expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))

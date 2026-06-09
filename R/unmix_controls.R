@@ -183,12 +183,13 @@
 .unmix_output_paths <- function(output_dir) {
     list(
         unmixed_dir = file.path(output_dir, "unmixed_fcs"),
-        spectra_file = file.path(output_dir, "scc_spectra.pdf"),
-        af_spectra_file = file.path(output_dir, "scc_af_spectra.pdf"),
+        spectra_file = file.path(output_dir, "scc_spectra.png"),
+        af_spectra_file = file.path(output_dir, "scc_af_spectra.png"),
         reference_matrix_csv = file.path(output_dir, "scc_reference_matrix.csv"),
         detector_noise_csv = file.path(output_dir, "scc_detector_noise.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
-        unmixing_scatter_pdf = file.path(output_dir, "scc_unmixing_scatter_matrix.pdf"),
+        unmixing_matrix_png = file.path(output_dir, "scc_unmixing_matrix.png"),
+        unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
         variances_csv = file.path(output_dir, "scc_variances.csv")
     )
 }
@@ -300,8 +301,8 @@
 #' 2) builds the reference matrix from SCCs,
 #' 3) unmixed SCC files,
 #' 4) saves reference/unmixing matrices and SCC-derived WLS detector noise floors,
-#' 5) saves spectra and SCC unmixing scatter plots, returns the unmixing matrix
-#'    plot object, and optionally writes per-control QC PNGs.
+#' 5) saves standalone spectra, unmixing-matrix, and SCC scatter PNGs, and
+#'    optionally writes per-control QC PNGs.
 #'
 #' This function is intended as the control-stage step before GUI adjustment
 #' and downstream sample unmixing.
@@ -453,6 +454,7 @@ unmix_controls <- function(
     save_unmixing_matrix(W, output_paths$unmixing_matrix_csv)
 
     p_unmix <- plot_unmixing_matrix(W, pd = meta_info$pd)
+    ggplot2::ggsave(output_paths$unmixing_matrix_png, p_unmix, width = 220, height = 140, units = "mm", dpi = 300)
 
     marker_mapping <- .resolve_unmix_marker_mappings(control_df)
     scatter_markers <- rownames(M)
@@ -464,7 +466,7 @@ unmix_controls <- function(
         sample_to_marker = marker_mapping$sample_to_marker,
         markers = scatter_markers,
         marker_display = NULL,
-        output_file = output_paths$unmixing_scatter_pdf,
+        output_file = output_paths$unmixing_scatter_png,
         transform = "none",
         panel_size_mm = unmix_scatter_panel_size_mm,
         seed = seed
@@ -480,8 +482,8 @@ unmix_controls <- function(
         variances_file = output_paths$variances_csv,
         spectra_file = output_paths$spectra_file,
         af_spectra_file = if (nrow(M_af) > 0) output_paths$af_spectra_file else NULL,
-        unmixing_matrix_plot = NULL,
-        unmixing_scatter_file = output_paths$unmixing_scatter_pdf,
+        unmixing_matrix_plot = output_paths$unmixing_matrix_png,
+        unmixing_scatter_file = output_paths$unmixing_scatter_png,
         qc_plot_dir = if (isTRUE(save_qc_plots)) output_dir else NULL,
         static_unmixing_matrix_method = static_info$static_unmixing_matrix_method,
         spectra_plot = p_spectra,

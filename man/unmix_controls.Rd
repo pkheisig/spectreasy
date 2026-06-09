@@ -71,8 +71,8 @@ SCC workflow helper that:
 2) builds the reference matrix from SCCs,
 3) unmixed SCC files,
 4) saves reference/unmixing matrices and SCC-derived WLS detector noise floors,
-5) saves spectra and SCC unmixing scatter plots, returns the unmixing matrix
-   plot object, and optionally writes per-control QC PNGs.
+5) saves standalone spectra, unmixing-matrix, and SCC scatter PNGs, and
+   optionally writes per-control QC PNGs.
 }
 \details{
 This function is intended as the control-stage step before GUI adjustment
