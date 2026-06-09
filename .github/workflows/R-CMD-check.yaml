@@ -5,17 +5,27 @@ on:
     branches: [master, main]
   pull_request:
     branches: [master, main]
+  schedule:
+    - cron: "18 4 * * 1"
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        r: ["release", "devel"]
+        r: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["release", "devel"]' || '["release"]') }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: r-lib/actions/setup-r@v2
         with:
@@ -28,6 +38,7 @@ jobs:
             any::rcmdcheck
             bioc::BiocCheck
           needs: check
+          cache: always
 
       - name: Run R CMD check
         uses: r-lib/actions/check-r-package@v2
@@ -35,11 +46,46 @@ jobs:
           args: 'c("--no-manual")'
 
       - name: Run BiocCheck
-        shell: Rscript {0}
+        shell: bash
         run: |
-          tarball <- list.files(pattern = "^spectreasy_.*\\.tar\\.gz$", full.names = TRUE)
-          if (length(tarball) == 0) {
-            system("R CMD build .", intern = TRUE)
-            tarball <- list.files(pattern = "^spectreasy_.*\\.tar\\.gz$", full.names = TRUE)
+          set -euo pipefail
+
+          tarball="$(
+            Rscript -e '
+              tarball <- list.files(pattern = "^spectreasy_.*\\.tar\\.gz$", full.names = TRUE)
+              if (length(tarball) == 0) {
+                system("R CMD build .", intern = TRUE)
+                tarball <- list.files(pattern = "^spectreasy_.*\\.tar\\.gz$", full.names = TRUE)
+              }
+              cat(normalizePath(tarball[[1]], winslash = "/"))
+            '
+          )"
+
+          run_bioccheck() {
+            local allow_deprecated_skip="${1:-false}"
+            TARBALL="$tarball" ALLOW_DEPRECATED_SKIP="$allow_deprecated_skip" Rscript - <<'EOF'
+          args <- list(Sys.getenv("TARBALL"), quitWithStatus = TRUE)
+          if (identical(Sys.getenv("ALLOW_DEPRECATED_SKIP"), "true")) {
+            args[["no-check-deprecated"]] <- TRUE
           }
-          BiocCheck::BiocCheck(tarball[[1]], quitWithStatus = TRUE)
+          do.call(BiocCheck::BiocCheck, args)
+          EOF
+          }
+
+          for attempt in 1 2; do
+            log_file="bioccheck-attempt-${attempt}.log"
+            if run_bioccheck false 2>&1 | tee "$log_file"; then
+              exit 0
+            fi
+
+            if ! grep -Eiq "HTTP 5[0-9][0-9]|Gateway Timeout|download failed|bfcadd\\(\\) failed|bfcrpath" "$log_file"; then
+              exit 1
+            fi
+
+            if [ "$attempt" -lt 2 ]; then
+              sleep $((attempt * 30))
+            fi
+          done
+
+          echo "BiocCheck's deprecated-package status download kept failing; rerunning with only that remote check disabled."
+          run_bioccheck true
