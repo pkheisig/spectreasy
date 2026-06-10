@@ -151,14 +151,13 @@ The same `unmix_controls()` call then continues and writes the control-stage out
 #> [21] "unmixed_fcs/PerCP-Cy5.5 (Beads)_unmixed.fcs"
 #> [22] "unmixed_fcs/Unstained (Cells)_unmixed.fcs"
 #> [23] "scc_unmixing_matrix.csv"
-#> [24] "scc_unmixing_matrix.png"
-#> [25] "scc_unmixing_scatter_matrix.png"
-#> [26] "spectrum/Alexa Fluor 700 (Beads)_spectrum.png"
-#> [27] "spectrum/BUV395 (Beads)_spectrum.png"
-#> [28] "spectrum/BV510 (Beads)_spectrum.png"
-#> [29] "spectrum/FITC (Beads)_spectrum.png"
-#> [30] "spectrum/LIVE DEAD NIR (Cells)_spectrum.png"
-#> [31] "spectrum/PerCP-Cy5.5 (Beads)_spectrum.png"
+#> [24] "scc_unmixing_scatter_matrix.png"
+#> [25] "spectrum/Alexa Fluor 700 (Beads)_spectrum.png"
+#> [26] "spectrum/BUV395 (Beads)_spectrum.png"
+#> [27] "spectrum/BV510 (Beads)_spectrum.png"
+#> [28] "spectrum/FITC (Beads)_spectrum.png"
+#> [29] "spectrum/LIVE DEAD NIR (Cells)_spectrum.png"
+#> [30] "spectrum/PerCP-Cy5.5 (Beads)_spectrum.png"
 ```
 
 Key outputs from this step include:
@@ -169,7 +168,6 @@ Key outputs from this step include:
 - `spectreasy_outputs/unmix_controls/scc_variances.csv`
 - `spectreasy_outputs/unmix_controls/scc_spectra.png`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
-- `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.png`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
 - `spectreasy_outputs/unmix_controls/fsc_ssc/*.png`
 - `spectreasy_outputs/unmix_controls/histogram/*.png`
