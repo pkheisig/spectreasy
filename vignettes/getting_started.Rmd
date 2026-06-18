@@ -206,20 +206,20 @@ Key outputs from this step include:
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
 - `spectreasy_outputs/unmix_controls/fsc_ssc/*.png`
-- `spectreasy_outputs/unmix_controls/histogram/*.png`
+- `spectreasy_outputs/unmix_controls/intensity_scatter/*.png`
 - `spectreasy_outputs/unmix_controls/spectrum/*.png`
 - `spectreasy_outputs/unmix_controls/unmixed_fcs/*.fcs`
 
 The control-stage run also writes visual checks for each single-color control.
-For one color, the three plots below show the FSC/SSC gate, the peak-channel
-histogram gate, and the detector spectrum used to build the reference matrix.
+For one color, the three plots below show the FSC/SSC gate, the intensity-vs-FSC
+scatter gate, and the detector spectrum used to build the reference matrix.
 
 ```{r, echo = FALSE, out.width = "48%", fig.show = "hold"}
 example_control <- "FITC (Beads)"
 control_plot_dir <- file.path(project_dir, "spectreasy_outputs", "unmix_controls")
 knitr::include_graphics(c(
   file.path(control_plot_dir, "fsc_ssc", paste0(example_control, "_fsc_ssc.png")),
-  file.path(control_plot_dir, "histogram", paste0(example_control, "_histogram.png"))
+  file.path(control_plot_dir, "intensity_scatter", paste0(example_control, "_intensity_scatter.png"))
 ))
 ```
 
