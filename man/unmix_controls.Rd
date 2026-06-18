@@ -20,6 +20,7 @@ unmix_controls(
   af_bands_per_file = 5,
   include_multi_af = FALSE,
   save_qc_plots = FALSE,
+  use_scatter_gating = TRUE,
   ...
 )
 }
@@ -57,7 +58,11 @@ multiple AF sources are pooled. Default is 5.}
 \item{include_multi_af}{Logical; whether to include additional AF files from `af_dir`. Default is FALSE.}
 
 \item{save_qc_plots}{Logical; whether to write per-control FSC/SSC,
-histogram, and spectrum PNGs under `output_dir`.}
+intensity-gate, and spectrum PNGs under `output_dir`.}
+
+\item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
+scatter gate for final positive/negative population selection. If `FALSE`,
+use the legacy one-dimensional histogram gate.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }

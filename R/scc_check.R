@@ -68,7 +68,7 @@
         "saturated"
     ), drop = FALSE]
 
-    headers <- c("Fluor", "Marker", "Sample", "Type", "Peak", "Events", "Final", "Scatter%", "Hist%", "SI", "Sat")
+    headers <- c("Fluor", "Marker", "Sample", "Type", "Peak", "Events", "Final", "Scatter%", "Gate%", "SI", "Sat")
     widths <- c(14, 14, 20, 6, 8, 7, 7, 8, 7, 6, 4)
 
     trim_to <- function(x, w) {
@@ -139,7 +139,7 @@
     invisible(NULL)
 }
 
-.draw_scc_report_sample_page <- function(row, report_plot_dir) {
+.draw_scc_report_sample_page <- function(row, report_plot_dir, use_scatter_gating = TRUE) {
     sample_id <- row$sample[[1]]
     fluor <- row$fluorophore[[1]]
     marker <- if ("marker" %in% colnames(row)) trimws(as.character(row$marker[[1]])) else ""
@@ -153,7 +153,7 @@
         " | Peak channel: ", row$peak_channel[[1]],
         " | Events: ", row$n_total[[1]],
         " | Scatter gate: ", row$n_scatter_gated[[1]], " (", row$scatter_gate_pct[[1]], "%)",
-        " | Final: ", row$n_final[[1]], " (", row$histogram_gate_pct[[1]], "%)"
+        " | Final gate: ", row$n_final[[1]], " (", row$histogram_gate_pct[[1]], "%)"
     )
 
     grid::grid.newpage()
@@ -168,9 +168,12 @@
         width = grid::unit(0.46, "npc"),
         height = grid::unit(0.44, "npc")
     )
+    gate_dir <- if (isTRUE(use_scatter_gating)) "intensity_scatter" else "histogram"
+    gate_suffix <- if (isTRUE(use_scatter_gating)) "_intensity_scatter.png" else "_histogram.png"
+    gate_title <- if (isTRUE(use_scatter_gating)) "Intensity-vs-FSC Scatter Gate" else "Peak-Channel Histogram Gate"
     .draw_report_image_panel(
-        file.path(report_plot_dir, "histogram", paste0(sample_id, "_histogram.png")),
-        "Peak-Channel Histogram Gate",
+        file.path(report_plot_dir, gate_dir, paste0(sample_id, gate_suffix)),
+        gate_title,
         x = grid::unit(0.74, "npc"),
         y = grid::unit(0.62, "npc"),
         width = grid::unit(0.42, "npc"),
@@ -295,11 +298,14 @@
 #' @param cytometer Cytometer name passed to [build_reference_matrix()].
 #' @param method Unmixing method used for the control scatter matrix
 #'   (`"WLS"`, `"OLS"`, or `"NNLS"`).
-#' @param qc_plot_dir Directory where FSC/SSC, histogram, and spectrum PNGs are written
+#' @param qc_plot_dir Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
 #'   when `save_qc_pngs = TRUE`.
 #' @param save_qc_pngs Logical; if `TRUE`, keep the intermediate QC PNG files in
 #'   `qc_plot_dir`. If `FALSE` (default), PNGs are written to a temporary directory
 #'   for report assembly and removed afterward.
+#' @param use_scatter_gating Logical; if `TRUE` (default), use scatter/intensity
+#'   gating and show scatter gate plots in the report. If `FALSE`, use and show
+#'   the legacy histogram gate.
 #' @param include_multi_af Logical; forward to [build_reference_matrix()].
 #' @param af_dir AF directory forwarded to [build_reference_matrix()].
 #' @param af_bands_per_file Number of AF bands requested per AF file when
@@ -327,6 +333,7 @@ qc_controls <- function(
     method = "WLS",
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
     save_qc_pngs = FALSE,
+    use_scatter_gating = TRUE,
     include_multi_af = FALSE,
     af_dir = "af",
     af_bands_per_file = 5,
@@ -364,6 +371,7 @@ qc_controls <- function(
         af_dir = af_dir,
         af_bands_per_file = af_bands_per_file,
         cytometer = cytometer,
+        use_scatter_gating = use_scatter_gating,
         seed = seed,
         ...
     )
@@ -514,7 +522,7 @@ qc_controls <- function(
 
     if (nrow(qc_summary) > 0) {
         for (i in seq_len(nrow(qc_summary))) {
-            .draw_scc_report_sample_page(qc_summary[i, , drop = FALSE], report_plot_dir = report_plot_dir)
+            .draw_scc_report_sample_page(qc_summary[i, , drop = FALSE], report_plot_dir = report_plot_dir, use_scatter_gating = use_scatter_gating)
         }
     }
 

@@ -1,7 +1,10 @@
 #' Gating options
 #'
-#' Helper constructor for histogram-gating settings.
+#' Helper constructor for intensity-gating settings.
 #'
+#' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
+#'   scatter gate for final positive/negative population selection. If `FALSE`,
+#'   use the legacy one-dimensional histogram gate.
 #' @param histogram_pct_beads Quantile width for the bead histogram gate.
 #' @param histogram_direction_beads Gate direction for beads: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.
@@ -13,11 +16,13 @@
 #' opts <- gating_options(histogram_pct_beads = 0.98, histogram_pct_cells = 0.35)
 #' str(opts)
 #' @export
-gating_options <- function(histogram_pct_beads = 0.98,
+gating_options <- function(use_scatter_gating = TRUE,
+                           histogram_pct_beads = 0.98,
                            histogram_direction_beads = "right",
                            histogram_pct_cells = 0.35,
                            histogram_direction_cells = "right") {
     list(
+        use_scatter_gating = use_scatter_gating,
         histogram_pct_beads = histogram_pct_beads,
         histogram_direction_beads = histogram_direction_beads,
         histogram_pct_cells = histogram_pct_cells,

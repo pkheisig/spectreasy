@@ -2,11 +2,13 @@ test_that("gating_options returns named list", {
     opts <- spectreasy::gating_options(histogram_pct_beads = 0.9, histogram_pct_cells = 0.3)
     expect_type(opts, "list")
     expect_true(all(c(
+        "use_scatter_gating",
         "histogram_pct_beads",
         "histogram_direction_beads",
         "histogram_pct_cells",
         "histogram_direction_cells"
     ) %in% names(opts)))
+    expect_true(opts$use_scatter_gating)
     expect_equal(opts$histogram_pct_beads, 0.9)
     expect_equal(opts$histogram_pct_cells, 0.3)
 })
@@ -779,6 +781,31 @@ test_that("cell histogram gating keeps full middle negative mode for bright cont
     expect_lt(attr(gate$vals_log, "neg_log_min"), 3.0)
     expect_gt(attr(gate$vals_log, "neg_log_max"), 3.6)
     expect_gt(log10(gate$gate_min), 5.0)
+})
+
+test_that("scatter intensity gating separates nearest negative and bright positive modes", {
+    set.seed(7)
+    vals_log <- c(
+        rep(0, 100),
+        stats::rnorm(600, 2.45, 0.18),
+        stats::rnorm(800, 5.2, 0.10)
+    )
+
+    gate <- spectreasy:::.compute_reference_scatter_intensity_gate(
+        peak_vals = 10^vals_log,
+        sample_type = "beads",
+        histogram_pct_beads = 0.98,
+        histogram_direction_beads = "right",
+        histogram_pct_cells = 0.35,
+        histogram_direction_cells = "right"
+    )
+
+    expect_equal(attr(gate$vals_log, "gate_type"), "scatter")
+    expect_true(isTRUE(attr(gate$vals_log, "negative_gate_present")))
+    expect_gt(attr(gate$vals_log, "neg_log_min"), 1.8)
+    expect_lt(attr(gate$vals_log, "neg_log_max"), 3.1)
+    expect_gt(log10(gate$gate_min), 4.8)
+    expect_lt(log10(gate$gate_max), 5.6)
 })
 
 test_that("histogram gating cutoff detection extends right gate leftwards", {

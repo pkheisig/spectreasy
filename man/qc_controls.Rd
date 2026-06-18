@@ -15,6 +15,7 @@ qc_controls(
   method = "WLS",
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   save_qc_pngs = FALSE,
+  use_scatter_gating = TRUE,
   include_multi_af = FALSE,
   af_dir = "af",
   af_bands_per_file = 5,
@@ -41,12 +42,16 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 \item{method}{Unmixing method used for the control scatter matrix
 (`"WLS"`, `"OLS"`, or `"NNLS"`).}
 
-\item{qc_plot_dir}{Directory where FSC/SSC, histogram, and spectrum PNGs are written
+\item{qc_plot_dir}{Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
 when `save_qc_pngs = TRUE`.}
 
 \item{save_qc_pngs}{Logical; if `TRUE`, keep the intermediate QC PNG files in
 `qc_plot_dir`. If `FALSE` (default), PNGs are written to a temporary directory
 for report assembly and removed afterward.}
+
+\item{use_scatter_gating}{Logical; if `TRUE` (default), use scatter/intensity
+gating and show scatter gate plots in the report. If `FALSE`, use and show
+the legacy histogram gate.}
 
 \item{include_multi_af}{Logical; forward to [build_reference_matrix()].}
 

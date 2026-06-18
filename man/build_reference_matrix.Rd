@@ -18,6 +18,7 @@ build_reference_matrix(
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "Aurora",
+  use_scatter_gating = TRUE,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
@@ -37,7 +38,7 @@ build_reference_matrix(
 
 \item{output_folder}{Directory where gating/spectrum plots are written.}
 
-\item{save_qc_plots}{Logical; if `TRUE`, write FSC/SSC, histogram, and spectrum plots.
+\item{save_qc_plots}{Logical; if `TRUE`, write FSC/SSC, intensity-gate, and spectrum plots.
 When `FALSE` (default), the function returns the matrix without writing QC files.}
 
 \item{control_df}{Optional control mapping as a data.frame or CSV path.
@@ -65,6 +66,10 @@ deriving AF basis signatures.}
 \item{default_sample_type}{Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).}
 
 \item{cytometer}{Cytometer name used for channel alias resolution (for example `"Aurora"`).}
+
+\item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
+scatter gate for final positive/negative population selection. If `FALSE`,
+use the legacy one-dimensional histogram gate.}
 
 \item{histogram_pct_beads}{Quantile width for the bead histogram gate.}
 
@@ -99,7 +104,7 @@ Numeric matrix with rows = fluorophores and columns = detectors
   in `attr(M, "detector_noise")` for default WLS unmixing.
 }
 \description{
-Reads SCC FCS files, performs FSC/SSC gating and positive-peak histogram gating,
+Reads SCC FCS files, performs FSC/SSC gating and positive-peak intensity gating,
 then computes one normalized spectrum per fluorophore.
 }
 \details{
