@@ -14,13 +14,14 @@ qc_samples(
   res_list = NULL,
   png_dir = NULL,
   pd = NULL,
-  max_events_per_sample = 10000,
+  max_events_per_sample = 1000,
   overview_files_per_page = 15,
   matrix_markers_per_page = 15,
   sample_nxn_rows_per_page = 10,
   sample_nxn_max_points = max_events_per_sample,
   sample_nxn_transform = c("none", "asinh"),
   sample_nxn_asinh_cofactor = 150,
+  sample_nxn_axis_limit = NULL,
   nxn_all_samples = FALSE
 )
 }
@@ -40,8 +41,8 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{output_file}{Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.}
 
-\item{method}{Unmixing method used to create `results` (`"WLS"`, `"OLS"`, or
-`"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
+\item{method}{Unmixing method used to create `results` (`"WLS"`, `"RWLS"`,
+`"OLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
 because constrained NNLS results are non-negative by construction.}
 
 \item{res_list}{Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.}
@@ -52,7 +53,7 @@ because constrained NNLS results are non-negative by construction.}
 If omitted, `attr(M, "detector_pd")` is used when available.}
 
 \item{max_events_per_sample}{Maximum events per sample used for report-wide
-plots and diagnostics. Defaults to 10000 to keep large FCS reports
+plots and diagnostics. Defaults to 1000 to keep large FCS reports
 responsive. Set `NULL` to use all events.}
 
 \item{overview_files_per_page}{Maximum files shown on each RMS residual and
@@ -69,6 +70,10 @@ Defaults to 10, which standardizes geometry across pages and samples.}
 \item{sample_nxn_transform}{One of `"none"` or `"asinh"` for per-sample NxN pages.}
 
 \item{sample_nxn_asinh_cofactor}{Cofactor used when `sample_nxn_transform = "asinh"`.}
+
+\item{sample_nxn_axis_limit}{Optional fixed symmetric NxN scatter axis limit.
+The default `NULL` uses local per-panel ranges. Use `1e5` for
+`c(-1e5, 1e5)` on every NxN panel.}
 
 \item{nxn_all_samples}{Logical; if `TRUE`, include per-sample NxN pages for all samples.
 If `FALSE` (default), only include NxN pages for the first sample in `results`.}

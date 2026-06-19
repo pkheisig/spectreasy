@@ -43,14 +43,15 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 \item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls even when
 they are present in the SCC folder or control mapping.}
 
-\item{unmix_method}{SCC unmixing method (`"WLS"`, `"OLS"`, `"NNLS"`).}
+\item{unmix_method}{SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).}
 
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
 
 \item{seed}{Optional integer seed for deterministic subsampling and plotting.}
 
 \item{af_n_bands}{Number of AF bands to extract from the unstained control
-when only one AF source is available. Default is 10.}
+when only one AF source is available. Use `"auto"` to select the count
+from AF event shapes. Default is 10.}
 
 \item{af_bands_per_file}{Number of AF bands requested per AF file when
 multiple AF sources are pooled. Default is 5.}

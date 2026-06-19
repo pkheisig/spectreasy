@@ -26,7 +26,7 @@
 .normalize_gui_dirs <- function(matrix_dir, samples_dir = NULL) {
     matrix_dir <- normalizePath(matrix_dir, mustWork = TRUE)
     if (is.null(samples_dir)) {
-        samples_dir <- .default_launch_gui_samples_dir()
+        samples_dir <- .default_launch_gui_samples_dir(matrix_dir = matrix_dir)
         if (is.null(samples_dir)) {
             samples_dir <- file.path(matrix_dir, "samples")
         }
@@ -44,15 +44,39 @@
     getwd()
 }
 
-.default_launch_gui_samples_dir <- function() {
-    unmixed_fcs_dir <- file.path(getwd(), "spectreasy_outputs", "unmix_samples", "unmixed_fcs")
-    unmix_samples_dir <- file.path(getwd(), "spectreasy_outputs", "unmix_samples")
-    if (dir.exists(unmixed_fcs_dir)) {
-        return(unmixed_fcs_dir)
+.infer_project_dir_from_matrix_dir <- function(matrix_dir) {
+    if (is.null(matrix_dir) || !nzchar(matrix_dir)) {
+        return(NULL)
     }
-    if (dir.exists(unmix_samples_dir) &&
-        length(list.files(unmix_samples_dir, pattern = "\\.fcs$", ignore.case = TRUE)) > 0) {
-        return(unmix_samples_dir)
+    matrix_dir <- normalizePath(matrix_dir, mustWork = FALSE)
+    if (basename(matrix_dir) == "unmix_controls" &&
+        basename(dirname(matrix_dir)) == "spectreasy_outputs") {
+        return(dirname(dirname(matrix_dir)))
+    }
+    dirname(matrix_dir)
+}
+
+.default_launch_gui_samples_dir <- function(matrix_dir = NULL) {
+    project_dirs <- unique(c(getwd(), .infer_project_dir_from_matrix_dir(matrix_dir)))
+    project_dirs <- project_dirs[nzchar(project_dirs)]
+
+    raw_sample_dirs <- file.path(project_dirs, "samples")
+    raw_hit <- raw_sample_dirs[dir.exists(raw_sample_dirs)][1]
+    if (!is.na(raw_hit) && nzchar(raw_hit)) {
+        return(raw_hit)
+    }
+
+    unmixed_fcs_dirs <- file.path(project_dirs, "spectreasy_outputs", "unmix_samples", "unmixed_fcs")
+    unmixed_fcs_hit <- unmixed_fcs_dirs[dir.exists(unmixed_fcs_dirs)][1]
+    if (!is.na(unmixed_fcs_hit) && nzchar(unmixed_fcs_hit)) {
+        return(unmixed_fcs_hit)
+    }
+
+    unmix_samples_dirs <- file.path(project_dirs, "spectreasy_outputs", "unmix_samples")
+    for (unmix_samples_dir in unmix_samples_dirs[dir.exists(unmix_samples_dirs)]) {
+        if (length(list.files(unmix_samples_dir, pattern = "\\.fcs$", ignore.case = TRUE)) > 0) {
+            return(unmix_samples_dir)
+        }
     }
     NULL
 }
@@ -119,8 +143,11 @@
 #'   `spectreasy_outputs/unmix_controls` when it exists under the current working
 #'   directory, otherwise the current working directory.
 #' @param samples_dir Directory containing FCS sample files. If `NULL`, defaults to
-#'   `spectreasy_outputs/unmix_samples/unmixed_fcs` when it exists under the
-#'   current working directory, otherwise the `samples` subfolder of `matrix_dir`.
+#'   the `samples` folder under the current working directory or inferred project
+#'   directory when it exists, then falls back to
+#'   `spectreasy_outputs/unmix_samples/unmixed_fcs` or
+#'   `spectreasy_outputs/unmix_samples` when available. Otherwise, uses the
+#'   `samples` subfolder of `matrix_dir`.
 #' @param port API port (default: 8000)
 #' @param open_browser Logical. Open browser automatically? (default: TRUE)
 #' @param dev_mode Logical. If `FALSE` (default), serves bundled GUI assets from the

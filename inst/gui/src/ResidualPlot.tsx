@@ -9,6 +9,8 @@ interface ResidualPlotProps {
   pointOpacity: number;
   pointSize: number;
   sensitivity: number;
+  canAdjust?: boolean;
+  disabledReason?: string;
   onAdjust: (xKey: string, yKey: string, alpha: number) => void;
 }
 
@@ -21,6 +23,8 @@ const ResidualPlot: React.FC<ResidualPlotProps> = ({
   pointOpacity,
   pointSize,
   sensitivity,
+  canAdjust = true,
+  disabledReason,
   onAdjust
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -144,7 +148,7 @@ const ResidualPlot: React.FC<ResidualPlotProps> = ({
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     // Only allow dragging if X and Y are different
-    if (xKey === yKey) return;
+    if (xKey === yKey || !canAdjust) return;
 
     const canvas = canvasRef.current;
     const rect = canvas?.getBoundingClientRect();
@@ -228,7 +232,9 @@ const ResidualPlot: React.FC<ResidualPlotProps> = ({
       ref={canvasRef}
       width={size}
       height={size}
-      className={`w-full h-full touch-none ${xKey !== yKey ? 'cursor-crosshair hover:ring-1 hover:ring-blue-400' : 'cursor-default'}`}
+      title={!canAdjust && disabledReason ? disabledReason : undefined}
+      aria-label={`${yKey} versus ${xKey} residual plot`}
+      className={`w-full h-full touch-none ${xKey !== yKey && canAdjust ? 'cursor-crosshair hover:ring-1 hover:ring-blue-400' : 'cursor-not-allowed'}`}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

@@ -250,7 +250,7 @@
                                   include_multi_af = FALSE,
                                   cytometer = "Aurora",
                                   seed = NULL) {
-    if (!identical(toupper(method), "WLS")) {
+    if (!(toupper(method) %in% c("WLS", "RWLS"))) {
         return(M)
     }
 
@@ -564,7 +564,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
 #'   estimates the floors from `scc_dir` when available, and otherwise falls
 #'   back to the built-in scalar noise floor.
-#' @param method Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).
+#' @param method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).
 #' @param cytometer Reserved for compatibility with older workflows.
 #' @param scc_dir Directory containing single-color control files. Used to
 #'   dynamically build the reference matrix if `M` and `unmixing_matrix_file`
@@ -572,7 +572,8 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param control_file Path to the control mapping CSV.
 #'   Used when dynamically building the reference matrix.
 #' @param af_n_bands Number of AF bands to extract from the unstained control
-#'   when only one AF source is available.
+#'   when only one AF source is available. Use `"auto"` to select the count
+#'   from AF event shapes.
 #' @param af_bands_per_file Number of AF bands requested per AF file when
 #'   multiple AF sources are pooled.
 #' @param exclude_af Logical; whether to exclude AF from unmixing.
@@ -709,7 +710,7 @@ unmix_samples <- function(sample_dir = "samples",
     }
 
     method_upper <- toupper(method)
-    allowed_methods <- c("WLS", "OLS", "NNLS")
+    allowed_methods <- c("WLS", "RWLS", "OLS", "NNLS")
     if (!(method_upper %in% allowed_methods)) {
         stop("method must be one of: ", paste(allowed_methods, collapse = ", "))
     }

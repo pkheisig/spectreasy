@@ -252,7 +252,7 @@
     }
 
     static_unmixing_matrix_method <- toupper(unmix_method)
-    if (static_unmixing_matrix_method == "WLS") {
+    if (static_unmixing_matrix_method %in% c("WLS", "RWLS")) {
         W <- derive_unmixing_matrix(M_static, method = "WLS")
     } else {
         W <- derive_unmixing_matrix(M_static, method = static_unmixing_matrix_method)
@@ -316,11 +316,12 @@
 #' @param output_dir Output directory for SCC workflow artifacts.
 #' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls even when
 #'   they are present in the SCC folder or control mapping.
-#' @param unmix_method SCC unmixing method (`"WLS"`, `"OLS"`, `"NNLS"`).
+#' @param unmix_method SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
 #' @param af_n_bands Number of AF bands to extract from the unstained control
-#'   when only one AF source is available. Default is 10.
+#'   when only one AF source is available. Use `"auto"` to select the count
+#'   from AF event shapes. Default is 10.
 #' @param af_bands_per_file Number of AF bands requested per AF file when
 #'   multiple AF sources are pooled. Default is 5.
 #' @param include_multi_af Logical; whether to include additional AF files from `af_dir`. Default is FALSE.

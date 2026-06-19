@@ -196,13 +196,49 @@ plot_spectra <- function(ref_matrix,
     c(lo, hi)
 }
 
+.add_unmix_scatter_density_colors <- function(plot_df) {
+    plot_df$color <- "#0000FF"
+    groups <- split(seq_len(nrow(plot_df)), interaction(plot_df$panel_row, plot_df$panel_col, drop = TRUE))
+    ramp <- grDevices::colorRampPalette(c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"))
+    for (idx in groups) {
+        if (length(idx) > 1 && stats::var(plot_df$x[idx]) > 0 && stats::var(plot_df$y[idx]) > 0) {
+            plot_df$color[idx] <- grDevices::densCols(plot_df$x[idx], plot_df$y[idx], colramp = ramp)
+        }
+    }
+    plot_df
+}
+
+.compute_unmix_fixed_scatter_limits <- function(axis_limit,
+                                                transform = c("none", "asinh"),
+                                                asinh_cofactor = 150) {
+    if (is.null(axis_limit)) {
+        return(NULL)
+    }
+    transform <- match.arg(transform)
+    axis_limit <- suppressWarnings(as.numeric(axis_limit)[1])
+    if (!is.finite(axis_limit) || axis_limit <= 0) {
+        return(NULL)
+    }
+    limits <- c(-axis_limit, axis_limit)
+    if (transform == "asinh") {
+        limits <- asinh(limits / asinh_cofactor)
+    }
+    limits
+}
+
 .build_unmix_scatter_panel_data <- function(data_list,
                                             sample_stains,
                                             markers,
                                             max_points_per_sample = 3000,
                                             transform = c("none", "asinh"),
-                                            asinh_cofactor = 150) {
+                                            asinh_cofactor = 150,
+                                            axis_limit = NULL) {
     transform <- match.arg(transform)
+    fixed_limits <- .compute_unmix_fixed_scatter_limits(
+        axis_limit = axis_limit,
+        transform = transform,
+        asinh_cofactor = asinh_cofactor
+    )
     panel_data <- list()
     panel_limits <- list()
     k <- 1
@@ -235,22 +271,21 @@ plot_spectra <- function(ref_matrix,
                 y_vals <- asinh(y_vals / asinh_cofactor)
             }
 
-            x_lim <- .compute_unmix_scatter_limits(x_vals)
-            y_lim <- .compute_unmix_scatter_limits(y_vals)
+            if (is.null(fixed_limits)) {
+                x_lim <- .compute_unmix_scatter_limits(x_vals)
+                y_lim <- .compute_unmix_scatter_limits(y_vals)
+            } else {
+                x_lim <- fixed_limits
+                y_lim <- fixed_limits
+            }
             x_plot <- pmax(pmin(x_vals, x_lim[2]), x_lim[1])
             y_plot <- pmax(pmin(y_vals, y_lim[2]), y_lim[1])
-            if (nrow(d_pair) > 1 && stats::var(x_plot) > 0 && stats::var(y_plot) > 0) {
-                density_color <- grDevices::densCols(x_plot, y_plot, colramp = grDevices::colorRampPalette(c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000")))
-            } else {
-                density_color <- rep("#0000FF", length(x_plot))
-            }
 
             panel_data[[k]] <- data.frame(
                 x = x_plot,
                 y = y_plot,
                 panel_col = xm,
                 panel_row = row_stain,
-                color = density_color,
                 stringsAsFactors = FALSE
             )
             panel_limits[[lim_k]] <- data.frame(
@@ -271,6 +306,7 @@ plot_spectra <- function(ref_matrix,
 
     plot_df <- do.call(rbind, panel_data)
     lim_df <- do.call(rbind, panel_limits)
+    plot_df <- .add_unmix_scatter_density_colors(plot_df)
     plot_df$panel_col <- factor(plot_df$panel_col, levels = markers)
     plot_df$panel_row <- factor(plot_df$panel_row, levels = markers)
     lim_df$panel_col <- factor(lim_df$panel_col, levels = markers)
@@ -371,6 +407,9 @@ plot_spectra <- function(ref_matrix,
 #' @param max_points_per_sample Maximum events sampled per sample for plotting.
 #' @param transform One of `"asinh"` or `"none"`.
 #' @param asinh_cofactor Cofactor used when `transform = "asinh"`.
+#' @param axis_limit Optional fixed symmetric scatter axis limit. The default
+#'   `NULL` uses local per-panel ranges. Use `1e5` for `c(-1e5, 1e5)` on
+#'   every panel.
 #' @param panel_size_mm Size per matrix panel in millimeters.
 #' @param seed Optional integer seed for deterministic point subsampling.
 #' @return A `ggplot` object.
@@ -421,9 +460,10 @@ plot_unmixing_scatter_matrix <- function(
     markers = NULL,
     marker_display = NULL,
     output_file = NULL,
-    max_points_per_sample = 3000,
+    max_points_per_sample = 1000,
     transform = c("none", "asinh"),
     asinh_cofactor = 150,
+    axis_limit = NULL,
     panel_size_mm = 30,
     seed = NULL
 ) {
@@ -439,7 +479,8 @@ plot_unmixing_scatter_matrix <- function(
         markers = marker_info$markers,
         max_points_per_sample = max_points_per_sample,
         transform = transform,
-        asinh_cofactor = asinh_cofactor
+        asinh_cofactor = asinh_cofactor,
+        axis_limit = axis_limit
     )
     p <- .build_unmix_scatter_plot(
         plot_df = panel_info$plot_df,

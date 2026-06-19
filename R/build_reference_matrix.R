@@ -34,9 +34,14 @@
 # are positive integers, throwing an error if they are invalid.
 # Returns a validated list containing these parameters.
 .validate_build_reference_af_args <- function(af_n_bands, af_max_cells, af_bands_per_file = 5) {
-    af_n_bands <- as.integer(af_n_bands[1])
-    if (!is.finite(af_n_bands) || is.na(af_n_bands) || af_n_bands < 1) {
-        stop("af_n_bands must be an integer >= 1.")
+    af_n_bands_raw <- af_n_bands[1]
+    af_n_bands <- if (is.character(af_n_bands_raw) && identical(tolower(trimws(af_n_bands_raw)), "auto")) {
+        "auto"
+    } else {
+        as.integer(af_n_bands_raw)
+    }
+    if (!identical(af_n_bands, "auto") && (!is.finite(af_n_bands) || is.na(af_n_bands) || af_n_bands < 1)) {
+        stop("af_n_bands must be an integer >= 1 or \"auto\".")
     }
 
     af_bands_per_file <- as.integer(af_bands_per_file[1])
@@ -50,6 +55,93 @@
     }
 
     list(af_n_bands = af_n_bands, af_bands_per_file = af_bands_per_file, af_max_cells = af_max_cells)
+}
+
+.select_reference_auto_af_band_count <- function(af_shape,
+                                                max_bands = 10,
+                                                pca_variance = 0.98,
+                                                min_cluster_size = 20) {
+    af_shape <- as.matrix(af_shape)
+    n_events <- nrow(af_shape)
+    if (n_events < 2 || ncol(af_shape) < 2) {
+        return(list(n_bands = 1L, method = "fallback", reason = "too_few_events_or_detectors"))
+    }
+
+    rounded_shape <- as.data.frame(round(af_shape, digits = 6))
+    distinct_n <- nrow(unique(rounded_shape))
+    max_bands <- min(as.integer(max_bands), n_events, distinct_n)
+    if (!is.finite(max_bands) || is.na(max_bands) || max_bands < 2) {
+        return(list(n_bands = 1L, method = "fallback", reason = "one_distinct_shape"))
+    }
+    if (distinct_n <= max_bands && distinct_n <= 10) {
+        shape_counts <- table(do.call(paste, c(rounded_shape, sep = "\r")))
+        if (all(shape_counts >= min_cluster_size)) {
+            return(list(
+                n_bands = as.integer(distinct_n),
+                method = "distinct_shape_count",
+                reason = "small_exact_shape_set"
+            ))
+        }
+    }
+
+    pc <- tryCatch(
+        stats::prcomp(af_shape, center = TRUE, scale. = FALSE, rank. = min(max_bands, ncol(af_shape), n_events - 1L)),
+        error = function(e) NULL
+    )
+    if (is.null(pc) || length(pc$sdev) == 0 || !any(is.finite(pc$sdev) & pc$sdev > 0)) {
+        return(list(n_bands = 1L, method = "fallback", reason = "pca_failed"))
+    }
+
+    eig <- pc$sdev^2
+    eig <- eig[is.finite(eig) & eig > 0]
+    cum_var <- cumsum(eig) / sum(eig)
+    pca_n <- which(cum_var >= pca_variance)[1]
+    if (is.na(pca_n)) pca_n <- length(eig)
+    pca_n <- min(max(1L, as.integer(pca_n)), max_bands)
+
+    scores <- pc$x[, seq_len(min(pca_n, ncol(pc$x))), drop = FALSE]
+    if (ncol(scores) == 0 || nrow(scores) <= ncol(scores)) {
+        return(list(
+            n_bands = pca_n,
+            method = "pca_variance",
+            pca_components = pca_n,
+            cumulative_variance = cum_var[pca_n],
+            reason = "not_enough_events_for_gmm"
+        ))
+    }
+
+    fit <- tryCatch(
+        suppressWarnings(mclust::Mclust(scores, G = seq_len(max_bands), verbose = FALSE)),
+        error = function(e) NULL
+    )
+    if (is.null(fit) || is.null(fit$G) || !is.finite(fit$G)) {
+        return(list(
+            n_bands = pca_n,
+            method = "pca_variance",
+            pca_components = pca_n,
+            cumulative_variance = cum_var[pca_n],
+            reason = "gmm_failed"
+        ))
+    }
+
+    n_bands <- as.integer(fit$G)
+    if (!is.null(fit$classification)) {
+        cluster_sizes <- table(factor(fit$classification, levels = seq_len(n_bands)))
+        tiny_clusters <- sum(cluster_sizes < min_cluster_size)
+        if (tiny_clusters > 0 && n_bands > 1) {
+            n_bands <- max(1L, n_bands - tiny_clusters)
+        }
+    }
+
+    list(
+        n_bands = min(max(1L, n_bands), max_bands),
+        method = "gmm_bic_on_pcs",
+        pca_components = pca_n,
+        cumulative_variance = cum_var[pca_n],
+        max_bands = max_bands,
+        bic = if (!is.null(fit$bic)) fit$bic else NA_real_,
+        model_name = if (!is.null(fit$modelName)) fit$modelName else NA_character_
+    )
 }
 
 .reference_cell_fsc_upper_fraction <- 0.98
@@ -422,6 +514,11 @@
     }
 
     af_shape <- af_pos[keep, , drop = FALSE] / row_scale[keep]
+    selection <- NULL
+    if (is.character(n_bands) && identical(tolower(trimws(n_bands[1])), "auto")) {
+        selection <- .select_reference_auto_af_band_count(af_shape)
+        n_bands <- selection$n_bands
+    }
     n_eff <- min(as.integer(n_bands), nrow(af_shape))
     if (n_eff < 1) n_eff <- 1
     distinct_n <- nrow(unique(as.data.frame(round(af_shape, digits = 6))))
@@ -456,7 +553,7 @@
     rownames(centers) <- c("AF", if (nrow(centers) > 1) paste0("AF_", seq.int(2, nrow(centers))) else NULL)
     colnames(centers) <- detector_names
 
-    list(raw_median = raw_median, signatures = centers)
+    list(raw_median = raw_median, signatures = centers, selection = selection)
 }
 
 # Determines the name of the autofluorescence (unstained) control file.
@@ -619,6 +716,7 @@
             requested_bands = requested_bands,
             af_bands_per_file = if (n_af_sources > 1) af_bands_per_file else NA_integer_,
             derived_bands = if (!is.null(af_signatures_norm)) nrow(af_signatures_norm) else 0L,
+            auto_selection = af_profiles$selection,
             mode = if (n_af_sources > 1) "pooled_multi_af_per_file_scaled" else "single_af"
         )
         if (!is.null(af_signatures_norm)) {
@@ -627,7 +725,12 @@
             } else {
                 paste0(n_af_sources, " pooled AF control files")
             }
-            message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from ", msg, ".")
+            auto_msg <- if (!is.null(af_profiles$selection)) {
+                paste0(" (auto-selected from ", af_profiles$selection$method, ")")
+            } else {
+                ""
+            }
+            message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from ", msg, auto_msg, ".")
         }
     }
 
@@ -2312,7 +2415,9 @@
 #'   even when they are present in `control_df`, the SCC folder, or `af_dir`.
 #' @param af_dir Directory with extra AF controls when `include_multi_af = TRUE`.
 #' @param af_n_bands Number of AF basis signatures to extract from the pooled
-#'   unstained/AF control when only one AF source is available (`1` = classic single AF signature).
+#'   unstained/AF control when only one AF source is available (`1` = classic
+#'   single AF signature). Use `"auto"` to choose the number from AF event
+#'   shapes using PCA plus BIC-selected Gaussian mixture clustering.
 #' @param af_bands_per_file Number of AF basis signatures requested per AF file
 #'   when multiple AF sources are pooled (`5` files with the default `5` yields
 #'   up to `25` shared AF bank signatures).

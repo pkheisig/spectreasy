@@ -114,6 +114,7 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
     old_wd <- getwd()
     tmp_wd <- tempfile("spectreasy_gui_default_")
     dir.create(file.path(tmp_wd, "spectreasy_outputs", "unmix_controls"), recursive = TRUE, showWarnings = FALSE)
+    dir.create(file.path(tmp_wd, "samples"), recursive = TRUE, showWarnings = FALSE)
     dir.create(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "unmixed_fcs"), recursive = TRUE, showWarnings = FALSE)
     on.exit(setwd(old_wd), add = TRUE)
     setwd(tmp_wd)
@@ -123,10 +124,21 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
     )
     expect_equal(
         spectreasy:::.default_launch_gui_samples_dir(),
-        normalizePath(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "unmixed_fcs"))
+        normalizePath(file.path(tmp_wd, "samples"))
     )
     expect_equal(
         spectreasy:::.normalize_gui_dirs(spectreasy:::.default_launch_gui_matrix_dir())$samples_dir,
+        normalizePath(file.path(tmp_wd, "samples"))
+    )
+    expect_equal(
+        spectreasy:::.normalize_gui_dirs(file.path(tmp_wd, "spectreasy_outputs", "unmix_controls"))$samples_dir,
+        normalizePath(file.path(tmp_wd, "samples"))
+    )
+    unlink(file.path(tmp_wd, "samples"), recursive = TRUE)
+    expect_equal(
+        spectreasy:::.default_launch_gui_samples_dir(
+            matrix_dir = file.path(tmp_wd, "spectreasy_outputs", "unmix_controls")
+        ),
         normalizePath(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "unmixed_fcs"))
     )
     unlink(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "unmixed_fcs"), recursive = TRUE)

@@ -16,7 +16,7 @@ derive_unmixing_matrix(
 \arguments{
 \item{M}{Reference matrix (Markers x Detectors)}
 
-\item{method}{Unmixing method ("OLS", "WLS", or "NNLS").}
+\item{method}{Unmixing method ("OLS", "WLS", "RWLS", or "NNLS").}
 
 \item{variances}{Deprecated. SCC population variances are retained as
 reference QC metadata but are no longer used as WLS detector weights.}

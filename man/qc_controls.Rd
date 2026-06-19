@@ -19,6 +19,8 @@ qc_controls(
   include_multi_af = FALSE,
   af_dir = "af",
   af_bands_per_file = 5,
+  unmix_scatter_max_points = 1000,
+  unmix_scatter_axis_limit = NULL,
   seed = NULL,
   ...
 )
@@ -40,7 +42,7 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 \item{cytometer}{Cytometer name passed to [build_reference_matrix()].}
 
 \item{method}{Unmixing method used for the control scatter matrix
-(`"WLS"`, `"OLS"`, or `"NNLS"`).}
+(`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}
 
 \item{qc_plot_dir}{Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
 when `save_qc_pngs = TRUE`.}
@@ -59,6 +61,13 @@ the legacy histogram gate.}
 
 \item{af_bands_per_file}{Number of AF bands requested per AF file when
 multiple AF sources are pooled.}
+
+\item{unmix_scatter_max_points}{Maximum events sampled per control for the
+SCC unmixing scatter matrix.}
+
+\item{unmix_scatter_axis_limit}{Optional fixed symmetric axis limit for the
+SCC unmixing scatter matrix. The default `NULL` uses local per-panel
+ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

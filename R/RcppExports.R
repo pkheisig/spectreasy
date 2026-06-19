@@ -9,6 +9,10 @@ spectreasy_wls_unmix_cpp <- function(Y, M, noise_floor, signal_scale, max_weight
     .Call(`_spectreasy_spectreasy_wls_unmix_cpp`, Y, M, noise_floor, signal_scale, max_weight_ratio, tol)
 }
 
+spectreasy_rwls_unmix_cpp <- function(Y, M, noise_floor, signal_scale, max_weight_ratio = 1600.0, huber_k = 1.345, max_iter = 1L, robust_tol = 1e-6, tol = 1e-10) {
+    .Call(`_spectreasy_spectreasy_rwls_unmix_cpp`, Y, M, noise_floor, signal_scale, max_weight_ratio, huber_k, max_iter, robust_tol, tol)
+}
+
 spectreasy_unmix_best_af_cpp <- function(Y, M, fluor_idx, af_idx, method, noise_floor, signal_scale, max_weight_ratio = 1600.0, tol = 1e-10, max_outer = 500L, max_inner = 500L) {
     .Call(`_spectreasy_spectreasy_unmix_best_af_cpp`, Y, M, fluor_idx, af_idx, method, noise_floor, signal_scale, max_weight_ratio, tol, max_outer, max_inner)
 }

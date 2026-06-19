@@ -10,9 +10,10 @@ plot_unmixing_scatter_matrix(
   markers = NULL,
   marker_display = NULL,
   output_file = NULL,
-  max_points_per_sample = 3000,
+  max_points_per_sample = 1000,
   transform = c("none", "asinh"),
   asinh_cofactor = 150,
+  axis_limit = NULL,
   panel_size_mm = 30,
   seed = NULL
 )
@@ -35,6 +36,10 @@ names to display labels (for example `"BUV395 / CD45RA"`).}
 \item{transform}{One of `"asinh"` or `"none"`.}
 
 \item{asinh_cofactor}{Cofactor used when `transform = "asinh"`.}
+
+\item{axis_limit}{Optional fixed symmetric scatter axis limit. The default
+`NULL` uses local per-panel ranges. Use `1e5` for `c(-1e5, 1e5)` on
+every panel.}
 
 \item{panel_size_mm}{Size per matrix panel in millimeters.}
 

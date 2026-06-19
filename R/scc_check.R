@@ -297,7 +297,7 @@
 #' @param control_file Control mapping CSV path.
 #' @param cytometer Cytometer name passed to [build_reference_matrix()].
 #' @param method Unmixing method used for the control scatter matrix
-#'   (`"WLS"`, `"OLS"`, or `"NNLS"`).
+#'   (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).
 #' @param qc_plot_dir Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
 #'   when `save_qc_pngs = TRUE`.
 #' @param save_qc_pngs Logical; if `TRUE`, keep the intermediate QC PNG files in
@@ -310,6 +310,11 @@
 #' @param af_dir AF directory forwarded to [build_reference_matrix()].
 #' @param af_bands_per_file Number of AF bands requested per AF file when
 #'   multiple AF sources are pooled.
+#' @param unmix_scatter_max_points Maximum events sampled per control for the
+#'   SCC unmixing scatter matrix.
+#' @param unmix_scatter_axis_limit Optional fixed symmetric axis limit for the
+#'   SCC unmixing scatter matrix. The default `NULL` uses local per-panel
+#'   ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #' @return Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
@@ -337,6 +342,8 @@ qc_controls <- function(
     include_multi_af = FALSE,
     af_dir = "af",
     af_bands_per_file = 5,
+    unmix_scatter_max_points = 1000,
+    unmix_scatter_axis_limit = NULL,
     seed = NULL,
     ...
 ) {
@@ -344,8 +351,8 @@ qc_controls <- function(
         stop("Please supply output_file to save the SCC PDF report.", call. = FALSE)
     }
     method <- toupper(as.character(method)[1])
-    if (!(method %in% c("WLS", "OLS", "NNLS"))) {
-        stop("method must be one of: WLS, OLS, NNLS", call. = FALSE)
+    if (!(method %in% c("WLS", "RWLS", "OLS", "NNLS"))) {
+        stop("method must be one of: WLS, RWLS, OLS, NNLS", call. = FALSE)
     }
 
     message("Generating SCC QC report...")
@@ -470,7 +477,11 @@ qc_controls <- function(
     if (nrow(M_no_af) > 1) {
         sim_mat <- calculate_similarity_matrix(M_no_af)
         .draw_report_ggplot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
-        ssm_method <- if (identical(method, "NNLS")) "OLS" else method
+        ssm_method <- if (method %in% c("NNLS", "RWLS")) {
+            if (identical(method, "RWLS")) "WLS" else "OLS"
+        } else {
+            method
+        }
         .draw_report_ggplot_page(plot_ssm(calculate_ssm(M_no_af, method = ssm_method), output_file = NULL))
 
         unmixed_list <- unmix_samples(
@@ -515,6 +526,8 @@ qc_controls <- function(
             markers = scatter_markers,
             marker_display = NULL,
             output_file = NULL,
+            max_points_per_sample = unmix_scatter_max_points,
+            axis_limit = unmix_scatter_axis_limit,
             seed = seed
         )
         .draw_report_ggplot_page(p_scatter, square = TRUE)
