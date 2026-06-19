@@ -42,7 +42,7 @@ const COLOR_PALETTES = {
     cool: ['#5390d9', '#7400b8', '#6930c3', '#5e60ce', '#4ea8de', '#48bfe3', '#56cfe1', '#64dfdf', '#72efdd', '#80ffdb']
 };
 
-const SCATTER_COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+const SCATTER_COLORS = ['#f97316', '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6'];
 
 const isUnmixingFilename = (filename: string) => {
     const lower = filename.toLowerCase();
@@ -72,6 +72,13 @@ const pickPreferredMatrix = (files: string[], current: string) => {
     if (unmixingHit) return unmixingHit;
 
     return files[0];
+};
+
+const asScalarString = (value: unknown, fallback = '') => {
+    if (Array.isArray(value)) return asScalarString(value[0], fallback);
+    if (typeof value === 'string') return value;
+    if (value == null) return fallback;
+    return String(value);
 };
 
 const App = () => {
@@ -105,10 +112,10 @@ const App = () => {
     const [residualCellSize, setResidualCellSize] = useState(130);
     const [pointSize, setPointSize] = useState(1.5);
     const [pointOpacity, setPointOpacity] = useState(0.5);
-    const [pointColor, setPointColor] = useState('#3b82f6');
-    const [dragSensitivity, setDragSensitivity] = useState(0.05);
+    const [pointColor, setPointColor] = useState('#f97316');
+    const [dragSensitivity, setDragSensitivity] = useState(0.1);
 
-    const [theme, setTheme] = useState<'dark' | 'light'>('light');
+    const [theme, setTheme] = useState<'dark' | 'light'>('dark');
     const [pageScroll, setPageScroll] = useState(true);
     const sampleFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -151,7 +158,7 @@ const App = () => {
         const raw = Array.isArray(resData.data.raw_data) ? resData.data.raw_data as DataRow[] : [];
         setRawData(raw);
         setDetectorLabels(resData.data.detector_labels || detNames);
-        if (resData.data.sample_name) setCurrentSample(resData.data.sample_name);
+        if (resData.data.sample_name) setCurrentSample(asScalarString(resData.data.sample_name));
         await runUnmix(matrixData, raw, filenameForType);
     };
 
@@ -242,7 +249,15 @@ const App = () => {
         return false;
     };
 
+    const sampleHasDetectorChannels = (sampleRows = rawData) => {
+        if (!Array.isArray(sampleRows) || sampleRows.length === 0 || detectors.length === 0) return false;
+        const sampleColumns = new Set(Object.keys(sampleRows[0]));
+        return detectors.some(detector => sampleColumns.has(detector));
+    };
+
     const handleResidualAdjust = (xMarker: string, yMarker: string, alpha: number) => {
+        if (!sampleHasDetectorChannels()) return;
+
         const newMatrix = matrix.map(row => {
             if (row.Marker === yMarker) {
                 const rowX = matrix.find(r => r.Marker === xMarker);
@@ -294,7 +309,7 @@ const App = () => {
         if (typeof viewConfig.pointOpacity === 'number') setPointOpacity(viewConfig.pointOpacity);
         if (typeof viewConfig.pointColor === 'string') setPointColor(viewConfig.pointColor);
         if (typeof viewConfig.dragSensitivity === 'number') {
-            setDragSensitivity(Math.max(0.01, Math.min(0.1, viewConfig.dragSensitivity)));
+            setDragSensitivity(Math.max(0, Math.min(0.3, viewConfig.dragSensitivity)));
         }
     };
 
@@ -320,7 +335,7 @@ const App = () => {
             config_json: buildConfig()
         }).catch(() => null);
         if (result?.data?.success) {
-            const savedName = result.data.filename || name;
+            const savedName = asScalarString(result.data.filename, name);
             setCurrentConfig(savedName);
             await fetchConfigs();
             setConfigStatus('saved');
@@ -392,7 +407,7 @@ const App = () => {
                 throw new Error(String(response.data.error));
             }
 
-            const importedName = String(response.data?.filename || file.name);
+            const importedName = asScalarString(response.data?.filename, file.name);
             await fetchSamples();
             setSampleImportStatus('loaded');
             setSampleImportMessage(`Loaded ${importedName}`);
@@ -433,6 +448,10 @@ const App = () => {
     const colors = COLOR_PALETTES[colorPalette];
     const markerNames = matrix.map(m => m.Marker);
     const chartWidth = detectors.length * signatureDetWidth;
+    const canAdjustResiduals = sampleHasDetectorChannels();
+    const residualAdjustmentText = canAdjustResiduals
+        ? 'Drag on plots to adjust crosstalk'
+        : 'Load raw detector FCS to adjust crosstalk';
 
     // iOS 26 Glassy Theme
     const glassyTheme = theme === 'dark' ? {
@@ -940,14 +959,14 @@ const App = () => {
                             </div>
                             <h2 style={{ fontWeight: 700, fontSize: 15, margin: 0 }}>Residual Monitor</h2>
                             <span style={{ fontSize: 12, color: g.textMuted }}>({lowerTriangleCells} cells, {unmixedData.length} events)</span>
-                            <span style={{ fontSize: 11, color: '#fb7185', fontWeight: 600, marginLeft: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <Sliders size={12} /> Drag on plots to adjust crosstalk
+                            <span style={{ fontSize: 11, color: canAdjustResiduals ? '#fb7185' : g.textMuted, fontWeight: 600, marginLeft: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Sliders size={12} /> {residualAdjustmentText}
                             </span>
                             <span style={{ fontSize: 12, color: g.textMuted, marginLeft: 8 }}>Drag Sensitivity:</span>
                             <input
                                 type="range"
-                                min="0.01"
-                                max="0.1"
+                                min="0"
+                                max="0.3"
                                 step="0.01"
                                 value={dragSensitivity}
                                 onChange={e => setDragSensitivity(Number(e.target.value))}
@@ -1015,6 +1034,8 @@ const App = () => {
                                                             pointOpacity={pointOpacity}
                                                             pointSize={pointSize}
                                                             sensitivity={dragSensitivity}
+                                                            canAdjust={canAdjustResiduals}
+                                                            disabledReason={residualAdjustmentText}
                                                             onAdjust={handleResidualAdjust}
                                                         />
                                                     </div>

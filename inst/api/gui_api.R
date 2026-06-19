@@ -134,7 +134,13 @@ function(req, res) {
 #* Health Check
 #* @get /status
 function() {
-    return(list(status = "ok", time = Sys.time(), wd = getwd(), matrix_dir = get_matrix_dir()))
+    return(list(
+        status = "ok",
+        time = Sys.time(),
+        wd = getwd(),
+        matrix_dir = get_matrix_dir(),
+        samples_dir = get_samples_dir()
+    ))
 }
 
 #* List available matrices

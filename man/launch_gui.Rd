@@ -18,8 +18,11 @@ launch_gui(
 directory, otherwise the current working directory.}
 
 \item{samples_dir}{Directory containing FCS sample files. If `NULL`, defaults to
-`spectreasy_outputs/unmix_samples/unmixed_fcs` when it exists under the
-current working directory, otherwise the `samples` subfolder of `matrix_dir`.}
+the `samples` folder under the current working directory or inferred project
+directory when it exists, then falls back to
+`spectreasy_outputs/unmix_samples/unmixed_fcs` or
+`spectreasy_outputs/unmix_samples` when available. Otherwise, uses the
+`samples` subfolder of `matrix_dir`.}
 
 \item{port}{API port (default: 8000)}
 
