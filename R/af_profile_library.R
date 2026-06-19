@@ -96,6 +96,7 @@ af_profile_dir <- function(create = TRUE) {
 #' @param af_max_cells Maximum number of scatter-gated AF events used.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param show_plot Logical; print the AF spectra plot after extraction.
+#' @param verbose Logical; print progress updates while extracting.
 #'
 #' @return A `spectreasy_af_profile` object containing `$profile` and `$plot`.
 #' @export
@@ -103,7 +104,8 @@ extract_af_profile <- function(fcs_file,
                                af_n_bands = "auto",
                                af_max_cells = 50000,
                                seed = NULL,
-                               show_plot = TRUE) {
+                               show_plot = TRUE,
+                               verbose = TRUE) {
     if (!is.character(fcs_file) || length(fcs_file) != 1L || is.na(fcs_file) || !nzchar(fcs_file)) {
         stop("fcs_file must be a single path to an FCS file.", call. = FALSE)
     }
@@ -111,6 +113,9 @@ extract_af_profile <- function(fcs_file,
         stop("fcs_file not found: ", fcs_file, call. = FALSE)
     }
 
+    if (isTRUE(verbose)) {
+        message("Extracting AF profile from: ", basename(fcs_file))
+    }
     af_args <- .validate_build_reference_af_args(
         af_n_bands = af_n_bands,
         af_max_cells = af_max_cells,
@@ -118,7 +123,14 @@ extract_af_profile <- function(fcs_file,
     )
     .with_optional_seed(seed)
 
+    if (isTRUE(verbose)) {
+        message("  Detecting spectral detectors...")
+    }
     metadata <- .prepare_reference_detector_info(fcs_file)
+    if (isTRUE(verbose)) {
+        message("  Found ", length(metadata$detector_names), " spectral detector(s).")
+        message("  Scatter-gating AF events...")
+    }
     config <- list(
         outlier_percentile = 0.02,
         debris_percentile = 0.08,
@@ -138,16 +150,33 @@ extract_af_profile <- function(fcs_file,
         stop("Could not extract scatter-gated AF events from: ", fcs_file, call. = FALSE)
     }
 
-    af_profiles <- .extract_reference_af_profiles(
-        detector_names = metadata$detector_names,
-        n_bands = af_args$af_n_bands,
-        max_cells = af_args$af_max_cells,
-        af_events = gated$events
+    if (isTRUE(verbose)) {
+        message(
+            "  Extracting AF band(s)",
+            if (identical(af_args$af_n_bands, "auto")) " with auto band selection" else paste0(" (requested: ", af_args$af_n_bands, ")"),
+            "..."
+        )
+    }
+    af_profiles <- withCallingHandlers(
+        .extract_reference_af_profiles(
+            detector_names = metadata$detector_names,
+            n_bands = af_args$af_n_bands,
+            max_cells = af_args$af_max_cells,
+            af_events = gated$events
+        ),
+        warning = function(w) {
+            if (grepl("Quick-TRANSfer stage steps exceeded maximum", conditionMessage(w), fixed = TRUE)) {
+                invokeRestart("muffleWarning")
+            }
+        }
     )
     if (is.null(af_profiles$signatures) || nrow(af_profiles$signatures) == 0) {
         stop("AF profile extraction did not produce any AF bands.", call. = FALSE)
     }
 
+    if (isTRUE(verbose)) {
+        message("  Building AF spectra plot...")
+    }
     p <- .build_af_profile_plot(af_profiles$signatures, pd = metadata$pd_meta)
     out <- .new_af_profile_object(
         profile = af_profiles$signatures,
@@ -162,6 +191,15 @@ extract_af_profile <- function(fcs_file,
     )
     if (isTRUE(show_plot)) {
         print(out$plot)
+    }
+    if (isTRUE(verbose)) {
+        message(
+            "Done. Extracted ",
+            nrow(out$profile),
+            " AF band(s) from ",
+            nrow(gated$events),
+            " scatter-gated event(s)."
+        )
     }
     out
 }

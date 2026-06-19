@@ -9,7 +9,8 @@ extract_af_profile(
   af_n_bands = "auto",
   af_max_cells = 50000,
   seed = NULL,
-  show_plot = TRUE
+  show_plot = TRUE,
+  verbose = TRUE
 )
 }
 \arguments{
@@ -23,6 +24,8 @@ chooses the count from AF event shapes.}
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 
 \item{show_plot}{Logical; print the AF spectra plot after extraction.}
+
+\item{verbose}{Logical; print progress updates while extracting.}
 }
 \value{
 A `spectreasy_af_profile` object containing `$profile` and `$plot`.

@@ -74,7 +74,8 @@ test_that("extract_af_profile can derive a standalone profile from an unstained 
         src_unstained,
         af_n_bands = 1,
         seed = 1,
-        show_plot = FALSE
+        show_plot = FALSE,
+        verbose = FALSE
     )
 
     expect_s3_class(afp, "spectreasy_af_profile")
