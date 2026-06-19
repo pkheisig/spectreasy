@@ -3,7 +3,7 @@
 #' @param flow_frame A flowFrame object with raw fluorescence data
 #' @param M Reference matrix (fluorophores x detectors)
 #' @param file_name Optional file name to add to output
-#' @param method Unmixing method: "WLS" (default), "OLS", or "NNLS".
+#' @param method Unmixing method: "WLS" (default), "RWLS", "OLS", or "NNLS".
 #' @param return_residuals Logical. If TRUE, returns a list containing the unmixed
 #'   data and the detector residual matrix.
 #' @param background_noise Scalar or detector-length vector used as the WLS noise
@@ -63,12 +63,12 @@ calc_residuals <- function(flow_frame,
 
     Mt <- t(M)
     method <- toupper(method)
-    if (!method %in% c("OLS", "NNLS", "WLS")) {
-        stop("method must be 'OLS', 'NNLS', or 'WLS'")
+    if (!method %in% c("OLS", "NNLS", "WLS", "RWLS")) {
+        stop("method must be 'OLS', 'NNLS', 'WLS', or 'RWLS'")
     }
 
     af_match <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
-    wls_noise <- if (method == "WLS") {
+    wls_noise <- if (method %in% c("WLS", "RWLS")) {
         .resolve_wls_noise_parameters(
             M = M,
             background_noise = background_noise,
@@ -104,6 +104,14 @@ calc_residuals <- function(flow_frame,
             A <- spectreasy_nnls_unmix_cpp(Y = Y, M = M)
         } else if (method == "WLS") {
             A <- spectreasy_wls_unmix_cpp(
+                Y = Y,
+                M = M,
+                noise_floor = wls_noise$noise_floor,
+                signal_scale = wls_noise$signal_scale,
+                max_weight_ratio = wls_noise$max_weight_ratio
+            )
+        } else if (method == "RWLS") {
+            A <- spectreasy_rwls_unmix_cpp(
                 Y = Y,
                 M = M,
                 noise_floor = wls_noise$noise_floor,

@@ -22,7 +22,7 @@ calc_residuals(
 
 \item{file_name}{Optional file name to add to output}
 
-\item{method}{Unmixing method: "WLS" (default), "OLS", or "NNLS".}
+\item{method}{Unmixing method: "WLS" (default), "RWLS", "OLS", or "NNLS".}
 
 \item{return_residuals}{Logical. If TRUE, returns a list containing the unmixed
 data and the detector residual matrix.}

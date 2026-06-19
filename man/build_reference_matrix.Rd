@@ -52,7 +52,9 @@ even when they are present in `control_df`, the SCC folder, or `af_dir`.}
 \item{af_dir}{Directory with extra AF controls when `include_multi_af = TRUE`.}
 
 \item{af_n_bands}{Number of AF basis signatures to extract from the pooled
-unstained/AF control when only one AF source is available (`1` = classic single AF signature).}
+unstained/AF control when only one AF source is available (`1` = classic
+single AF signature). Use `"auto"` to choose the number from AF event
+shapes using PCA plus BIC-selected Gaussian mixture clustering.}
 
 \item{af_bands_per_file}{Number of AF basis signatures requested per AF file
 when multiple AF sources are pooled (`5` files with the default `5` yields

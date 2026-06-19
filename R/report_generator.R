@@ -247,6 +247,36 @@
     c(lo, hi)
 }
 
+.compute_qc_report_fixed_scatter_limits <- function(axis_limit,
+                                                    transform = c("none", "asinh"),
+                                                    asinh_cofactor = 150) {
+    if (is.null(axis_limit)) {
+        return(NULL)
+    }
+    transform <- match.arg(transform)
+    axis_limit <- suppressWarnings(as.numeric(axis_limit)[1])
+    if (!is.finite(axis_limit) || axis_limit <= 0) {
+        return(NULL)
+    }
+    limits <- c(-axis_limit, axis_limit)
+    if (transform == "asinh") {
+        limits <- asinh(limits / asinh_cofactor)
+    }
+    limits
+}
+
+.add_qc_report_density_colors <- function(plot_df) {
+    plot_df$color <- "#0000FF"
+    groups <- split(seq_len(nrow(plot_df)), interaction(plot_df$panel_row, plot_df$panel_col, drop = TRUE))
+    ramp <- grDevices::colorRampPalette(c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"))
+    for (idx in groups) {
+        if (length(idx) > 1 && stats::var(plot_df$x[idx]) > 0 && stats::var(plot_df$y[idx]) > 0) {
+            plot_df$color[idx] <- grDevices::densCols(plot_df$x[idx], plot_df$y[idx], colramp = ramp)
+        }
+    }
+    plot_df
+}
+
 .pad_qc_report_page_levels <- function(real_names, block_size = 10, prefix = "pad") {
     real_names <- as.character(real_names)
     if (length(real_names) >= block_size) {
@@ -289,7 +319,8 @@
                                               block_size = 10,
                                               transform = c("none", "asinh"),
                                               asinh_cofactor = 150,
-                                              max_points = 3000) {
+                                              max_points = 3000,
+                                              fixed_limits = NULL) {
     transform <- match.arg(transform)
     row_markers <- intersect(as.character(row_markers), markers)
     col_markers <- intersect(as.character(col_markers), markers)
@@ -326,23 +357,21 @@
                 y_vals <- asinh(y_vals / asinh_cofactor)
             }
 
-            x_lim <- .compute_qc_report_scatter_limits(x_vals)
-            y_lim <- .compute_qc_report_scatter_limits(y_vals)
+            if (is.null(fixed_limits)) {
+                x_lim <- .compute_qc_report_scatter_limits(x_vals)
+                y_lim <- .compute_qc_report_scatter_limits(y_vals)
+            } else {
+                x_lim <- fixed_limits
+                y_lim <- fixed_limits
+            }
             x_plot <- pmax(pmin(x_vals, x_lim[2]), x_lim[1])
             y_plot <- pmax(pmin(y_vals, y_lim[2]), y_lim[1])
-
-            if (nrow(d_pair) > 1 && stats::var(x_plot) > 0 && stats::var(y_plot) > 0) {
-                density_color <- grDevices::densCols(x_plot, y_plot, colramp = grDevices::colorRampPalette(c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000")))
-            } else {
-                density_color <- rep("#0000FF", length(x_plot))
-            }
 
             panel_data[[k]] <- data.frame(
                 x = x_plot,
                 y = y_plot,
                 panel_col = xm,
                 panel_row = row_stain,
-                color = density_color,
                 stringsAsFactors = FALSE
             )
             panel_limits[[lim_k]] <- data.frame(
@@ -365,6 +394,7 @@
 
     plot_df <- do.call(rbind, panel_data)
     lim_df <- do.call(rbind, panel_limits)
+    plot_df <- .add_qc_report_density_colors(plot_df)
     page_rows <- .pad_qc_report_page_levels(row_markers, block_size = block_size, prefix = "row")
     page_cols <- .pad_qc_report_page_levels(col_markers, block_size = block_size, prefix = "col")
 
@@ -455,6 +485,7 @@
                                                   max_points = 3000,
                                                   transform = c("none", "asinh"),
                                                   asinh_cofactor = 150,
+                                                  axis_limit = NULL,
                                                   all_samples = FALSE) {
     transform <- match.arg(transform)
     if (!("File" %in% colnames(results_df))) {
@@ -474,6 +505,11 @@
 
     pages <- list()
     k <- 1L
+    fixed_limits <- .compute_qc_report_fixed_scatter_limits(
+        axis_limit = axis_limit,
+        transform = transform,
+        asinh_cofactor = asinh_cofactor
+    )
     for (sample_name in sample_names) {
         sample_df <- results_df[results_df$File == sample_name, markers, drop = FALSE]
         page_defs <- .build_qc_report_sample_page_defs(markers, block_size = rows_per_page)
@@ -492,7 +528,8 @@
                 block_size = rows_per_page,
                 transform = transform,
                 asinh_cofactor = asinh_cofactor,
-                max_points = max_points
+                max_points = max_points,
+                fixed_limits = fixed_limits
             )
             if (is.null(panel_info)) next
 
@@ -542,15 +579,15 @@
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param output_file Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.
-#' @param method Unmixing method used to create `results` (`"WLS"`, `"OLS"`, or
-#'   `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
+#' @param method Unmixing method used to create `results` (`"WLS"`, `"RWLS"`,
+#'   `"OLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
 #'   because constrained NNLS results are non-negative by construction.
 #' @param res_list Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.
 #' @param png_dir Deprecated and ignored (kept for backward compatibility).
 #' @param pd Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
 #'   If omitted, `attr(M, "detector_pd")` is used when available.
 #' @param max_events_per_sample Maximum events per sample used for report-wide
-#'   plots and diagnostics. Defaults to 10000 to keep large FCS reports
+#'   plots and diagnostics. Defaults to 1000 to keep large FCS reports
 #'   responsive. Set `NULL` to use all events.
 #' @param overview_files_per_page Maximum files shown on each RMS residual and
 #'   NPS overview page.
@@ -561,6 +598,9 @@
 #' @param sample_nxn_max_points Maximum cells sampled per sample for each NxN page.
 #' @param sample_nxn_transform One of `"none"` or `"asinh"` for per-sample NxN pages.
 #' @param sample_nxn_asinh_cofactor Cofactor used when `sample_nxn_transform = "asinh"`.
+#' @param sample_nxn_axis_limit Optional fixed symmetric NxN scatter axis limit.
+#'   The default `NULL` uses local per-panel ranges. Use `1e5` for
+#'   `c(-1e5, 1e5)` on every NxN panel.
 #' @param nxn_all_samples Logical; if `TRUE`, include per-sample NxN pages for all samples.
 #'   If `FALSE` (default), only include NxN pages for the first sample in `results`.
 #'
@@ -598,13 +638,14 @@ qc_samples <- function(results,
                        res_list = NULL,
                        png_dir = NULL,
                        pd = NULL,
-                       max_events_per_sample = 10000,
+                       max_events_per_sample = 1000,
                        overview_files_per_page = 15,
                        matrix_markers_per_page = 15,
                        sample_nxn_rows_per_page = 10,
                        sample_nxn_max_points = max_events_per_sample,
                        sample_nxn_transform = c("none", "asinh"),
                        sample_nxn_asinh_cofactor = 150,
+                       sample_nxn_axis_limit = NULL,
                        nxn_all_samples = FALSE) {
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the QC PDF report.", call. = FALSE)
@@ -615,8 +656,8 @@ qc_samples <- function(results,
         method <- if (!is.null(method_attr)) method_attr else "WLS"
     }
     method <- toupper(as.character(method)[1])
-    if (!(method %in% c("WLS", "OLS", "NNLS"))) {
-        stop("method must be one of: WLS, OLS, NNLS", call. = FALSE)
+    if (!(method %in% c("WLS", "RWLS", "OLS", "NNLS"))) {
+        stop("method must be one of: WLS, RWLS, OLS, NNLS", call. = FALSE)
     }
 
     message("Generating spectreasy Summary Report...")
@@ -674,17 +715,6 @@ qc_samples <- function(results,
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
 
     grid::grid.newpage()
-    report_file_counts <- table(results_df$File)
-    median_events_txt <- if (length(file_counts) > 0) {
-        as.character(stats::median(as.numeric(file_counts)))
-    } else {
-        "NA"
-    }
-    median_report_events_txt <- if (length(report_file_counts) > 0) {
-        as.character(stats::median(as.numeric(report_file_counts)))
-    } else {
-        "NA"
-    }
     if (!is.null(max_events_per_sample) && any(as.numeric(file_counts) > as.numeric(max_events_per_sample)[1], na.rm = TRUE)) {
         message(
             "  - Report diagnostics capped at ",
@@ -700,9 +730,7 @@ qc_samples <- function(results,
         "spectreasy: Spectral Unmixing Quality Control Report\n",
         "Generated on: ", Sys.time(), "\n\n",
         "Files Processed: ", length(unique(results_df$File)), "\n",
-        "Total Markers (non-AF): ", nrow(M_no_af), "\n",
-        "Median Events per File: ", median_events_txt, "\n",
-        "Median Events Used per File in Report: ", median_report_events_txt
+        "Total Markers (non-AF): ", nrow(M_no_af)
     )
     grid::grid.text(summary_txt, x = 0.5, y = 0.6, just = "center", gp = grid::gpar(fontsize = 15))
 
@@ -743,7 +771,11 @@ qc_samples <- function(results,
 
     message("  - Adding Spread Matrix...")
     if (nrow(M_no_af) > 1) {
-        ssm_method <- if (identical(method, "NNLS")) "OLS" else method
+        ssm_method <- if (method %in% c("NNLS", "RWLS")) {
+            if (identical(method, "RWLS")) "WLS" else "OLS"
+        } else {
+            method
+        }
         ssm <- calculate_ssm(M_no_af, method = ssm_method)
         ssm_pages <- .build_qc_report_matrix_pages(
             ssm,
@@ -783,6 +815,7 @@ qc_samples <- function(results,
         max_points = sample_nxn_max_points,
         transform = sample_nxn_transform,
         asinh_cofactor = sample_nxn_asinh_cofactor,
+        axis_limit = sample_nxn_axis_limit,
         all_samples = nxn_all_samples
     )
     for (p in scatter_pages) {

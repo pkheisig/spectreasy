@@ -250,6 +250,26 @@ test_that("calc_residuals WLS matches small-matrix reference implementation", {
     expect_equal(as.matrix(res[, rownames(M)]), expected, tolerance = 1e-6)
 })
 
+test_that("calc_residuals RWLS down-weights detector-level outliers", {
+    M <- rbind(
+        FITC = c(1, 0.2, 0.05, 0.1),
+        PE = c(0.1, 1, 0.1, 0.05)
+    )
+    colnames(M) <- c("D1", "D2", "D3", "D4")
+
+    true_abundance <- c(FITC = 100, PE = 20)
+    y <- as.numeric(true_abundance %*% M)
+    y[3] <- y[3] + 500
+    ff <- flowCore::flowFrame(matrix(y, nrow = 1, dimnames = list(NULL, colnames(M))))
+
+    wls <- spectreasy::calc_residuals(ff, M, method = "WLS")[1, names(true_abundance)]
+    rwls <- spectreasy::calc_residuals(ff, M, method = "RWLS")[1, names(true_abundance)]
+
+    wls_error <- sum((as.numeric(wls) - true_abundance)^2)
+    rwls_error <- sum((as.numeric(rwls) - true_abundance)^2)
+    expect_lt(rwls_error, wls_error * 0.1)
+})
+
 test_that("calc_residuals WLS works without SCC-derived variances", {
     M <- matrix(c(
         1, 0.2,
@@ -701,6 +721,26 @@ test_that("AF profile extraction clusters pooled AF phenotypes", {
     expect_equal(profiles$raw_median, c("B1-A" = 55, "YG1-A" = 52.5, "V1-A" = 12.5), tolerance = 1e-6)
 })
 
+test_that("AF profile extraction can auto-select band count", {
+    detector_names <- c("B1-A", "YG1-A", "V1-A")
+    af_events <- rbind(
+        matrix(rep(c(100, 15, 5), 120), ncol = 3, byrow = TRUE),
+        matrix(rep(c(10, 90, 20), 120), ncol = 3, byrow = TRUE)
+    )
+    colnames(af_events) <- detector_names
+
+    profiles <- spectreasy:::.extract_reference_af_profiles(
+        detector_names = detector_names,
+        n_bands = "auto",
+        max_cells = 500,
+        af_events = af_events
+    )
+
+    expect_equal(nrow(profiles$signatures), 2)
+    expect_true(profiles$selection$method %in% c("gmm_bic_on_pcs", "distinct_shape_count"))
+    expect_equal(profiles$selection$n_bands, 2)
+})
+
 test_that("AF profile extraction handles empty and all-zero AF events", {
     detector_names <- c("B1-A", "YG1-A")
 
@@ -739,6 +779,12 @@ test_that("AF argument validation supports multi-AF bands per file", {
         spectreasy:::.validate_build_reference_af_args(0, 500, af_bands_per_file = 1),
         "af_n_bands"
     )
+    args_auto <- spectreasy:::.validate_build_reference_af_args(
+        af_n_bands = "auto",
+        af_bands_per_file = 5,
+        af_max_cells = 500
+    )
+    expect_equal(args_auto$af_n_bands, "auto")
     expect_error(
         spectreasy:::.validate_build_reference_af_args(2, 99, af_bands_per_file = 1),
         "af_max_cells"

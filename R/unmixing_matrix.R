@@ -5,7 +5,7 @@
 #' To unmix data manually: Unmixed_Data = Raw_Data %*% t(W)
 #' 
 #' @param M Reference matrix (Markers x Detectors)
-#' @param method Unmixing method ("OLS", "WLS", or "NNLS").
+#' @param method Unmixing method ("OLS", "WLS", "RWLS", or "NNLS").
 #' @param variances Deprecated. SCC population variances are retained as
 #'   reference QC metadata but are no longer used as WLS detector weights.
 #' @param background_noise Scalar or detector-length WLS noise floor used for
@@ -43,7 +43,13 @@ derive_unmixing_matrix <- function(M,
         if (rcond(MMt) < 1e-10) stop("Reference Matrix is singular (collinear spectra).")
         W <- solve(MMt) %*% M
 
-    } else if (method_upper == "WLS") {
+    } else if (method_upper %in% c("WLS", "RWLS")) {
+        if (identical(method_upper, "RWLS")) {
+            warning(
+                "Static RWLS matrix is a WLS proxy and may differ from per-cell RWLS solutions. ",
+                "Use dynamic method = 'RWLS' in unmix_samples() for robust per-cell fits."
+            )
+        }
         detector_weights <- .wls_static_detector_weights(
             M = M,
             background_noise = background_noise,
@@ -71,7 +77,7 @@ derive_unmixing_matrix <- function(M,
         )
 
     } else {
-        stop("method must be one of: 'OLS', 'WLS', 'NNLS'")
+        stop("method must be one of: 'OLS', 'WLS', 'RWLS', 'NNLS'")
     }
 
     rownames(W) <- rownames(M)

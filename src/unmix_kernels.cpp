@@ -111,6 +111,53 @@ arma::vec weighted_lsq_coeffs_cpp(const arma::mat& X,
     return coeffs;
 }
 
+arma::vec robust_weighted_lsq_coeffs_cpp(const arma::mat& X,
+                                         const arma::vec& y,
+                                         const arma::vec& base_weights,
+                                         const double huber_k = 1.345,
+                                         const int max_iter = 1,
+                                         const double robust_tol = 1e-6,
+                                         const double tol = 1e-10) {
+    arma::vec weights = base_weights;
+    arma::vec coeffs = weighted_lsq_coeffs_cpp(X, y, weights, tol);
+    const arma::mat A = X.t();
+    const double k = (std::isfinite(huber_k) && huber_k > 0) ? huber_k : 1.345;
+    const int n_iter = (max_iter > 0) ? max_iter : 1;
+    const double conv_tol = (std::isfinite(robust_tol) && robust_tol > 0) ? robust_tol : 1e-6;
+
+    for (int iter = 0; iter < n_iter; ++iter) {
+        arma::vec resid = y - A * coeffs;
+        arma::vec std_resid = resid % arma::sqrt(arma::clamp(base_weights, 1e-12, arma::datum::inf));
+        double center = arma::median(std_resid);
+        arma::vec abs_dev = arma::abs(std_resid - center);
+        double scale = 1.4826 * arma::median(abs_dev);
+        if (!std::isfinite(scale) || scale <= tol) {
+            break;
+        }
+
+        arma::vec robust_weights(std_resid.n_elem, arma::fill::ones);
+        for (arma::uword j = 0; j < std_resid.n_elem; ++j) {
+            double z = std::abs((std_resid(j) - center) / scale);
+            if (!std::isfinite(z)) {
+                robust_weights(j) = 1.0;
+            } else if (z > k) {
+                robust_weights(j) = k / z;
+            }
+        }
+
+        weights = base_weights % robust_weights;
+        arma::vec next_coeffs = weighted_lsq_coeffs_cpp(X, y, weights, tol);
+        double denom = std::max(1.0, arma::norm(coeffs, 2));
+        double delta = arma::norm(next_coeffs - coeffs, 2) / denom;
+        coeffs = next_coeffs;
+        if (!std::isfinite(delta) || delta < conv_tol) {
+            break;
+        }
+    }
+
+    return coeffs;
+}
+
 double positive_median_cpp(arma::vec x, const double fallback = 1.0) {
     std::vector<double> positive_vals;
     positive_vals.reserve(x.n_elem);
@@ -228,6 +275,32 @@ arma::mat spectreasy_wls_unmix_cpp(const arma::mat& Y,
 }
 
 // [[Rcpp::export]]
+arma::mat spectreasy_rwls_unmix_cpp(const arma::mat& Y,
+                                    const arma::mat& M,
+                                    const arma::vec& noise_floor,
+                                    const arma::vec& signal_scale,
+                                    const double max_weight_ratio = 1600.0,
+                                    const double huber_k = 1.345,
+                                    const int max_iter = 1,
+                                    const double robust_tol = 1e-6,
+                                    const double tol = 1e-10) {
+    const arma::uword n_cells = Y.n_rows;
+    const arma::uword n_markers = M.n_rows;
+    arma::mat A_out(n_cells, n_markers, arma::fill::zeros);
+
+    for (arma::uword i = 0; i < n_cells; ++i) {
+        arma::vec y = Y.row(i).t();
+        arma::vec weights = wls_event_weights_cpp(y, noise_floor, signal_scale, max_weight_ratio);
+        arma::vec coeffs = robust_weighted_lsq_coeffs_cpp(
+            M, y, weights, huber_k, max_iter, robust_tol, tol
+        );
+        A_out.row(i) = coeffs.t();
+    }
+
+    return A_out;
+}
+
+// [[Rcpp::export]]
 arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
                                        const arma::mat& M,
                                        const arma::uvec& fluor_idx,
@@ -245,8 +318,8 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
     const arma::uword n_fluors = fluor_idx.n_elem;
     const arma::uword n_af = af_idx.n_elem;
     const bool has_wls_noise = noise_floor.n_elem == n_detectors && signal_scale.n_elem == n_detectors;
-    if (method == "WLS" && !has_wls_noise) {
-        Rcpp::stop("WLS noise_floor and signal_scale must match the number of detectors.");
+    if ((method == "WLS" || method == "RWLS") && !has_wls_noise) {
+        Rcpp::stop("WLS/RWLS noise_floor and signal_scale must match the number of detectors.");
     }
 
     arma::mat A_out(n_cells, n_markers, arma::fill::zeros);
@@ -289,7 +362,7 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
     for (arma::uword i = 0; i < n_cells; ++i) {
         arma::vec y = Y.row(i).t();
         arma::vec event_weights;
-        if (method == "WLS") {
+        if (method == "WLS" || method == "RWLS") {
             event_weights = wls_event_weights_cpp(y, noise_floor, signal_scale, max_weight_ratio);
         }
 
@@ -306,7 +379,7 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
             const arma::mat& X_k = X_list[k];
             const arma::mat& A_k = A_list[k];
 
-            if (method == "WLS") {
+            if (method == "WLS" || method == "RWLS") {
                 coeffs_k = weighted_lsq_coeffs_cpp(X_k, y, event_weights, tol);
                 arma::vec resid = y - A_k * coeffs_k;
                 rss = arma::dot(event_weights % resid, resid);
@@ -350,6 +423,8 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
                 arma::vec weights = event_weights;
                 coeffs = weighted_lsq_coeffs_cpp(X_best, y, weights, tol);
             }
+        } else if (method == "RWLS") {
+            coeffs = robust_weighted_lsq_coeffs_cpp(X_best, y, event_weights, 1.345, 1, 1e-6, tol);
         } else if (method == "NNLS") {
             coeffs = nnls_lawson_hanson_cpp(A_best, y, tol, max_outer, max_inner);
         }

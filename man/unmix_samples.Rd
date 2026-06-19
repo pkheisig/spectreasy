@@ -49,7 +49,7 @@ omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
 estimates the floors from `scc_dir` when available, and otherwise falls
 back to the built-in scalar noise floor.}
 
-\item{method}{Unmixing method (`"WLS"`, `"OLS"`, or `"NNLS"`).}
+\item{method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}
 
 \item{cytometer}{Reserved for compatibility with older workflows.}
 
@@ -61,7 +61,8 @@ are missing.}
 Used when dynamically building the reference matrix.}
 
 \item{af_n_bands}{Number of AF bands to extract from the unstained control
-when only one AF source is available.}
+when only one AF source is available. Use `"auto"` to select the count
+from AF event shapes.}
 
 \item{af_bands_per_file}{Number of AF bands requested per AF file when
 multiple AF sources are pooled.}

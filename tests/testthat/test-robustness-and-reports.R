@@ -334,8 +334,8 @@ test_that("per-cell AF selection unmix selects exactly one AF band per cell", {
     )
     ff <- flowCore::flowFrame(exprs_full)
 
-    # Run calc_residuals with different methods: OLS, WLS, NNLS
-    for (m in c("OLS", "WLS", "NNLS")) {
+    # Run calc_residuals with different methods: OLS, WLS, RWLS, NNLS
+    for (m in c("OLS", "WLS", "RWLS", "NNLS")) {
         res <- spectreasy::calc_residuals(ff, M, method = m)
         
         # Verify that for each cell, at most one AF band is non-zero
