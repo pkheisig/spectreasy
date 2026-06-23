@@ -10,7 +10,7 @@ get_control_spectra(
   control_dir = "scc",
   af_dir = "af",
   method = "WLS",
-  cytometer = "Aurora"
+  cytometer = "auto"
 )
 }
 \arguments{
@@ -24,7 +24,8 @@ get_control_spectra(
 
 \item{method}{Reserved for future method selection.}
 
-\item{cytometer}{Cytometer type (for example `"Aurora"`).}
+\item{cytometer}{Cytometer name used as a channel-mapping hint. The default,
+`"auto"`, infers the cytometer from FCS detector names when possible.}
 }
 \value{
 Expanded reference matrix aligned to the detectors in `flow_frame`.
@@ -40,7 +41,7 @@ if (interactive()) {
     flow_frame = ff,
     control_file = "fcs_mapping.csv",
     control_dir = "scc",
-    cytometer = "Aurora"
+    cytometer = "auto"
   )
   dim(M_ctrl)
 }

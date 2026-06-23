@@ -11,7 +11,9 @@ pi-sessions-*.html
 # Data files
 *.fcs
 *.csv
+!inst/extdata/cytometer_dictionary.csv
 !inst/extdata/fluorophore_dictionary.csv
+!inst/extdata/fluorophore_channel_dictionary.csv
 !inst/extdata/marker_dictionary.csv
 
 # Output plots and reports
@@ -78,4 +80,3 @@ backtup/
 # Local scratch and check folders
 scratch/
 check/
-

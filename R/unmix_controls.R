@@ -309,7 +309,8 @@
 #' @param scc_dir Directory containing SCC FCS files.
 #' @param control_file Path to control mapping CSV.
 #' @param auto_create_control Logical; auto-generate control file when missing.
-#' @param cytometer Cytometer name (for example `"Aurora"`).
+#' @param cytometer Cytometer name used as a channel-mapping hint. The default,
+#'   `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @param auto_default_control_type Deprecated and ignored.
 #' @param auto_unknown_fluor_policy Auto-fill policy for unresolved fluorophores
 #'   when creating controls (`"by_channel"`, `"empty"`, `"filename"`).
@@ -346,7 +347,7 @@
 #'     scc_dir = "scc",
 #'     control_file = "fcs_mapping.csv",
 #'     auto_create_control = TRUE,
-#'     cytometer = "Aurora",
+#'     cytometer = "auto",
 #'     output_dir = "spectreasy_outputs/unmix_controls"
 #'   )
 #'   ctrl$unmixing_matrix_file
@@ -355,7 +356,7 @@ unmix_controls <- function(
     scc_dir = "scc",
     control_file = "fcs_mapping.csv",
     auto_create_control = TRUE,
-    cytometer = "Aurora",
+    cytometer = "auto",
     auto_default_control_type = "beads",
     auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
     output_dir = "spectreasy_outputs/unmix_controls",

@@ -248,7 +248,7 @@
                                   af_bands_per_file = 5,
                                   exclude_af = FALSE,
                                   include_multi_af = FALSE,
-                                  cytometer = "Aurora",
+                                  cytometer = "auto",
                                   seed = NULL) {
     if (!(toupper(method) %in% c("WLS", "RWLS"))) {
         return(M)
@@ -570,7 +570,9 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   historical behavior.
 #' @param n_threads Positive integer; number of threads to use for event-wise
 #'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
-#' @param cytometer Reserved for compatibility with older workflows.
+#' @param cytometer Cytometer name used only when `unmix_samples()` must build a
+#'   reference matrix dynamically. The default, `"auto"`, infers the cytometer
+#'   from FCS detector names when possible.
 #' @param scc_dir Directory containing single-color control files. Used to
 #'   dynamically build the reference matrix if `M` and `unmixing_matrix_file`
 #'   are missing.
@@ -646,7 +648,7 @@ unmix_samples <- function(sample_dir = "samples",
                           method = "WLS", 
                           rwls_max_iter = 1L,
                           n_threads = 1L,
-                          cytometer = "Aurora",
+                          cytometer = "auto",
                           scc_dir = NULL,
                           control_file = NULL,
                           af_n_bands = 10,

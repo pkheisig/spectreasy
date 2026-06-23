@@ -295,7 +295,8 @@
 #' @param scc_dir Directory containing SCC FCS files.
 #' @param output_file Path to save the PDF report. Defaults to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.
 #' @param control_file Control mapping CSV path.
-#' @param cytometer Cytometer name passed to [build_reference_matrix()].
+#' @param cytometer Cytometer name passed to [build_reference_matrix()]. The
+#'   default, `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @param method Unmixing method used for the control scatter matrix
 #'   (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).
 #' @param qc_plot_dir Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
@@ -334,7 +335,7 @@ qc_controls <- function(
     scc_dir = "scc",
     output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
     control_file = "fcs_mapping.csv",
-    cytometer = "Aurora",
+    cytometer = "auto",
     method = "WLS",
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
     save_qc_pngs = FALSE,
