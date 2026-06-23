@@ -106,6 +106,52 @@ testthat::test_that("detector fallback matches whole detector codes", {
     testthat::expect_equal(infer("R10-A", fluor_channel_map = character()), "APC")
 })
 
+testthat::test_that("supported cytometer metadata is normalized", {
+    ids <- spectreasy::supported_cytometers()
+
+    testthat::expect_true(all(c(
+        "aurora", "northern_lights", "id7000", "discover_s8",
+        "discover_a8", "a5se", "opteon", "mosaic", "xenith"
+    ) %in% ids))
+    testthat::expect_true("auto" %in% spectreasy::supported_cytometers(include_auto = TRUE))
+
+    channels <- spectreasy:::.read_fluorophore_channel_dictionary()
+    testthat::expect_true(any(
+        channels$cytometer == "xenith" &
+            channels$fluorophore == "Alexa Fluor 488" &
+            channels$channel == "FL37-A"
+    ))
+    testthat::expect_true(any(
+        channels$cytometer == "aurora" &
+            channels$fluorophore == "7-AAD" &
+            channels$channel == "YG-4"
+    ))
+
+    xenith_ref <- spectreasy:::.load_control_file_shipped_reference("Xenith")
+    testthat::expect_equal(xenith_ref$channel_map[["FL37-A"]], "FITC")
+    aurora_ref <- spectreasy:::.load_control_file_shipped_reference("Aurora")
+    testthat::expect_equal(aurora_ref$channel_map[["YG4-A"]], "PE-Fire 640")
+})
+
+testthat::test_that("cytometer auto detection recognizes detector naming conventions", {
+    xenith_pd <- data.frame(
+        name = c("FL07-A", "FL08-A", "FL37-A", "FL36-A", "FSC51-A", "SSC52-A", "Time"),
+        desc = c(
+            "349nm - 387/11-A", "349nm - 420/10-A", "488nm - 530/30-A",
+            "488nm - 515/20-A", "FSC51-A", "SSC52-A", "Time"
+        ),
+        stringsAsFactors = FALSE
+    )
+    testthat::expect_equal(spectreasy:::.infer_cytometer_from_pd(xenith_pd), "xenith")
+
+    discover_pd <- data.frame(
+        name = c("UV1 (375)-A", "UV2 (390)-A", "B2 (515)-A", "YG5 (655)-A", "FSC-A", "SSC (Violet)-A"),
+        desc = c("UV1 (375)-A", "UV2 (390)-A", "B2 (515)-A", "YG5 (655)-A", "FSC-A", "SSC (Violet)-A"),
+        stringsAsFactors = FALSE
+    )
+    testthat::expect_true(spectreasy:::.infer_cytometer_from_pd(discover_pd) %in% c("discover_s8", "discover_a8"))
+})
+
 testthat::test_that("custom fluorophore overrides accept common filename forms", {
     testthat::skip_if_not_installed("spectreasy")
 

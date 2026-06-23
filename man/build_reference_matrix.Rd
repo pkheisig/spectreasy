@@ -17,7 +17,7 @@ build_reference_matrix(
   af_max_cells = 50000,
   seed = NULL,
   default_sample_type = "beads",
-  cytometer = "Aurora",
+  cytometer = "auto",
   use_scatter_gating = TRUE,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
@@ -67,7 +67,8 @@ deriving AF basis signatures.}
 
 \item{default_sample_type}{Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).}
 
-\item{cytometer}{Cytometer name used for channel alias resolution (for example `"Aurora"`).}
+\item{cytometer}{Cytometer name used as a channel-mapping hint. The default,
+`"auto"`, infers the cytometer from FCS detector names when possible.}
 
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,
@@ -119,7 +120,7 @@ if (interactive()) {
     output_folder = "spectreasy_outputs/build_reference_plots",
     save_qc_plots = TRUE,
     control_df = "fcs_mapping.csv",
-    cytometer = "Aurora"
+    cytometer = "auto"
   )
 
   M_fast <- build_reference_matrix(

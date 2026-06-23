@@ -407,6 +407,7 @@
 
 .normalize_channel_token <- function(x) {
     out <- toupper(gsub("\\s+", "", trimws(as.character(x))))
+    out <- gsub("([A-Z]+)-([0-9])", "\\1\\2", out, perl = TRUE)
     out[is.na(out)] <- ""
     out
 }

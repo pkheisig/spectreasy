@@ -221,6 +221,7 @@
 # Returns the normalized character vector.
 .normalize_reference_channel <- function(x) {
     out <- toupper(gsub("\\s+", "", trimws(as.character(x))))
+    out <- gsub("([A-Z]+)-([0-9])", "\\1\\2", out, perl = TRUE)
     out[is.na(out)] <- ""
     out
 }
@@ -2425,7 +2426,8 @@
 #'   deriving AF basis signatures.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
-#' @param cytometer Cytometer name used for channel alias resolution (for example `"Aurora"`).
+#' @param cytometer Cytometer name used as a channel-mapping hint. The default,
+#'   `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
 #'   use the legacy one-dimensional histogram gate.
@@ -2456,7 +2458,7 @@
 #'     output_folder = "spectreasy_outputs/build_reference_plots",
 #'     save_qc_plots = TRUE,
 #'     control_df = "fcs_mapping.csv",
-#'     cytometer = "Aurora"
+#'     cytometer = "auto"
 #'   )
 #'
 #'   M_fast <- build_reference_matrix(
@@ -2477,7 +2479,7 @@ build_reference_matrix <- function(
   af_max_cells = 50000,
   seed = NULL,
   default_sample_type = "beads",
-  cytometer = "Aurora",
+  cytometer = "auto",
   use_scatter_gating = TRUE,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
@@ -2509,6 +2511,7 @@ build_reference_matrix <- function(
     )
     out_path <- .prepare_reference_output_path(output_folder = output_folder, save_qc_plots = save_qc_plots)
     metadata <- .prepare_reference_detector_info(file_info$fcs_files[1])
+    cytometer <- .resolve_cytometer_from_pd(cytometer, metadata$pd_meta)
 
     config <- list(
         include_multi_af = include_multi_af,

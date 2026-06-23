@@ -20,6 +20,7 @@
 
 .control_file_canonicalize_channel <- function(x) {
     out <- toupper(gsub("\\s+", "", trimws(as.character(x))))
+    out <- gsub("([A-Z]+)-([0-9])", "\\1\\2", out, perl = TRUE)
     out[is.na(out)] <- ""
     out
 }
@@ -31,11 +32,7 @@
 }
 
 .control_file_extdata_file <- function(filename) {
-    p <- system.file("extdata", filename, package = "spectreasy")
-    if (nzchar(p) && file.exists(p)) return(p)
-    local_p <- file.path("inst", "extdata", filename)
-    if (file.exists(local_p)) return(local_p)
-    ""
+    .spectreasy_extdata_file(filename)
 }
 
 .control_file_preferred_fluors <- function() {
@@ -82,8 +79,10 @@
 
 .load_control_file_shipped_reference <- function(cytometer_name, preferred_fluors = .control_file_preferred_fluors()) {
     fluor_file <- .control_file_extdata_file("fluorophore_dictionary.csv")
+    channel_file <- .control_file_extdata_file("fluorophore_channel_dictionary.csv")
     marker_file <- .control_file_extdata_file("marker_dictionary.csv")
     out <- list(name_map = character(), channel_map = character(), marker_map = character(), marker_names = character())
+    cytometer_id <- .resolve_cytometer_id(cytometer_name, allow_auto = TRUE, unknown_as_auto = TRUE)
 
     if (nzchar(fluor_file)) {
         fluor_df <- tryCatch(
@@ -91,31 +90,52 @@
             error = function(e) NULL
         )
         if (!is.null(fluor_df) && nrow(fluor_df) > 0 && "fluorophore" %in% colnames(fluor_df)) {
-            channel_col <- colnames(fluor_df)[tolower(colnames(fluor_df)) == tolower(paste0("channel_", cytometer_name))]
-            if (length(channel_col) == 0) {
-                channel_col <- colnames(fluor_df)[tolower(colnames(fluor_df)) == "channel_aurora"]
-            }
             for (i in seq_len(nrow(fluor_df))) {
                 canonical <- trimws(as.character(fluor_df$fluorophore[i]))
                 if (!nzchar(canonical)) next
-                aliases <- unique(c(canonical, .control_file_split_semicolon(fluor_df$aliases[i])))
+                aliases_raw <- if ("aliases" %in% colnames(fluor_df)) fluor_df$aliases[i] else ""
+                aliases <- unique(c(canonical, .control_file_split_semicolon(aliases_raw)))
                 alias_keys <- .control_file_normalize_token(aliases)
                 alias_keys <- alias_keys[nzchar(alias_keys)]
                 for (k in alias_keys) {
                     if (!k %in% names(out$name_map)) out$name_map[k] <- canonical
                 }
-                if (length(channel_col) > 0) {
-                    ch_vals <- .control_file_canonicalize_channel(.control_file_split_semicolon(fluor_df[i, channel_col[1]]))
-                    ch_vals <- ch_vals[nzchar(ch_vals)]
-                    for (ch in ch_vals) {
-                        if (!ch %in% names(out$channel_map)) {
-                            out$channel_map[ch] <- canonical
-                        } else {
-                            out$channel_map[ch] <- .control_file_choose_preferred_fluor(
-                                c(out$channel_map[ch], canonical),
-                                preferred_fluors = preferred_fluors
-                            )
-                        }
+            }
+        }
+    }
+
+    if (nzchar(channel_file)) {
+        channel_df <- tryCatch(
+            utils::read.csv(channel_file, stringsAsFactors = FALSE, check.names = FALSE),
+            error = function(e) NULL
+        )
+        required <- c("fluorophore", "cytometer", "channel")
+        if (!is.null(channel_df) && nrow(channel_df) > 0 && all(required %in% colnames(channel_df))) {
+            if (!identical(cytometer_id, "auto")) {
+                channel_ids <- vapply(
+                    channel_df$cytometer,
+                    .resolve_cytometer_id,
+                    character(1),
+                    allow_auto = FALSE,
+                    unknown_as_auto = FALSE
+                )
+                channel_df <- channel_df[channel_ids == cytometer_id, , drop = FALSE]
+            }
+            for (i in seq_len(nrow(channel_df))) {
+                canonical <- trimws(as.character(channel_df$fluorophore[i]))
+                if (!nzchar(canonical)) next
+                raw_channels <- .control_file_split_semicolon(channel_df$channel[i])
+                ch_vals <- .control_file_canonicalize_channel(raw_channels)
+                ch_vals <- unique(c(ch_vals, gsub("-A$", "", ch_vals), paste0(gsub("-A$", "", ch_vals), "-A")))
+                ch_vals <- ch_vals[nzchar(ch_vals)]
+                for (ch in ch_vals) {
+                    if (!ch %in% names(out$channel_map)) {
+                        out$channel_map[ch] <- canonical
+                    } else {
+                        out$channel_map[ch] <- .control_file_choose_preferred_fluor(
+                            c(out$channel_map[ch], canonical),
+                            preferred_fluors = preferred_fluors
+                        )
                     }
                 }
             }
@@ -401,11 +421,19 @@
 }
 
 .control_file_get_expected_af_channel <- function(cytometer_name) {
-    cy <- tolower(trimws(as.character(cytometer_name)))
-    if (!nzchar(cy)) return("")
-    if (grepl("aurora", cy, fixed = TRUE)) return("B1-A")
-    if (grepl("northern lights", cy, fixed = TRUE)) return("B1-A")
-    ""
+    id <- .resolve_cytometer_id(cytometer_name, allow_auto = TRUE, unknown_as_auto = TRUE)
+    switch(id,
+        aurora = "B1-A",
+        northern_lights = "B1-A",
+        id7000 = "405CH7-A",
+        discover_s8 = "V6 (515)-A",
+        discover_a8 = "V6 (515)-A",
+        a5se = "UV515-A",
+        opteon = "UV508-A",
+        mosaic = "V8-A",
+        xenith = "FL13-A",
+        ""
+    )
 }
 
 .control_file_extract_detector_codes <- function(...) {
@@ -803,8 +831,8 @@
 #' @param input_folder Directory containing single-stained control FCS files.
 #' @param af_folder Optional AF folder.
 #' @param include_af_folder Logical. Include AF folder files in the control file.
-#' @param cytometer Cytometer name used for channel-to-fluorophore mapping
-#'   (for example `"Aurora"`).
+#' @param cytometer Cytometer name used as a channel-mapping hint. The default,
+#'   `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @param default_control_type Deprecated. Kept for backward compatibility and ignored.
 #' @param unknown_fluor_policy How to fill unresolved fluorophores:
 #'   `"empty"` (recommended), `"by_channel"` (best-effort guess), `"filename"`.
@@ -839,14 +867,14 @@
 #' control_df <- create_control_file(
 #'   input_folder = scc_dir,
 #'   include_af_folder = FALSE,
-#'   cytometer = "Aurora",
+#'   cytometer = "auto",
 #'   output_file = file.path(td, "fcs_mapping.csv")
 #' )
 #' head(control_df)
 create_control_file <- function(input_folder = "scc",
                                 af_folder = "af",
                                 include_af_folder = TRUE,
-                                cytometer = "Aurora",
+                                cytometer = "auto",
                                 default_control_type = "cells",
                                 unknown_fluor_policy = c("empty", "by_channel", "filename"),
                                 output_file = "fcs_mapping.csv",
@@ -861,7 +889,11 @@ create_control_file <- function(input_folder = "scc",
 
     if (length(scc_files) == 0) stop("No FCS files found in ", input_folder)
 
-    ref <- .prepare_control_file_reference(cytometer)
+    cytometer_resolved <- .resolve_cytometer_from_files(
+        cytometer,
+        files = c(file.path(input_folder, scc_files), file.path(af_folder, af_files))
+    )
+    ref <- .prepare_control_file_reference(cytometer_resolved)
     scc_df <- .build_control_file_scc_df(scc_files, ref = ref, custom_fluorophores = custom_fluorophores)
     af_df <- .build_control_file_af_df(af_files)
     df <- .combine_control_file_seed_rows(scc_df = scc_df, af_df = af_df)
@@ -871,7 +903,7 @@ create_control_file <- function(input_folder = "scc",
         input_folder = input_folder,
         af_folder = af_folder,
         include_af_folder = include_af_folder,
-        cytometer = cytometer,
+        cytometer = cytometer_resolved,
         unknown_fluor_policy = unknown_fluor_policy,
         ref = ref
     )
@@ -896,7 +928,8 @@ create_control_file <- function(input_folder = "scc",
 #' @param control_dir Directory containing SCC FCS files.
 #' @param af_dir Directory containing optional AF FCS files.
 #' @param method Reserved for future method selection.
-#' @param cytometer Cytometer type (for example `"Aurora"`).
+#' @param cytometer Cytometer name used as a channel-mapping hint. The default,
+#'   `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @return Expanded reference matrix aligned to the detectors in `flow_frame`.
 #' @export
 #' @examples
@@ -906,7 +939,7 @@ create_control_file <- function(input_folder = "scc",
 #'     flow_frame = ff,
 #'     control_file = "fcs_mapping.csv",
 #'     control_dir = "scc",
-#'     cytometer = "Aurora"
+#'     cytometer = "auto"
 #'   )
 #'   dim(M_ctrl)
 #' }
@@ -915,13 +948,12 @@ get_control_spectra <- function(flow_frame,
                                 control_dir = "scc",
                                 af_dir = "af",
                                 method = "WLS",
-                                cytometer = "Aurora") {
-    cytometer_resolved <- cytometer
-
+                                cytometer = "auto") {
     # 1. Get detector info
     pd <- flowCore::pData(flowCore::parameters(flow_frame))
     det_info <- get_sorted_detectors(pd)
     detector_names <- det_info$names
+    cytometer_resolved <- .resolve_cytometer_from_pd(cytometer, pd)
 
     control_file <- .resolve_control_file_path(control_file)
 

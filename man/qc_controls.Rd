@@ -11,7 +11,7 @@ qc_controls(
   scc_dir = "scc",
   output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
   control_file = "fcs_mapping.csv",
-  cytometer = "Aurora",
+  cytometer = "auto",
   method = "WLS",
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   save_qc_pngs = FALSE,
@@ -39,7 +39,8 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{control_file}{Control mapping CSV path.}
 
-\item{cytometer}{Cytometer name passed to [build_reference_matrix()].}
+\item{cytometer}{Cytometer name passed to [build_reference_matrix()]. The
+default, `"auto"`, infers the cytometer from FCS detector names when possible.}
 
 \item{method}{Unmixing method used for the control scatter matrix
 (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}

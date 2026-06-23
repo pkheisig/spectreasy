@@ -8,7 +8,7 @@ unmix_controls(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",
   auto_create_control = TRUE,
-  cytometer = "Aurora",
+  cytometer = "auto",
   auto_default_control_type = "beads",
   auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
   output_dir = "spectreasy_outputs/unmix_controls",
@@ -33,7 +33,8 @@ unmix_controls(
 
 \item{auto_create_control}{Logical; auto-generate control file when missing.}
 
-\item{cytometer}{Cytometer name (for example `"Aurora"`).}
+\item{cytometer}{Cytometer name used as a channel-mapping hint. The default,
+`"auto"`, infers the cytometer from FCS detector names when possible.}
 
 \item{auto_default_control_type}{Deprecated and ignored.}
 
@@ -99,7 +100,7 @@ if (interactive()) {
     scc_dir = "scc",
     control_file = "fcs_mapping.csv",
     auto_create_control = TRUE,
-    cytometer = "Aurora",
+    cytometer = "auto",
     output_dir = "spectreasy_outputs/unmix_controls"
   )
   ctrl$unmixing_matrix_file
