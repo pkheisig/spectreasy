@@ -13,6 +13,7 @@ unmix_samples(
   detector_noise_file = NULL,
   method = "WLS",
   rwls_max_iter = 1L,
+  n_threads = 1L,
   cytometer = "Aurora",
   scc_dir = NULL,
   control_file = NULL,
@@ -55,6 +56,9 @@ back to the built-in scalar noise floor.}
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
 iterations used when `method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
+
+\item{n_threads}{Positive integer; number of threads to use for event-wise
+multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
 
 \item{cytometer}{Reserved for compatibility with older workflows.}
 

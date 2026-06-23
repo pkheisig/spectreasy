@@ -1,6 +1,7 @@
 #include <RcppArmadillo.h>
+#include <RcppParallel.h>
 
-// [[Rcpp::depends(RcppArmadillo)]]
+// [[Rcpp::depends(RcppArmadillo, RcppParallel)]]
 
 namespace {
 
@@ -231,6 +232,301 @@ arma::vec wls_event_weights_cpp(const arma::vec& y,
     return weights;
 }
 
+double positive_median_std(std::vector<double>& values, const double fallback) {
+    if (values.empty()) {
+        return fallback;
+    }
+
+    const std::size_t n = values.size();
+    const std::size_t mid = n / 2;
+    std::nth_element(values.begin(), values.begin() + mid, values.end());
+    double med = values[mid];
+    if (n % 2 == 0) {
+        std::nth_element(values.begin(), values.begin() + mid - 1, values.end());
+        med = 0.5 * (med + values[mid - 1]);
+    }
+    if (!std::isfinite(med) || med <= 0) {
+        return fallback;
+    }
+    return med;
+}
+
+struct WlsAfWorkspace {
+    arma::vec y;
+    arma::vec weights;
+    arma::vec denom;
+    arma::mat fluor_w_fluor_t;
+    arma::vec fluor_w_y;
+    arma::mat normal;
+    arma::vec rhs;
+    arma::vec coeffs;
+    arma::vec best_coeffs;
+    arma::mat selected_model;
+    std::vector<double> positive_denom;
+    std::vector<double> positive_weights;
+
+    WlsAfWorkspace(const arma::uword n_detectors, const arma::uword n_fluors)
+        : y(n_detectors, arma::fill::zeros),
+          weights(n_detectors, arma::fill::zeros),
+          denom(n_detectors, arma::fill::zeros),
+          fluor_w_fluor_t(n_fluors, n_fluors, arma::fill::zeros),
+          fluor_w_y(n_fluors, arma::fill::zeros),
+          normal(n_fluors + 1, n_fluors + 1, arma::fill::zeros),
+          rhs(n_fluors + 1, arma::fill::zeros),
+          coeffs(n_fluors + 1, arma::fill::zeros),
+          best_coeffs(n_fluors + 1, arma::fill::zeros),
+          selected_model(n_fluors + 1, n_detectors, arma::fill::zeros) {
+        positive_denom.reserve(n_detectors);
+        positive_weights.reserve(n_detectors);
+    }
+};
+
+void fill_wls_event_weights(const arma::vec& y,
+                            const arma::vec& noise_floor,
+                            const arma::vec& signal_scale,
+                            const double max_weight_ratio,
+                            WlsAfWorkspace& ws) {
+    const arma::uword n_detectors = y.n_elem;
+    ws.positive_denom.clear();
+    for (arma::uword j = 0; j < n_detectors; ++j) {
+        double floor_j = noise_floor(j);
+        if (!std::isfinite(floor_j) || floor_j <= 0) {
+            floor_j = 125.0;
+        }
+        double scale_j = signal_scale(j);
+        if (!std::isfinite(scale_j) || scale_j < 0) {
+            scale_j = 1.0;
+        }
+        double signal_j = y(j);
+        if (!std::isfinite(signal_j) || signal_j < 0) {
+            signal_j = 0.0;
+        }
+        ws.denom(j) = floor_j + scale_j * signal_j;
+        if (std::isfinite(ws.denom(j)) && ws.denom(j) > 0) {
+            ws.positive_denom.push_back(ws.denom(j));
+        }
+    }
+
+    const double fallback = positive_median_std(ws.positive_denom, 125.0);
+    ws.positive_weights.clear();
+    for (arma::uword j = 0; j < n_detectors; ++j) {
+        double d = ws.denom(j);
+        if (!std::isfinite(d) || d <= 0) {
+            d = fallback;
+        }
+        ws.weights(j) = 1.0 / d;
+        if (std::isfinite(ws.weights(j)) && ws.weights(j) > 0) {
+            ws.positive_weights.push_back(ws.weights(j));
+        }
+    }
+
+    const double med = positive_median_std(ws.positive_weights, 1.0);
+    ws.weights /= med;
+
+    if (std::isfinite(max_weight_ratio) && max_weight_ratio > 1.0) {
+        const double half_cap = std::sqrt(max_weight_ratio);
+        const double lo = 1.0 / half_cap;
+        const double hi = half_cap;
+        for (arma::uword j = 0; j < n_detectors; ++j) {
+            if (!std::isfinite(ws.weights(j)) || ws.weights(j) <= 0) {
+                ws.weights(j) = 1.0;
+            }
+            ws.weights(j) = std::min(std::max(ws.weights(j), lo), hi);
+        }
+    }
+}
+
+void fill_fluor_wls_blocks(const arma::mat& F,
+                           const arma::vec& y,
+                           const arma::vec& weights,
+                           WlsAfWorkspace& ws) {
+    const arma::uword n_fluors = F.n_rows;
+    const arma::uword n_detectors = F.n_cols;
+    ws.fluor_w_fluor_t.zeros();
+    ws.fluor_w_y.zeros();
+
+    for (arma::uword f1 = 0; f1 < n_fluors; ++f1) {
+        double rhs_sum = 0.0;
+        for (arma::uword j = 0; j < n_detectors; ++j) {
+            rhs_sum += F(f1, j) * weights(j) * y(j);
+        }
+        ws.fluor_w_y(f1) = rhs_sum;
+
+        for (arma::uword f2 = f1; f2 < n_fluors; ++f2) {
+            double normal_sum = 0.0;
+            for (arma::uword j = 0; j < n_detectors; ++j) {
+                normal_sum += F(f1, j) * weights(j) * F(f2, j);
+            }
+            ws.fluor_w_fluor_t(f1, f2) = normal_sum;
+            ws.fluor_w_fluor_t(f2, f1) = normal_sum;
+        }
+    }
+}
+
+double fit_af_candidate_from_blocks(const arma::mat& F,
+                                    const arma::rowvec& af,
+                                    const arma::vec& y,
+                                    const arma::vec& weights,
+                                    const double tol,
+                                    WlsAfWorkspace& ws) {
+    const arma::uword n_fluors = F.n_rows;
+    const arma::uword n_detectors = F.n_cols;
+    ws.normal.zeros();
+    ws.rhs.zeros();
+
+    for (arma::uword f1 = 0; f1 < n_fluors; ++f1) {
+        ws.rhs(f1) = ws.fluor_w_y(f1);
+        for (arma::uword f2 = 0; f2 < n_fluors; ++f2) {
+            ws.normal(f1, f2) = ws.fluor_w_fluor_t(f1, f2);
+        }
+    }
+
+    double af_w_af = 0.0;
+    double af_w_y = 0.0;
+    for (arma::uword f = 0; f < n_fluors; ++f) {
+        double fluor_w_af = 0.0;
+        for (arma::uword j = 0; j < n_detectors; ++j) {
+            fluor_w_af += F(f, j) * weights(j) * af(j);
+        }
+        ws.normal(f, n_fluors) = fluor_w_af;
+        ws.normal(n_fluors, f) = fluor_w_af;
+    }
+    for (arma::uword j = 0; j < n_detectors; ++j) {
+        af_w_af += af(j) * weights(j) * af(j);
+        af_w_y += af(j) * weights(j) * y(j);
+    }
+    ws.normal(n_fluors, n_fluors) = af_w_af;
+    ws.rhs(n_fluors) = af_w_y;
+
+    bool solved = arma::solve(ws.coeffs, ws.normal, ws.rhs);
+    if (!solved || !ws.coeffs.is_finite()) {
+        ws.coeffs = safe_inverse_cpp(ws.normal, tol) * ws.rhs;
+    }
+
+    double rss = 0.0;
+    for (arma::uword j = 0; j < n_detectors; ++j) {
+        double fitted = 0.0;
+        for (arma::uword f = 0; f < n_fluors; ++f) {
+            fitted += F(f, j) * ws.coeffs(f);
+        }
+        fitted += af(j) * ws.coeffs(n_fluors);
+        const double resid = y(j) - fitted;
+        rss += weights(j) * resid * resid;
+    }
+    return rss;
+}
+
+void fill_selected_model(const arma::mat& F,
+                         const arma::rowvec& af,
+                         WlsAfWorkspace& ws) {
+    const arma::uword n_fluors = F.n_rows;
+    for (arma::uword f = 0; f < n_fluors; ++f) {
+        ws.selected_model.row(f) = F.row(f);
+    }
+    ws.selected_model.row(n_fluors) = af;
+}
+
+void unmix_wls_best_af_event(const arma::mat& Y,
+                             const arma::mat& F,
+                             const arma::mat& AF,
+                             const arma::uvec& fluor_idx,
+                             const arma::uvec& af_idx,
+                             const arma::vec& noise_floor,
+                             const arma::vec& signal_scale,
+                             const double max_weight_ratio,
+                             const double tol,
+                             const bool robust,
+                             const int rwls_max_iter,
+                             arma::mat& A_out,
+                             const arma::uword i,
+                             WlsAfWorkspace& ws) {
+    const arma::uword n_detectors = Y.n_cols;
+    const arma::uword n_fluors = F.n_rows;
+    const arma::uword n_af = AF.n_rows;
+    for (arma::uword j = 0; j < n_detectors; ++j) {
+        ws.y(j) = Y(i, j);
+    }
+
+    fill_wls_event_weights(ws.y, noise_floor, signal_scale, max_weight_ratio, ws);
+    fill_fluor_wls_blocks(F, ws.y, ws.weights, ws);
+
+    double min_rss = std::numeric_limits<double>::max();
+    arma::uword best_k = 0;
+    for (arma::uword k = 0; k < n_af; ++k) {
+        const double rss = fit_af_candidate_from_blocks(
+            F, AF.row(k), ws.y, ws.weights, tol, ws
+        );
+        if (rss < min_rss) {
+            min_rss = rss;
+            best_k = k;
+            ws.best_coeffs = ws.coeffs;
+        }
+    }
+
+    if (robust) {
+        fill_selected_model(F, AF.row(best_k), ws);
+        ws.best_coeffs = robust_weighted_lsq_coeffs_cpp(
+            ws.selected_model, ws.y, ws.weights, 1.345, rwls_max_iter, 1e-6, tol
+        );
+    }
+
+    for (arma::uword f = 0; f < n_fluors; ++f) {
+        A_out(i, fluor_idx(f)) = ws.best_coeffs(f);
+    }
+    A_out(i, af_idx(best_k)) = ws.best_coeffs(n_fluors);
+}
+
+struct WlsBestAfWorker : public RcppParallel::Worker {
+    const arma::mat& Y;
+    const arma::mat& F;
+    const arma::mat& AF;
+    const arma::uvec& fluor_idx;
+    const arma::uvec& af_idx;
+    const arma::vec& noise_floor;
+    const arma::vec& signal_scale;
+    const double max_weight_ratio;
+    const double tol;
+    const bool robust;
+    const int rwls_max_iter;
+    arma::mat& A_out;
+
+    WlsBestAfWorker(const arma::mat& Y,
+                    const arma::mat& F,
+                    const arma::mat& AF,
+                    const arma::uvec& fluor_idx,
+                    const arma::uvec& af_idx,
+                    const arma::vec& noise_floor,
+                    const arma::vec& signal_scale,
+                    const double max_weight_ratio,
+                    const double tol,
+                    const bool robust,
+                    const int rwls_max_iter,
+                    arma::mat& A_out)
+        : Y(Y),
+          F(F),
+          AF(AF),
+          fluor_idx(fluor_idx),
+          af_idx(af_idx),
+          noise_floor(noise_floor),
+          signal_scale(signal_scale),
+          max_weight_ratio(max_weight_ratio),
+          tol(tol),
+          robust(robust),
+          rwls_max_iter(rwls_max_iter),
+          A_out(A_out) {}
+
+    void operator()(std::size_t begin, std::size_t end) {
+        WlsAfWorkspace ws(Y.n_cols, F.n_rows);
+        for (std::size_t i = begin; i < end; ++i) {
+            unmix_wls_best_af_event(
+                Y, F, AF, fluor_idx, af_idx, noise_floor, signal_scale,
+                max_weight_ratio, tol, robust, rwls_max_iter, A_out,
+                static_cast<arma::uword>(i), ws
+            );
+        }
+    }
+};
+
 } // namespace
 
 // [[Rcpp::export]]
@@ -312,7 +608,8 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
                                        const double tol = 1e-10,
                                        const int max_outer = 500,
                                        const int max_inner = 500,
-                                       const int rwls_max_iter = 1) {
+                                       const int rwls_max_iter = 1,
+                                       const int n_threads = 1) {
     const arma::uword n_cells = Y.n_rows;
     const arma::uword n_detectors = Y.n_cols;
     const arma::uword n_markers = M.n_rows;
@@ -324,6 +621,29 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
     }
 
     arma::mat A_out(n_cells, n_markers, arma::fill::zeros);
+
+    if ((method == "WLS" || method == "RWLS") && n_af > 0) {
+        const arma::mat F = M.rows(fluor_idx);
+        const arma::mat AF = M.rows(af_idx);
+        const bool robust = method == "RWLS";
+        const int threads = std::max(1, n_threads);
+        if (threads > 1 && n_cells > 1) {
+            WlsBestAfWorker worker(
+                Y, F, AF, fluor_idx, af_idx, noise_floor, signal_scale,
+                max_weight_ratio, tol, robust, rwls_max_iter, A_out
+            );
+            RcppParallel::parallelFor(0, n_cells, worker, 128, threads);
+        } else {
+            WlsAfWorkspace ws(n_detectors, n_fluors);
+            for (arma::uword i = 0; i < n_cells; ++i) {
+                unmix_wls_best_af_event(
+                    Y, F, AF, fluor_idx, af_idx, noise_floor, signal_scale,
+                    max_weight_ratio, tol, robust, rwls_max_iter, A_out, i, ws
+                );
+            }
+        }
+        return A_out;
+    }
 
     // Precompute candidate model matrices. OLS also gets fixed projection
     // matrices after a condition check because candidate conditioning does not

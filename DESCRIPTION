@@ -19,13 +19,16 @@ Imports:
     methods,
     png,
     Rcpp,
+    RcppParallel,
     scales,
     sp,
     tidyr,
     withr
 LinkingTo:
     Rcpp,
-    RcppArmadillo
+    RcppArmadillo,
+    RcppParallel
+SystemRequirements: GNU make
 Suggests:
     jsonlite,
     KernSmooth,

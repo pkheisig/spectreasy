@@ -6,6 +6,14 @@
     rwls_max_iter
 }
 
+.normalize_unmix_threads <- function(n_threads) {
+    n_threads <- suppressWarnings(as.integer(n_threads[1]))
+    if (!is.finite(n_threads) || n_threads < 1L) {
+        stop("n_threads must be an integer >= 1.", call. = FALSE)
+    }
+    n_threads
+}
+
 #' Calculate unmixing residuals
 #'
 #' @param flow_frame A flowFrame object with raw fluorescence data
@@ -23,9 +31,12 @@
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
+#' @param n_threads Positive integer; number of threads to use for event-wise
+#'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
 #' @return Data frame with unmixed abundances and retained acquisition parameters
 #'   (`Time` plus all `FSC*`/`SSC*` columns, when available).
 #'         If return_residuals=TRUE, returns a list with [[data]] and [[residuals]].
+#' @importFrom RcppParallel defaultNumThreads
 #' @examples
 #' M_demo <- rbind(
 #'   FITC = c(1.00, 0.20, 0.05),
@@ -60,9 +71,11 @@ calc_residuals <- function(flow_frame,
                            background_noise = .default_wls_background_noise(),
                            wls_signal_scale = .default_wls_signal_scale(),
                            wls_max_weight_ratio = .default_wls_max_weight_ratio(),
-                           rwls_max_iter = 1L) {
+                           rwls_max_iter = 1L,
+                           n_threads = 1L) {
     M <- .as_reference_matrix(M, "M")
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
+    n_threads <- .normalize_unmix_threads(n_threads)
     full_data <- flowCore::exprs(flow_frame)
     detectors <- colnames(M)
     
@@ -104,7 +117,8 @@ calc_residuals <- function(flow_frame,
             noise_floor = wls_noise$noise_floor,
             signal_scale = wls_noise$signal_scale,
             max_weight_ratio = wls_noise$max_weight_ratio,
-            rwls_max_iter = rwls_max_iter
+            rwls_max_iter = rwls_max_iter,
+            n_threads = n_threads
         )
     } else {
         if (method == "OLS") {
