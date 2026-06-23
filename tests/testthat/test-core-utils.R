@@ -406,6 +406,41 @@ test_that("unmix_samples loads sibling SCC detector-noise file for WLS", {
     )
 })
 
+test_that("multi-AF WLS threading matches single-threaded output", {
+    M <- matrix(c(
+        1.00, 0.20, 0.05, 0.01,
+        0.10, 1.00, 0.20, 0.05,
+        0.05, 0.10, 1.00, 0.20,
+        0.30, 0.25, 0.15, 0.10,
+        0.08, 0.18, 0.28, 0.38
+    ), nrow = 5, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE", "APC", "AF", "AF_2")
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A", "V1-A")
+
+    coeffs <- matrix(c(
+        120, 15, 8, 25, 0,
+        20, 110, 12, 0, 35,
+        15, 10, 95, 18, 0,
+        65, 55, 30, 0, 22
+    ), nrow = 4, byrow = TRUE)
+    Y <- coeffs %*% M
+    colnames(Y) <- colnames(M)
+    ff <- flowCore::flowFrame(Y)
+
+    single <- spectreasy::calc_residuals(ff, M, method = "WLS", n_threads = 1)
+    threaded <- spectreasy::calc_residuals(ff, M, method = "WLS", n_threads = 2)
+
+    expect_equal(
+        as.matrix(threaded[, rownames(M)]),
+        as.matrix(single[, rownames(M)]),
+        tolerance = 1e-8
+    )
+    expect_error(
+        spectreasy::calc_residuals(ff, M, method = "WLS", n_threads = 0),
+        "n_threads must be an integer >= 1"
+    )
+})
+
 test_that("saved static unmixing matrices are rejected where reference matrices are expected", {
     W <- matrix(c(
         1.0, -0.2,

@@ -20,6 +20,7 @@ unmix_controls(
   af_bands_per_file = 5,
   include_multi_af = FALSE,
   rwls_max_iter = 1L,
+  unmix_threads = 1L,
   save_qc_plots = FALSE,
   use_scatter_gating = TRUE,
   ...
@@ -62,6 +63,9 @@ multiple AF sources are pooled. Default is 5.}
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
 iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
+
+\item{unmix_threads}{Positive integer; number of threads to use for event-wise
+multi-AF WLS/RWLS SCC unmixing. The default, 1, keeps execution single-threaded.}
 
 \item{save_qc_plots}{Logical; whether to write per-control FSC/SSC,
 intensity-gate, and spectrum PNGs under `output_dir`.}

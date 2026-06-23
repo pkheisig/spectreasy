@@ -328,6 +328,8 @@
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
+#' @param unmix_threads Positive integer; number of threads to use for event-wise
+#'   multi-AF WLS/RWLS SCC unmixing. The default, 1, keeps execution single-threaded.
 #' @param save_qc_plots Logical; whether to write per-control FSC/SSC,
 #'   intensity-gate, and spectrum PNGs under `output_dir`.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
@@ -365,6 +367,7 @@ unmix_controls <- function(
     af_bands_per_file = 5,
     include_multi_af = FALSE,
     rwls_max_iter = 1L,
+    unmix_threads = 1L,
     save_qc_plots = FALSE,
     use_scatter_gating = TRUE,
     ...
@@ -447,6 +450,7 @@ unmix_controls <- function(
         M = M,
         method = unmix_method,
         rwls_max_iter = rwls_max_iter,
+        n_threads = unmix_threads,
         cytometer = cytometer,
         output_dir = output_paths$unmixed_dir,
         write_fcs = TRUE

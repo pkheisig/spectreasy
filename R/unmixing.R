@@ -568,6 +568,8 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
+#' @param n_threads Positive integer; number of threads to use for event-wise
+#'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
 #' @param cytometer Reserved for compatibility with older workflows.
 #' @param scc_dir Directory containing single-color control files. Used to
 #'   dynamically build the reference matrix if `M` and `unmixing_matrix_file`
@@ -643,6 +645,7 @@ unmix_samples <- function(sample_dir = "samples",
                           detector_noise_file = NULL,
                           method = "WLS", 
                           rwls_max_iter = 1L,
+                          n_threads = 1L,
                           cytometer = "Aurora",
                           scc_dir = NULL,
                           control_file = NULL,
@@ -719,6 +722,7 @@ unmix_samples <- function(sample_dir = "samples",
         stop("method must be one of: ", paste(allowed_methods, collapse = ", "))
     }
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
+    n_threads <- .normalize_unmix_threads(n_threads)
     M <- .ensure_wls_variances(
         M = M,
         method = method_upper,
@@ -758,6 +762,7 @@ unmix_samples <- function(sample_dir = "samples",
             method = method_upper,
             file_name = sn,
             rwls_max_iter = rwls_max_iter,
+            n_threads = n_threads,
             return_residuals = TRUE
         )
         

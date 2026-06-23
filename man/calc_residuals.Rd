@@ -13,7 +13,8 @@ calc_residuals(
   background_noise = .default_wls_background_noise(),
   wls_signal_scale = .default_wls_signal_scale(),
   wls_max_weight_ratio = .default_wls_max_weight_ratio(),
-  rwls_max_iter = 1L
+  rwls_max_iter = 1L,
+  n_threads = 1L
 )
 }
 \arguments{
@@ -40,6 +41,9 @@ non-negative event signal in the WLS variance model.}
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
 iterations used when `method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
+
+\item{n_threads}{Positive integer; number of threads to use for event-wise
+multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
 }
 \value{
 Data frame with unmixed abundances and retained acquisition parameters
