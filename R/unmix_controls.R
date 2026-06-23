@@ -325,6 +325,9 @@
 #' @param af_bands_per_file Number of AF bands requested per AF file when
 #'   multiple AF sources are pooled. Default is 5.
 #' @param include_multi_af Logical; whether to include additional AF files from `af_dir`. Default is FALSE.
+#' @param rwls_max_iter Positive integer; number of robust reweighting
+#'   iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
+#'   historical behavior.
 #' @param save_qc_plots Logical; whether to write per-control FSC/SSC,
 #'   intensity-gate, and spectrum PNGs under `output_dir`.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
@@ -361,6 +364,7 @@ unmix_controls <- function(
     af_n_bands = 10,
     af_bands_per_file = 5,
     include_multi_af = FALSE,
+    rwls_max_iter = 1L,
     save_qc_plots = FALSE,
     use_scatter_gating = TRUE,
     ...
@@ -442,6 +446,7 @@ unmix_controls <- function(
         sample_dir = scc_dir,
         M = M,
         method = unmix_method,
+        rwls_max_iter = rwls_max_iter,
         cytometer = cytometer,
         output_dir = output_paths$unmixed_dir,
         write_fcs = TRUE

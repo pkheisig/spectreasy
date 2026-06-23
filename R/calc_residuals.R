@@ -1,3 +1,11 @@
+.normalize_rwls_max_iter <- function(rwls_max_iter) {
+    rwls_max_iter <- suppressWarnings(as.integer(rwls_max_iter[1]))
+    if (!is.finite(rwls_max_iter) || rwls_max_iter < 1L) {
+        stop("rwls_max_iter must be an integer >= 1.", call. = FALSE)
+    }
+    rwls_max_iter
+}
+
 #' Calculate unmixing residuals
 #'
 #' @param flow_frame A flowFrame object with raw fluorescence data
@@ -12,6 +20,9 @@
 #' @param wls_signal_scale Scalar or detector-length vector multiplying the
 #'   non-negative event signal in the WLS variance model.
 #' @param wls_max_weight_ratio Maximum detector weight ratio allowed per event.
+#' @param rwls_max_iter Positive integer; number of robust reweighting
+#'   iterations used when `method = "RWLS"`. The default, 1, preserves the
+#'   historical behavior.
 #' @return Data frame with unmixed abundances and retained acquisition parameters
 #'   (`Time` plus all `FSC*`/`SSC*` columns, when available).
 #'         If return_residuals=TRUE, returns a list with [[data]] and [[residuals]].
@@ -48,8 +59,10 @@ calc_residuals <- function(flow_frame,
                            return_residuals = FALSE,
                            background_noise = .default_wls_background_noise(),
                            wls_signal_scale = .default_wls_signal_scale(),
-                           wls_max_weight_ratio = .default_wls_max_weight_ratio()) {
+                           wls_max_weight_ratio = .default_wls_max_weight_ratio(),
+                           rwls_max_iter = 1L) {
     M <- .as_reference_matrix(M, "M")
+    rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     full_data <- flowCore::exprs(flow_frame)
     detectors <- colnames(M)
     
@@ -90,7 +103,8 @@ calc_residuals <- function(flow_frame,
             method = method,
             noise_floor = wls_noise$noise_floor,
             signal_scale = wls_noise$signal_scale,
-            max_weight_ratio = wls_noise$max_weight_ratio
+            max_weight_ratio = wls_noise$max_weight_ratio,
+            rwls_max_iter = rwls_max_iter
         )
     } else {
         if (method == "OLS") {
@@ -116,7 +130,8 @@ calc_residuals <- function(flow_frame,
                 M = M,
                 noise_floor = wls_noise$noise_floor,
                 signal_scale = wls_noise$signal_scale,
-                max_weight_ratio = wls_noise$max_weight_ratio
+                max_weight_ratio = wls_noise$max_weight_ratio,
+                max_iter = rwls_max_iter
             )
         }
     }

@@ -565,6 +565,9 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   estimates the floors from `scc_dir` when available, and otherwise falls
 #'   back to the built-in scalar noise floor.
 #' @param method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).
+#' @param rwls_max_iter Positive integer; number of robust reweighting
+#'   iterations used when `method = "RWLS"`. The default, 1, preserves the
+#'   historical behavior.
 #' @param cytometer Reserved for compatibility with older workflows.
 #' @param scc_dir Directory containing single-color control files. Used to
 #'   dynamically build the reference matrix if `M` and `unmixing_matrix_file`
@@ -639,6 +642,7 @@ unmix_samples <- function(sample_dir = "samples",
                           variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
                           detector_noise_file = NULL,
                           method = "WLS", 
+                          rwls_max_iter = 1L,
                           cytometer = "Aurora",
                           scc_dir = NULL,
                           control_file = NULL,
@@ -714,6 +718,7 @@ unmix_samples <- function(sample_dir = "samples",
     if (!(method_upper %in% allowed_methods)) {
         stop("method must be one of: ", paste(allowed_methods, collapse = ", "))
     }
+    rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     M <- .ensure_wls_variances(
         M = M,
         method = method_upper,
@@ -747,7 +752,14 @@ unmix_samples <- function(sample_dir = "samples",
             flowCore::read.FCS(entry$file_path, transformation = FALSE, truncate_max_range = FALSE)
         }
 
-        res_obj <- calc_residuals(ff, M, method = method_upper, file_name = sn, return_residuals = TRUE)
+        res_obj <- calc_residuals(
+            ff,
+            M,
+            method = method_upper,
+            file_name = sn,
+            rwls_max_iter = rwls_max_iter,
+            return_residuals = TRUE
+        )
         
         if (isTRUE(write_fcs)) {
             marker_source <- rownames(M)

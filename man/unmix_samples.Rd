@@ -12,6 +12,7 @@ unmix_samples(
   variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
   detector_noise_file = NULL,
   method = "WLS",
+  rwls_max_iter = 1L,
   cytometer = "Aurora",
   scc_dir = NULL,
   control_file = NULL,
@@ -50,6 +51,10 @@ estimates the floors from `scc_dir` when available, and otherwise falls
 back to the built-in scalar noise floor.}
 
 \item{method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}
+
+\item{rwls_max_iter}{Positive integer; number of robust reweighting
+iterations used when `method = "RWLS"`. The default, 1, preserves the
+historical behavior.}
 
 \item{cytometer}{Reserved for compatibility with older workflows.}
 

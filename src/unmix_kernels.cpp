@@ -311,7 +311,8 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
                                        const double max_weight_ratio = 1600.0,
                                        const double tol = 1e-10,
                                        const int max_outer = 500,
-                                       const int max_inner = 500) {
+                                       const int max_inner = 500,
+                                       const int rwls_max_iter = 1) {
     const arma::uword n_cells = Y.n_rows;
     const arma::uword n_detectors = Y.n_cols;
     const arma::uword n_markers = M.n_rows;
@@ -424,7 +425,7 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
                 coeffs = weighted_lsq_coeffs_cpp(X_best, y, weights, tol);
             }
         } else if (method == "RWLS") {
-            coeffs = robust_weighted_lsq_coeffs_cpp(X_best, y, event_weights, 1.345, 1, 1e-6, tol);
+            coeffs = robust_weighted_lsq_coeffs_cpp(X_best, y, event_weights, 1.345, rwls_max_iter, 1e-6, tol);
         } else if (method == "NNLS") {
             coeffs = nnls_lawson_hanson_cpp(A_best, y, tol, max_outer, max_inner);
         }

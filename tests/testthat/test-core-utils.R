@@ -270,6 +270,41 @@ test_that("calc_residuals RWLS down-weights detector-level outliers", {
     expect_lt(rwls_error, wls_error * 0.1)
 })
 
+test_that("rwls_max_iter is exposed through the unmixing APIs", {
+    expect_true("rwls_max_iter" %in% names(formals(spectreasy::calc_residuals)))
+    expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_samples)))
+    expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_controls)))
+})
+
+test_that("calc_residuals multi-AF RWLS honors rwls_max_iter", {
+    M <- rbind(
+        FITC = c(1.00, 0.15, 0.10, 0.05, 0.02, 0.01),
+        PE = c(0.10, 1.00, 0.15, 0.05, 0.02, 0.01),
+        AF = c(0.20, 0.20, 0.80, 0.20, 0.10, 0.05),
+        AF_2 = c(0.05, 0.10, 0.20, 0.80, 0.20, 0.10)
+    )
+    colnames(M) <- paste0("D", seq_len(ncol(M)))
+
+    true_abundance <- c(FITC = 80, PE = 25, AF = 0, AF_2 = 120)
+    y <- as.numeric(true_abundance %*% M)
+    y[3] <- y[3] + 1000
+    y[6] <- y[6] - 250
+    ff <- flowCore::flowFrame(matrix(y, nrow = 1, dimnames = list(NULL, colnames(M))))
+
+    iter_1 <- spectreasy::calc_residuals(ff, M, method = "RWLS", rwls_max_iter = 1)
+    iter_5 <- spectreasy::calc_residuals(ff, M, method = "RWLS", rwls_max_iter = 5)
+
+    expect_false(isTRUE(all.equal(
+        as.matrix(iter_1[, rownames(M)]),
+        as.matrix(iter_5[, rownames(M)]),
+        tolerance = 1e-8
+    )))
+    expect_error(
+        spectreasy::calc_residuals(ff, M, method = "RWLS", rwls_max_iter = 0),
+        "rwls_max_iter must be an integer >= 1"
+    )
+})
+
 test_that("calc_residuals WLS works without SCC-derived variances", {
     M <- matrix(c(
         1, 0.2,

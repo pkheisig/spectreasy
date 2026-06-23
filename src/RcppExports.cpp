@@ -62,8 +62,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // spectreasy_unmix_best_af_cpp
-arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y, const arma::mat& M, const arma::uvec& fluor_idx, const arma::uvec& af_idx, const std::string& method, const arma::vec& noise_floor, const arma::vec& signal_scale, const double max_weight_ratio, const double tol, const int max_outer, const int max_inner);
-RcppExport SEXP _spectreasy_spectreasy_unmix_best_af_cpp(SEXP YSEXP, SEXP MSEXP, SEXP fluor_idxSEXP, SEXP af_idxSEXP, SEXP methodSEXP, SEXP noise_floorSEXP, SEXP signal_scaleSEXP, SEXP max_weight_ratioSEXP, SEXP tolSEXP, SEXP max_outerSEXP, SEXP max_innerSEXP) {
+arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y, const arma::mat& M, const arma::uvec& fluor_idx, const arma::uvec& af_idx, const std::string& method, const arma::vec& noise_floor, const arma::vec& signal_scale, const double max_weight_ratio, const double tol, const int max_outer, const int max_inner, const int rwls_max_iter);
+RcppExport SEXP _spectreasy_spectreasy_unmix_best_af_cpp(SEXP YSEXP, SEXP MSEXP, SEXP fluor_idxSEXP, SEXP af_idxSEXP, SEXP methodSEXP, SEXP noise_floorSEXP, SEXP signal_scaleSEXP, SEXP max_weight_ratioSEXP, SEXP tolSEXP, SEXP max_outerSEXP, SEXP max_innerSEXP, SEXP rwls_max_iterSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -78,7 +78,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const double >::type tol(tolSEXP);
     Rcpp::traits::input_parameter< const int >::type max_outer(max_outerSEXP);
     Rcpp::traits::input_parameter< const int >::type max_inner(max_innerSEXP);
-    rcpp_result_gen = Rcpp::wrap(spectreasy_unmix_best_af_cpp(Y, M, fluor_idx, af_idx, method, noise_floor, signal_scale, max_weight_ratio, tol, max_outer, max_inner));
+    Rcpp::traits::input_parameter< const int >::type rwls_max_iter(rwls_max_iterSEXP);
+    rcpp_result_gen = Rcpp::wrap(spectreasy_unmix_best_af_cpp(Y, M, fluor_idx, af_idx, method, noise_floor, signal_scale, max_weight_ratio, tol, max_outer, max_inner, rwls_max_iter));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -87,7 +88,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_spectreasy_spectreasy_nnls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_nnls_unmix_cpp, 5},
     {"_spectreasy_spectreasy_wls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_wls_unmix_cpp, 6},
     {"_spectreasy_spectreasy_rwls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_rwls_unmix_cpp, 9},
-    {"_spectreasy_spectreasy_unmix_best_af_cpp", (DL_FUNC) &_spectreasy_spectreasy_unmix_best_af_cpp, 11},
+    {"_spectreasy_spectreasy_unmix_best_af_cpp", (DL_FUNC) &_spectreasy_spectreasy_unmix_best_af_cpp, 12},
     {NULL, NULL, 0}
 };
 
