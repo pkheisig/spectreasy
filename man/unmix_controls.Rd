@@ -18,6 +18,10 @@ unmix_controls(
   seed = NULL,
   af_n_bands = 10,
   af_bands_per_file = 5,
+  af_auto_max_bands = 20,
+  af_min_cluster_events = 20,
+  af_min_cluster_proportion = 0.005,
+  af_n_bands_sensitivity = 1.5,
   include_multi_af = FALSE,
   rwls_max_iter = 1L,
   unmix_threads = 1L,
@@ -58,6 +62,19 @@ from AF event shapes. Default is 10.}
 
 \item{af_bands_per_file}{Number of AF bands requested per AF file when
 multiple AF sources are pooled. Default is 5.}
+
+\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.
+Default is 20.}
+
+\item{af_min_cluster_events}{Minimum number of AF events required to keep a
+k-means AF cluster. Used together with `af_min_cluster_proportion`.}
+
+\item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
+events required to keep a k-means AF cluster. Default is 0.005.}
+
+\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
+when `af_n_bands = "auto"`. Lower values allow more bands; higher values
+select fewer bands. Default is `1.5`.}
 
 \item{include_multi_af}{Logical; whether to include additional AF files from `af_dir`. Default is FALSE.}
 

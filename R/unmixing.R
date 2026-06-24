@@ -246,6 +246,10 @@
                                   control_file = NULL,
                                   af_n_bands = 10,
                                   af_bands_per_file = 5,
+                                  af_auto_max_bands = 20,
+                                  af_min_cluster_events = 20,
+                                  af_min_cluster_proportion = 0.005,
+                                  af_n_bands_sensitivity = 1.5,
                                   exclude_af = FALSE,
                                   include_multi_af = FALSE,
                                   cytometer = "auto",
@@ -583,6 +587,14 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   from AF event shapes.
 #' @param af_bands_per_file Number of AF bands requested per AF file when
 #'   multiple AF sources are pooled.
+#' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
+#' @param af_min_cluster_events Minimum number of AF events required to keep a
+#'   k-means AF cluster.
+#' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
+#'   events required to keep a k-means AF cluster.
+#' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
+#'   when `af_n_bands = "auto"`. Lower values allow more bands; higher values
+#'   select fewer bands. Default is `1.5`.
 #' @param exclude_af Logical; whether to exclude AF from unmixing.
 #' @param include_multi_af Logical; whether to include multi-AF controls.
 #' @param output_dir Directory to save unmixed FCS files when `write_fcs = TRUE`.
@@ -653,6 +665,10 @@ unmix_samples <- function(sample_dir = "samples",
                           control_file = NULL,
                           af_n_bands = 10,
                           af_bands_per_file = 5,
+                          af_auto_max_bands = 20,
+                          af_min_cluster_events = 20,
+                          af_min_cluster_proportion = 0.005,
+                          af_n_bands_sensitivity = 1.5,
                           exclude_af = FALSE,
                           include_multi_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
@@ -699,6 +715,10 @@ unmix_samples <- function(sample_dir = "samples",
                 control_df = control_file,
                 af_n_bands = af_n_bands,
                 af_bands_per_file = af_bands_per_file,
+                af_auto_max_bands = af_auto_max_bands,
+                af_min_cluster_events = af_min_cluster_events,
+                af_min_cluster_proportion = af_min_cluster_proportion,
+                af_n_bands_sensitivity = af_n_bands_sensitivity,
                 exclude_af = exclude_af,
                 include_multi_af = include_multi_af,
                 cytometer = cytometer
@@ -733,6 +753,10 @@ unmix_samples <- function(sample_dir = "samples",
         control_file = control_file,
         af_n_bands = af_n_bands,
         af_bands_per_file = af_bands_per_file,
+        af_auto_max_bands = af_auto_max_bands,
+        af_min_cluster_events = af_min_cluster_events,
+        af_min_cluster_proportion = af_min_cluster_proportion,
+        af_n_bands_sensitivity = af_n_bands_sensitivity,
         exclude_af = exclude_af,
         include_multi_af = include_multi_af,
         cytometer = cytometer,

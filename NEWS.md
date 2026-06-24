@@ -16,6 +16,7 @@
 - `universal.negative` can now point to a specific negative FCS file for SCC subtraction.
 - Removed the unused `background_noise` argument from spectral spread matrix calculation.
 - Added AF basis-band extraction via `af_n_bands`/`af_max_cells` in `build_reference_matrix()`.
+- Added configurable AF auto-band limits, percentage-aware AF cluster retention, and sensitivity-based auto selection via `af_auto_max_bands`, `af_min_cluster_events`, `af_min_cluster_proportion`, and `af_n_bands_sensitivity`.
 - Added optional deterministic `seed` support in SCC report/matrix/control workflows.
 - Updated static matrix export in `unmix_controls()` to follow selected method (`OLS`, `WLS`, `NNLS` proxy).
 - Updated SCC/Sample QC reports to exclude AF bands from spectra overlays, SSM, and NPS pages.

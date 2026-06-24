@@ -8,6 +8,10 @@ extract_af_profile(
   fcs_file,
   af_n_bands = "auto",
   af_max_cells = 50000,
+  af_auto_max_bands = 20,
+  af_min_cluster_events = 20,
+  af_min_cluster_proportion = 0.005,
+  af_n_bands_sensitivity = 1.5,
   seed = NULL,
   show_plot = TRUE,
   verbose = TRUE
@@ -20,6 +24,18 @@ extract_af_profile(
 chooses the count from AF event shapes.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used.}
+
+\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.}
+
+\item{af_min_cluster_events}{Minimum number of AF events required to keep a
+k-means AF cluster.}
+
+\item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
+events required to keep a k-means AF cluster.}
+
+\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
+when `af_n_bands = "auto"`. Lower values allow more bands; higher values
+select fewer bands. Default is `1.5`.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

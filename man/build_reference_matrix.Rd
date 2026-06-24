@@ -15,6 +15,10 @@ build_reference_matrix(
   af_n_bands = 10,
   af_bands_per_file = 5,
   af_max_cells = 50000,
+  af_auto_max_bands = 20,
+  af_min_cluster_events = 20,
+  af_min_cluster_proportion = 0.005,
+  af_n_bands_sensitivity = 1.5,
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
@@ -62,6 +66,23 @@ up to `25` shared AF bank signatures).}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used when
 deriving AF basis signatures.}
+
+\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.
+If auto selection repeatedly reaches this value, inspect QC and consider
+increasing it.}
+
+\item{af_min_cluster_events}{Minimum number of AF events required to keep a
+k-means AF cluster. Used together with `af_min_cluster_proportion`; the
+larger threshold is applied.}
+
+\item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
+events required to keep a k-means AF cluster. The default `0.005` means
+0.5\% of the AF events used for extraction.}
+
+\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
+when `af_n_bands = "auto"`. Lower values allow richer AF models; higher
+values select fewer bands. Values must be between `0.1` and `5`; the
+default `1.5` corresponds to a 3\% minimum k-means fit improvement.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 
