@@ -18,6 +18,10 @@ unmix_samples(
   control_file = NULL,
   af_n_bands = 10,
   af_bands_per_file = 5,
+  af_auto_max_bands = 20,
+  af_min_cluster_events = 20,
+  af_min_cluster_proportion = 0.005,
+  af_n_bands_sensitivity = 1.5,
   exclude_af = FALSE,
   include_multi_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
@@ -71,6 +75,18 @@ from AF event shapes.}
 
 \item{af_bands_per_file}{Number of AF bands requested per AF file when
 multiple AF sources are pooled.}
+
+\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.}
+
+\item{af_min_cluster_events}{Minimum number of AF events required to keep a
+k-means AF cluster.}
+
+\item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
+events required to keep a k-means AF cluster.}
+
+\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
+when `af_n_bands = "auto"`. Lower values allow more bands; higher values
+select fewer bands. Default is `1.5`.}
 
 \item{exclude_af}{Logical; whether to exclude AF from unmixing.}
 

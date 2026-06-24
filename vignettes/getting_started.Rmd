@@ -336,10 +336,11 @@ autofluorescence signature from the unstained control. If your cells have
 different AF shapes from cell to cell, you can split AF into several basis
 signatures.
 
-Use the two multi-AF settings in the control-stage call. `af_n_bands` controls
-how many AF basis signatures are extracted from the unstained control, while
-`include_multi_af` tells `spectreasy` to include additional AF controls from
-the `af/` directory when those files are available.
+Use the multi-AF settings in the control-stage call. `af_n_bands` controls
+how many AF basis signatures are extracted from the unstained control. Set it
+to `"auto"` to let `spectreasy` choose the count, and tune that choice with
+`af_n_bands_sensitivity`. `include_multi_af` tells `spectreasy` to include
+additional AF controls from the `af/` directory when those files are available.
 
 ```{r, eval = FALSE}
 ctrl_multi_af <- unmix_controls(
@@ -349,7 +350,8 @@ ctrl_multi_af <- unmix_controls(
   output_dir = "spectreasy_outputs/unmix_controls_multi_af",
   unmix_method = "WLS",
   include_multi_af = TRUE,
-  af_n_bands = 10,
+  af_n_bands = "auto",
+  af_n_bands_sensitivity = 1.5,
   seed = 1
 )
 ```
@@ -365,14 +367,17 @@ unmixed_multi_af <- unmix_samples(
   control_file = "fcs_mapping.csv",
   method = "WLS",
   include_multi_af = TRUE,
-  af_n_bands = 10,
+  af_n_bands = "auto",
+  af_n_bands_sensitivity = 1.5,
   output_dir = "spectreasy_outputs/unmix_samples_multi_af"
 )
 ```
 
 `af_n_bands` is like choosing how many AF "flavors" to model. More bands can
-fit complex AF better, but they also take longer to compute. For large files,
-start with 5 to 10 bands before trying higher values.
+fit complex AF better, but they also take longer to compute. With
+`af_n_bands = "auto"`, `af_n_bands_sensitivity` controls how easily auto adds
+another band. The default `1.5` is balanced; lower values such as `1` allow
+more bands, while higher values such as `2.5` or `5` select fewer bands.
 
 ## Use a reviewed control CSV in non-interactive workflows
 

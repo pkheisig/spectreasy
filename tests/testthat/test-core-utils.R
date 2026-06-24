@@ -776,6 +776,61 @@ test_that("AF profile extraction can auto-select band count", {
     expect_equal(profiles$selection$n_bands, 2)
 })
 
+test_that("AF auto band selection can exceed the old 10-band ceiling", {
+    detector_names <- c("B1-A", "YG1-A", "V1-A")
+    centers <- lapply(seq_len(12), function(i) {
+        v <- c(1 + i / 20, 0.05 + i / 100, 0.02 + i / 200)
+        v / max(v)
+    })
+    af_events <- do.call(rbind, lapply(centers, function(v) {
+        matrix(rep(v * 1000, 25), ncol = length(v), byrow = TRUE)
+    }))
+    colnames(af_events) <- detector_names
+
+    profiles <- spectreasy:::.extract_reference_af_profiles(
+        detector_names = detector_names,
+        n_bands = "auto",
+        max_cells = 1000,
+        af_events = af_events,
+        auto_max_bands = 20,
+        min_cluster_events = 20,
+        min_cluster_proportion = 0
+    )
+
+    expect_equal(profiles$selection$method, "distinct_shape_count")
+    expect_equal(profiles$selection$n_bands, 12)
+    expect_equal(nrow(profiles$signatures), 12)
+})
+
+test_that("AF k-means cluster retention uses the larger event or proportion threshold", {
+    detector_names <- c("B1-A", "YG1-A", "V1-A")
+    af_events <- rbind(
+        matrix(rep(c(100, 15, 5), 4978), ncol = 3, byrow = TRUE),
+        matrix(rep(c(10, 90, 20), 22), ncol = 3, byrow = TRUE)
+    )
+    colnames(af_events) <- detector_names
+
+    old_like_profiles <- spectreasy:::.extract_reference_af_profiles(
+        detector_names = detector_names,
+        n_bands = 2,
+        max_cells = 5000,
+        af_events = af_events,
+        min_cluster_events = 20,
+        min_cluster_proportion = 0
+    )
+    proportion_profiles <- spectreasy:::.extract_reference_af_profiles(
+        detector_names = detector_names,
+        n_bands = 2,
+        max_cells = 5000,
+        af_events = af_events,
+        min_cluster_events = 20,
+        min_cluster_proportion = 0.005
+    )
+
+    expect_equal(nrow(old_like_profiles$signatures), 2)
+    expect_equal(nrow(proportion_profiles$signatures), 1)
+})
+
 test_that("AF profile extraction handles empty and all-zero AF events", {
     detector_names <- c("B1-A", "YG1-A")
 
@@ -806,6 +861,10 @@ test_that("AF argument validation supports multi-AF bands per file", {
     expect_equal(args$af_n_bands, 2L)
     expect_equal(args$af_bands_per_file, 5L)
     expect_equal(args$af_max_cells, 500L)
+    expect_equal(args$af_auto_max_bands, 20L)
+    expect_equal(args$af_min_cluster_events, 20L)
+    expect_equal(args$af_min_cluster_proportion, 0.005)
+    expect_equal(args$af_n_bands_sensitivity, 1.5)
     expect_error(
         spectreasy:::.validate_build_reference_af_args(2, 500, af_bands_per_file = 0),
         "af_bands_per_file"
@@ -823,6 +882,37 @@ test_that("AF argument validation supports multi-AF bands per file", {
     expect_error(
         spectreasy:::.validate_build_reference_af_args(2, 99, af_bands_per_file = 1),
         "af_max_cells"
+    )
+    expect_error(
+        spectreasy:::.validate_build_reference_af_args(2, 500, af_auto_max_bands = 0),
+        "af_auto_max_bands"
+    )
+    expect_error(
+        spectreasy:::.validate_build_reference_af_args(2, 500, af_min_cluster_events = 0),
+        "af_min_cluster_events"
+    )
+    expect_error(
+        spectreasy:::.validate_build_reference_af_args(2, 500, af_min_cluster_proportion = 1.5),
+        "af_min_cluster_proportion"
+    )
+    args_improvement <- spectreasy:::.validate_build_reference_af_args(
+        af_n_bands = "auto",
+        af_bands_per_file = 5,
+        af_max_cells = 500,
+        af_n_bands_sensitivity = 1
+    )
+    expect_equal(args_improvement$af_n_bands_sensitivity, 1)
+    expect_error(
+        spectreasy:::.validate_build_reference_af_args(2, 500, af_n_bands_sensitivity = 5.5),
+        "af_n_bands_sensitivity"
+    )
+    expect_error(
+        spectreasy:::.validate_build_reference_af_args(2, 500, af_n_bands_sensitivity = 0.05),
+        "af_n_bands_sensitivity"
+    )
+    expect_error(
+        spectreasy:::.validate_build_reference_af_args(2, 500, af_n_bands_sensitivity = NULL),
+        "af_n_bands_sensitivity"
     )
 })
 

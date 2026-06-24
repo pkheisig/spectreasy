@@ -268,7 +268,8 @@ ctrl_multi_af <- unmix_controls(
   output_dir = "spectreasy_outputs/unmix_controls_multi_af",
   unmix_method = "WLS",
   include_multi_af = TRUE,
-  af_n_bands = 10,
+  af_n_bands = "auto",
+  af_n_bands_sensitivity = 1.5,
   seed = 1
 )
 ```
@@ -283,12 +284,17 @@ unmixed_multi_af <- unmix_samples(
   control_file = "fcs_mapping.csv",
   method = "WLS",
   include_multi_af = TRUE,
-  af_n_bands = 10,
+  af_n_bands = "auto",
+  af_n_bands_sensitivity = 1.5,
   output_dir = "spectreasy_outputs/unmix_samples_multi_af"
 )
 ```
 
-`af_n_bands` is like choosing how many AF "flavors" to model. More bands can fit complex AF better, but they also take longer to compute. For large files, start with 5 to 10 bands before trying higher values.
+`af_n_bands` is like choosing how many AF "flavors" to model. More bands can fit complex AF better, but they also take longer to compute. With `af_n_bands = "auto"`, auto-selection can now test up to `af_auto_max_bands = 20` bands by default. If auto repeatedly lands exactly on that maximum, inspect QC and consider increasing `af_auto_max_bands`.
+
+Very small AF k-means clusters are filtered with the larger of `af_min_cluster_events = 20` and `af_min_cluster_proportion = 0.005` of the modeled scatter-gated AF events. That means a tiny cluster must represent at least 20 events and at least 0.5% of the AF events used for extraction.
+
+For more direct control over how many AF bands `"auto"` creates, set `af_n_bands_sensitivity` from `0.1` to `5`. The default `1.5` is balanced. Lower values such as `1` allow more bands, while higher values such as `2.5` or `5` select fewer bands.
 
 ## Use a reviewed control CSV in non-interactive workflows
 

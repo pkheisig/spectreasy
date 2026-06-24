@@ -324,6 +324,15 @@
 #'   from AF event shapes. Default is 10.
 #' @param af_bands_per_file Number of AF bands requested per AF file when
 #'   multiple AF sources are pooled. Default is 5.
+#' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
+#'   Default is 20.
+#' @param af_min_cluster_events Minimum number of AF events required to keep a
+#'   k-means AF cluster. Used together with `af_min_cluster_proportion`.
+#' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
+#'   events required to keep a k-means AF cluster. Default is 0.005.
+#' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
+#'   when `af_n_bands = "auto"`. Lower values allow more bands; higher values
+#'   select fewer bands. Default is `1.5`.
 #' @param include_multi_af Logical; whether to include additional AF files from `af_dir`. Default is FALSE.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
@@ -363,6 +372,10 @@ unmix_controls <- function(
     seed = NULL,
     af_n_bands = 10,
     af_bands_per_file = 5,
+    af_auto_max_bands = 20,
+    af_min_cluster_events = 20,
+    af_min_cluster_proportion = 0.005,
+    af_n_bands_sensitivity = 1.5,
     include_multi_af = FALSE,
     rwls_max_iter = 1L,
     save_qc_plots = FALSE,
@@ -411,6 +424,10 @@ unmix_controls <- function(
         exclude_af = exclude_af,
         af_n_bands = af_n_bands,
         af_bands_per_file = af_bands_per_file,
+        af_auto_max_bands = af_auto_max_bands,
+        af_min_cluster_events = af_min_cluster_events,
+        af_min_cluster_proportion = af_min_cluster_proportion,
+        af_n_bands_sensitivity = af_n_bands_sensitivity,
         include_multi_af = include_multi_af,
         use_scatter_gating = use_scatter_gating,
         seed = seed,
