@@ -128,36 +128,38 @@ y
 The same `unmix_controls()` call then continues and writes the control-stage outputs to `spectreasy_outputs/unmix_controls/`.
 
 ```
-#>  [1] "fsc_ssc/Alexa Fluor 700 (Beads)_fsc_ssc.png"    
-#>  [2] "fsc_ssc/BUV395 (Beads)_fsc_ssc.png"             
-#>  [3] "fsc_ssc/BV510 (Beads)_fsc_ssc.png"              
-#>  [4] "fsc_ssc/FITC (Beads)_fsc_ssc.png"               
-#>  [5] "fsc_ssc/LIVE DEAD NIR (Cells)_fsc_ssc.png"      
-#>  [6] "fsc_ssc/PerCP-Cy5.5 (Beads)_fsc_ssc.png"        
-#>  [7] "histogram/Alexa Fluor 700 (Beads)_histogram.png"
-#>  [8] "histogram/BUV395 (Beads)_histogram.png"         
-#>  [9] "histogram/BV510 (Beads)_histogram.png"          
-#> [10] "histogram/FITC (Beads)_histogram.png"           
-#> [11] "histogram/LIVE DEAD NIR (Cells)_histogram.png"  
-#> [12] "histogram/PerCP-Cy5.5 (Beads)_histogram.png"    
-#> [13] "scc_detector_noise.csv"
-#> [14] "scc_reference_matrix.csv"
-#> [15] "scc_spectra.png"
-#> [16] "unmixed_fcs/Alexa Fluor 700 (Beads)_unmixed.fcs"
-#> [17] "unmixed_fcs/BUV395 (Beads)_unmixed.fcs"
-#> [18] "unmixed_fcs/BV510 (Beads)_unmixed.fcs"
-#> [19] "unmixed_fcs/FITC (Beads)_unmixed.fcs"
-#> [20] "unmixed_fcs/LIVE DEAD NIR (Cells)_unmixed.fcs"
-#> [21] "unmixed_fcs/PerCP-Cy5.5 (Beads)_unmixed.fcs"
-#> [22] "unmixed_fcs/Unstained (Cells)_unmixed.fcs"
-#> [23] "scc_unmixing_matrix.csv"
-#> [24] "scc_unmixing_scatter_matrix.png"
-#> [25] "spectrum/Alexa Fluor 700 (Beads)_spectrum.png"
-#> [26] "spectrum/BUV395 (Beads)_spectrum.png"
-#> [27] "spectrum/BV510 (Beads)_spectrum.png"
-#> [28] "spectrum/FITC (Beads)_spectrum.png"
-#> [29] "spectrum/LIVE DEAD NIR (Cells)_spectrum.png"
-#> [30] "spectrum/PerCP-Cy5.5 (Beads)_spectrum.png"
+#>  [1] "fsc_ssc/Alexa Fluor 700 (Beads)_fsc_ssc.png"
+#>  [2] "fsc_ssc/BUV395 (Beads)_fsc_ssc.png"
+#>  [3] "fsc_ssc/BV510 (Beads)_fsc_ssc.png"
+#>  [4] "fsc_ssc/FITC (Beads)_fsc_ssc.png"
+#>  [5] "fsc_ssc/LIVE DEAD NIR (Cells)_fsc_ssc.png"
+#>  [6] "fsc_ssc/PerCP-Cy5.5 (Beads)_fsc_ssc.png"
+#>  [7] "intensity_scatter/Alexa Fluor 700 (Beads)_intensity_scatter.png"
+#>  [8] "intensity_scatter/BUV395 (Beads)_intensity_scatter.png"
+#>  [9] "intensity_scatter/BV510 (Beads)_intensity_scatter.png"
+#> [10] "intensity_scatter/FITC (Beads)_intensity_scatter.png"
+#> [11] "intensity_scatter/LIVE DEAD NIR (Cells)_intensity_scatter.png"
+#> [12] "intensity_scatter/PerCP-Cy5.5 (Beads)_intensity_scatter.png"
+#> [13] "scc_af_spectra.png"
+#> [14] "scc_detector_noise.csv"
+#> [15] "scc_reference_matrix.csv"
+#> [16] "scc_spectra.png"
+#> [17] "scc_unmixing_matrix.csv"
+#> [18] "scc_unmixing_scatter_matrix.png"
+#> [19] "scc_variances.csv"
+#> [20] "spectrum/Alexa Fluor 700 (Beads)_spectrum.png"
+#> [21] "spectrum/BUV395 (Beads)_spectrum.png"
+#> [22] "spectrum/BV510 (Beads)_spectrum.png"
+#> [23] "spectrum/FITC (Beads)_spectrum.png"
+#> [24] "spectrum/LIVE DEAD NIR (Cells)_spectrum.png"
+#> [25] "spectrum/PerCP-Cy5.5 (Beads)_spectrum.png"
+#> [26] "unmixed_fcs/Alexa Fluor 700 (Beads)_unmixed.fcs"
+#> [27] "unmixed_fcs/BUV395 (Beads)_unmixed.fcs"
+#> [28] "unmixed_fcs/BV510 (Beads)_unmixed.fcs"
+#> [29] "unmixed_fcs/FITC (Beads)_unmixed.fcs"
+#> [30] "unmixed_fcs/LIVE DEAD NIR (Cells)_unmixed.fcs"
+#> [31] "unmixed_fcs/PerCP-Cy5.5 (Beads)_unmixed.fcs"
+#> [32] "unmixed_fcs/Unstained (Cells)_unmixed.fcs"
 ```
 
 Key outputs from this step include:
@@ -170,15 +172,15 @@ Key outputs from this step include:
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
 - `spectreasy_outputs/unmix_controls/fsc_ssc/*.png`
-- `spectreasy_outputs/unmix_controls/histogram/*.png`
+- `spectreasy_outputs/unmix_controls/intensity_scatter/*.png`
 - `spectreasy_outputs/unmix_controls/spectrum/*.png`
 - `spectreasy_outputs/unmix_controls/unmixed_fcs/*.fcs`
 
-The control-stage run also writes visual checks for each single-color control. For one color, the three plots below show the FSC/SSC gate, the peak-channel histogram gate, and the detector spectrum used to build the reference matrix:
+The control-stage run also writes visual checks for each single-color control. For one color, the three plots below show the FSC/SSC gate, the intensity-vs-FSC scatter gate, and the detector spectrum used to build the reference matrix:
 
 <p align="center">
   <img src="man/figures/vignette_fsc_ssc.png" width="48%" />
-  <img src="man/figures/vignette_histogram.png" width="48%" />
+  <img src="man/figures/vignette_intensity_scatter.png" width="48%" />
 </p>
 
 <p align="center">
@@ -214,14 +216,14 @@ For the example dataset, this writes:
 
 and returns a named list with one element per sample.
 
-| Alexa Fluor 700|      BUV395|      BV510|       FITC| LIVE DEAD NIR| PerCP-Cy5.5| AF|File   |
-|---------------:|-----------:|----------:|----------:|-------------:|-----------:|--:|:------|
-|     -20.0046965|    78.02875|  596.62462|  324.35267|     167.87073|  -212.23328|  0|sample |
-|     237.2567103|   554.65499| 1072.44707| -929.98170|     297.11526|   -64.63053|  0|sample |
-|       0.7253584|  -340.35803|  172.66508|   10.90629|     -66.49656|  -158.87998|  0|sample |
-|     -58.6181900|    31.38628|  681.66951|  263.65788|      16.26860|  -136.49576|  0|sample |
-|    8403.7958580| 17036.58226| 2769.59003| 1281.26888|      87.47512|  -338.49202|  0|sample |
-|     -74.3725140|  -269.70584|   41.78715|  112.99311|     101.74875|  -145.45809|  0|sample |
+| Alexa Fluor 700|      BUV395|     BV510|        FITC| LIVE DEAD NIR| PerCP-Cy5.5|         AF|File   |
+|---------------:|-----------:|---------:|-----------:|-------------:|-----------:|----------:|:------|
+|        69.30757|    92.68504|  815.3799|   363.95801|     146.16334|   -19.78563|     0.0000|sample |
+|        30.20207|   669.77978|  -69.6220| -1712.11376|     156.65262|   695.78227| 11494.0203|sample |
+|       -19.07283|  -261.43980|  616.0712|   182.37640|     -56.23331|    93.10464|     0.0000|sample |
+|      -103.82067|    78.38529|  496.1857|   146.58977|      67.91341|   -61.55665|  -442.6262|sample |
+|      8233.14537| 16461.14920| 1683.2967|  1009.26887|      32.07973|  -257.83746|  3400.9268|sample |
+|       -42.85445|  -235.11592| -247.3907|   -55.22978|     218.27591|  -157.39362|   263.2533|sample |
 
 ## 6. Generate quality control reports (optional)
 
@@ -311,7 +313,7 @@ ctrl_noninteractive <- unmix_controls(
 )
 
 dim(ctrl_noninteractive$M)
-#> [1] 16 64
+#> [1] 9 64
 ```
 
 ## Pass the in-memory reference matrix directly
