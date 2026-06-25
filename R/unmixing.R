@@ -244,7 +244,7 @@
                                   variances_file = NULL,
                                   scc_dir = NULL,
                                   control_file = NULL,
-                                  af_n_bands = 10,
+                                  af_n_bands = "auto",
                                   af_bands_per_file = 5,
                                   af_auto_max_bands = 20,
                                   af_min_cluster_events = 20,
@@ -584,7 +584,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   Used when dynamically building the reference matrix.
 #' @param af_n_bands Number of AF bands to extract from the unstained control
 #'   when only one AF source is available. Use `"auto"` to select the count
-#'   from AF event shapes.
+#'   from AF event shapes and prune near-duplicate AF signatures.
 #' @param af_bands_per_file Number of AF bands requested per AF file when
 #'   multiple AF sources are pooled.
 #' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
@@ -594,9 +594,15 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   events required to keep a k-means AF cluster.
 #' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
 #'   when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-#'   select fewer bands. Default is `1.5`.
+#'   select fewer bands before near-duplicate AF signatures are pruned. Default
+#'   is `1.5`.
 #' @param exclude_af Logical; whether to exclude AF from unmixing.
 #' @param include_multi_af Logical; whether to include multi-AF controls.
+#' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
+#'   stained sample event-wise WLS residuals, select the best candidate model by
+#'   held-out WLS residual score, and append the selected AF rows to the
+#'   reference matrix before unmixing. This is intended for workflows where no
+#'   unstained cell control is available. Default is `FALSE`.
 #' @param output_dir Directory to save unmixed FCS files when `write_fcs = TRUE`.
 #' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 #'   Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.
@@ -663,7 +669,7 @@ unmix_samples <- function(sample_dir = "samples",
                           cytometer = "auto",
                           scc_dir = NULL,
                           control_file = NULL,
-                          af_n_bands = 10,
+                          af_n_bands = "auto",
                           af_bands_per_file = 5,
                           af_auto_max_bands = 20,
                           af_min_cluster_events = 20,
@@ -671,6 +677,7 @@ unmix_samples <- function(sample_dir = "samples",
                           af_n_bands_sensitivity = 1.5,
                           exclude_af = FALSE,
                           include_multi_af = FALSE,
+                          estimate_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
                           subsample_n = NULL,
@@ -745,6 +752,7 @@ unmix_samples <- function(sample_dir = "samples",
     }
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(n_threads)
+    estimate_af <- isTRUE(estimate_af)
     M <- .ensure_wls_variances(
         M = M,
         method = method_upper,
@@ -763,15 +771,37 @@ unmix_samples <- function(sample_dir = "samples",
         seed = seed
     )
 
+    sample_entries <- .prepare_unmix_samples_input(sample_dir)
+
+    if (estimate_af) {
+        if (isTRUE(verbose)) {
+            message("  estimate_af = TRUE: estimating AF from stained samples.")
+        }
+        M <- .estimate_blind_af_reference(
+            M = M,
+            sample_entries = sample_entries,
+            n_bands = 10L,
+            candidate_quantile = 0.90,
+            max_training_events = 20000L,
+            max_evaluation_events = 5000L,
+            seed = seed,
+            verbose = verbose
+        )
+    }
+
     results <- list()
     marker_source_all <- rownames(M)
     secondary_label_map <- .resolve_secondary_label_map(marker_source_all, sample_dir = sample_dir)
 
     if (isTRUE(write_fcs)) {
-        dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+        if (!dir.exists(output_dir)) {
+            dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+            if (!dir.exists(output_dir)) {
+                Sys.sleep(0.5)
+                dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+            }
+        }
     }
-
-    sample_entries <- .prepare_unmix_samples_input(sample_dir)
 
     for (entry in sample_entries) {
         sn <- entry$sample_name
@@ -836,6 +866,8 @@ unmix_samples <- function(sample_dir = "samples",
 
     class(results) <- c("spectreasy_unmixed_results", "list")
     attr(results, "method") <- method_upper
+    attr(results, "reference_matrix") <- M
+    attr(results, "blind_af_info") <- attr(M, "blind_af_info")
 
     invisible(results)
 }

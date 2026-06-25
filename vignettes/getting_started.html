@@ -751,10 +751,11 @@ for the core <code>unmix_controls()</code> -&gt;
 <code>unmix_samples()</code> workflow shown above.</p>
 <div id="per-cell-autofluorescence-af-extraction" class="section level2">
 <h2>Per-cell Autofluorescence (AF) Extraction</h2>
-<p>By default, <code>unmix_controls()</code> and
-<code>unmix_samples()</code> use one average autofluorescence signature
+<p>By default, <code>unmix_controls()</code> and dynamic
+<code>unmix_samples()</code> reference-matrix builds use
+<code>af_n_bands = &quot;auto&quot;</code> to choose autofluorescence signatures
 from the unstained control. If your cells have different AF shapes from
-cell to cell, you can split AF into several basis signatures.</p>
+cell to cell, auto can split AF into several basis signatures.</p>
 <p>Use the multi-AF settings in the control-stage call.
 <code>af_n_bands</code> controls how many AF basis signatures are
 extracted from the unstained control. Set it to <code>&quot;auto&quot;</code> to
@@ -788,11 +789,13 @@ there as well:</p>
 <span id="cb12-10"><a href="#cb12-10" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="st">&quot;spectreasy_outputs/unmix_samples_multi_af&quot;</span></span>
 <span id="cb12-11"><a href="#cb12-11" tabindex="-1"></a>)</span></code></pre></div>
 <p><code>af_n_bands</code> is like choosing how many AF “flavors” to
-model. More bands can fit complex AF better, but they also take longer
-to compute. With <code>af_n_bands = &quot;auto&quot;</code>,
+model. More bands can fit complex AF better, but too many similar bands
+can make the matrix unstable. With
+<code>af_n_bands = &quot;auto&quot;</code>,
 <code>af_n_bands_sensitivity</code> controls how easily auto adds
-another band. The default <code>1.5</code> is balanced; lower values
-such as <code>1</code> allow more bands, while higher values such as
+another band, and near-duplicate AF signatures are pruned before
+unmixing. The default <code>1.5</code> is balanced; lower values such as
+<code>1</code> allow more bands, while higher values such as
 <code>2.5</code> or <code>5</code> select fewer bands.</p>
 </div>
 <div id="use-a-reviewed-control-csv-in-non-interactive-workflows" class="section level2">

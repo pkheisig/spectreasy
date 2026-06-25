@@ -256,7 +256,7 @@ The sections below are useful extensions, but they are not required for the core
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `unmix_controls()` and `unmix_samples()` use one average autofluorescence signature from the unstained control. If your cells have different AF shapes from cell to cell, you can split AF into several basis signatures.
+By default, `unmix_controls()` and dynamic `unmix_samples()` reference-matrix builds use `af_n_bands = "auto"` to choose autofluorescence signatures from the unstained control. If your cells have different AF shapes from cell to cell, auto can split AF into several basis signatures.
 
 Use the two multi-AF settings in the control-stage call. `af_n_bands` controls how many AF basis signatures are extracted from the unstained control, while `include_multi_af` tells `spectreasy` to include additional AF controls from the `af/` directory when those files are available.
 
@@ -290,7 +290,7 @@ unmixed_multi_af <- unmix_samples(
 )
 ```
 
-`af_n_bands` is like choosing how many AF "flavors" to model. More bands can fit complex AF better, but they also take longer to compute. With `af_n_bands = "auto"`, auto-selection can now test up to `af_auto_max_bands = 20` bands by default. If auto repeatedly lands exactly on that maximum, inspect QC and consider increasing `af_auto_max_bands`.
+`af_n_bands` is like choosing how many AF "flavors" to model. More bands can fit complex AF better, but too many similar bands can make the matrix unstable. With `af_n_bands = "auto"`, auto-selection can test up to `af_auto_max_bands = 20` bands by default, then prunes near-duplicate AF signatures before unmixing. If auto repeatedly lands exactly on that maximum, inspect QC and consider increasing `af_auto_max_bands`.
 
 Very small AF k-means clusters are filtered with the larger of `af_min_cluster_events = 20` and `af_min_cluster_proportion = 0.005` of the modeled scatter-gated AF events. That means a tiny cluster must represent at least 20 events and at least 0.5% of the AF events used for extraction.
 

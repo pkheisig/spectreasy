@@ -12,7 +12,7 @@ build_reference_matrix(
   include_multi_af = FALSE,
   exclude_af = FALSE,
   af_dir = "af",
-  af_n_bands = 10,
+  af_n_bands = "auto",
   af_bands_per_file = 5,
   af_max_cells = 50000,
   af_auto_max_bands = 20,
@@ -57,8 +57,8 @@ even when they are present in `control_df`, the SCC folder, or `af_dir`.}
 
 \item{af_n_bands}{Number of AF basis signatures to extract from the pooled
 unstained/AF control when only one AF source is available (`1` = classic
-single AF signature). Use `"auto"` to choose the number from AF event
-shapes using PCA plus BIC-selected Gaussian mixture clustering.}
+single AF signature). The default, `"auto"`, chooses the number from AF
+event shapes and prunes near-duplicate AF signatures.}
 
 \item{af_bands_per_file}{Number of AF basis signatures requested per AF file
 when multiple AF sources are pooled (`5` files with the default `5` yields
@@ -81,8 +81,9 @@ events required to keep a k-means AF cluster. The default `0.005` means
 
 \item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
 when `af_n_bands = "auto"`. Lower values allow richer AF models; higher
-values select fewer bands. Values must be between `0.1` and `5`; the
-default `1.5` corresponds to a 3\% minimum k-means fit improvement.}
+values select fewer bands before near-duplicate AF signatures are pruned.
+Values must be between `0.1` and `5`; the default `1.5` corresponds to a
+3\% minimum k-means fit improvement.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

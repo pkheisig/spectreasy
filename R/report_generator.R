@@ -25,6 +25,104 @@
     invisible(NULL)
 }
 
+.extract_qc_report_legend <- function(p) {
+    grob <- ggplot2::ggplotGrob(p)
+    grob_names <- vapply(grob$grobs, function(x) {
+        if (is.null(x$name)) "" else x$name
+    }, character(1))
+    guide_idx <- which(grepl("^guide-box", grob_names))
+    if (length(guide_idx) == 0) {
+        return(grid::nullGrob())
+    }
+    grob$grobs[[guide_idx[1]]]
+}
+
+.draw_qc_report_spectra_page <- function(p) {
+    if (is.null(p)) return(invisible(NULL))
+
+    n_labels <- 0L
+    if (is.data.frame(p$data) && "Fluorophore" %in% colnames(p$data)) {
+        n_labels <- length(unique(as.character(p$data$Fluorophore)))
+    }
+
+    legend_text_size <- if (n_labels > 34L) {
+        5.8
+    } else if (n_labels > 28L) {
+        6.5
+    } else if (n_labels > 22L) {
+        7.5
+    } else if (n_labels > 18L) {
+        8.5
+    } else {
+        10
+    }
+    legend_title_size <- if (n_labels > 28L) 12 else if (n_labels > 22L) 14 else 16
+    legend_key_size <- if (n_labels > 34L) {
+        2.6
+    } else if (n_labels > 28L) {
+        3.0
+    } else if (n_labels > 22L) {
+        3.4
+    } else if (n_labels > 18L) {
+        3.8
+    } else {
+        4.3
+    }
+    legend_spacing <- if (n_labels > 22L) 0.1 else 0.35
+
+    legend_plot <- p +
+        ggplot2::guides(color = ggplot2::guide_legend(ncol = 1, byrow = FALSE, title.position = "top")) +
+        ggplot2::theme(
+            plot.margin = ggplot2::margin(0, 0, 0, 0),
+            axis.title.y = ggplot2::element_text(margin = ggplot2::margin(r = 3)),
+            axis.title.x = ggplot2::element_text(margin = ggplot2::margin(t = 3)),
+            plot.title = ggplot2::element_text(margin = ggplot2::margin(b = 4)),
+            legend.position = "right",
+            legend.title = ggplot2::element_text(size = legend_title_size),
+            legend.text = ggplot2::element_text(size = legend_text_size),
+            legend.key.size = grid::unit(legend_key_size, "mm"),
+            legend.spacing.y = grid::unit(legend_spacing, "mm"),
+            legend.margin = ggplot2::margin(0, 0, 0, 0),
+            legend.box.margin = ggplot2::margin(0, 0, 0, 0)
+        )
+    plot_grob <- ggplot2::ggplotGrob(
+        p +
+            ggplot2::theme(
+                legend.position = "none",
+                plot.margin = ggplot2::margin(0, 0, 0, 0),
+                axis.title.y = ggplot2::element_text(margin = ggplot2::margin(r = 3)),
+                axis.title.x = ggplot2::element_text(margin = ggplot2::margin(t = 3)),
+                plot.title = ggplot2::element_text(margin = ggplot2::margin(b = 4))
+            )
+    )
+    legend_grob <- .extract_qc_report_legend(legend_plot)
+
+    grid::grid.newpage()
+    grid::grid.draw(
+        grid::editGrob(
+            plot_grob,
+            vp = grid::viewport(
+                x = 0.42,
+                y = 0.49,
+                width = 0.82,
+                height = 0.66
+            )
+        )
+    )
+    grid::grid.draw(
+        grid::editGrob(
+            legend_grob,
+            vp = grid::viewport(
+                x = 0.915,
+                y = 0.49,
+                width = 0.16,
+                height = 0.90
+            )
+        )
+    )
+    invisible(NULL)
+}
+
 .split_qc_report_batches <- function(values, max_per_page = 15) {
     values <- as.character(values)
     values <- values[!is.na(values) & values != ""]
@@ -46,6 +144,39 @@
     }
 
     p + ggplot2::labs(caption = paste0(item_label, " ", page_idx, " of ", page_total))
+}
+
+.split_qc_report_matrix_marker_batches <- function(marker_names, max_markers_per_page = 20) {
+    marker_names <- as.character(marker_names)
+    marker_names <- marker_names[!is.na(marker_names) & marker_names != ""]
+    n_markers <- length(marker_names)
+    if (n_markers == 0) {
+        return(list())
+    }
+
+    max_markers_per_page <- suppressWarnings(as.integer(max_markers_per_page[1]))
+    if (!is.finite(max_markers_per_page) || max_markers_per_page <= 0) {
+        max_markers_per_page <- 20L
+    }
+
+    n_pages <- if (n_markers <= max_markers_per_page) {
+        1L
+    } else if (n_markers <= 2L * max_markers_per_page) {
+        2L
+    } else {
+        3L
+    }
+
+    base_size <- n_markers %/% n_pages
+    remainder <- n_markers %% n_pages
+    sizes <- rep(base_size, n_pages)
+    if (remainder > 0) {
+        sizes[seq_len(remainder)] <- sizes[seq_len(remainder)] + 1L
+    }
+
+    ends <- cumsum(sizes)
+    starts <- c(1L, head(ends, -1L) + 1L)
+    Map(function(start, end) marker_names[seq.int(start, end)], starts, ends)
 }
 
 .build_qc_report_rms_pages <- function(res_list, M = NULL, max_files_per_page = 15) {
@@ -101,7 +232,7 @@
     pages
 }
 
-.build_qc_report_matrix_pages <- function(mat, plot_fun, max_markers_per_page = 15, item_label = "Markers") {
+.build_qc_report_matrix_pages <- function(mat, plot_fun, max_markers_per_page = 20, item_label = "Markers") {
     if (is.null(mat) || nrow(mat) == 0 || ncol(mat) == 0) {
         return(list())
     }
@@ -111,14 +242,19 @@
         marker_names <- seq_len(nrow(mat))
     }
 
-    batches <- .split_qc_report_batches(marker_names, max_per_page = max_markers_per_page)
+    shared_markers <- intersect(marker_names, colnames(mat))
+    if (length(shared_markers) == 0) {
+        p <- plot_fun(mat, output_file = NULL)
+        return(if (is.null(p)) list() else list(p))
+    }
+
+    batches <- .split_qc_report_matrix_marker_batches(shared_markers, max_markers_per_page = max_markers_per_page)
     pages <- list()
     k <- 1L
     for (page_idx in seq_along(batches)) {
         markers <- batches[[page_idx]]
-        markers <- intersect(markers, intersect(rownames(mat), colnames(mat)))
-        if (length(markers) == 0) next
         p <- plot_fun(mat[markers, markers, drop = FALSE], output_file = NULL)
+        if (is.null(p)) next
         pages[[k]] <- .label_qc_report_batch_page(
             p,
             page_idx = page_idx,
@@ -591,8 +727,10 @@
 #'   responsive. Set `NULL` to use all events.
 #' @param overview_files_per_page Maximum files shown on each RMS residual and
 #'   NPS overview page.
-#' @param matrix_markers_per_page Maximum markers shown on each similarity and
-#'   spread matrix page.
+#' @param matrix_markers_per_page Marker cutoff for similarity and spread
+#'   matrix pages. Up to this many markers are shown on one page; larger panels
+#'   are split into two balanced pages up to twice this cutoff, and three
+#'   balanced pages above that.
 #' @param sample_nxn_rows_per_page Number of marker rows and columns to show per per-sample NxN page block.
 #'   Defaults to 10, which standardizes geometry across pages and samples.
 #' @param sample_nxn_max_points Maximum cells sampled per sample for each NxN page.
@@ -640,7 +778,7 @@ qc_samples <- function(results,
                        pd = NULL,
                        max_events_per_sample = 1000,
                        overview_files_per_page = 15,
-                       matrix_markers_per_page = 15,
+                       matrix_markers_per_page = 20,
                        sample_nxn_rows_per_page = 10,
                        sample_nxn_max_points = max_events_per_sample,
                        sample_nxn_transform = c("none", "asinh"),
@@ -752,7 +890,7 @@ qc_samples <- function(results,
 
     message("  - Adding spectra overlay...")
     if (nrow(M_no_af) > 0) {
-        .draw_qc_report_plot_page(plot_spectra(M_no_af, pd = pd, output_file = NULL), height_ratio = 0.6)
+        .draw_qc_report_spectra_page(plot_spectra(M_no_af, pd = pd, output_file = NULL))
     }
 
     if (nrow(M_no_af) > 1) {

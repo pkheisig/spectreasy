@@ -109,6 +109,52 @@
     as.numeric(sensitivity) / 50
 }
 
+.reference_af_max_cosine_similarity <- function() {
+    0.98
+}
+
+.prune_reference_similar_af_centers <- function(centers,
+                                                max_cosine = .reference_af_max_cosine_similarity()) {
+    centers <- as.matrix(centers)
+    n_centers <- nrow(centers)
+    if (n_centers <= 1) {
+        return(list(centers = centers, kept = seq_len(n_centers), pruned = integer(0), max_cosine = max_cosine))
+    }
+
+    norms <- sqrt(rowSums(centers^2))
+    usable <- is.finite(norms) & norms > 0
+    if (!any(usable)) {
+        return(list(centers = centers[1, , drop = FALSE], kept = 1L, pruned = seq.int(2L, n_centers), max_cosine = max_cosine))
+    }
+
+    keep <- integer()
+    for (i in seq_len(n_centers)) {
+        if (!usable[i]) {
+            next
+        }
+        if (length(keep) == 0) {
+            keep <- i
+            next
+        }
+        denom <- norms[i] * norms[keep]
+        cosine <- as.numeric((centers[i, , drop = FALSE] %*% t(centers[keep, , drop = FALSE])) / denom)
+        if (!any(is.finite(cosine) & cosine >= max_cosine)) {
+            keep <- c(keep, i)
+        }
+    }
+
+    if (length(keep) == 0) {
+        keep <- which(usable)[1]
+    }
+    pruned <- setdiff(seq_len(n_centers), keep)
+    list(
+        centers = centers[keep, , drop = FALSE],
+        kept = keep,
+        pruned = pruned,
+        max_cosine = max_cosine
+    )
+}
+
 .select_reference_kmeans_improvement_af_band_count <- function(scores,
                                                                max_bands,
                                                                min_cluster_size,
@@ -630,7 +676,7 @@
 # Returns a list with the raw median spectrum and a matrix of normalized AF basis signatures.
 .extract_reference_af_profiles <- function(ff_af = NULL,
                                            detector_names,
-                                           n_bands = 1,
+                                           n_bands = "auto",
                                            max_cells = 50000,
                                            af_events = NULL,
                                            auto_max_bands = 20,
@@ -721,6 +767,19 @@
 
     if (is.null(dim(centers))) {
         centers <- matrix(centers, nrow = 1)
+    }
+
+    if (!is.null(selection) && nrow(centers) > 1) {
+        raw_center_count <- nrow(centers)
+        pruned <- .prune_reference_similar_af_centers(centers)
+        centers <- pruned$centers
+        selection$raw_selected_bands <- selection$n_bands
+        selection$n_bands <- nrow(centers)
+        selection$final_bands <- nrow(centers)
+        selection$pruned_similar_bands <- length(pruned$pruned)
+        selection$similarity_prune_max_cosine <- pruned$max_cosine
+        selection$raw_center_count <- raw_center_count
+        selection$kept_center_indices <- pruned$kept
     }
     rownames(centers) <- c("AF", if (nrow(centers) > 1) paste0("AF_", seq.int(2, nrow(centers))) else NULL)
     colnames(centers) <- detector_names
@@ -2615,8 +2674,8 @@
 #' @param af_dir Directory with extra AF controls when `include_multi_af = TRUE`.
 #' @param af_n_bands Number of AF basis signatures to extract from the pooled
 #'   unstained/AF control when only one AF source is available (`1` = classic
-#'   single AF signature). Use `"auto"` to choose the number from AF event
-#'   shapes using PCA plus BIC-selected Gaussian mixture clustering.
+#'   single AF signature). The default, `"auto"`, chooses the number from AF
+#'   event shapes and prunes near-duplicate AF signatures.
 #' @param af_bands_per_file Number of AF basis signatures requested per AF file
 #'   when multiple AF sources are pooled (`5` files with the default `5` yields
 #'   up to `25` shared AF bank signatures).
@@ -2633,8 +2692,9 @@
 #'   0.5\% of the AF events used for extraction.
 #' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
 #'   when `af_n_bands = "auto"`. Lower values allow richer AF models; higher
-#'   values select fewer bands. Values must be between `0.1` and `5`; the
-#'   default `1.5` corresponds to a 3\% minimum k-means fit improvement.
+#'   values select fewer bands before near-duplicate AF signatures are pruned.
+#'   Values must be between `0.1` and `5`; the default `1.5` corresponds to a
+#'   3\% minimum k-means fit improvement.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
@@ -2685,7 +2745,7 @@ build_reference_matrix <- function(
   include_multi_af = FALSE,
   exclude_af = FALSE,
   af_dir = "af",
-  af_n_bands = 10,
+  af_n_bands = "auto",
   af_bands_per_file = 5,
   af_max_cells = 50000,
   af_auto_max_bands = 20,

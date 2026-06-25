@@ -331,10 +331,10 @@ core `unmix_controls()` -> `unmix_samples()` workflow shown above.
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `unmix_controls()` and `unmix_samples()` use one average
-autofluorescence signature from the unstained control. If your cells have
-different AF shapes from cell to cell, you can split AF into several basis
-signatures.
+By default, `unmix_controls()` and dynamic `unmix_samples()` reference-matrix
+builds use `af_n_bands = "auto"` to choose autofluorescence signatures from
+the unstained control. If your cells have different AF shapes from cell to
+cell, auto can split AF into several basis signatures.
 
 Use the multi-AF settings in the control-stage call. `af_n_bands` controls
 how many AF basis signatures are extracted from the unstained control. Set it
@@ -374,9 +374,10 @@ unmixed_multi_af <- unmix_samples(
 ```
 
 `af_n_bands` is like choosing how many AF "flavors" to model. More bands can
-fit complex AF better, but they also take longer to compute. With
-`af_n_bands = "auto"`, `af_n_bands_sensitivity` controls how easily auto adds
-another band. The default `1.5` is balanced; lower values such as `1` allow
+fit complex AF better, but too many similar bands can make the matrix
+unstable. With `af_n_bands = "auto"`, `af_n_bands_sensitivity` controls how
+easily auto adds another band, and near-duplicate AF signatures are pruned
+before unmixing. The default `1.5` is balanced; lower values such as `1` allow
 more bands, while higher values such as `2.5` or `5` select fewer bands.
 
 ## Use a reviewed control CSV in non-interactive workflows

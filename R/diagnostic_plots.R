@@ -279,18 +279,23 @@ calculate_similarity_matrix <- function(M) {
 #' @export
 plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width = 180, height = 160) {
     sim_tri <- similarity_matrix
-    sim_tri[upper.tri(sim_tri, diag = FALSE)] <- NA
+    is_square_same_markers <- nrow(sim_tri) == ncol(sim_tri) &&
+        identical(rownames(sim_tri), colnames(sim_tri))
+    if (is_square_same_markers) {
+        sim_tri[upper.tri(sim_tri, diag = FALSE)] <- NA
+    }
     
     long <- as.data.frame(sim_tri)
     long$Marker1 <- rownames(sim_tri)
     long <- tidyr::pivot_longer(long, cols = -Marker1, names_to = "Marker2", values_to = "Similarity")
     long <- long[!is.na(long$Similarity), ]
     
-    markers <- rownames(sim_tri)
-    long$Marker1 <- factor(long$Marker1, levels = markers)
-    long$Marker2 <- factor(long$Marker2, levels = markers)
+    row_markers <- rownames(sim_tri)
+    col_markers <- colnames(sim_tri)
+    long$Marker1 <- factor(long$Marker1, levels = row_markers)
+    long$Marker2 <- factor(long$Marker2, levels = col_markers)
     
-    n_markers <- length(markers)
+    n_markers <- max(length(row_markers), length(col_markers))
     text_size <- max(2.4, min(4.8, 36 / max(1, n_markers)))
     
     p <- ggplot2::ggplot(long, ggplot2::aes(Marker2, Marker1, fill = Similarity)) +

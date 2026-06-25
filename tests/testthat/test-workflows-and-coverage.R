@@ -254,6 +254,28 @@ test_that("unmix_controls handles WLS output and exclude_af branch", {
     expect_false(file.exists(file.path(output_dir, "unmixed_fcs", "Unstained (Cells)_unmixed.fcs")))
 })
 
+test_that("unmix_controls tolerates a missing unstained mapping row", {
+    wf <- make_synthetic_workflow(include_af = TRUE)
+    file.remove(file.path(wf$scc_dir, "Unstained (Cells).fcs"))
+
+    output_dir <- tempfile("spectreasy_missing_af_")
+    control_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
+
+    ctrl <- spectreasy::unmix_controls(
+        scc_dir = wf$scc_dir,
+        control_file = control_csv,
+        output_dir = output_dir,
+        unmix_method = "WLS",
+        seed = 1,
+        subsample_n = 300
+    )
+
+    expect_true(file.exists(ctrl$reference_matrix_file))
+    expect_false(any(grepl("^AF($|_)", rownames(ctrl$M), ignore.case = TRUE)))
+    expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))
+})
+
 test_that("unmix_samples runs WLS without recomputing missing SCC variances", {
     wf <- make_synthetic_workflow()
     M <- spectreasy::build_reference_matrix(

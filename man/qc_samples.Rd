@@ -16,7 +16,7 @@ qc_samples(
   pd = NULL,
   max_events_per_sample = 1000,
   overview_files_per_page = 15,
-  matrix_markers_per_page = 15,
+  matrix_markers_per_page = 20,
   sample_nxn_rows_per_page = 10,
   sample_nxn_max_points = max_events_per_sample,
   sample_nxn_transform = c("none", "asinh"),
@@ -59,8 +59,10 @@ responsive. Set `NULL` to use all events.}
 \item{overview_files_per_page}{Maximum files shown on each RMS residual and
 NPS overview page.}
 
-\item{matrix_markers_per_page}{Maximum markers shown on each similarity and
-spread matrix page.}
+\item{matrix_markers_per_page}{Marker cutoff for similarity and spread
+matrix pages. Up to this many markers are shown on one page; larger panels
+are split into two balanced pages up to twice this cutoff, and three
+balanced pages above that.}
 
 \item{sample_nxn_rows_per_page}{Number of marker rows and columns to show per per-sample NxN page block.
 Defaults to 10, which standardizes geometry across pages and samples.}

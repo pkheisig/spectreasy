@@ -17,7 +17,7 @@ unmix_samples(
   cytometer = "auto",
   scc_dir = NULL,
   control_file = NULL,
-  af_n_bands = 10,
+  af_n_bands = "auto",
   af_bands_per_file = 5,
   af_auto_max_bands = 20,
   af_min_cluster_events = 20,
@@ -25,6 +25,7 @@ unmix_samples(
   af_n_bands_sensitivity = 1.5,
   exclude_af = FALSE,
   include_multi_af = FALSE,
+  estimate_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
   subsample_n = NULL,
@@ -77,7 +78,7 @@ Used when dynamically building the reference matrix.}
 
 \item{af_n_bands}{Number of AF bands to extract from the unstained control
 when only one AF source is available. Use `"auto"` to select the count
-from AF event shapes.}
+from AF event shapes and prune near-duplicate AF signatures.}
 
 \item{af_bands_per_file}{Number of AF bands requested per AF file when
 multiple AF sources are pooled.}
@@ -92,11 +93,18 @@ events required to keep a k-means AF cluster.}
 
 \item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
 when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-select fewer bands. Default is `1.5`.}
+select fewer bands before near-duplicate AF signatures are pruned. Default
+is `1.5`.}
 
 \item{exclude_af}{Logical; whether to exclude AF from unmixing.}
 
 \item{include_multi_af}{Logical; whether to include multi-AF controls.}
+
+\item{estimate_af}{Logical; if `TRUE`, estimate AF signatures directly from
+stained sample event-wise WLS residuals, select the best candidate model by
+held-out WLS residual score, and append the selected AF rows to the
+reference matrix before unmixing. This is intended for workflows where no
+unstained cell control is available. Default is `FALSE`.}
 
 \item{output_dir}{Directory to save unmixed FCS files when `write_fcs = TRUE`.}
 

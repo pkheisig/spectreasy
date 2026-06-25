@@ -232,7 +232,7 @@ test_that("qc_samples can include NxN pages for all samples", {
     expect_true(grepl("Sample NxN Scatter Matrix: SampleB", txt, fixed = TRUE))
 })
 
-test_that("qc_samples overview and matrix pages batch after 15 items", {
+test_that("qc_samples overview batches while moderate matrix pages stay complete", {
     marker_names <- paste0("M", seq_len(16))
     detector_names <- paste0("D", seq_len(16), "-A")
     M <- diag(16)
@@ -262,8 +262,49 @@ test_that("qc_samples overview and matrix pages batch after 15 items", {
 
     expect_equal(length(rms_pages), 2)
     expect_equal(length(nps_pages), 2)
-    expect_equal(length(sim_pages), 2)
-    expect_equal(length(ssm_pages), 2)
+    expect_equal(length(sim_pages), 1)
+    expect_equal(length(ssm_pages), 1)
+
+    sim_chunk_pages <- spectreasy:::.build_qc_report_matrix_pages(
+        sim_mat,
+        plot_fun = spectreasy:::plot_similarity_matrix,
+        max_markers_per_page = 10
+    )
+    ssm_chunk_pages <- spectreasy:::.build_qc_report_matrix_pages(
+        ssm,
+        plot_fun = spectreasy::plot_ssm,
+        max_markers_per_page = 10
+    )
+    expect_equal(length(sim_chunk_pages), 2)
+    expect_equal(length(ssm_chunk_pages), 2)
+})
+
+test_that("qc_samples matrix pages split markers into balanced groups", {
+    batches_20 <- spectreasy:::.split_qc_report_matrix_marker_batches(paste0("M", seq_len(20)))
+    batches_30 <- spectreasy:::.split_qc_report_matrix_marker_batches(paste0("M", seq_len(30)))
+    batches_36 <- spectreasy:::.split_qc_report_matrix_marker_batches(paste0("M", seq_len(36)))
+    batches_41 <- spectreasy:::.split_qc_report_matrix_marker_batches(paste0("M", seq_len(41)))
+
+    expect_equal(lengths(batches_20), 20L)
+    expect_equal(lengths(batches_30), c(15L, 15L))
+    expect_equal(lengths(batches_36), c(18L, 18L))
+    expect_equal(lengths(batches_41), c(14L, 14L, 13L))
+
+    make_square <- function(n) {
+        M <- diag(n)
+        rownames(M) <- paste0("M", seq_len(n))
+        colnames(M) <- paste0("M", seq_len(n))
+        M
+    }
+
+    expect_equal(length(spectreasy:::.build_qc_report_matrix_pages(
+        make_square(30),
+        plot_fun = spectreasy:::plot_similarity_matrix
+    )), 2)
+    expect_equal(length(spectreasy:::.build_qc_report_matrix_pages(
+        make_square(41),
+        plot_fun = spectreasy::plot_ssm
+    )), 3)
 })
 
 test_that("qc_samples loads M from unmixing_matrix_file", {

@@ -128,6 +128,36 @@
     list(control_df = control_df, excluded_af_filenames = excluded_af_filenames)
 }
 
+.drop_missing_unmix_af_rows <- function(control_df, scc_dir, emit_message = TRUE) {
+    if (is.null(control_df) || nrow(control_df) == 0 || !("filename" %in% colnames(control_df))) {
+        return(control_df)
+    }
+
+    af_rows <- .is_af_control_row(
+        fluorophore = if ("fluorophore" %in% colnames(control_df)) control_df$fluorophore else NULL,
+        marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
+        filename = control_df$filename
+    )
+    if (!any(af_rows)) {
+        return(control_df)
+    }
+
+    af_files <- file.path(scc_dir, as.character(control_df$filename[af_rows]))
+    missing_af <- af_rows
+    missing_af[af_rows] <- !file.exists(af_files)
+    if (!any(missing_af)) {
+        return(control_df)
+    }
+
+    if (isTRUE(emit_message)) {
+        message(
+            "AF/unstained control file(s) are missing; building a marker-only reference matrix. ",
+            "Use unmix_samples(estimate_af = TRUE) to estimate AF from stained samples."
+        )
+    }
+    control_df[!missing_af, , drop = FALSE]
+}
+
 .run_unmix_preflight <- function(control_df, scc_dir, exclude_af = FALSE, include_multi_af = FALSE) {
     validate_control_file_mapping(
         control_df = control_df,
@@ -322,7 +352,8 @@
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
 #' @param af_n_bands Number of AF bands to extract from the unstained control
 #'   when only one AF source is available. Use `"auto"` to select the count
-#'   from AF event shapes. Default is 10.
+#'   from AF event shapes and prune near-duplicate AF signatures. Default is
+#'   `"auto"`.
 #' @param af_bands_per_file Number of AF bands requested per AF file when
 #'   multiple AF sources are pooled. Default is 5.
 #' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
@@ -333,7 +364,8 @@
 #'   events required to keep a k-means AF cluster. Default is 0.005.
 #' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
 #'   when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-#'   select fewer bands. Default is `1.5`.
+#'   select fewer bands before near-duplicate AF signatures are pruned. Default
+#'   is `1.5`.
 #' @param include_multi_af Logical; whether to include additional AF files from `af_dir`. Default is FALSE.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
@@ -373,7 +405,7 @@ unmix_controls <- function(
     unmix_method = "WLS",
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
-    af_n_bands = 10,
+    af_n_bands = "auto",
     af_bands_per_file = 5,
     af_auto_max_bands = 20,
     af_min_cluster_events = 20,
@@ -391,7 +423,13 @@ unmix_controls <- function(
 
     control_file <- .resolve_control_file_path(control_file)
 
-    dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+    if (!dir.exists(output_dir)) {
+        dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+        if (!dir.exists(output_dir)) {
+            Sys.sleep(0.5)
+            dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+        }
+    }
     if (!dir.exists(scc_dir)) stop("scc_dir not found: ", scc_dir)
 
     control_info <- .prepare_unmix_control_df(
@@ -405,6 +443,7 @@ unmix_controls <- function(
     control_df <- .normalize_unmix_control_df(control_info$control_df)
     control_file <- control_info$control_file
 
+    control_df <- .drop_missing_unmix_af_rows(control_df, scc_dir = scc_dir)
     filtered <- .filter_unmix_af_rows(control_df, exclude_af = exclude_af)
     control_df <- filtered$control_df
     excluded_af_filenames <- filtered$excluded_af_filenames

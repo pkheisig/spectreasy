@@ -16,7 +16,7 @@ unmix_controls(
   unmix_method = "WLS",
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
-  af_n_bands = 10,
+  af_n_bands = "auto",
   af_bands_per_file = 5,
   af_auto_max_bands = 20,
   af_min_cluster_events = 20,
@@ -58,7 +58,8 @@ they are present in the SCC folder or control mapping.}
 
 \item{af_n_bands}{Number of AF bands to extract from the unstained control
 when only one AF source is available. Use `"auto"` to select the count
-from AF event shapes. Default is 10.}
+from AF event shapes and prune near-duplicate AF signatures. Default is
+`"auto"`.}
 
 \item{af_bands_per_file}{Number of AF bands requested per AF file when
 multiple AF sources are pooled. Default is 5.}
@@ -74,7 +75,8 @@ events required to keep a k-means AF cluster. Default is 0.005.}
 
 \item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
 when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-select fewer bands. Default is `1.5`.}
+select fewer bands before near-duplicate AF signatures are pruned. Default
+is `1.5`.}
 
 \item{include_multi_af}{Logical; whether to include additional AF files from `af_dir`. Default is FALSE.}
 

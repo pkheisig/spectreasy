@@ -274,6 +274,9 @@ test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::calc_residuals)))
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_samples)))
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_controls)))
+    expect_true("estimate_af" %in% names(formals(spectreasy::unmix_samples)))
+    expect_false(formals(spectreasy::unmix_samples)$estimate_af)
+    expect_equal(formals(spectreasy::unmix_samples)$method, "WLS")
 })
 
 test_that("calc_residuals multi-AF RWLS honors rwls_max_iter", {
@@ -403,6 +406,72 @@ test_that("unmix_samples loads sibling SCC detector-noise file for WLS", {
         as.matrix(unmixed$sample$data[, rownames(M)]),
         as.matrix(expected[, rownames(M)]),
         tolerance = 1e-6
+    )
+})
+
+test_that("unmix_samples can estimate missing AF from stained samples", {
+    set.seed(42)
+    M_marker <- rbind(
+        FITC = c(1.00, 0.12, 0.04),
+        PE = c(0.08, 1.00, 0.10)
+    )
+    colnames(M_marker) <- c("B1-A", "YG1-A", "R1-A")
+    af_signature <- c("B1-A" = 0.20, "YG1-A" = 0.25, "R1-A" = 1.00)
+
+    n <- 320
+    abund <- cbind(
+        FITC = rgamma(n, shape = 2, rate = 0.03),
+        PE = rgamma(n, shape = 2, rate = 0.04)
+    )
+    af_abund <- rgamma(n, shape = 2, rate = 0.04)
+    Y <- abund %*% M_marker +
+        af_abund %*% matrix(af_signature, nrow = 1) +
+        matrix(rnorm(n * ncol(M_marker), sd = 0.15), nrow = n)
+    colnames(Y) <- colnames(M_marker)
+    exprs_mat <- cbind(
+        Y,
+        "FSC-A" = rnorm(n, 100000, 4000),
+        "SSC-A" = rnorm(n, 50000, 3000)
+    )
+    ff <- flowCore::flowFrame(exprs_mat)
+    fs <- flowCore::flowSet(list(stained = ff))
+
+    without_af <- spectreasy::unmix_samples(
+        sample_dir = fs,
+        M = M_marker,
+        method = "WLS",
+        write_fcs = FALSE,
+        verbose = FALSE
+    )
+    with_af <- spectreasy::unmix_samples(
+        sample_dir = fs,
+        M = M_marker,
+        method = "WLS",
+        estimate_af = TRUE,
+        write_fcs = FALSE,
+        verbose = FALSE,
+        seed = 11
+    )
+
+    M_est <- attr(with_af, "reference_matrix")
+    expect_true(any(grepl("^AF($|_)", rownames(M_est), ignore.case = TRUE)))
+    expect_true("AF" %in% colnames(with_af$stained$data))
+
+    rmse_without <- sqrt(mean(without_af$stained$residuals^2))
+    rmse_with <- sqrt(mean(with_af$stained$residuals^2))
+    expect_lt(rmse_with, rmse_without * 0.8)
+
+    blind_info <- attr(with_af, "blind_af_info")
+    expect_false(is.null(blind_info))
+    expect_gt(blind_info$derived_bands, 0)
+    expect_true(blind_info$model_id %in% c("residual_wls_q90_k10", "residual_wls_low_marker_q90_k10"))
+    expect_equal(blind_info$candidate_quantile, 0.90)
+    expect_equal(blind_info$requested_bands, 10)
+    expect_equal(blind_info$selected_by, "heldout_event_wise_wls")
+    expect_s3_class(blind_info$heldout_scores, "data.frame")
+    expect_setequal(
+        blind_info$heldout_scores$model_id,
+        c("residual_wls_q90_k10", "residual_wls_low_marker_q90_k10")
     )
 })
 
@@ -812,13 +881,16 @@ test_that("AF profile extraction can auto-select band count", {
 })
 
 test_that("AF auto band selection can exceed the old 10-band ceiling", {
-    detector_names <- c("B1-A", "YG1-A", "V1-A")
+    detector_names <- paste0("D", seq_len(12), "-A")
     centers <- lapply(seq_len(12), function(i) {
-        v <- c(1 + i / 20, 0.05 + i / 100, 0.02 + i / 200)
+        v <- rep(0.01, length(detector_names))
+        v[i] <- 1
+        if (i > 1) v[i - 1] <- 0.15
+        if (i < length(detector_names)) v[i + 1] <- 0.15
         v / max(v)
     })
     af_events <- do.call(rbind, lapply(centers, function(v) {
-        matrix(rep(v * 1000, 25), ncol = length(v), byrow = TRUE)
+        matrix(rep(v * 1000, 25), ncol = length(detector_names), byrow = TRUE)
     }))
     colnames(af_events) <- detector_names
 
@@ -835,6 +907,40 @@ test_that("AF auto band selection can exceed the old 10-band ceiling", {
     expect_equal(profiles$selection$method, "distinct_shape_count")
     expect_equal(profiles$selection$n_bands, 12)
     expect_equal(nrow(profiles$signatures), 12)
+})
+
+test_that("AF auto band selection prunes near-duplicate AF signatures", {
+    detector_names <- c("B1-A", "YG1-A", "V1-A", "R1-A")
+    centers <- list(
+        c(1, 0.20, 0.05, 0.02),
+        c(1, 0.21, 0.05, 0.02),
+        c(0.05, 1, 0.18, 0.03),
+        c(0.05, 1, 0.19, 0.03)
+    )
+    af_events <- do.call(rbind, lapply(centers, function(v) {
+        matrix(rep(v * 1000, 30), ncol = length(detector_names), byrow = TRUE)
+    }))
+    colnames(af_events) <- detector_names
+
+    profiles <- spectreasy:::.extract_reference_af_profiles(
+        detector_names = detector_names,
+        n_bands = "auto",
+        max_cells = 1000,
+        af_events = af_events,
+        auto_max_bands = 10,
+        min_cluster_events = 20,
+        min_cluster_proportion = 0
+    )
+
+    expect_lt(nrow(profiles$signatures), profiles$selection$raw_center_count)
+    expect_gt(profiles$selection$pruned_similar_bands, 0)
+    expect_equal(profiles$selection$n_bands, nrow(profiles$signatures))
+})
+
+test_that("AF auto is the default for matrix-building APIs", {
+    expect_equal(formals(spectreasy::build_reference_matrix)$af_n_bands, "auto")
+    expect_equal(formals(spectreasy::unmix_controls)$af_n_bands, "auto")
+    expect_equal(formals(spectreasy::unmix_samples)$af_n_bands, "auto")
 })
 
 test_that("AF k-means cluster retention uses the larger event or proportion threshold", {
