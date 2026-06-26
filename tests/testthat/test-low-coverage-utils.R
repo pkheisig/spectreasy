@@ -100,8 +100,8 @@ test_that("diagnostic plot helpers handle save and no-residual branches", {
     expect_true(file.exists(nps_png))
 })
 
-test_that("launch_gui internal helpers validate packaged assets and dev-mode requirements", {
-    paths <- spectreasy:::.prepare_launch_gui_paths()
+test_that("adjust_matrix internal helpers validate packaged assets and dev-mode requirements", {
+    paths <- spectreasy:::.prepare_gui_paths()
     expect_true(file.exists(paths$api_path))
     expect_true(dir.exists(paths$gui_path))
 
@@ -119,15 +119,15 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
     on.exit(setwd(old_wd), add = TRUE)
     setwd(tmp_wd)
     expect_equal(
-        spectreasy:::.default_launch_gui_matrix_dir(),
+        spectreasy:::.default_adjust_matrix_matrix_dir(),
         normalizePath(file.path(tmp_wd, "spectreasy_outputs", "unmix_controls"))
     )
     expect_equal(
-        spectreasy:::.default_launch_gui_samples_dir(),
+        spectreasy:::.default_adjust_matrix_samples_dir(),
         normalizePath(file.path(tmp_wd, "samples"))
     )
     expect_equal(
-        spectreasy:::.normalize_gui_dirs(spectreasy:::.default_launch_gui_matrix_dir())$samples_dir,
+        spectreasy:::.normalize_gui_dirs(spectreasy:::.default_adjust_matrix_matrix_dir())$samples_dir,
         normalizePath(file.path(tmp_wd, "samples"))
     )
     expect_equal(
@@ -136,7 +136,7 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
     )
     unlink(file.path(tmp_wd, "samples"), recursive = TRUE)
     expect_equal(
-        spectreasy:::.default_launch_gui_samples_dir(
+        spectreasy:::.default_adjust_matrix_samples_dir(
             matrix_dir = file.path(tmp_wd, "spectreasy_outputs", "unmix_controls")
         ),
         normalizePath(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "unmixed_fcs"))
@@ -144,11 +144,11 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
     unlink(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "unmixed_fcs"), recursive = TRUE)
     writeLines("", file.path(tmp_wd, "spectreasy_outputs", "unmix_samples", "sample_unmixed.fcs"))
     expect_equal(
-        spectreasy:::.default_launch_gui_samples_dir(),
+        spectreasy:::.default_adjust_matrix_samples_dir(),
         normalizePath(file.path(tmp_wd, "spectreasy_outputs", "unmix_samples"))
     )
 
-    frontend_bundled <- spectreasy:::.resolve_launch_gui_frontend(
+    frontend_bundled <- spectreasy:::.resolve_gui_frontend(
         gui_path = paths$gui_path,
         dist_path = paths$dist_path,
         port = 8000,
@@ -158,7 +158,7 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
     expect_match(frontend_bundled$frontend_url, "127.0.0.1:8000")
 
     expect_error(
-        spectreasy:::.resolve_launch_gui_frontend(
+        spectreasy:::.resolve_gui_frontend(
             gui_path = paths$gui_path,
             dist_path = tempfile("spectreasy_missing_dist_"),
             port = 8000,
@@ -168,7 +168,7 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
     )
 
     expect_error(
-        spectreasy:::.resolve_launch_gui_frontend(
+        spectreasy:::.resolve_gui_frontend(
             gui_path = paths$gui_path,
             dist_path = paths$dist_path,
             port = 8000,
@@ -181,7 +181,7 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
     tmp_gui_path <- tempfile("spectreasy_gui_dev_")
     dir.create(tmp_gui_path, recursive = TRUE, showWarnings = FALSE)
     expect_error(
-        spectreasy:::.resolve_launch_gui_frontend(
+        spectreasy:::.resolve_gui_frontend(
             gui_path = tmp_gui_path,
             dist_path = paths$dist_path,
             port = 9000,
@@ -192,7 +192,7 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
     )
 
     dir.create(file.path(tmp_gui_path, "node_modules"), recursive = TRUE, showWarnings = FALSE)
-    frontend_dev <- spectreasy:::.resolve_launch_gui_frontend(
+    frontend_dev <- spectreasy:::.resolve_gui_frontend(
         gui_path = tmp_gui_path,
         dist_path = paths$dist_path,
         port = 9000,
@@ -204,7 +204,7 @@ test_that("launch_gui internal helpers validate packaged assets and dev-mode req
     expect_equal(frontend_dev$npm_bin, "npm")
 })
 
-test_that("launch_gui dev-server helper starts npm with API base and restores working directory", {
+test_that("adjust_matrix dev-server helper starts npm with API base and restores working directory", {
     tmp_gui_path <- tempfile("spectreasy_gui_dev_server_")
     dir.create(tmp_gui_path, recursive = TRUE, showWarnings = FALSE)
 
@@ -228,7 +228,7 @@ test_that("launch_gui dev-server helper starts npm with API base and restores wo
         setwd(old_wd)
     }, add = TRUE)
 
-    expect_null(spectreasy:::.start_launch_gui_dev_server(tmp_gui_path, port = 8123, npm_bin = fake_npm))
+    expect_null(spectreasy:::.start_gui_dev_server(tmp_gui_path, port = 8123, npm_bin = fake_npm))
     expect_equal(getwd(), old_wd)
     expect_true(file.exists(fake_npm_log))
 

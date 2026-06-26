@@ -1,4 +1,4 @@
-
+if (FALSE) {
 
     # -------------------------------------------------------------------------
     # Typical simple workflow
@@ -8,7 +8,7 @@
         input_folder = "scc",
         af_folder = "af",
         include_af_folder = TRUE,
-        cytometer = "Aurora",
+        cytometer = "auto",
         default_control_type = "cells",
         unknown_fluor_policy = c("empty", "by_channel", "filename"),
         output_file = "fcs_mapping.csv",
@@ -38,7 +38,7 @@
         scc_dir = "scc",
         control_file = "fcs_mapping.csv",
         auto_create_control = TRUE,
-        cytometer = "Aurora",
+        cytometer = "auto",
         auto_default_control_type = "beads",
         auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
         output_dir = "spectreasy_outputs/unmix_controls",
@@ -70,7 +70,7 @@
         scc_dir = "scc",
         output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
         control_file = "fcs_mapping.csv",
-        cytometer = "Aurora",
+        cytometer = "auto",
         method = "WLS",
         qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
         save_qc_pngs = FALSE,
@@ -84,7 +84,7 @@
         # Additional build_reference_matrix() arguments can be passed here.
     )
 
-    launch_gui(
+    adjust_matrix(
         matrix_dir = NULL,
         samples_dir = NULL,
         port = 8000,
@@ -109,7 +109,7 @@
         method = "WLS",
         rwls_max_iter = 1L,
         n_threads = 1L,
-        cytometer = "Aurora",
+        cytometer = "auto",
         scc_dir = NULL,
         control_file = NULL,
         af_n_bands = 10,
@@ -154,6 +154,16 @@
         sample_nxn_asinh_cofactor = 150,
         sample_nxn_axis_limit = NULL,
         nxn_all_samples = FALSE
+    )
+
+    # -------------------------------------------------------------------------
+    # Spectral library and panel helpers
+    # -------------------------------------------------------------------------
+
+    panel_builder <- build_spectral_panel(
+        port = 8000,
+        open_browser = TRUE,
+        dev_mode = FALSE
     )
 
     # -------------------------------------------------------------------------
@@ -226,7 +236,7 @@
         af_n_bands_sensitivity = 1.5,
         seed = NULL,
         default_sample_type = "beads",
-        cytometer = "Aurora",
+        cytometer = "auto",
         use_scatter_gating = TRUE,
         histogram_pct_beads = 0.98,
         histogram_direction_beads = "right",
@@ -338,7 +348,7 @@
         control_dir = "scc",
         af_dir = "af",
         method = "WLS",
-        cytometer = "Aurora"
+        cytometer = "auto"
     )
 
     # -------------------------------------------------------------------------
@@ -367,3 +377,4 @@
         force = FALSE,
         quiet = FALSE
     )
+}

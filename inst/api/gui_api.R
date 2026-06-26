@@ -139,8 +139,49 @@ function() {
         time = Sys.time(),
         wd = getwd(),
         matrix_dir = get_matrix_dir(),
-        samples_dir = get_samples_dir()
+        samples_dir = get_samples_dir(),
+        gui_mode = getOption("spectreasy.gui_mode", "tuner"),
+        panel_cytometer = getOption("spectreasy.panel_cytometer", "aurora")
     ))
+}
+
+#* Spectral panel builder metadata and current selection
+#* @get /spectral_panel
+#* @param cytometer
+function(cytometer = "") {
+    selected_cytometer <- if (is.null(cytometer) || !nzchar(trimws(as.character(cytometer)[1]))) {
+        getOption("spectreasy.panel_cytometer", "aurora")
+    } else {
+        cytometer
+    }
+    tryCatch(
+        spectreasy:::.spectral_panel_payload(
+            cytometer = selected_cytometer,
+            fluorophores = character()
+        ),
+        error = function(e) list(error = conditionMessage(e))
+    )
+}
+
+#* CORS preflight for spectral_panel_metrics
+#* @options /spectral_panel_metrics
+function(res) {
+    return("")
+}
+
+#* Recalculate spectral panel metrics for selected fluorophores
+#* @post /spectral_panel_metrics
+function(req) {
+    body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
+    cytometer <- if (!is.null(body$cytometer)) body$cytometer else getOption("spectreasy.panel_cytometer", "aurora")
+    fluorophores <- if (!is.null(body$fluorophores)) body$fluorophores else character()
+    tryCatch(
+        spectreasy:::.spectral_panel_payload(
+            cytometer = cytometer,
+            fluorophores = fluorophores
+        ),
+        error = function(e) list(error = conditionMessage(e))
+    )
 }
 
 #* List available matrices

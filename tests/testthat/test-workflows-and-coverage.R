@@ -408,12 +408,12 @@ test_that("qc_controls does not retain QC PNGs unless requested", {
     expect_false(dir.exists(qc_plot_dir))
 })
 
-test_that("launch_gui starts packaged GUI on localhost", {
+test_that("adjust_matrix starts packaged GUI on localhost", {
     skip_on_os("windows")
     skip_if_not_installed("plumber")
 
     expect_error(
-        spectreasy::launch_gui(matrix_dir = tempfile("spectreasy_missing_matrix_"), open_browser = FALSE),
+        spectreasy::adjust_matrix(matrix_dir = tempfile("spectreasy_missing_matrix_"), open_browser = FALSE),
         regexp = "cannot be found|No such file|mustWork"
     )
 
@@ -422,7 +422,7 @@ test_that("launch_gui starts packaged GUI on localhost", {
     port <- sample(18000:18999, 1)
 
     job <- parallel::mcparallel({
-        spectreasy::launch_gui(
+        spectreasy::adjust_matrix(
             matrix_dir = tmp_matrix_dir,
             open_browser = FALSE,
             dev_mode = FALSE,

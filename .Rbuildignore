@@ -10,6 +10,7 @@
 ^inst/gui/yarn-error\.log.*$
 ^inst/gui/pnpm-debug\.log.*$
 ^inst/gui/\.DS_Store$
+^inst/extdata/\.DS_Store$
 ^\.DS_Store$
 ^\.git$
 ^\.vscode$
@@ -26,6 +27,7 @@
 ^fcs_mapping.*\.csv$
 ^reference_matrix.*\.csv$
 ^refined_reference_matrix.*\.csv$
+^reconstructed_.*_table\.csv$
 ^refined_unmixing_matrix\.csv$
 ^unmixing_matrix\.csv$
 ^.*_Audit\.pdf$

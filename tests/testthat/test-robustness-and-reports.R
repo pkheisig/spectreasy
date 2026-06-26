@@ -622,6 +622,38 @@ test_that("Plumber gui_api load_matrix and save_matrix filter and merge AF rows"
     expect_true("AF" %in% colnames(preview))
 })
 
+test_that("Plumber gui_api serves spectral panel payloads", {
+    api_file <- system.file("api/gui_api.R", package = "spectreasy")
+    if (api_file == "") {
+        api_file <- "../../inst/api/gui_api.R"
+    }
+
+    expect_true(file.exists(api_file))
+
+    pr <- plumber::plumb(api_file)
+    spectral_panel_fn <- pr$routes$spectral_panel$getFunc()
+    spectral_metrics_fn <- pr$routes$spectral_panel_metrics[[2]]$getFunc()
+
+    old_opts <- options(spectreasy.panel_cytometer = "aurora")
+    on.exit(options(old_opts), add = TRUE)
+
+    payload <- spectral_panel_fn("")
+    expect_equal(payload$cytometer, "aurora")
+    expect_equal(payload$selected, character())
+    expect_true(nrow(payload$detectors) > 20)
+
+    req <- new.env()
+    req$postBody <- jsonlite::toJSON(list(
+        cytometer = "id7000",
+        fluorophores = c("FITC", "PE", "APC")
+    ), auto_unbox = TRUE)
+
+    recalculated <- spectral_metrics_fn(req)
+    expect_equal(recalculated$cytometer, "id7000")
+    expect_equal(recalculated$selected, c("FITC", "PE", "APC"))
+    expect_true(is.numeric(recalculated$complexity_index))
+})
+
 test_that("unmix_samples supports in-memory subsampling via subsample_n", {
     M <- matrix(c(
         1.0, 0.2,

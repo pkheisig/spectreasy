@@ -5,6 +5,9 @@
 - Added `unmix_controls()` as the main SCC workflow entry point.
 - Added `unmix_samples()` support for loading a saved unmixing matrix file.
 - Added structured control-file preflight validation and auto-generation support.
+- Added `build_spectral_panel()` as a browser-based spectral panel builder for
+  Aurora, Discover, ID7000, and Xenith theoretical spectra.
+- Renamed the matrix-adjustment GUI entry point to `adjust_matrix()`.
 
 ## Changes
 
