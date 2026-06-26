@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { Plus } from 'lucide-react';
+import { Download, FileText, Plus, Upload } from 'lucide-react';
 import './PanelBuilder.css';
 
 const API_BASE = (() => {
@@ -51,7 +51,19 @@ type PanelPayload = {
     error?: string;
 };
 
+type PanelExportResponse = {
+    filename: string;
+    content_type: string;
+    content_base64: string;
+    error?: string;
+};
+
 type TabId = 'panel' | 'similarity' | 'signatures';
+
+type ImportedPanelRow = {
+    fluor: string;
+    marker: string;
+};
 
 const laserOrder = ['DeepUV', 'UV', 'Violet', 'Blue', 'YellowGreen', 'Red', 'IR', 'Other'];
 const emptySlots = 18;
@@ -96,18 +108,226 @@ const similarityColor = (value: number) => {
     return `rgb(${blue}, ${Math.round(248 - alpha * 90)}, ${Math.round(252 - alpha * 35)})`;
 };
 
+const bandColor = (value: number) => {
+    const v = Math.max(0, Math.min(1, value));
+    const stops = [
+        { at: 0, color: [0, 0, 255] },
+        { at: 0.25, color: [0, 255, 255] },
+        { at: 0.5, color: [0, 255, 0] },
+        { at: 0.75, color: [255, 255, 0] },
+        { at: 1, color: [255, 0, 0] },
+    ];
+    const upper = stops.findIndex(stop => v <= stop.at);
+    const hi = stops[Math.max(1, upper)];
+    const lo = stops[Math.max(0, Math.max(1, upper) - 1)];
+    const range = Math.max(0.0001, hi.at - lo.at);
+    const t = (v - lo.at) / range;
+    const rgb = lo.color.map((channel, i) => Math.round(channel + (hi.color[i] - channel) * t));
+    return `rgb(${rgb.join(', ')})`;
+};
+
+const signatureLogFromValue = (value: number) => {
+    const v = Math.max(0, Math.min(1, value));
+    return 0.35 + Math.pow(v, 0.72) * 5.65;
+};
+
+const signatureY = (logValue: number, top: number, height: number) => {
+    const yPower = 1.5;
+    const maxTransformed = Math.pow(6.35, yPower);
+    const transformed = Math.pow(Math.max(0, Math.min(6.35, logValue)), yPower);
+    return top + height - (transformed / maxTransformed) * height;
+};
+
+const signatureBandBins = (value: number) => {
+    const offsets = [-0.36, -0.30, -0.24, -0.18, -0.12, -0.06, 0, 0.06, 0.12, 0.18, 0.24, 0.30, 0.36];
+    const v = Math.max(0, Math.min(1, value));
+    const center = signatureLogFromValue(v);
+    return offsets.map((offset, index) => {
+        const distance = Math.abs(index - (offsets.length - 1) / 2) / ((offsets.length - 1) / 2);
+        const density = Math.max(0.05, 1 - distance) * Math.max(0.08, v);
+        return {
+            logValue: Math.max(0, Math.min(6, center + offset)),
+            density,
+        };
+    });
+};
+
+const csvEscape = (value: string) => `"${value.replace(/"/g, '""')}"`;
+
+const downloadBlob = (filename: string, blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+};
+
+const base64ToBlob = (content: string, contentType: string) => {
+    const binary = window.atob(content);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: contentType });
+};
+
+const normalizeImportToken = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+const parseDelimitedRows = (text: string, delimiter: string) => {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let cell = '';
+    let quoted = false;
+
+    for (let i = 0; i < text.length; i += 1) {
+        const char = text[i];
+        const next = text[i + 1];
+
+        if (char === '"') {
+            if (quoted && next === '"') {
+                cell += '"';
+                i += 1;
+            } else {
+                quoted = !quoted;
+            }
+        } else if (char === delimiter && !quoted) {
+            row.push(cell.trim());
+            cell = '';
+        } else if ((char === '\n' || char === '\r') && !quoted) {
+            row.push(cell.trim());
+            cell = '';
+            if (row.some(value => value.length > 0)) rows.push(row);
+            row = [];
+            if (char === '\r' && next === '\n') i += 1;
+        } else {
+            cell += char;
+        }
+    }
+
+    row.push(cell.trim());
+    if (row.some(value => value.length > 0)) rows.push(row);
+    if (rows.length > 0 && rows[0].length > 0) rows[0][0] = rows[0][0].replace(/^\uFEFF/, '');
+    return rows;
+};
+
+const parseCsvLikeRows = (text: string) => {
+    const delimiters = [',', '\t', ';'];
+    const parsed = delimiters.map(delimiter => {
+        const rows = parseDelimitedRows(text, delimiter);
+        const multiColumnRows = rows.filter(row => row.length > 1).length;
+        const totalCells = rows.reduce((sum, row) => sum + row.length, 0);
+        return { delimiter, rows, score: multiColumnRows * 1000 + totalCells };
+    });
+    parsed.sort((a, b) => b.score - a.score);
+    return parsed[0]?.rows || [];
+};
+
+const rowHasHeaderWords = (row: string[]) => row.some(value => {
+    const key = normalizeImportToken(value);
+    return ['marker', 'markers', 'antigen', 'target', 'targets', 'fluor', 'fluorophore', 'fluorochrome', 'dye', 'tag', 'color', 'colour', 'reagent'].includes(key);
+});
+
+const buildFluorLookup = (fluorophores: FluorInfo[]) => {
+    const lookup = new Map<string, string>();
+    fluorophores.forEach(info => {
+        const canonical = info.fluorophore;
+        const keys = [
+            canonical,
+            canonical.replace(/\s*\([^)]*\)/g, ''),
+            canonical.replace(/^(.+?)\s*-\s*/g, '$1-'),
+        ].map(normalizeImportToken).filter(Boolean);
+        keys.forEach(key => {
+            if (!lookup.has(key)) lookup.set(key, canonical);
+        });
+    });
+    return lookup;
+};
+
+const matchImportedFluor = (value: string, lookup: Map<string, string>) => {
+    const raw = value.trim();
+    if (!raw) return '';
+    const candidates = [
+        raw,
+        raw.replace(/\s*\([^)]*\)/g, ''),
+        raw.split(/[;,|]/)[0] || raw,
+    ].map(normalizeImportToken).filter(Boolean);
+
+    for (const key of candidates) {
+        const hit = lookup.get(key);
+        if (hit) return hit;
+    }
+    return '';
+};
+
+const detectImportedPanelRows = (text: string, fluorophores: FluorInfo[]) => {
+    const rows = parseCsvLikeRows(text);
+    if (rows.length === 0) throw new Error('The imported CSV file is empty.');
+
+    const lookup = buildFluorLookup(fluorophores);
+    const firstRow = rows[0] || [];
+    const firstRowHasFluor = firstRow.some(value => !!matchImportedFluor(value, lookup));
+    const hasHeader = rowHasHeaderWords(firstRow) || (!firstRowHasFluor && rows.length > 1);
+    const headers = hasHeader ? firstRow.map(normalizeImportToken) : [];
+    const dataRows = hasHeader ? rows.slice(1) : rows;
+    const maxCols = Math.max(...rows.map(row => row.length));
+
+    const fluorScores = Array.from({ length: maxCols }, (_, colIndex) => {
+        const valueMatches = dataRows.reduce((count, row) => count + (matchImportedFluor(row[colIndex] || '', lookup) ? 1 : 0), 0);
+        const header = headers[colIndex] || '';
+        const headerBonus = ['fluor', 'fluorophore', 'fluorochrome', 'dye', 'tag', 'color', 'colour', 'reagent'].includes(header) ? 2 : 0;
+        return valueMatches + headerBonus;
+    });
+    const fluorCol = fluorScores.indexOf(Math.max(...fluorScores));
+    if (fluorCol < 0 || fluorScores[fluorCol] <= 0) {
+        throw new Error('No known fluorophores were recognized in the imported CSV for the selected cytometer.');
+    }
+
+    const markerHeaderHits = headers
+        .map((header, index) => ({ header, index }))
+        .filter(item => ['marker', 'markers', 'antigen', 'target', 'targets'].includes(item.header) && item.index !== fluorCol);
+    const markerCol = markerHeaderHits[0]?.index ?? (maxCols > 1
+        ? Array.from({ length: maxCols }, (_, index) => index).find(index => index !== fluorCol && fluorScores[index] === 0)
+        : undefined);
+
+    const imported: ImportedPanelRow[] = [];
+    const seen = new Set<string>();
+    dataRows.forEach(row => {
+        const fluor = matchImportedFluor(row[fluorCol] || '', lookup);
+        if (!fluor || seen.has(fluor)) return;
+        seen.add(fluor);
+        imported.push({
+            fluor,
+            marker: markerCol === undefined ? '' : (row[markerCol] || '').trim(),
+        });
+    });
+
+    if (imported.length === 0) {
+        throw new Error('No known fluorophores were recognized in the imported CSV for the selected cytometer.');
+    }
+    return imported;
+};
+
 const PanelBuilder = () => {
     const [payload, setPayload] = useState<PanelPayload | null>(null);
     const [cytometer, setCytometer] = useState('aurora');
     const [slots, setSlots] = useState<string[]>(Array(emptySlots).fill(''));
+    const slotsRef = useRef<string[]>(Array(emptySlots).fill(''));
+    const importInputRef = useRef<HTMLInputElement | null>(null);
     const [markers, setMarkers] = useState<Record<number, string>>({});
     const [queries, setQueries] = useState<Record<number, string>>({});
     const [activeSlot, setActiveSlot] = useState<number | null>(null);
     const [tab, setTab] = useState<TabId>('panel');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [exporting, setExporting] = useState(false);
+    const [importing, setImporting] = useState(false);
 
     const selected = useMemo(() => slots.filter(Boolean), [slots]);
+
+    useEffect(() => {
+        slotsRef.current = slots;
+    }, [slots]);
 
     const selectedSet = useMemo(() => new Set(selected), [selected]);
 
@@ -165,6 +385,13 @@ const PanelBuilder = () => {
             .filter(entry => entry.fluor);
     }, [fluorByName, markers, payload, slots]);
 
+    const selectedRows = useMemo(() => slots
+        .map((fluor, slotIndex) => ({
+            fluor,
+            marker: (markers[slotIndex] || '').trim(),
+        }))
+        .filter(row => row.fluor), [markers, slots]);
+
     const fetchPanel = async (nextCytometer: string, nextSelected: string[]) => {
         setError('');
         const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, {
@@ -191,6 +418,7 @@ const PanelBuilder = () => {
                 const initialSlots = [...initial.selected];
                 while (initialSlots.length < emptySlots) initialSlots.push('');
                 setSlots(initialSlots);
+                slotsRef.current = initialSlots;
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Could not load spectral libraries.');
             } finally {
@@ -201,8 +429,10 @@ const PanelBuilder = () => {
     }, []);
 
     const updateSlot = async (index: number, fluor: string) => {
-        if (fluor && slots.some((existing, i) => i !== index && existing === fluor)) return;
-        const nextSlots = slots.map((existing, i) => (i === index ? fluor : existing));
+        const currentSlots = slotsRef.current;
+        if (fluor && currentSlots.some((existing, i) => i !== index && existing === fluor)) return;
+        const nextSlots = currentSlots.map((existing, i) => (i === index ? fluor : existing));
+        slotsRef.current = nextSlots;
         setSlots(nextSlots);
         setQueries(prev => ({ ...prev, [index]: '' }));
         setActiveSlot(null);
@@ -227,6 +457,7 @@ const PanelBuilder = () => {
         try {
             const nextPayload = await fetchPanel(nextCytometer, []);
             const nextSlots = Array(emptySlots).fill('');
+            slotsRef.current = nextSlots;
             setSlots(nextSlots);
             setMarkers({});
             setPayload(nextPayload);
@@ -246,6 +477,71 @@ const PanelBuilder = () => {
             .slice(0, 80);
     };
 
+    const exportPanelCsv = () => {
+        if (selectedRows.length === 0) {
+            setError('Select at least one fluorophore before exporting a panel.');
+            return;
+        }
+        const lines = [
+            ['Marker', 'Fluorophore'].map(csvEscape).join(','),
+            ...selectedRows.map(row => [row.marker, row.fluor].map(csvEscape).join(',')),
+        ];
+        downloadBlob(
+            `spectreasy_${cytometer}_panel.csv`,
+            new Blob([`${lines.join('\n')}\n`], { type: 'text/csv;charset=utf-8' })
+        );
+    };
+
+    const exportPanelOverview = async () => {
+        if (selectedRows.length === 0) {
+            setError('Select at least one fluorophore before exporting a panel overview.');
+            return;
+        }
+        setError('');
+        setExporting(true);
+        try {
+            const res = await axios.post(`${API_BASE}/export_spectral_panel_overview`, {
+                cytometer,
+                fluorophores: selectedRows.map(row => row.fluor),
+                markers: selectedRows.map(row => row.marker),
+            });
+            if (res.data?.error) throw new Error(String(res.data.error));
+            const out = res.data as PanelExportResponse;
+            downloadBlob(out.filename || `spectreasy_${cytometer}_panel_overview.pdf`, base64ToBlob(out.content_base64, out.content_type || 'application/pdf'));
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not export panel overview.');
+        } finally {
+            setExporting(false);
+        }
+    };
+
+    const importPanelCsv = async (file: File | null) => {
+        if (!file || !payload) return;
+        setError('');
+        setImporting(true);
+        try {
+            const text = await file.text();
+            const imported = detectImportedPanelRows(text, payload.fluorophores);
+            const nextSlots = imported.map(row => row.fluor);
+            while (nextSlots.length < emptySlots) nextSlots.push('');
+            slotsRef.current = nextSlots;
+            setSlots(nextSlots);
+            const nextMarkers: Record<number, string> = {};
+            imported.forEach((row, index) => {
+                if (row.marker) nextMarkers[index] = row.marker;
+            });
+            setMarkers(nextMarkers);
+            setQueries({});
+            setActiveSlot(null);
+            await fetchPanel(cytometer, imported.map(row => row.fluor));
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not import panel CSV.');
+        } finally {
+            setImporting(false);
+            if (importInputRef.current) importInputRef.current.value = '';
+        }
+    };
+
     if (loading) {
         return <div className="panel-builder"><div className="empty-state">Loading spectral panel builder...</div></div>;
     }
@@ -258,14 +554,46 @@ const PanelBuilder = () => {
 
     const chartWidth = Math.max(1040, payload.detectors.length * 22);
     const chartHeight = 230;
+    const signatureLeft = 58;
+    const signatureTop = 22;
+    const signaturePlotHeight = 265;
+    const signatureAxisBottom = signatureTop + signaturePlotHeight;
+    const signatureHeight = signatureAxisBottom + 82;
+    const signaturePlotWidth = chartWidth - signatureLeft - 18;
+    const signatureColumnWidth = signaturePlotWidth / Math.max(1, payload.detectors.length);
 
     return (
         <div className="panel-builder">
+            <header className="panel-topbar">
+                <div>
+                    <h1>Spectral Panel Builder</h1>
+                    <p>{selected.length} fluorophores selected</p>
+                </div>
+                <div className="panel-actions">
+                    <input
+                        ref={importInputRef}
+                        type="file"
+                        accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values"
+                        className="hidden-file-input"
+                        onChange={event => void importPanelCsv(event.target.files?.[0] || null)}
+                    />
+                    <button type="button" className="export-button" onClick={() => importInputRef.current?.click()} disabled={importing}>
+                        <Upload size={16} />
+                        {importing ? 'Importing...' : 'Import panel CSV'}
+                    </button>
+                    <button type="button" className="export-button" onClick={exportPanelCsv}>
+                        <FileText size={16} />
+                        Export panel CSV
+                    </button>
+                    <button type="button" className="export-button primary" onClick={() => void exportPanelOverview()} disabled={exporting}>
+                        <Download size={16} />
+                        {exporting ? 'Exporting...' : 'Export overview PDF'}
+                    </button>
+                </div>
+            </header>
             <div className="panel-shell">
                 <aside className="panel-sidebar">
                     <div className="panel-sidebar-head">
-                        <h1>Spectral Panel Builder</h1>
-                        <p>{selected.length} fluorophores selected</p>
                         <select
                             className="instrument-select"
                             value={cytometer}
@@ -313,6 +641,7 @@ const PanelBuilder = () => {
                                                         onMouseDown={event => event.preventDefault()}
                                                         onClick={() => void updateSlot(index, option.fluorophore)}
                                                     >
+                                                        <span className="fluor-option-swatch" style={{ background: option.peak_color || '#d1d5db' }} />
                                                         {option.fluorophore}
                                                     </button>
                                                 ))}
@@ -333,7 +662,7 @@ const PanelBuilder = () => {
 
                 <main className="main-panel">
                     <div className="top-spectrum">
-                        <svg width={chartWidth} height={chartHeight + 56} role="img" aria-label="Combined spectral signatures">
+                        <svg className="spectrum-svg" width="100%" height={chartHeight + 56} viewBox={`0 0 ${chartWidth} ${chartHeight + 56}`} role="img" aria-label="Combined spectral signatures">
                             {[0, 25, 50, 75, 100].map(tick => {
                                 const y = chartHeight - (tick / 100) * (chartHeight - 18) - 10;
                                 return (
@@ -378,8 +707,6 @@ const PanelBuilder = () => {
                     <div className="tabs-bar">
                         <button className={`tab-button ${tab === 'panel' ? 'active' : ''}`} onClick={() => setTab('panel')}>PANEL MATRIX</button>
                         <button className={`tab-button ${tab === 'similarity' ? 'active' : ''}`} onClick={() => setTab('similarity')}>SIMILARITY MATRIX</button>
-                        <button className="tab-button disabled">SIR</button>
-                        <button className="tab-button disabled">SSM</button>
                         <button className={`tab-button ${tab === 'signatures' ? 'active' : ''}`} onClick={() => setTab('signatures')}>SIGNATURES</button>
                         <select className="coexpression-select" defaultValue="">
                             <option value="">Show Co-Expression</option>
@@ -490,28 +817,43 @@ const PanelBuilder = () => {
                                     return (
                                         <div className="signature-card" key={fluor}>
                                             <h3>{fluor}</h3>
-                                            <svg width={chartWidth} height={250} role="img" aria-label={`${fluor} signature`}>
-                                                <line x1={42} y1={214} x2={chartWidth - 8} y2={214} stroke="#111" strokeWidth={2} />
-                                                <line x1={42} y1={16} x2={42} y2={214} stroke="#111" strokeWidth={2} />
-                                                {payload.detectors.map((det, index) => {
-                                                    const x = 42 + (index / Math.max(1, payload.detectors.length - 1)) * (chartWidth - 56);
-                                                    const value = toNumber(row[det.detector]);
-                                                    const barHeight = Math.max(2, value * 170);
+                                            <svg className="signature-band-svg" width="100%" height={signatureHeight} viewBox={`0 0 ${chartWidth} ${signatureHeight}`} role="img" aria-label={`${fluor} signature`}>
+                                                <rect x={signatureLeft} y={signatureTop} width={signaturePlotWidth} height={signaturePlotHeight} fill="#ffffff" stroke="#e5e7eb" />
+                                                {[0, 1, 2, 3, 4, 5, 6].map(tick => {
+                                                    const y = signatureY(tick, signatureTop, signaturePlotHeight);
                                                     return (
-                                                        <g key={det.detector}>
-                                                            <rect x={x - 5} y={214 - barHeight} width={10} height={barHeight} fill={det.color} opacity={0.78} />
-                                                            <text x={x} y={232} fontSize={10} textAnchor="end" transform={`rotate(-55 ${x} 232)`}>{det.label}</text>
+                                                        <g key={tick}>
+                                                            <line x1={signatureLeft} y1={y} x2={signatureLeft + signaturePlotWidth} y2={y} stroke="#e8ebef" strokeWidth={1} />
+                                                            <text x={signatureLeft - 9} y={y + 4} fontSize={11} textAnchor="end">{`10^${tick}`}</text>
                                                         </g>
                                                     );
                                                 })}
-                                                <path
-                                                    d={linePath(row, payload.detectors, chartWidth - 56, 210, 42)}
-                                                    fill="none"
-                                                    stroke={colorByFluor.get(fluor) || '#111'}
-                                                    strokeWidth={2}
-                                                    strokeLinejoin="round"
-                                                    strokeLinecap="round"
-                                                />
+                                                <text x={14} y={signatureTop + signaturePlotHeight / 2} fontSize={13} fontWeight={700} textAnchor="middle" transform={`rotate(-90 14 ${signatureTop + signaturePlotHeight / 2})`}>Intensity</text>
+                                                {payload.detectors.map((det, index) => {
+                                                    const x = signatureLeft + index * signatureColumnWidth;
+                                                    const centerX = x + signatureColumnWidth / 2;
+                                                    const value = toNumber(row[det.detector]);
+                                                    return (
+                                                        <g key={det.detector}>
+                                                            <line x1={centerX} y1={signatureTop} x2={centerX} y2={signatureAxisBottom} stroke="#f1f3f6" strokeWidth={1} />
+                                                            {signatureBandBins(value).map((bin, bandIndex) => {
+                                                                const y = signatureY(bin.logValue, signatureTop, signaturePlotHeight);
+                                                                return (
+                                                                    <rect
+                                                                        key={`${det.detector}-${bandIndex}`}
+                                                                        x={centerX - Math.max(3, signatureColumnWidth * 0.28)}
+                                                                        y={y - 2.3}
+                                                                        width={Math.max(4, signatureColumnWidth * 0.56)}
+                                                                        height={4.6}
+                                                                        fill={bandColor(bin.density)}
+                                                                        opacity={0.95}
+                                                                    />
+                                                                );
+                                                            })}
+                                                            <text x={centerX} y={signatureAxisBottom + 15} fontSize={10} textAnchor="end" transform={`rotate(-65 ${centerX} ${signatureAxisBottom + 15})`}>{det.label}</text>
+                                                        </g>
+                                                    );
+                                                })}
                                             </svg>
                                         </div>
                                     );

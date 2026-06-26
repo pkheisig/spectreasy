@@ -124,6 +124,9 @@ function(req, res) {
     res$setHeader("Access-Control-Allow-Origin", "*")
     res$setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
     res$setHeader("Access-Control-Allow-Headers", "Content-Type")
+    res$setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+    res$setHeader("Pragma", "no-cache")
+    res$setHeader("Expires", "0")
     if (req$REQUEST_METHOD == "OPTIONS") {
         res$status <- 200
         return(list())
@@ -182,6 +185,38 @@ function(req) {
         ),
         error = function(e) list(error = conditionMessage(e))
     )
+}
+
+#* CORS preflight for export_spectral_panel_overview
+#* @options /export_spectral_panel_overview
+function(res) {
+    return("")
+}
+
+#* Export spectral panel overview PDF
+#* @post /export_spectral_panel_overview
+function(req) {
+    body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
+    cytometer <- if (!is.null(body$cytometer)) body$cytometer else getOption("spectreasy.panel_cytometer", "aurora")
+    fluorophores <- if (!is.null(body$fluorophores)) body$fluorophores else character()
+    markers <- if (!is.null(body$markers)) body$markers else character()
+
+    tryCatch({
+        output_file <- tempfile("spectreasy_panel_overview_", fileext = ".pdf")
+        on.exit(unlink(output_file), add = TRUE)
+        spectreasy:::.write_spectral_panel_overview_pdf(
+            cytometer = cytometer,
+            fluorophores = fluorophores,
+            markers = markers,
+            output_file = output_file
+        )
+        payload <- readBin(output_file, what = "raw", n = file.info(output_file)$size)
+        list(
+            filename = paste0("spectreasy_", cytometer, "_panel_overview.pdf"),
+            content_type = "application/pdf",
+            content_base64 = jsonlite::base64_enc(payload)
+        )
+    }, error = function(e) list(error = conditionMessage(e)))
 }
 
 #* List available matrices

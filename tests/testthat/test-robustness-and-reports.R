@@ -633,6 +633,7 @@ test_that("Plumber gui_api serves spectral panel payloads", {
     pr <- plumber::plumb(api_file)
     spectral_panel_fn <- pr$routes$spectral_panel$getFunc()
     spectral_metrics_fn <- pr$routes$spectral_panel_metrics[[2]]$getFunc()
+    spectral_export_fn <- pr$routes$export_spectral_panel_overview[[2]]$getFunc()
 
     old_opts <- options(spectreasy.panel_cytometer = "aurora")
     on.exit(options(old_opts), add = TRUE)
@@ -652,6 +653,19 @@ test_that("Plumber gui_api serves spectral panel payloads", {
     expect_equal(recalculated$cytometer, "id7000")
     expect_equal(recalculated$selected, c("FITC", "PE", "APC"))
     expect_true(is.numeric(recalculated$complexity_index))
+
+    export_req <- new.env()
+    export_req$postBody <- jsonlite::toJSON(list(
+        cytometer = "aurora",
+        fluorophores = c("FITC", "PE"),
+        markers = c("CD8", "CD4")
+    ), auto_unbox = TRUE)
+    exported <- spectral_export_fn(export_req)
+    expect_equal(exported$content_type, "application/pdf")
+    pdf_con <- rawConnection(jsonlite::base64_dec(exported$content_base64), open = "rb")
+    on.exit(close(pdf_con), add = TRUE)
+    pdf_sig <- readBin(pdf_con, what = "raw", n = 4)
+    expect_equal(rawToChar(pdf_sig), "%PDF")
 })
 
 test_that("unmix_samples supports in-memory subsampling via subsample_n", {
