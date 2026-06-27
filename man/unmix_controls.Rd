@@ -67,7 +67,8 @@ from AF event shapes. Default is `"auto"`.}
 multiple AF sources are pooled. Default is 5.}
 
 \item{af_auto_max_bands}{Maximum SOM nodes that `"auto"` may create before
-prepending the mean AF row. Default is 100.}
+prepending the mean AF row.
+Default is 100.}
 
 \item{af_min_cluster_events}{Compatibility argument retained for older
 workflows.}

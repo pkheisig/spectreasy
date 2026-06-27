@@ -866,6 +866,7 @@ unmix_samples <- function(sample_dir = "samples",
             method = method_upper,
             file_name = sn,
             rwls_max_iter = rwls_max_iter,
+            multithreading = multithreading,
             n_threads = n_threads,
             return_residuals = TRUE
         )
