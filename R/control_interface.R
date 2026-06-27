@@ -152,9 +152,11 @@
                 marker <- trimws(as.character(marker_df$marker[i]))
                 if (!nzchar(marker)) next
                 out$marker_names <- c(out$marker_names, marker)
-                marker_key <- .control_file_normalize_token(marker)
-                if (nzchar(marker_key)) {
-                    k <- marker_key
+                aliases_raw <- if ("aliases" %in% colnames(marker_df)) marker_df$aliases[i] else ""
+                aliases <- unique(c(marker, .control_file_split_semicolon(aliases_raw)))
+                alias_keys <- .control_file_normalize_token(aliases)
+                alias_keys <- alias_keys[nzchar(alias_keys)]
+                for (k in alias_keys) {
                     if (!k %in% names(out$marker_map)) out$marker_map[k] <- marker
                 }
             }
@@ -271,6 +273,9 @@
 }
 
 .detect_control_file_marker <- function(stem, marker_names = character(), marker_name_map = character()) {
+    marker_guess <- .detect_control_file_alias(stem, marker_name_map, min_substring_n = 3)
+    if (nzchar(marker_guess)) return(marker_guess)
+
     marker_names <- unique(trimws(as.character(marker_names)))
     marker_names <- marker_names[nzchar(marker_names)]
     if (length(marker_names) > 0) {
@@ -281,7 +286,7 @@
             }
         }
     }
-    .detect_control_file_alias(stem, marker_name_map, min_substring_n = 3)
+    ""
 }
 
 .infer_control_type_from_filename <- function(fn, fluor_guess = "", marker_guess = "") {
@@ -800,6 +805,8 @@
     df$is.viability[is.na(df$is.viability)] <- ""
     df$is.viability[df$is.viability %in% c("T", "TRUE", "1", "YES", "Y")] <- "TRUE"
     df$is.viability[!(df$is.viability %in% c("", "TRUE"))] <- ""
+    viability_missing_marker <- df$is.viability == "TRUE" & !nzchar(trimws(as.character(df$marker)))
+    df$marker[viability_missing_marker] <- "Live"
 
     is_af_row <- grepl("^AF($|_)", as.character(df$fluorophore), ignore.case = TRUE)
     df$control.type[is_af_row] <- "cells"
