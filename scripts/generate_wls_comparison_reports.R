@@ -67,7 +67,7 @@ for (sample_file in sample_files) {
   sample_weights <- weights[weights$sample == sample_name, , drop = FALSE]
   sample_weights <- sample_weights[match(colnames(M_base), sample_weights$detector), , drop = FALSE]
   if (any(is.na(sample_weights$autospectral_fixed_weight))) {
-    stop("Missing AutoSpectral-style weights for sample: ", sample_name)
+    stop("Missing fixed mean WLS weights for sample: ", sample_name)
   }
   M_auto <- auto_fixed_matrix_for_sample(M_base, sample_weights$autospectral_fixed_weight)
   results_auto_fixed[[sample_name]] <- spectreasy::calc_residuals(
@@ -122,7 +122,7 @@ summary_lines <- c(
   "- QC PDFs are subsampled to 5,000 events per sample to avoid R's 16 GB vector limit during PDF generation.",
   "",
   "Paired RMSE/RSS deltas:",
-  "Positive values mean spectreasy event-wise WLS had lower residuals than AutoSpectral-style fixed WLS.",
+  "Positive values mean spectreasy event-wise WLS had lower residuals than fixed mean WLS.",
   "",
   paste(capture.output(print(paired[, c("sample", "rmse_pct_better_spectreasy", "rss_pct_better_spectreasy")], row.names = FALSE)), collapse = "\n"),
   "",

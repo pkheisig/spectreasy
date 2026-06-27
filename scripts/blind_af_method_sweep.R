@@ -287,7 +287,7 @@ compare_to_conventional <- function(summary) {
   out$Signal_Scaled_vs_Conventional_Pct <- NA_real_
   for (dataset in unique(out$Dataset)) {
     idx <- out$Dataset == dataset
-    conv <- out[idx & out$Model == "conventional_multi_af_10", , drop = FALSE]
+    conv <- out[idx & out$Model == "conventional_multi_af", , drop = FALSE]
     if (!nrow(conv)) next
     out$Raw_RMSE_vs_Conventional_Pct[idx] <- 100 * (out$Raw_RMSE[idx] - conv$Raw_RMSE[1]) / conv$Raw_RMSE[1]
     out$Signal_Scaled_vs_Conventional_Pct[idx] <- 100 * (out$Signal_Scaled_RMSE[idx] - conv$Signal_Scaled_RMSE[1]) / conv$Signal_Scaled_RMSE[1]
@@ -300,7 +300,7 @@ af_similarity <- function(dataset, conventional_M, models) {
   rows <- list()
   for (name in names(models)) {
     M <- models[[name]]
-    if (is.null(M) || name %in% c("marker_only_no_af", "conventional_single_af", "conventional_multi_af_10")) next
+    if (is.null(M) || name %in% c("marker_only_no_af", "conventional_single_af", "conventional_multi_af")) next
     blind_af <- M[af_rows(M), , drop = FALSE]
     if (!nrow(blind_af) || !nrow(conventional_af)) next
     cos <- cosine_matrix(blind_af, conventional_af)
@@ -321,7 +321,7 @@ build_models <- function(splits, marker_M, conventional_single, conventional_mul
   models <- list(
     marker_only_no_af = marker_M,
     conventional_single_af = conventional_single,
-    conventional_multi_af_10 = conventional_multi
+    conventional_multi_af = conventional_multi
   )
 
   q_grid <- c(0.90, 0.95)
@@ -382,15 +382,15 @@ configs <- list(
     name = "PBMC-CULTURE-TITRATION",
     samples = list.files(file.path(pbmc_source, "samples"), pattern = "[.]fcs$", full.names = TRUE, ignore.case = TRUE),
     single_ref = file.path(benchmark_dir, "runs/PBMC-CULTURE-TITRATION/benchmark_outputs/references/single_af/scc_reference_matrix.csv"),
-    multi_ref = file.path(benchmark_dir, "runs/PBMC-CULTURE-TITRATION/benchmark_outputs/references/multi_af_10/scc_reference_matrix.csv"),
-    noise = file.path(benchmark_dir, "runs/PBMC-CULTURE-TITRATION/benchmark_outputs/references/multi_af_10/scc_detector_noise.csv")
+    multi_ref = file.path(benchmark_dir, "runs/PBMC-CULTURE-TITRATION/benchmark_outputs/references/multi_af/scc_reference_matrix.csv"),
+    noise = file.path(benchmark_dir, "runs/PBMC-CULTURE-TITRATION/benchmark_outputs/references/multi_af/scc_detector_noise.csv")
   ),
   list(
     name = "MONOCYTE-XENITH-CELLS",
     samples = list.files(file.path(benchmark_dir, "runs/MONOCYTE-XENITH-CELLS/data/samples"), pattern = "[.]fcs$", full.names = TRUE, ignore.case = TRUE),
     single_ref = file.path(benchmark_dir, "runs/MONOCYTE-XENITH-CELLS/benchmark_outputs/references/single_af/scc_reference_matrix.csv"),
-    multi_ref = file.path(benchmark_dir, "runs/MONOCYTE-XENITH-CELLS/benchmark_outputs/references/multi_af_10/scc_reference_matrix.csv"),
-    noise = file.path(benchmark_dir, "runs/MONOCYTE-XENITH-CELLS/benchmark_outputs/references/multi_af_10/scc_detector_noise.csv")
+    multi_ref = file.path(benchmark_dir, "runs/MONOCYTE-XENITH-CELLS/benchmark_outputs/references/multi_af/scc_reference_matrix.csv"),
+    noise = file.path(benchmark_dir, "runs/MONOCYTE-XENITH-CELLS/benchmark_outputs/references/multi_af/scc_detector_noise.csv")
   )
 )
 

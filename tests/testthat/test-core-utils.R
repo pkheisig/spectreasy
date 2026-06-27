@@ -176,7 +176,7 @@ test_that("calc_residuals NNLS matches per-cell constrained reference fits", {
     expect_true(all(as.matrix(res[, rownames(M)]) >= -1e-10))
 })
 
-test_that("calc_residuals multi-AF NNLS selects AF band by constrained residual", {
+test_that("calc_residuals multi-AF NNLS selects one AF band before constrained fit", {
     M <- matrix(c(
         1.00000000, 0.46357026, 0.56448788,
         0.20952040, 1.00000000, 0.41805212,
@@ -274,6 +274,15 @@ test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::calc_residuals)))
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_samples)))
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_controls)))
+    expect_true("multithreading" %in% names(formals(spectreasy::calc_residuals)))
+    expect_true("multithreading" %in% names(formals(spectreasy::unmix_samples)))
+    expect_true("multithreading" %in% names(formals(spectreasy::unmix_controls)))
+    expect_equal(formals(spectreasy::calc_residuals)$n_threads, "auto")
+    expect_equal(formals(spectreasy::unmix_samples)$n_threads, "auto")
+    expect_equal(formals(spectreasy::unmix_controls)$n_threads, "auto")
+    expect_false(formals(spectreasy::calc_residuals)$multithreading)
+    expect_false(formals(spectreasy::unmix_samples)$multithreading)
+    expect_false(formals(spectreasy::unmix_controls)$multithreading)
     expect_true("estimate_af" %in% names(formals(spectreasy::unmix_samples)))
     expect_false(formals(spectreasy::unmix_samples)$estimate_af)
     expect_equal(formals(spectreasy::unmix_samples)$method, "WLS")
@@ -496,17 +505,35 @@ test_that("multi-AF WLS threading matches single-threaded output", {
     colnames(Y) <- colnames(M)
     ff <- flowCore::flowFrame(Y)
 
-    single <- spectreasy::calc_residuals(ff, M, method = "WLS", n_threads = 1)
-    threaded <- spectreasy::calc_residuals(ff, M, method = "WLS", n_threads = 2)
+    single <- spectreasy::calc_residuals(ff, M, method = "WLS")
+    threaded <- spectreasy::calc_residuals(ff, M, method = "WLS", multithreading = TRUE, n_threads = 2)
+    auto_threaded <- spectreasy::calc_residuals(ff, M, method = "WLS", multithreading = TRUE, n_threads = "auto")
+    clipped_threaded <- spectreasy::calc_residuals(ff, M, method = "WLS", multithreading = TRUE, n_threads = 999999)
+    ignored_threads <- spectreasy::calc_residuals(ff, M, method = "WLS", multithreading = FALSE, n_threads = 2)
 
     expect_equal(
         as.matrix(threaded[, rownames(M)]),
         as.matrix(single[, rownames(M)]),
         tolerance = 1e-8
     )
+    expect_equal(
+        as.matrix(auto_threaded[, rownames(M)]),
+        as.matrix(single[, rownames(M)]),
+        tolerance = 1e-8
+    )
+    expect_equal(
+        as.matrix(clipped_threaded[, rownames(M)]),
+        as.matrix(single[, rownames(M)]),
+        tolerance = 1e-8
+    )
+    expect_equal(
+        as.matrix(ignored_threads[, rownames(M)]),
+        as.matrix(single[, rownames(M)]),
+        tolerance = 1e-8
+    )
     expect_error(
-        spectreasy::calc_residuals(ff, M, method = "WLS", n_threads = 0),
-        "n_threads must be an integer >= 1"
+        spectreasy::calc_residuals(ff, M, method = "WLS", multithreading = TRUE, n_threads = 0),
+        "n_threads must be \"auto\" or an integer >= 1"
     )
 })
 
@@ -840,9 +867,9 @@ test_that("AF profile extraction clusters pooled AF phenotypes", {
         af_events = af_events
     )
 
-    expect_equal(nrow(profiles$signatures), 2)
+    expect_equal(nrow(profiles$signatures), 3)
     expect_equal(colnames(profiles$signatures), detector_names)
-    expect_equal(rownames(profiles$signatures), c("AF", "AF_2"))
+    expect_equal(rownames(profiles$signatures), c("AF", "AF_2", "AF_3"))
 
     expected_shapes <- rbind(
         c("B1-A" = 1, "YG1-A" = 0.15, "V1-A" = 0.05),
@@ -856,11 +883,11 @@ test_that("AF profile extraction clusters pooled AF phenotypes", {
         ,
         drop = FALSE
     ]
-    expect_equal(unname(matched_shapes), unname(expected_shapes), tolerance = 1e-6)
+    expect_equal(unname(matched_shapes), unname(expected_shapes), tolerance = 1e-4)
     expect_equal(profiles$raw_median, c("B1-A" = 55, "YG1-A" = 52.5, "V1-A" = 12.5), tolerance = 1e-6)
 })
 
-test_that("AF profile extraction can auto-select band count", {
+test_that("AF profile extraction uses SOM auto bank", {
     detector_names <- c("B1-A", "YG1-A", "V1-A")
     af_events <- rbind(
         matrix(rep(c(100, 15, 5), 120), ncol = 3, byrow = TRUE),
@@ -875,9 +902,9 @@ test_that("AF profile extraction can auto-select band count", {
         af_events = af_events
     )
 
-    expect_equal(nrow(profiles$signatures), 2)
-    expect_true(profiles$selection$method %in% c("gmm_bic_on_pcs", "distinct_shape_count"))
-    expect_equal(profiles$selection$n_bands, 2)
+    expect_equal(nrow(profiles$signatures), 101)
+    expect_equal(profiles$selection$method, "som_grid")
+    expect_equal(profiles$selection$n_bands, 101)
 })
 
 test_that("AF auto band selection can exceed the old 10-band ceiling", {
@@ -904,12 +931,12 @@ test_that("AF auto band selection can exceed the old 10-band ceiling", {
         min_cluster_proportion = 0
     )
 
-    expect_equal(profiles$selection$method, "distinct_shape_count")
-    expect_equal(profiles$selection$n_bands, 12)
-    expect_equal(nrow(profiles$signatures), 12)
+    expect_equal(profiles$selection$method, "som_grid")
+    expect_equal(profiles$selection$n_bands, 21)
+    expect_equal(nrow(profiles$signatures), 21)
 })
 
-test_that("AF auto band selection prunes near-duplicate AF signatures", {
+test_that("AF auto band selection retains similar AF signatures for covariance assignment", {
     detector_names <- c("B1-A", "YG1-A", "V1-A", "R1-A")
     centers <- list(
         c(1, 0.20, 0.05, 0.02),
@@ -932,8 +959,8 @@ test_that("AF auto band selection prunes near-duplicate AF signatures", {
         min_cluster_proportion = 0
     )
 
-    expect_lt(nrow(profiles$signatures), profiles$selection$raw_center_count)
-    expect_gt(profiles$selection$pruned_similar_bands, 0)
+    expect_equal(nrow(profiles$signatures), 11)
+    expect_equal(nrow(profiles$signatures), profiles$selection$raw_center_count)
     expect_equal(profiles$selection$n_bands, nrow(profiles$signatures))
 })
 
@@ -941,9 +968,43 @@ test_that("AF auto is the default for matrix-building APIs", {
     expect_equal(formals(spectreasy::build_reference_matrix)$af_n_bands, "auto")
     expect_equal(formals(spectreasy::unmix_controls)$af_n_bands, "auto")
     expect_equal(formals(spectreasy::unmix_samples)$af_n_bands, "auto")
+    expect_false(formals(spectreasy::build_reference_matrix)$af_refine)
+    expect_false(formals(spectreasy::unmix_controls)$af_refine)
+    expect_false(formals(spectreasy::unmix_samples)$af_refine)
 })
 
-test_that("AF k-means cluster retention uses the larger event or proportion threshold", {
+test_that("AF refinement appends or reports a second-pass outcome", {
+    detector_names <- c("B1-A", "YG1-A", "V1-A", "R1-A")
+    fluor_spectra <- rbind(
+        FITC = c(1, 0.18, 0.02, 0.01),
+        PE = c(0.05, 1, 0.20, 0.02)
+    )
+    colnames(fluor_spectra) <- detector_names
+    af_events <- rbind(
+        matrix(rep(c(100, 18, 4, 2), 260), ncol = 4, byrow = TRUE),
+        matrix(rep(c(40, 100, 25, 5), 260), ncol = 4, byrow = TRUE),
+        matrix(rep(c(90, 55, 16, 4), 260), ncol = 4, byrow = TRUE)
+    )
+    colnames(af_events) <- detector_names
+
+    profiles <- spectreasy:::.extract_reference_af_profiles(
+        detector_names = detector_names,
+        n_bands = "auto",
+        max_cells = 1000,
+        af_events = af_events,
+        auto_max_bands = 4,
+        fluor_spectra = fluor_spectra,
+        refine = TRUE,
+        refine_problem_quantile = 0.8,
+        remove_contaminants = FALSE
+    )
+
+    expect_true(isTRUE(profiles$selection$refine$enabled))
+    expect_true("added" %in% names(profiles$selection$refine))
+    expect_gte(nrow(profiles$signatures), 1)
+})
+
+test_that("AF SOM bank keeps requested sparse AF nodes for covariance assignment", {
     detector_names <- c("B1-A", "YG1-A", "V1-A")
     af_events <- rbind(
         matrix(rep(c(100, 15, 5), 4978), ncol = 3, byrow = TRUE),
@@ -951,7 +1012,7 @@ test_that("AF k-means cluster retention uses the larger event or proportion thre
     )
     colnames(af_events) <- detector_names
 
-    old_like_profiles <- spectreasy:::.extract_reference_af_profiles(
+    event_threshold_profiles <- spectreasy:::.extract_reference_af_profiles(
         detector_names = detector_names,
         n_bands = 2,
         max_cells = 5000,
@@ -968,8 +1029,8 @@ test_that("AF k-means cluster retention uses the larger event or proportion thre
         min_cluster_proportion = 0.005
     )
 
-    expect_equal(nrow(old_like_profiles$signatures), 2)
-    expect_equal(nrow(proportion_profiles$signatures), 1)
+    expect_equal(nrow(event_threshold_profiles$signatures), 3)
+    expect_equal(nrow(proportion_profiles$signatures), 3)
 })
 
 test_that("AF profile extraction handles empty and all-zero AF events", {
@@ -1002,7 +1063,7 @@ test_that("AF argument validation supports multi-AF bands per file", {
     expect_equal(args$af_n_bands, 2L)
     expect_equal(args$af_bands_per_file, 5L)
     expect_equal(args$af_max_cells, 500L)
-    expect_equal(args$af_auto_max_bands, 20L)
+    expect_equal(args$af_auto_max_bands, 100L)
     expect_equal(args$af_min_cluster_events, 20L)
     expect_equal(args$af_min_cluster_proportion, 0.005)
     expect_equal(args$af_n_bands_sensitivity, 1.5)
@@ -1260,7 +1321,7 @@ test_that("calc_residuals WLS performs event-wise noise-model unmixing", {
     expect_true(all(is.finite(as.matrix(res))))
 })
 
-test_that("calc_residuals multi-AF WLS uses event-wise detector weights", {
+test_that("calc_residuals multi-AF WLS uses joint AF assignment before event-wise weighted fit", {
     M <- matrix(c(
         1.0, 0.2, 0.1, 0.05,
         0.1, 1.0, 0.2, 0.05,
@@ -1281,6 +1342,30 @@ test_that("calc_residuals multi-AF WLS uses event-wise detector weights", {
 
     fluor_idx <- which(!grepl("^AF($|_)", rownames(M), ignore.case = TRUE))
     af_idx <- which(grepl("^AF($|_)", rownames(M), ignore.case = TRUE))
+    F <- M[fluor_idx, , drop = FALSE]
+    AF <- M[af_idx, , drop = FALSE]
+    P <- solve(F %*% t(F), F)
+    af_cov <- stats::cov(AF)
+    fluor_weights <- sqrt(abs(diag(P %*% af_cov %*% t(P)))) + 1e-8
+    v_library <- P %*% t(AF)
+    r_library <- t(AF) - t(F) %*% v_library
+    r_dots <- pmax(colSums(r_library^2), 1e-10)
+    select_joint_af <- function(y) {
+        unmixed <- as.numeric(P %*% y)
+        base_resid <- y - as.numeric(t(F) %*% pmax(unmixed, 0))
+        base_fluor <- sum(fluor_weights * abs(unmixed)) + 1e-6
+        base_resid_norm <- sqrt(sum(base_resid^2)) + 1e-6
+        scores <- vapply(seq_len(nrow(AF)), function(k) {
+            af_scale <- sum(y * r_library[, k]) / r_dots[[k]]
+            if (!is.finite(af_scale) || af_scale < 0) af_scale <- 0
+            adjusted_fluor <- unmixed - af_scale * v_library[, k]
+            adjusted_resid <- base_resid - af_scale * r_library[, k]
+            sum(fluor_weights * abs(adjusted_fluor)) / base_fluor *
+                sqrt(sum(adjusted_resid^2)) / base_resid_norm
+        }, numeric(1))
+        which.min(scores)
+    }
+
     expected <- matrix(0, nrow = nrow(exprs), ncol = nrow(M), dimnames = list(NULL, rownames(M)))
 
     for (i in seq_len(nrow(exprs))) {
@@ -1291,22 +1376,11 @@ test_that("calc_residuals multi-AF WLS uses event-wise detector weights", {
             signal_scale = rep(1, ncol(M)),
             max_weight_ratio = spectreasy:::.default_wls_max_weight_ratio()
         )
-        best_rss <- Inf
-        best_coeffs <- NULL
-        best_af <- NA_integer_
-        for (k in af_idx) {
-            rows <- c(fluor_idx, k)
-            X <- M[rows, , drop = FALSE]
-            Xw <- sweep(X, 2, detector_weights, `*`)
-            coeffs <- solve(Xw %*% t(X), X %*% (detector_weights * y))
-            resid <- y - drop(as.numeric(coeffs) %*% X)
-            rss <- sum(detector_weights * resid^2)
-            if (rss < best_rss) {
-                best_rss <- rss
-                best_coeffs <- coeffs
-                best_af <- k
-            }
-        }
+        best_af <- af_idx[[select_joint_af(y)]]
+        rows <- c(fluor_idx, best_af)
+        X <- M[rows, , drop = FALSE]
+        Xw <- sweep(X, 2, detector_weights, `*`)
+        best_coeffs <- solve(Xw %*% t(X), X %*% (detector_weights * y))
         expected[i, fluor_idx] <- best_coeffs[seq_along(fluor_idx)]
         expected[i, best_af] <- best_coeffs[length(best_coeffs)]
     }

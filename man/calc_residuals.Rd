@@ -14,7 +14,8 @@ calc_residuals(
   wls_signal_scale = .default_wls_signal_scale(),
   wls_max_weight_ratio = .default_wls_max_weight_ratio(),
   rwls_max_iter = 1L,
-  n_threads = 1L
+  multithreading = FALSE,
+  n_threads = "auto"
 )
 }
 \arguments{
@@ -42,8 +43,14 @@ non-negative event signal in the WLS variance model.}
 iterations used when `method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
-\item{n_threads}{Positive integer; number of threads to use for event-wise
-multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
+\item{multithreading}{Logical; if `TRUE`, allow event-wise multi-AF WLS/RWLS
+unmixing to use multiple threads. The default, `FALSE`, keeps execution
+single-threaded.}
+
+\item{n_threads}{`"auto"` or positive integer; thread count to use when
+`multithreading = TRUE`. `"auto"` uses `RcppParallel::defaultNumThreads()`.
+Integers larger than the available thread count are clipped to the
+available count.}
 }
 \value{
 Data frame with unmixed abundances and retained acquisition parameters

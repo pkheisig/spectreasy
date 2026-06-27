@@ -107,6 +107,28 @@
     .prepare_unmix_samples_input_from_directory(sample_input)
 }
 
+.start_unmix_samples_progress <- function(total, verbose) {
+    if (!isTRUE(verbose) || !interactive() || total < 1L) {
+        return(NULL)
+    }
+    utils::txtProgressBar(min = 0, max = total, initial = 0, style = 3)
+}
+
+.tick_unmix_samples_progress <- function(progress_bar, value) {
+    if (is.null(progress_bar)) {
+        return(invisible(FALSE))
+    }
+    utils::setTxtProgressBar(progress_bar, value)
+    invisible(TRUE)
+}
+
+.close_unmix_samples_progress <- function(progress_bar) {
+    if (!is.null(progress_bar)) {
+        close(progress_bar)
+    }
+    invisible(NULL)
+}
+
 .read_unmixing_matrix_csv <- function(path) {
     if (!file.exists(path)) stop("unmixing_matrix_file not found: ", path)
     df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
@@ -246,10 +268,12 @@
                                   control_file = NULL,
                                   af_n_bands = "auto",
                                   af_bands_per_file = 5,
-                                  af_auto_max_bands = 20,
+                                  af_auto_max_bands = 100,
                                   af_min_cluster_events = 20,
                                   af_min_cluster_proportion = 0.005,
                                   af_n_bands_sensitivity = 1.5,
+                                  af_refine = FALSE,
+                                  af_refine_problem_quantile = 0.99,
                                   exclude_af = FALSE,
                                   include_multi_af = FALSE,
                                   cytometer = "auto",
@@ -572,8 +596,13 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
-#' @param n_threads Positive integer; number of threads to use for event-wise
-#'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
+#' @param multithreading Logical; if `TRUE`, allow event-wise multi-AF WLS/RWLS
+#'   unmixing to use multiple threads. The default, `FALSE`, keeps execution
+#'   single-threaded.
+#' @param n_threads `"auto"` or positive integer; thread count to use when
+#'   `multithreading = TRUE`. `"auto"` uses `RcppParallel::defaultNumThreads()`.
+#'   Integers larger than the available thread count are clipped to the
+#'   available count.
 #' @param cytometer Cytometer name used only when `unmix_samples()` must build a
 #'   reference matrix dynamically. The default, `"auto"`, infers the cytometer
 #'   from FCS detector names when possible.
@@ -584,20 +613,30 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   Used when dynamically building the reference matrix.
 #' @param af_n_bands Number of AF bands to extract from the unstained control
 #'   when only one AF source is available. Use `"auto"` to select the count
-#'   from AF event shapes and prune near-duplicate AF signatures.
+#'   from AF event shapes. Only used when `unmix_samples()` has to build a
+#'   reference matrix itself.
 #' @param af_bands_per_file Number of AF bands requested per AF file when
-#'   multiple AF sources are pooled.
-#' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
-#' @param af_min_cluster_events Minimum number of AF events required to keep a
-#'   k-means AF cluster.
-#' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
-#'   events required to keep a k-means AF cluster.
-#' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
-#'   when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-#'   select fewer bands before near-duplicate AF signatures are pruned. Default
-#'   is `1.5`.
-#' @param exclude_af Logical; whether to exclude AF from unmixing.
-#' @param include_multi_af Logical; whether to include multi-AF controls.
+#'   multiple AF sources are pooled. Only used when `unmix_samples()` has to
+#'   build a reference matrix itself.
+#' @param af_auto_max_bands Maximum SOM nodes that `"auto"` may create before
+#'   prepending the mean AF row. Only used when `unmix_samples()` has to build a
+#'   reference matrix itself.
+#' @param af_min_cluster_events Compatibility argument retained for older
+#'   workflows.
+#' @param af_min_cluster_proportion Compatibility argument retained for older
+#'   workflows.
+#' @param af_n_bands_sensitivity Compatibility argument retained for older
+#'   workflows.
+#' @param af_refine Logical; if `TRUE`, run the optional second-pass AF
+#'   refinement. Only used when `unmix_samples()` has to build a reference
+#'   matrix itself.
+#' @param af_refine_problem_quantile Quantile used to choose high-error
+#'   unstained cells for AF refinement. Only used when `unmix_samples()` has to
+#'   build a reference matrix itself.
+#' @param exclude_af Logical; whether to exclude AF from unmixing. Only used
+#'   when `unmix_samples()` has to build a reference matrix itself.
+#' @param include_multi_af Logical; whether to include multi-AF controls. Only
+#'   used when `unmix_samples()` has to build a reference matrix itself.
 #' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
 #'   stained sample event-wise WLS residuals, select the best candidate model by
 #'   held-out WLS residual score, and append the selected AF rows to the
@@ -616,7 +655,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   unmixed values are returned in assay `"unmixed"`, with detector residuals in
 #'   `altExp(x, "detector_residuals")` when available.
 #' @param verbose Logical; if `TRUE`, print progress messages while unmixing
-#'   each sample.
+#'   each sample and show an interactive console progress bar when available.
 #' @return Either a named list with one element per sample, a `flowSet`, or a
 #'   `SingleCellExperiment` depending on `return_type`. For `return_type = "list"`,
 #'   the result has class `spectreasy_unmixed_results`; list elements contain
@@ -665,16 +704,19 @@ unmix_samples <- function(sample_dir = "samples",
                           detector_noise_file = NULL,
                           method = "WLS", 
                           rwls_max_iter = 1L,
-                          n_threads = 1L,
+                          multithreading = FALSE,
+                          n_threads = "auto",
                           cytometer = "auto",
                           scc_dir = NULL,
                           control_file = NULL,
                           af_n_bands = "auto",
                           af_bands_per_file = 5,
-                          af_auto_max_bands = 20,
+                          af_auto_max_bands = 100,
                           af_min_cluster_events = 20,
                           af_min_cluster_proportion = 0.005,
                           af_n_bands_sensitivity = 1.5,
+                          af_refine = FALSE,
+                          af_refine_problem_quantile = 0.99,
                           exclude_af = FALSE,
                           include_multi_af = FALSE,
                           estimate_af = FALSE,
@@ -726,6 +768,8 @@ unmix_samples <- function(sample_dir = "samples",
                 af_min_cluster_events = af_min_cluster_events,
                 af_min_cluster_proportion = af_min_cluster_proportion,
                 af_n_bands_sensitivity = af_n_bands_sensitivity,
+                af_refine = af_refine,
+                af_refine_problem_quantile = af_refine_problem_quantile,
                 exclude_af = exclude_af,
                 include_multi_af = include_multi_af,
                 cytometer = cytometer
@@ -751,7 +795,7 @@ unmix_samples <- function(sample_dir = "samples",
         stop("method must be one of: ", paste(allowed_methods, collapse = ", "))
     }
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
-    n_threads <- .normalize_unmix_threads(n_threads)
+    n_threads <- .normalize_unmix_threads(multithreading = multithreading, n_threads = n_threads)
     estimate_af <- isTRUE(estimate_af)
     M <- .ensure_wls_variances(
         M = M,
@@ -803,7 +847,11 @@ unmix_samples <- function(sample_dir = "samples",
         }
     }
 
-    for (entry in sample_entries) {
+    progress_bar <- .start_unmix_samples_progress(length(sample_entries), verbose = verbose)
+    on.exit(.close_unmix_samples_progress(progress_bar), add = TRUE)
+
+    for (entry_i in seq_along(sample_entries)) {
+        entry <- sample_entries[[entry_i]]
         sn <- entry$sample_name
         if (isTRUE(verbose)) message("  Unmixing sample: ", sn)
         ff <- if (inherits(entry$flow_frame, "flowFrame")) {
@@ -855,6 +903,7 @@ unmix_samples <- function(sample_dir = "samples",
             }
         }
         results[[sn]] <- res_obj
+        .tick_unmix_samples_progress(progress_bar, entry_i)
     }
 
     if (identical(return_type, "flowSet")) {

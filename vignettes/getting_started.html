@@ -753,16 +753,17 @@ for the core <code>unmix_controls()</code> -&gt;
 <h2>Per-cell Autofluorescence (AF) Extraction</h2>
 <p>By default, <code>unmix_controls()</code> and dynamic
 <code>unmix_samples()</code> reference-matrix builds use
-<code>af_n_bands = &quot;auto&quot;</code> to choose autofluorescence signatures
-from the unstained control. If your cells have different AF shapes from
-cell to cell, auto can split AF into several basis signatures.</p>
+<code>af_n_bands = &quot;auto&quot;</code> to build a FlowSOM autofluorescence
+bank from the unstained control. If your cells have different AF shapes
+from cell to cell, the SOM bank represents those shapes as multiple
+candidate AF signatures.</p>
 <p>Use the multi-AF settings in the control-stage call.
 <code>af_n_bands</code> controls how many AF basis signatures are
 extracted from the unstained control. Set it to <code>&quot;auto&quot;</code> to
-let <code>spectreasy</code> choose the count, and tune that choice with
-<code>af_n_bands_sensitivity</code>. <code>include_multi_af</code> tells
-<code>spectreasy</code> to include additional AF controls from the
-<code>af/</code> directory when those files are available.</p>
+build a SOM bank up to <code>af_auto_max_bands</code>.
+<code>include_multi_af</code> tells <code>spectreasy</code> to include
+additional AF controls from the <code>af/</code> directory when those
+files are available.</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>ctrl_multi_af <span class="ot">&lt;-</span> <span class="fu">unmix_controls</span>(</span>
 <span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>  <span class="at">scc_dir =</span> <span class="st">&quot;scc&quot;</span>,</span>
 <span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>  <span class="at">control_file =</span> <span class="st">&quot;fcs_mapping.csv&quot;</span>,</span>
@@ -771,7 +772,7 @@ let <code>spectreasy</code> choose the count, and tune that choice with
 <span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>  <span class="at">unmix_method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
 <span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>  <span class="at">include_multi_af =</span> <span class="cn">TRUE</span>,</span>
 <span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a>  <span class="at">af_n_bands =</span> <span class="st">&quot;auto&quot;</span>,</span>
-<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a>  <span class="at">af_n_bands_sensitivity =</span> <span class="fl">1.5</span>,</span>
+<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a>  <span class="at">af_auto_max_bands =</span> <span class="dv">100</span>,</span>
 <span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a>  <span class="at">seed =</span> <span class="dv">1</span></span>
 <span id="cb11-11"><a href="#cb11-11" tabindex="-1"></a>)</span></code></pre></div>
 <p>If you want <code>unmix_samples()</code> to rebuild the reference
@@ -785,18 +786,22 @@ there as well:</p>
 <span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
 <span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a>  <span class="at">include_multi_af =</span> <span class="cn">TRUE</span>,</span>
 <span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a>  <span class="at">af_n_bands =</span> <span class="st">&quot;auto&quot;</span>,</span>
-<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a>  <span class="at">af_n_bands_sensitivity =</span> <span class="fl">1.5</span>,</span>
+<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a>  <span class="at">af_auto_max_bands =</span> <span class="dv">100</span>,</span>
 <span id="cb12-10"><a href="#cb12-10" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="st">&quot;spectreasy_outputs/unmix_samples_multi_af&quot;</span></span>
 <span id="cb12-11"><a href="#cb12-11" tabindex="-1"></a>)</span></code></pre></div>
 <p><code>af_n_bands</code> is like choosing how many AF “flavors” to
-model. More bands can fit complex AF better, but too many similar bands
-can make the matrix unstable. With
-<code>af_n_bands = &quot;auto&quot;</code>,
-<code>af_n_bands_sensitivity</code> controls how easily auto adds
-another band, and near-duplicate AF signatures are pruned before
-unmixing. The default <code>1.5</code> is balanced; lower values such as
-<code>1</code> allow more bands, while higher values such as
-<code>2.5</code> or <code>5</code> select fewer bands.</p>
+model. With <code>af_n_bands = &quot;auto&quot;</code>, spectreasy builds a
+SOM bank with up to <code>af_auto_max_bands = 100</code> SOM nodes by
+default, then prepends a mean AF row. That gives 101 AF rows before any
+contaminant QC removals. During unmixing, each event chooses one AF
+profile with a joint covariance + residual score, so a larger AF bank can
+describe varied autofluorescence without putting every AF profile into
+the final fit. For direct control over the multi-AF bank size, set
+<code>af_auto_max_bands</code> or pass an explicit integer to
+<code>af_n_bands</code>. For difficult samples with structured AF left after
+the first pass, set <code>af_refine = TRUE</code> to append second-pass
+modulated AF spectra from high-error unstained cells. Keep it off unless
+benchmark metrics show it helps your panel.</p>
 </div>
 <div id="use-a-reviewed-control-csv-in-non-interactive-workflows" class="section level2">
 <h2>Use a reviewed control CSV in non-interactive workflows</h2>

@@ -18,13 +18,16 @@ unmix_controls(
   seed = NULL,
   af_n_bands = "auto",
   af_bands_per_file = 5,
-  af_auto_max_bands = 20,
+  af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
   af_n_bands_sensitivity = 1.5,
+  af_refine = FALSE,
+  af_refine_problem_quantile = 0.99,
   include_multi_af = FALSE,
   rwls_max_iter = 1L,
-  unmix_threads = 1L,
+  multithreading = FALSE,
+  n_threads = "auto",
   save_qc_plots = FALSE,
   use_scatter_gating = TRUE,
   ...
@@ -58,25 +61,28 @@ they are present in the SCC folder or control mapping.}
 
 \item{af_n_bands}{Number of AF bands to extract from the unstained control
 when only one AF source is available. Use `"auto"` to select the count
-from AF event shapes and prune near-duplicate AF signatures. Default is
-`"auto"`.}
+from AF event shapes. Default is `"auto"`.}
 
 \item{af_bands_per_file}{Number of AF bands requested per AF file when
 multiple AF sources are pooled. Default is 5.}
 
-\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.
-Default is 20.}
+\item{af_auto_max_bands}{Maximum SOM nodes that `"auto"` may create before
+prepending the mean AF row. Default is 100.}
 
-\item{af_min_cluster_events}{Minimum number of AF events required to keep a
-k-means AF cluster. Used together with `af_min_cluster_proportion`.}
+\item{af_min_cluster_events}{Compatibility argument retained for older
+workflows.}
 
-\item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
-events required to keep a k-means AF cluster. Default is 0.005.}
+\item{af_min_cluster_proportion}{Compatibility argument retained for older
+workflows.}
 
-\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
-when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-select fewer bands before near-duplicate AF signatures are pruned. Default
-is `1.5`.}
+\item{af_n_bands_sensitivity}{Compatibility argument retained for older
+workflows.}
+
+\item{af_refine}{Logical; if `TRUE`, run the optional second-pass AF
+refinement while building the reference matrix.}
+
+\item{af_refine_problem_quantile}{Quantile used to choose high-error
+unstained cells for AF refinement.}
 
 \item{include_multi_af}{Logical; whether to include additional AF files from `af_dir`. Default is FALSE.}
 
@@ -84,8 +90,14 @@ is `1.5`.}
 iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
-\item{unmix_threads}{Positive integer; number of threads to use for event-wise
-multi-AF WLS/RWLS SCC unmixing. The default, 1, keeps execution single-threaded.}
+\item{multithreading}{Logical; if `TRUE`, allow event-wise multi-AF WLS/RWLS
+SCC unmixing to use multiple threads. The default, `FALSE`, keeps
+execution single-threaded.}
+
+\item{n_threads}{`"auto"` or positive integer; thread count to use when
+`multithreading = TRUE`. `"auto"` uses `RcppParallel::defaultNumThreads()`.
+Integers larger than the available thread count are clipped to the
+available count.}
 
 \item{save_qc_plots}{Logical; whether to write per-control FSC/SSC,
 intensity-gate, and spectrum PNGs under `output_dir`.}

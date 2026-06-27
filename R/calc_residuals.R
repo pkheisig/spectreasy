@@ -6,12 +6,26 @@
     rwls_max_iter
 }
 
-.normalize_unmix_threads <- function(n_threads) {
+.available_unmix_threads <- function() {
+    max(1L, as.integer(RcppParallel::defaultNumThreads()))
+}
+
+.normalize_unmix_threads <- function(multithreading = FALSE, n_threads = "auto") {
+    multithreading <- isTRUE(multithreading[1])
+    if (!multithreading) {
+        return(1L)
+    }
+
+    available_threads <- .available_unmix_threads()
+    if (is.character(n_threads) && length(n_threads) > 0 && identical(tolower(trimws(n_threads[1])), "auto")) {
+        return(available_threads)
+    }
+
     n_threads <- suppressWarnings(as.integer(n_threads[1]))
     if (!is.finite(n_threads) || n_threads < 1L) {
-        stop("n_threads must be an integer >= 1.", call. = FALSE)
+        stop("n_threads must be \"auto\" or an integer >= 1.", call. = FALSE)
     }
-    n_threads
+    min(n_threads, available_threads)
 }
 
 #' Calculate unmixing residuals
@@ -31,8 +45,13 @@
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
-#' @param n_threads Positive integer; number of threads to use for event-wise
-#'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
+#' @param multithreading Logical; if `TRUE`, allow event-wise multi-AF WLS/RWLS
+#'   unmixing to use multiple threads. The default, `FALSE`, keeps execution
+#'   single-threaded.
+#' @param n_threads `"auto"` or positive integer; thread count to use when
+#'   `multithreading = TRUE`. `"auto"` uses `RcppParallel::defaultNumThreads()`.
+#'   Integers larger than the available thread count are clipped to the
+#'   available count.
 #' @return Data frame with unmixed abundances and retained acquisition parameters
 #'   (`Time` plus all `FSC*`/`SSC*` columns, when available).
 #'         If return_residuals=TRUE, returns a list with [[data]] and [[residuals]].
@@ -72,10 +91,11 @@ calc_residuals <- function(flow_frame,
                            wls_signal_scale = .default_wls_signal_scale(),
                            wls_max_weight_ratio = .default_wls_max_weight_ratio(),
                            rwls_max_iter = 1L,
-                           n_threads = 1L) {
+                           multithreading = FALSE,
+                           n_threads = "auto") {
     M <- .as_reference_matrix(M, "M")
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
-    n_threads <- .normalize_unmix_threads(n_threads)
+    n_threads <- .normalize_unmix_threads(multithreading = multithreading, n_threads = n_threads)
     full_data <- flowCore::exprs(flow_frame)
     detectors <- colnames(M)
     

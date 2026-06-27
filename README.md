@@ -258,7 +258,7 @@ The sections below are useful extensions, but they are not required for the core
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `unmix_controls()` and dynamic `unmix_samples()` reference-matrix builds use `af_n_bands = "auto"` to choose autofluorescence signatures from the unstained control. If your cells have different AF shapes from cell to cell, auto can split AF into several basis signatures.
+By default, `unmix_controls()` and dynamic `unmix_samples()` reference-matrix builds use `af_n_bands = "auto"` to build a FlowSOM autofluorescence bank from the unstained control. If your cells have different AF shapes from cell to cell, the SOM bank represents those shapes as multiple candidate AF signatures.
 
 Use the two multi-AF settings in the control-stage call. `af_n_bands` controls how many AF basis signatures are extracted from the unstained control, while `include_multi_af` tells `spectreasy` to include additional AF controls from the `af/` directory when those files are available.
 
@@ -271,7 +271,7 @@ ctrl_multi_af <- unmix_controls(
   unmix_method = "WLS",
   include_multi_af = TRUE,
   af_n_bands = "auto",
-  af_n_bands_sensitivity = 1.5,
+  af_auto_max_bands = 100,
   seed = 1
 )
 ```
@@ -287,16 +287,14 @@ unmixed_multi_af <- unmix_samples(
   method = "WLS",
   include_multi_af = TRUE,
   af_n_bands = "auto",
-  af_n_bands_sensitivity = 1.5,
+  af_auto_max_bands = 100,
   output_dir = "spectreasy_outputs/unmix_samples_multi_af"
 )
 ```
 
-`af_n_bands` is like choosing how many AF "flavors" to model. More bands can fit complex AF better, but too many similar bands can make the matrix unstable. With `af_n_bands = "auto"`, auto-selection can test up to `af_auto_max_bands = 20` bands by default, then prunes near-duplicate AF signatures before unmixing. If auto repeatedly lands exactly on that maximum, inspect QC and consider increasing `af_auto_max_bands`.
+`af_n_bands` is like choosing how many AF "flavors" to model. With `af_n_bands = "auto"`, spectreasy builds a SOM bank with up to `af_auto_max_bands = 100` SOM nodes by default, then prepends a mean AF row. That gives 101 AF rows before any contaminant QC removals. During unmixing, each event chooses one AF profile with a joint covariance + residual score, so the larger AF bank can describe varied autofluorescence without using every AF profile in the final fit.
 
-Very small AF k-means clusters are filtered with the larger of `af_min_cluster_events = 20` and `af_min_cluster_proportion = 0.005` of the modeled scatter-gated AF events. That means a tiny cluster must represent at least 20 events and at least 0.5% of the AF events used for extraction.
-
-For more direct control over how many AF bands `"auto"` creates, set `af_n_bands_sensitivity` from `0.1` to `5`. The default `1.5` is balanced. Lower values such as `1` allow more bands, while higher values such as `2.5` or `5` select fewer bands.
+For direct control over the multi-AF bank size, set `af_auto_max_bands` or pass an explicit integer to `af_n_bands`. For difficult samples with structured AF left after the first pass, set `af_refine = TRUE` to append second-pass modulated AF spectra from high-error unstained cells. Keep it off unless benchmark metrics show it helps your panel.
 
 ## Use a reviewed control CSV in non-interactive workflows
 

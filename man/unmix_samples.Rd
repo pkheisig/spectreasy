@@ -13,16 +13,19 @@ unmix_samples(
   detector_noise_file = NULL,
   method = "WLS",
   rwls_max_iter = 1L,
-  n_threads = 1L,
+  multithreading = FALSE,
+  n_threads = "auto",
   cytometer = "auto",
   scc_dir = NULL,
   control_file = NULL,
   af_n_bands = "auto",
   af_bands_per_file = 5,
-  af_auto_max_bands = 20,
+  af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
   af_n_bands_sensitivity = 1.5,
+  af_refine = FALSE,
+  af_refine_problem_quantile = 0.99,
   exclude_af = FALSE,
   include_multi_af = FALSE,
   estimate_af = FALSE,
@@ -62,8 +65,14 @@ back to the built-in scalar noise floor.}
 iterations used when `method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
-\item{n_threads}{Positive integer; number of threads to use for event-wise
-multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
+\item{multithreading}{Logical; if `TRUE`, allow event-wise multi-AF WLS/RWLS
+unmixing to use multiple threads. The default, `FALSE`, keeps execution
+single-threaded.}
+
+\item{n_threads}{`"auto"` or positive integer; thread count to use when
+`multithreading = TRUE`. `"auto"` uses `RcppParallel::defaultNumThreads()`.
+Integers larger than the available thread count are clipped to the
+available count.}
 
 \item{cytometer}{Cytometer name used only when `unmix_samples()` must build a
 reference matrix dynamically. The default, `"auto"`, infers the cytometer
@@ -78,27 +87,39 @@ Used when dynamically building the reference matrix.}
 
 \item{af_n_bands}{Number of AF bands to extract from the unstained control
 when only one AF source is available. Use `"auto"` to select the count
-from AF event shapes and prune near-duplicate AF signatures.}
+from AF event shapes. Only used when `unmix_samples()` has to build a
+reference matrix itself.}
 
 \item{af_bands_per_file}{Number of AF bands requested per AF file when
-multiple AF sources are pooled.}
+multiple AF sources are pooled. Only used when `unmix_samples()` has to
+build a reference matrix itself.}
 
-\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.}
+\item{af_auto_max_bands}{Maximum SOM nodes that `"auto"` may create before
+prepending the mean AF row. Only used when `unmix_samples()` has to build a
+reference matrix itself.}
 
-\item{af_min_cluster_events}{Minimum number of AF events required to keep a
-k-means AF cluster.}
+\item{af_min_cluster_events}{Compatibility argument retained for older
+workflows.}
 
-\item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
-events required to keep a k-means AF cluster.}
+\item{af_min_cluster_proportion}{Compatibility argument retained for older
+workflows.}
 
-\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
-when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-select fewer bands before near-duplicate AF signatures are pruned. Default
-is `1.5`.}
+\item{af_n_bands_sensitivity}{Compatibility argument retained for older
+workflows.}
 
-\item{exclude_af}{Logical; whether to exclude AF from unmixing.}
+\item{af_refine}{Logical; if `TRUE`, run the optional second-pass AF
+refinement. Only used when `unmix_samples()` has to build a reference
+matrix itself.}
 
-\item{include_multi_af}{Logical; whether to include multi-AF controls.}
+\item{af_refine_problem_quantile}{Quantile used to choose high-error
+unstained cells for AF refinement. Only used when `unmix_samples()` has to
+build a reference matrix itself.}
+
+\item{exclude_af}{Logical; whether to exclude AF from unmixing. Only used
+when `unmix_samples()` has to build a reference matrix itself.}
+
+\item{include_multi_af}{Logical; whether to include multi-AF controls. Only
+used when `unmix_samples()` has to build a reference matrix itself.}
 
 \item{estimate_af}{Logical; if `TRUE`, estimate AF signatures directly from
 stained sample event-wise WLS residuals, select the best candidate model by
@@ -124,7 +145,7 @@ unmixed values are returned in assay `"unmixed"`, with detector residuals in
 `altExp(x, "detector_residuals")` when available.}
 
 \item{verbose}{Logical; if `TRUE`, print progress messages while unmixing
-each sample.}
+each sample and show an interactive console progress bar when available.}
 }
 \value{
 Either a named list with one element per sample, a `flowSet`, or a

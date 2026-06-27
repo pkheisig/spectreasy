@@ -15,10 +15,12 @@ build_reference_matrix(
   af_n_bands = "auto",
   af_bands_per_file = 5,
   af_max_cells = 50000,
-  af_auto_max_bands = 20,
+  af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
   af_n_bands_sensitivity = 1.5,
+  af_refine = FALSE,
+  af_refine_problem_quantile = 0.99,
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
@@ -58,7 +60,8 @@ even when they are present in `control_df`, the SCC folder, or `af_dir`.}
 \item{af_n_bands}{Number of AF basis signatures to extract from the pooled
 unstained/AF control when only one AF source is available (`1` = classic
 single AF signature). The default, `"auto"`, chooses the number from AF
-event shapes and prunes near-duplicate AF signatures.}
+event shapes. For `"auto"`, `af_auto_max_bands` controls the number of SOM
+nodes and a mean AF row is prepended.}
 
 \item{af_bands_per_file}{Number of AF basis signatures requested per AF file
 when multiple AF sources are pooled (`5` files with the default `5` yields
@@ -67,23 +70,23 @@ up to `25` shared AF bank signatures).}
 \item{af_max_cells}{Maximum number of scatter-gated AF events used when
 deriving AF basis signatures.}
 
-\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.
-If auto selection repeatedly reaches this value, inspect QC and consider
-increasing it.}
+\item{af_auto_max_bands}{Maximum SOM nodes that `"auto"` may create before
+prepending the mean AF row. Default is 100.}
 
-\item{af_min_cluster_events}{Minimum number of AF events required to keep a
-k-means AF cluster. Used together with `af_min_cluster_proportion`; the
-larger threshold is applied.}
+\item{af_min_cluster_events}{Compatibility argument retained for older
+workflows.}
 
-\item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
-events required to keep a k-means AF cluster. The default `0.005` means
-0.5\% of the AF events used for extraction.}
+\item{af_min_cluster_proportion}{Compatibility argument retained for older
+workflows.}
 
-\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
-when `af_n_bands = "auto"`. Lower values allow richer AF models; higher
-values select fewer bands before near-duplicate AF signatures are pruned.
-Values must be between `0.1` and `5`; the default `1.5` corresponds to a
-3\% minimum k-means fit improvement.}
+\item{af_n_bands_sensitivity}{Compatibility argument retained for older
+workflows.}
+
+\item{af_refine}{Logical; if `TRUE`, run a second AF-library refinement pass
+that modulates SOM AF spectra from high-error unstained cells.}
+
+\item{af_refine_problem_quantile}{Quantile used to choose high-error
+unstained cells for AF refinement. Default is 0.99.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

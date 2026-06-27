@@ -269,7 +269,7 @@ p_delta <- ggplot(wide_metrics, aes(x = reorder(sample, rmse_pct_better_spectrea
   geom_col(fill = "#2563eb", width = 0.75) +
   coord_flip() +
   labs(
-    title = "RMSE improvement of spectreasy event-wise WLS over AutoSpectral-style WLS",
+    title = "RMSE improvement of spectreasy event-wise WLS over fixed mean WLS",
     subtitle = "Positive means spectreasy has lower residual RMSE",
     x = NULL,
     y = "% lower RMSE"
@@ -315,7 +315,7 @@ spectreasy::qc_samples(
   nxn_all_samples = FALSE
 )
 
-log_msg("Generating AutoSpectral-style fixed WLS QC report")
+log_msg("Generating fixed mean WLS QC report")
 spectreasy::qc_samples(
   results = results_auto_fixed,
   M = M_base,

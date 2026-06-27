@@ -92,16 +92,16 @@ af_profile_dir <- function(create = TRUE) {
 #'
 #' @param fcs_file Path to an unstained/autofluorescence `.fcs` file.
 #' @param af_n_bands Number of AF bands to extract. The default, `"auto"`,
-#'   chooses the count from AF event shapes.
+#'   builds a SOM bank up to `af_auto_max_bands` nodes plus a mean AF row.
 #' @param af_max_cells Maximum number of scatter-gated AF events used.
-#' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
-#' @param af_min_cluster_events Minimum number of AF events required to keep a
-#'   k-means AF cluster.
-#' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
-#'   events required to keep a k-means AF cluster.
-#' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
-#'   when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-#'   select fewer bands. Default is `1.5`.
+#' @param af_auto_max_bands Maximum SOM nodes that `"auto"` may create before
+#'   prepending the mean AF row.
+#' @param af_min_cluster_events Compatibility argument retained for older
+#'   workflows.
+#' @param af_min_cluster_proportion Compatibility argument retained for older
+#'   workflows.
+#' @param af_n_bands_sensitivity Compatibility argument retained for older
+#'   workflows.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param show_plot Logical; print the AF spectra plot after extraction.
 #' @param verbose Logical; print progress updates while extracting.
@@ -111,7 +111,7 @@ af_profile_dir <- function(create = TRUE) {
 extract_af_profile <- function(fcs_file,
                                af_n_bands = "auto",
                                af_max_cells = 50000,
-                               af_auto_max_bands = 20,
+                               af_auto_max_bands = 100,
                                af_min_cluster_events = 20,
                                af_min_cluster_proportion = 0.005,
                                af_n_bands_sensitivity = 1.5,
