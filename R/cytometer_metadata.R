@@ -82,15 +82,25 @@ supported_cytometers <- function(include_auto = FALSE) {
 }
 
 .read_cytometer_dictionary <- function() {
+    if (exists("cytometer_dictionary", envir = .spectreasy_cache)) {
+        return(get("cytometer_dictionary", envir = .spectreasy_cache))
+    }
     path <- .spectreasy_extdata_file("cytometer_dictionary.csv")
     if (!nzchar(path)) return(data.frame())
-    utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+    out <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+    assign("cytometer_dictionary", out, envir = .spectreasy_cache)
+    out
 }
 
 .read_fluorophore_channel_dictionary <- function() {
+    if (exists("fluorophore_channel_dictionary", envir = .spectreasy_cache)) {
+        return(get("fluorophore_channel_dictionary", envir = .spectreasy_cache))
+    }
     path <- .spectreasy_extdata_file("fluorophore_channel_dictionary.csv")
     if (!nzchar(path)) return(data.frame())
-    utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+    out <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+    assign("fluorophore_channel_dictionary", out, envir = .spectreasy_cache)
+    out
 }
 
 .normalize_detector_token <- function(x) {

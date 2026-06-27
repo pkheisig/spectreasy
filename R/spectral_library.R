@@ -57,7 +57,13 @@
 }
 
 .read_spectral_library_matrix <- function(cytometer, normalize = TRUE) {
-    path <- .spectral_library_path(cytometer)
+    id <- .resolve_spectral_panel_cytometer(cytometer)
+    cache_key <- paste0("lib_", id, "_", normalize)
+    if (exists(cache_key, envir = .spectreasy_cache)) {
+        return(get(cache_key, envir = .spectreasy_cache))
+    }
+
+    path <- .spectral_library_path(id)
     df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
     if (ncol(df) < 2) {
         stop("Spectral library has no detector columns: ", path, call. = FALSE)
@@ -72,7 +78,10 @@
     values[!is.finite(values)] <- 0
     rownames(values) <- fluor
     values <- values[!duplicated(rownames(values)), , drop = FALSE]
-    if (isTRUE(normalize)) .normalize_spectral_rows(values) else values
+    out <- if (isTRUE(normalize)) .normalize_spectral_rows(values) else values
+
+    assign(cache_key, out, envir = .spectreasy_cache)
+    out
 }
 
 .normalize_spectral_rows <- function(M) {
@@ -318,10 +327,15 @@
 
 .spectral_detector_metadata <- function(cytometer, detectors) {
     id <- .resolve_spectral_panel_cytometer(cytometer)
+    cache_key <- paste0("det_", id)
+    if (exists(cache_key, envir = .spectreasy_cache)) {
+        return(get(cache_key, envir = .spectreasy_cache))
+    }
+
     palette <- .spectral_panel_laser_palette()
     lasers <- vapply(detectors, function(det) .spectral_detector_laser(id, det), character(1))
     emissions <- vapply(detectors, function(det) .spectral_detector_emission(id, det), integer(1))
-    data.frame(
+    out <- data.frame(
         detector = detectors,
         label = gsub("-A$", "", gsub("\\s*\\([^)]*\\)", "", detectors)),
         laser = lasers,
@@ -329,6 +343,20 @@
         color = unname(palette[ifelse(lasers %in% names(palette), lasers, "Other")]),
         stringsAsFactors = FALSE
     )
+
+    laser_order_ref <- c("DeepUV", "UV", "Violet", "Blue", "YellowGreen", "Red", "IR", "Other")
+    laser_rank <- match(out$laser, laser_order_ref)
+    laser_rank[is.na(laser_rank)] <- length(laser_order_ref)
+
+    det_base <- gsub("-A$", "", out$detector)
+    channel_num <- suppressWarnings(as.integer(regmatches(det_base, regexpr("[0-9]+$", det_base))))
+    channel_num[is.na(channel_num)] <- 0L
+
+    out <- out[order(laser_rank, channel_num), , drop = FALSE]
+    rownames(out) <- NULL
+
+    assign(cache_key, out, envir = .spectreasy_cache)
+    out
 }
 
 .calculate_panel_complexity <- function(spectra) {

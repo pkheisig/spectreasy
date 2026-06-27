@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { Download, FileText, Plus, Upload } from 'lucide-react';
+import { Download, FileText, Moon, Plus, Sun, Trash2, Upload } from 'lucide-react';
 import './PanelBuilder.css';
 
 const API_BASE = (() => {
@@ -97,19 +97,90 @@ const linePath = (row: NumericRow, detectors: DetectorInfo[], width: number, hei
     if (detectors.length === 0) return '';
     return detectors.map((det, index) => {
         const x = left + (detectors.length === 1 ? width / 2 : (index / (detectors.length - 1)) * width);
-        const y = height - toNumber(row[det.detector]) * (height - 18) - 10;
+        const y = height - toNumber(row[det.detector]) * (height - 32) - 24;
         return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
 };
 
-const similarityColor = (value: number) => {
-    const alpha = Math.max(0.08, Math.min(0.82, value));
-    const blue = Math.round(245 - alpha * 120);
-    return `rgb(${blue}, ${Math.round(248 - alpha * 90)}, ${Math.round(252 - alpha * 35)})`;
+const wavelengthToColor = (wavelength: number) => {
+    let r = 0, g = 0, b = 0;
+    if (wavelength >= 350 && wavelength < 440) {
+        r = -(wavelength - 440) / (440 - 350);
+        b = 1.0;
+    } else if (wavelength >= 440 && wavelength < 490) {
+        g = (wavelength - 440) / (490 - 440);
+        b = 1.0;
+    } else if (wavelength >= 490 && wavelength < 510) {
+        g = 1.0;
+        b = -(wavelength - 510) / (510 - 490);
+    } else if (wavelength >= 510 && wavelength < 580) {
+        r = (wavelength - 510) / (580 - 510);
+        g = 1.0;
+    } else if (wavelength >= 580 && wavelength < 645) {
+        r = 1.0;
+        g = -(wavelength - 645) / (645 - 580);
+    } else if (wavelength >= 645 && wavelength <= 780) {
+        r = 1.0;
+    } else if (wavelength > 780) {
+        r = 0.5;
+        b = 0.2;
+    }
+    
+    let factor = 1.0;
+    if (wavelength >= 350 && wavelength < 420) {
+        factor = 0.3 + 0.7 * (wavelength - 350) / (420 - 350);
+    } else if (wavelength > 700 && wavelength <= 780) {
+        factor = 0.3 + 0.7 * (780 - wavelength) / (780 - 700);
+    } else if (wavelength > 780) {
+        factor = 0.3;
+    }
+    
+    return `rgb(${Math.round(r * factor * 255)}, ${Math.round(g * factor * 255)}, ${Math.round(b * factor * 255)})`;
+};
+
+const laserWavelength = (laser: string) => {
+    const key = laser.toLowerCase();
+    if (key === 'deepuv') return 320;
+    if (key === 'uv') return 355;
+    if (key === 'violet') return 405;
+    if (key === 'blue') return 488;
+    if (key === 'yellowgreen') return 561;
+    if (key === 'red') return 640;
+    if (key === 'ir') return 781;
+    return 0;
+};
+
+const getSimilarityStyle = (value: number, isDiag: boolean, currentTheme: 'light' | 'dark') => {
+    if (isDiag) {
+        return {
+            background: 'var(--bg-cell-diag)',
+            color: currentTheme === 'dark' ? '#fff' : '#111'
+        };
+    }
+    
+    if (currentTheme === 'dark') {
+        const opacity = Math.max(0.12, Math.min(0.92, value));
+        const r = Math.round(15 + value * 124); // 15 -> 139
+        const g = Math.round(23 + value * 69);  // 23 -> 92
+        const b = Math.round(42 + value * 204); // 42 -> 246
+        return {
+            background: `rgba(${r}, ${g}, ${b}, ${opacity})`,
+            color: '#fff',
+            textShadow: value > 0.5 ? '0 0 4px rgba(255, 255, 255, 0.4)' : 'none'
+        };
+    } else {
+        const alpha = Math.max(0.08, Math.min(0.82, value));
+        const blue = Math.round(245 - alpha * 120);
+        const rgbStr = `rgb(${blue}, ${Math.round(248 - alpha * 90)}, ${Math.round(252 - alpha * 35)})`;
+        return {
+            background: rgbStr,
+            color: value > 0.4 ? '#fff' : '#1e293b'
+        };
+    }
 };
 
 const bandColor = (value: number) => {
-    const v = Math.max(0, Math.min(1, value));
+    const v = Math.max(0, Math.min(1, Math.pow(value, 0.55)));
     const stops = [
         { at: 0, color: [0, 0, 255] },
         { at: 0.25, color: [0, 255, 255] },
@@ -308,13 +379,145 @@ const detectImportedPanelRows = (text: string, fluorophores: FluorInfo[]) => {
     return imported;
 };
 
+const getCytometerName = (val: any): string => {
+    if (!val) return '';
+    if (Array.isArray(val)) return String(val[0] || '');
+    return String(val);
+};
+
+const binEmission = (val: number, cyt: string): number => {
+    const c = getCytometerName(cyt).toLowerCase();
+    if (c === 'id7000') {
+        return Math.round(val / 20) * 20;
+    }
+    if (c === 'discover' || c === 'xenith') {
+        return Math.round(val / 15) * 15;
+    }
+    return val;
+};
+
+const mapDetectorToEmission = (detectorName: string): number => {
+    const clean = detectorName.replace(/-A$/, '').toUpperCase();
+    if (clean.startsWith('UV')) {
+        const idx = parseInt(clean.slice(2), 10);
+        const uvMap: Record<number, number> = {
+            1: 370,
+            2: 395,
+            3: 420,
+            4: 440,
+            5: 450,
+            6: 480,
+            7: 480,
+            8: 500,
+            9: 520,
+            10: 550,
+            11: 570,
+            12: 580,
+            13: 600,
+            14: 660,
+            15: 750,
+            16: 800
+        };
+        return uvMap[idx] || 370;
+    }
+    if (clean.startsWith('V')) {
+        const idx = parseInt(clean.slice(1), 10);
+        const vMap: Record<number, number> = {
+            1: 420,
+            2: 440,
+            3: 450,
+            4: 480,
+            5: 480,
+            6: 500,
+            7: 550,
+            8: 570,
+            9: 580,
+            10: 600,
+            11: 660,
+            12: 680,
+            13: 690,
+            14: 700,
+            15: 730,
+            16: 780
+        };
+        return vMap[idx] || 420;
+    }
+    if (clean.startsWith('B')) {
+        const idx = parseInt(clean.slice(1), 10);
+        const bMap: Record<number, number> = {
+            1: 500,
+            2: 520,
+            3: 550,
+            4: 550,
+            5: 570,
+            6: 580,
+            7: 600,
+            8: 600,
+            9: 660,
+            10: 680,
+            11: 690,
+            12: 700,
+            13: 750,
+            14: 780
+        };
+        return bMap[idx] || 500;
+    }
+    if (clean.startsWith('YG')) {
+        const idx = parseInt(clean.slice(2), 10);
+        const ygMap: Record<number, number> = {
+            1: 570,
+            2: 580,
+            3: 600,
+            4: 600,
+            5: 660,
+            6: 680,
+            7: 700,
+            8: 730,
+            9: 750,
+            10: 780
+        };
+        return ygMap[idx] || 570;
+    }
+    if (clean.startsWith('R')) {
+        const idx = parseInt(clean.slice(1), 10);
+        const rMap: Record<number, number> = {
+            1: 660,
+            2: 680,
+            3: 700,
+            4: 730,
+            5: 730,
+            6: 750,
+            7: 780,
+            8: 800
+        };
+        return rMap[idx] || 660;
+    }
+    return 0;
+};
+
 const PanelBuilder = () => {
     const [payload, setPayload] = useState<PanelPayload | null>(null);
-    const [cytometer, setCytometer] = useState('aurora');
-    const [slots, setSlots] = useState<string[]>(Array(emptySlots).fill(''));
-    const slotsRef = useRef<string[]>(Array(emptySlots).fill(''));
+    const [cytometer, setCytometer] = useState(() => getCytometerName(localStorage.getItem('spectreasy_cytometer') || 'aurora'));
+    const [slots, setSlots] = useState<string[]>(() => {
+        try {
+            const stored = localStorage.getItem('spectreasy_slots');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed)) return parsed;
+            }
+        } catch {}
+        return Array(emptySlots).fill('');
+    });
+    const slotsRef = useRef<string[]>(slots);
     const importInputRef = useRef<HTMLInputElement | null>(null);
-    const [markers, setMarkers] = useState<Record<number, string>>({});
+    const [markers, setMarkers] = useState<Record<number, string>>(() => {
+        try {
+            const stored = localStorage.getItem('spectreasy_markers');
+            return stored ? JSON.parse(stored) : {};
+        } catch {
+            return {};
+        }
+    });
     const [queries, setQueries] = useState<Record<number, string>>({});
     const [activeSlot, setActiveSlot] = useState<number | null>(null);
     const [tab, setTab] = useState<TabId>('panel');
@@ -322,6 +525,24 @@ const PanelBuilder = () => {
     const [error, setError] = useState('');
     const [exporting, setExporting] = useState(false);
     const [importing, setImporting] = useState(false);
+    const [hoveredFluor, setHoveredFluor] = useState<string | null>(null);
+    const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('spectreasy_theme') as 'light' | 'dark') || 'light');
+
+    useEffect(() => {
+        localStorage.setItem('spectreasy_cytometer', getCytometerName(cytometer));
+    }, [cytometer]);
+
+    useEffect(() => {
+        localStorage.setItem('spectreasy_theme', theme);
+    }, [theme]);
+
+    useEffect(() => {
+        localStorage.setItem('spectreasy_slots', JSON.stringify(slots));
+    }, [slots]);
+
+    useEffect(() => {
+        localStorage.setItem('spectreasy_markers', JSON.stringify(markers));
+    }, [markers]);
 
     const selected = useMemo(() => slots.filter(Boolean), [slots]);
 
@@ -362,9 +583,14 @@ const PanelBuilder = () => {
     }, [payload]);
 
     const emissions = useMemo(() => {
+        const cytName = getCytometerName(cytometer).toLowerCase();
+        if (cytName === 'aurora') {
+            return [370, 395, 420, 440, 450, 480, 500, 520, 550, 570, 580, 600, 660, 680, 690, 700, 730, 750, 780, 800];
+        }
         if (!payload) return [];
-        return unique(payload.detectors.map(d => d.emission)).sort((a, b) => a - b);
-    }, [payload]);
+        const rawEmissions = payload.detectors.map(d => binEmission(d.emission, cytometer));
+        return unique(rawEmissions).sort((a, b) => a - b);
+    }, [payload, cytometer]);
 
     const selectedEntries = useMemo(() => {
         if (!payload) return [];
@@ -372,18 +598,26 @@ const PanelBuilder = () => {
             .map((fluor, slotIndex) => {
                 const info = fluorByName.get(fluor);
                 const peakDetector = info?.peak_detector || '';
-                    const det = payload.detectors.find(d => d.detector === peakDetector);
+                const det = payload.detectors.find(d => d.detector === peakDetector);
+                const peakLaser = det?.laser || info?.peak_laser || '';
+                let peakEmission = det?.emission || 0;
+                const cytName = getCytometerName(cytometer).toLowerCase();
+                if (cytName === 'aurora' && peakDetector) {
+                    peakEmission = mapDetectorToEmission(peakDetector);
+                } else if (peakEmission > 0) {
+                    peakEmission = binEmission(peakEmission, cytometer);
+                }
                 return {
                     fluor,
                     slotIndex,
                     marker: markers[slotIndex] || '',
                     color: info?.peak_color || '#2688e8',
-                    peakLaser: det?.laser || info?.peak_laser || '',
-                    peakEmission: det?.emission || 0,
+                    peakLaser,
+                    peakEmission,
                 };
             })
             .filter(entry => entry.fluor);
-    }, [fluorByName, markers, payload, slots]);
+    }, [fluorByName, markers, payload, slots, cytometer]);
 
     const selectedRows = useMemo(() => slots
         .map((fluor, slotIndex) => ({
@@ -401,24 +635,21 @@ const PanelBuilder = () => {
         if (res.data?.error) throw new Error(String(res.data.error));
         const nextPayload = res.data as PanelPayload;
         setPayload(nextPayload);
-        setCytometer(nextPayload.cytometer);
+        setCytometer(getCytometerName(nextPayload.cytometer));
         return nextPayload;
     };
 
     useEffect(() => {
         const boot = async () => {
             try {
-                const params = new URLSearchParams(window.location.search);
-                const cytFromUrl = params.get('cytometer');
-                const res = await axios.get(`${API_BASE}/spectral_panel${cytFromUrl ? `?cytometer=${encodeURIComponent(cytFromUrl)}` : ''}`);
+                const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, {
+                    cytometer,
+                    fluorophores: slots.filter(Boolean),
+                });
                 if (res.data?.error) throw new Error(String(res.data.error));
                 const initial = res.data as PanelPayload;
                 setPayload(initial);
-                setCytometer(initial.cytometer);
-                const initialSlots = [...initial.selected];
-                while (initialSlots.length < emptySlots) initialSlots.push('');
-                setSlots(initialSlots);
-                slotsRef.current = initialSlots;
+                setCytometer(getCytometerName(initial.cytometer));
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Could not load spectral libraries.');
             } finally {
@@ -426,6 +657,19 @@ const PanelBuilder = () => {
             }
         };
         void boot();
+    }, []);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as HTMLElement;
+            if (target && typeof target.closest === 'function') {
+                if (!target.closest('.selector-row') && !target.closest('.clear-slot')) {
+                    setActiveSlot(null);
+                }
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
     const updateSlot = async (index: number, fluor: string) => {
@@ -455,11 +699,20 @@ const PanelBuilder = () => {
     const changeCytometer = async (nextCytometer: string) => {
         setLoading(true);
         try {
-            const nextPayload = await fetchPanel(nextCytometer, []);
-            const nextSlots = Array(emptySlots).fill('');
+            const activeSelected = slots.filter(Boolean);
+            const nextPayload = await fetchPanel(nextCytometer, activeSelected);
+            const availableSet = new Set(nextPayload.fluorophores.map(f => f.fluorophore));
+            const nextSlots = slots.map(fluor => (availableSet.has(fluor) ? fluor : ''));
+            const nextMarkers: Record<number, string> = {};
+            Object.entries(markers).forEach(([key, val]) => {
+                const idx = parseInt(key, 10);
+                if (nextSlots[idx]) {
+                    nextMarkers[idx] = val;
+                }
+            });
             slotsRef.current = nextSlots;
             setSlots(nextSlots);
-            setMarkers({});
+            setMarkers(nextMarkers);
             setPayload(nextPayload);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Could not switch cytometer.');
@@ -468,12 +721,52 @@ const PanelBuilder = () => {
         }
     };
 
+    const clearSelection = async () => {
+        setError('');
+        const emptySlotsArray = Array(emptySlots).fill('');
+        slotsRef.current = emptySlotsArray;
+        setSlots(emptySlotsArray);
+        setMarkers({});
+        setQueries({});
+        setActiveSlot(null);
+        setLoading(true);
+        try {
+            await fetchPanel(cytometer, []);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not clear selection.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const filteredOptions = (slotIndex: number) => {
         if (!payload) return [];
         const query = (queries[slotIndex] ?? '').trim().toLowerCase();
-        return payload.fluorophores
-            .filter(f => !selectedSet.has(f.fluorophore) || slots[slotIndex] === f.fluorophore)
-            .filter(f => !query || f.fluorophore.toLowerCase().includes(query))
+        const baseOptions = payload.fluorophores
+            .filter(f => !selectedSet.has(f.fluorophore) || slots[slotIndex] === f.fluorophore);
+
+        if (!query) {
+            return baseOptions.slice(0, 80);
+        }
+
+        const score = (name: string): number => {
+            const lower = name.toLowerCase();
+            if (lower === query) return 1000;
+            if (lower.startsWith(query)) {
+                return 800 - lower.length;
+            }
+            if (lower.includes(' ' + query) || lower.includes('-' + query)) {
+                return 600 - lower.length;
+            }
+            if (lower.includes(query)) {
+                return 100 - lower.length;
+            }
+            return 0;
+        };
+
+        return baseOptions
+            .filter(f => score(f.fluorophore) > 0)
+            .sort((a, b) => score(b.fluorophore) - score(a.fluorophore))
             .slice(0, 80);
     };
 
@@ -563,13 +856,32 @@ const PanelBuilder = () => {
     const signatureColumnWidth = signaturePlotWidth / Math.max(1, payload.detectors.length);
 
     return (
-        <div className="panel-builder">
+        <div className={`panel-builder ${theme}`}>
             <header className="panel-topbar">
                 <div>
                     <h1>Spectral Panel Builder</h1>
                     <p>{selected.length} fluorophores selected</p>
                 </div>
                 <div className="panel-actions">
+                    <button 
+                        type="button" 
+                        className="export-button" 
+                        onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
+                        aria-label="Toggle theme"
+                        style={{ padding: '0 10px', width: '40px' }}
+                    >
+                        {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+                    </button>
+                    <button
+                        type="button"
+                        className="export-button"
+                        onClick={clearSelection}
+                        disabled={selected.length === 0}
+                        style={{ color: '#ef4444' }}
+                    >
+                        <Trash2 size={16} />
+                        Clear selection
+                    </button>
                     <input
                         ref={importInputRef}
                         type="file"
@@ -609,8 +921,19 @@ const PanelBuilder = () => {
                             const info = fluorByName.get(fluor);
                             const display = activeSlot === index ? (queries[index] ?? fluor) : fluor;
                             const color = info?.peak_color || '#d1d5db';
+                            const isHovered = hoveredFluor === fluor;
                             return (
-                                <div className="selector-row" key={`slot-${index}`}>
+                                <div 
+                                    className="selector-row" 
+                                    key={`slot-${index}`}
+                                    onMouseEnter={() => fluor && setHoveredFluor(fluor)}
+                                    onMouseLeave={() => fluor && setHoveredFluor(null)}
+                                    style={fluor && isHovered ? {
+                                        borderColor: 'rgba(59, 130, 246, 0.5)',
+                                        background: 'rgba(30, 41, 59, 0.35)',
+                                        boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)'
+                                    } : {}}
+                                >
                                     <div className="selector-swatch" style={{ background: color }} />
                                     <div>
                                         <input
@@ -663,12 +986,26 @@ const PanelBuilder = () => {
                 <main className="main-panel">
                     <div className="top-spectrum">
                         <svg className="spectrum-svg" width="100%" height={chartHeight + 56} viewBox={`0 0 ${chartWidth} ${chartHeight + 56}`} role="img" aria-label="Combined spectral signatures">
+                            <defs>
+                                <linearGradient id="rainbow-axis-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    {payload.detectors.map((det, index) => {
+                                        const pct = (index / Math.max(1, payload.detectors.length - 1)) * 100;
+                                        return (
+                                            <stop
+                                                key={`stop-${det.detector}`}
+                                                offset={`${pct.toFixed(2)}%`}
+                                                stopColor={wavelengthToColor(det.emission)}
+                                            />
+                                        );
+                                    })}
+                                </linearGradient>
+                            </defs>
                             {[0, 25, 50, 75, 100].map(tick => {
-                                const y = chartHeight - (tick / 100) * (chartHeight - 18) - 10;
+                                const y = chartHeight - (tick / 100) * (chartHeight - 32) - 24;
                                 return (
                                     <g key={tick}>
-                                        <line x1={42} y1={y} x2={chartWidth - 8} y2={y} stroke="#d7dbe0" strokeWidth={1} />
-                                        <text x={28} y={y + 4} fontSize={12} textAnchor="end">{tick}</text>
+                                        <line x1={42} y1={y} x2={chartWidth - 8} y2={y} stroke="var(--chart-grid)" strokeWidth={1} />
+                                        <text x={28} y={y + 4} fontSize={12} textAnchor="end" className="chart-axis-text">{tick}</text>
                                     </g>
                                 );
                             })}
@@ -676,29 +1013,52 @@ const PanelBuilder = () => {
                                 const x = 42 + (index / Math.max(1, payload.detectors.length - 1)) * (chartWidth - 56);
                                 return (
                                     <g key={det.detector}>
-                                        <line x1={x} y1={6} x2={x} y2={chartHeight - 10} stroke="#d7dbe0" strokeWidth={1} />
-                                        <text x={x} y={chartHeight + 10} fontSize={11} textAnchor="end" transform={`rotate(-55 ${x} ${chartHeight + 10})`}>
+                                        <line x1={x} y1={6} x2={x} y2={chartHeight - 24} stroke="var(--chart-grid)" strokeWidth={1} />
+                                        <text x={x} y={chartHeight + 4} fontSize={11} textAnchor="end" transform={`rotate(-90 ${x} ${chartHeight + 4})`} className="chart-axis-text">
                                             {det.label}
                                         </text>
                                     </g>
                                 );
                             })}
-                            <line x1={42} y1={chartHeight - 10} x2={chartWidth - 8} y2={chartHeight - 10} stroke="#111" strokeWidth={4} />
+                            <rect x={42} y={chartHeight - 14} width={chartWidth - 56} height={6} fill="url(#rainbow-axis-gradient)" />
+                            <line x1={42} y1={chartHeight - 24} x2={chartWidth - 8} y2={chartHeight - 24} stroke="var(--chart-axis)" strokeWidth={3} />
                             {selected.map(fluor => {
                                 const row = spectraByName.get(fluor);
                                 if (!row) return null;
+                                const isHovered = hoveredFluor === fluor;
+                                const hasHoverActive = hoveredFluor !== null;
+                                const pathData = linePath(row, payload.detectors, chartWidth - 56, chartHeight, 42);
                                 return (
-                                    <path
-                                        key={fluor}
-                                        d={linePath(row, payload.detectors, chartWidth - 56, chartHeight, 42)}
-                                        transform="translate(0 0)"
-                                        fill="none"
-                                        stroke={colorByFluor.get(fluor) || '#2688e8'}
-                                        strokeWidth={2.2}
-                                        strokeLinejoin="round"
-                                        strokeLinecap="round"
-                                        opacity={0.92}
-                                    />
+                                    <g key={fluor}>
+                                        <path
+                                            d={pathData}
+                                            fill="none"
+                                            stroke={colorByFluor.get(fluor) || '#2688e8'}
+                                            strokeWidth={isHovered ? 4.2 : 2.4}
+                                            strokeLinejoin="round"
+                                            strokeLinecap="round"
+                                            opacity={hasHoverActive ? (isHovered ? 1.0 : 0.15) : 0.92}
+                                            style={{
+                                                transition: 'all 0.15s ease-in-out',
+                                                pointerEvents: 'none',
+                                                filter: isHovered ? `drop-shadow(0 0 5px ${colorByFluor.get(fluor) || '#2688e8'})` : 'none'
+                                            }}
+                                        />
+                                        <path
+                                            d={pathData}
+                                            fill="none"
+                                            stroke="transparent"
+                                            strokeWidth={22}
+                                            strokeLinejoin="round"
+                                            strokeLinecap="round"
+                                            onMouseEnter={() => setHoveredFluor(fluor)}
+                                            onMouseLeave={() => setHoveredFluor(null)}
+                                            style={{
+                                                cursor: 'pointer',
+                                                pointerEvents: 'stroke'
+                                            }}
+                                        />
+                                    </g>
                                 );
                             })}
                         </svg>
@@ -708,9 +1068,7 @@ const PanelBuilder = () => {
                         <button className={`tab-button ${tab === 'panel' ? 'active' : ''}`} onClick={() => setTab('panel')}>PANEL MATRIX</button>
                         <button className={`tab-button ${tab === 'similarity' ? 'active' : ''}`} onClick={() => setTab('similarity')}>SIMILARITY MATRIX</button>
                         <button className={`tab-button ${tab === 'signatures' ? 'active' : ''}`} onClick={() => setTab('signatures')}>SIGNATURES</button>
-                        <select className="coexpression-select" defaultValue="">
-                            <option value="">Show Co-Expression</option>
-                        </select>
+                        <div style={{ flex: 1 }} />
                         <div className="complexity-badge">Complexity Index: {formatMetric(payload.complexity_index)}</div>
                     </div>
 
@@ -738,33 +1096,48 @@ const PanelBuilder = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {emissions.map(emission => (
-                                            <tr key={emission}>
-                                                <td className="emission-cell">{emission}</td>
-                                                {lasers.flatMap(laser => {
-                                                    const entries = selectedEntries.filter(entry => entry.peakLaser === laser && entry.peakEmission === emission);
-                                                    const occupied = entries.length > 0;
-                                                    return [
-                                                        <td key={`${emission}-${laser}-marker`} className={occupied ? '' : 'empty-region'}>
-                                                            {entries.map(entry => (
-                                                                <input
-                                                                    key={entry.slotIndex}
-                                                                    className="matrix-marker-input"
-                                                                    value={entry.marker}
-                                                                    placeholder="Marker"
-                                                                    onChange={event => setMarkers(prev => ({ ...prev, [entry.slotIndex]: event.target.value }))}
-                                                                />
-                                                            ))}
-                                                        </td>,
-                                                        <td key={`${emission}-${laser}-fluor`} className={occupied ? '' : 'empty-region'}>
-                                                            {entries.map(entry => (
-                                                                <span className="matrix-fluor" key={entry.slotIndex} style={{ color: entry.color }}>{entry.fluor}</span>
-                                                            ))}
-                                                        </td>,
-                                                    ];
-                                                })}
-                                            </tr>
-                                        ))}
+                                        {emissions.flatMap(emission => {
+                                            const laserEntriesMap = new Map<string, typeof selectedEntries>();
+                                            lasers.forEach(laser => {
+                                                const entries = selectedEntries.filter(entry => entry.peakLaser === laser && entry.peakEmission === emission);
+                                                laserEntriesMap.set(laser, entries);
+                                            });
+                                            const maxEntries = Math.max(1, ...lasers.map(laser => laserEntriesMap.get(laser)?.length || 0));
+                                            
+                                            return Array.from({ length: maxEntries }).map((_, subIndex) => (
+                                                <tr key={`${emission}-${subIndex}`}>
+                                                    {subIndex === 0 ? (
+                                                        <td className="emission-cell" rowSpan={maxEntries}>{emission}</td>
+                                                    ) : null}
+                                                    {lasers.flatMap(laser => {
+                                                        const entries = laserEntriesMap.get(laser) || [];
+                                                        const entry = entries[subIndex];
+                                                        const occupied = !!entry;
+                                                        const isImpossible = emission < laserWavelength(laser);
+                                                        const cellClass = occupied ? '' : (isImpossible ? 'impossible-region' : 'empty-region');
+                                                        
+                                                        return [
+                                                            <td key={`${emission}-${laser}-marker-${subIndex}`} className={cellClass}>
+                                                                {!isImpossible && occupied && (
+                                                                    <input
+                                                                        key={entry.slotIndex}
+                                                                        className="matrix-marker-input"
+                                                                        value={entry.marker}
+                                                                        placeholder="Marker"
+                                                                        onChange={event => setMarkers(prev => ({ ...prev, [entry.slotIndex]: event.target.value }))}
+                                                                    />
+                                                                )}
+                                                            </td>,
+                                                            <td key={`${emission}-${laser}-fluor-${subIndex}`} className={cellClass}>
+                                                                {!isImpossible && occupied && (
+                                                                    <span className="matrix-fluor" key={entry.slotIndex} style={{ color: entry.color }}>{entry.fluor}</span>
+                                                                )}
+                                                            </td>,
+                                                        ];
+                                                    })}
+                                                </tr>
+                                            ));
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
@@ -772,7 +1145,6 @@ const PanelBuilder = () => {
 
                         {tab === 'similarity' && (
                             <div>
-                                <p style={{ margin: '0 0 18px', fontWeight: 600 }}>Double click the similarity panel to expand.</p>
                                 <div className="similarity-wrap">
                                     {selected.length === 0 ? (
                                         <div className="empty-state">Select fluorophores to calculate the similarity matrix.</div>
@@ -785,8 +1157,9 @@ const PanelBuilder = () => {
                                                         {selected.map((colName, colIndex) => {
                                                             if (colIndex > rowIndex) return null;
                                                             const value = rowName === colName ? 1 : toNumber(similarityByName.get(rowName)?.[colName]);
+                                                            const cellStyle = getSimilarityStyle(value, rowName === colName, theme);
                                                             return (
-                                                                <td key={colName} style={{ background: rowName === colName ? '#d1d1d1' : similarityColor(value), color: value > 0.5 ? '#fff' : '#111' }}>
+                                                                <td key={colName} style={cellStyle}>
                                                                     {value.toFixed(value === 1 ? 0 : 2)}
                                                                 </td>
                                                             );
@@ -803,7 +1176,6 @@ const PanelBuilder = () => {
                                         </table>
                                     )}
                                 </div>
-                                <p style={{ margin: '12px 0 0 14px', color: '#5b8fc7', fontWeight: 800 }}>Complexity Index: {formatMetric(payload.complexity_index)}</p>
                             </div>
                         )}
 
@@ -814,28 +1186,36 @@ const PanelBuilder = () => {
                                 ) : selected.map(fluor => {
                                     const row = spectraByName.get(fluor);
                                     if (!row) return null;
+                                    
+                                    const isDark = theme === 'dark';
+                                    const plotBg = isDark ? 'rgba(15, 23, 42, 0.5)' : '#f8fafc';
+                                    const plotStroke = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)';
+                                    const textHeading = isDark ? '#cbd5e1' : '#334155';
+                                    const gridH = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)';
+                                    const gridV = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)';
+                                    
                                     return (
                                         <div className="signature-card" key={fluor}>
                                             <h3>{fluor}</h3>
                                             <svg className="signature-band-svg" width="100%" height={signatureHeight} viewBox={`0 0 ${chartWidth} ${signatureHeight}`} role="img" aria-label={`${fluor} signature`}>
-                                                <rect x={signatureLeft} y={signatureTop} width={signaturePlotWidth} height={signaturePlotHeight} fill="#ffffff" stroke="#e5e7eb" />
+                                                <rect x={signatureLeft} y={signatureTop} width={signaturePlotWidth} height={signaturePlotHeight} fill={plotBg} stroke={plotStroke} />
                                                 {[0, 1, 2, 3, 4, 5, 6].map(tick => {
                                                     const y = signatureY(tick, signatureTop, signaturePlotHeight);
                                                     return (
                                                         <g key={tick}>
-                                                            <line x1={signatureLeft} y1={y} x2={signatureLeft + signaturePlotWidth} y2={y} stroke="#e8ebef" strokeWidth={1} />
-                                                            <text x={signatureLeft - 9} y={y + 4} fontSize={11} textAnchor="end">{`10^${tick}`}</text>
+                                                            <line x1={signatureLeft} y1={y} x2={signatureLeft + signaturePlotWidth} y2={y} stroke={gridH} strokeWidth={1} />
+                                                            <text x={signatureLeft - 9} y={y + 4} fontSize={11} textAnchor="end" className="chart-axis-text">{`10^${tick}`}</text>
                                                         </g>
                                                     );
                                                 })}
-                                                <text x={14} y={signatureTop + signaturePlotHeight / 2} fontSize={13} fontWeight={700} textAnchor="middle" transform={`rotate(-90 14 ${signatureTop + signaturePlotHeight / 2})`}>Intensity</text>
+                                                <text x={14} y={signatureTop + signaturePlotHeight / 2} fontSize={13} fontWeight={700} textAnchor="middle" transform={`rotate(-90 14 ${signatureTop + signaturePlotHeight / 2})`} fill={textHeading}>Intensity</text>
                                                 {payload.detectors.map((det, index) => {
                                                     const x = signatureLeft + index * signatureColumnWidth;
                                                     const centerX = x + signatureColumnWidth / 2;
                                                     const value = toNumber(row[det.detector]);
                                                     return (
                                                         <g key={det.detector}>
-                                                            <line x1={centerX} y1={signatureTop} x2={centerX} y2={signatureAxisBottom} stroke="#f1f3f6" strokeWidth={1} />
+                                                            <line x1={centerX} y1={signatureTop} x2={centerX} y2={signatureAxisBottom} stroke={gridV} strokeWidth={1} />
                                                             {signatureBandBins(value).map((bin, bandIndex) => {
                                                                 const y = signatureY(bin.logValue, signatureTop, signaturePlotHeight);
                                                                 return (
@@ -850,7 +1230,7 @@ const PanelBuilder = () => {
                                                                     />
                                                                 );
                                                             })}
-                                                            <text x={centerX} y={signatureAxisBottom + 15} fontSize={10} textAnchor="end" transform={`rotate(-65 ${centerX} ${signatureAxisBottom + 15})`}>{det.label}</text>
+                                                            <text x={centerX} y={signatureAxisBottom + 12} fontSize={10} textAnchor="end" transform={`rotate(-90 ${centerX} ${signatureAxisBottom + 12})`} className="chart-axis-text">{det.label}</text>
                                                         </g>
                                                     );
                                                 })}
