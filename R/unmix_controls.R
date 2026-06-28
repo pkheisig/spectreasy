@@ -391,6 +391,13 @@
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
 #'   use the legacy one-dimensional histogram gate.
+#' @param clean_scc_with_unstained Logical; if `TRUE`, clean cell SCC spectra
+#'   with scatter-matched unstained/AF events before deriving spectra and
+#'   spectral variants.
+#' @param scc_background_method Background method for cell SCC cleaning.
+#'   `"scatter_knn"` matches stained cells to unstained cells by FSC/SSC.
+#' @param scc_background_k Number of nearest unstained cells averaged for
+#'   scatter-matched background subtraction.
 #' @param optimize_spectral_variants Logical; if `TRUE`, learn conservative
 #'   per-fluorophore spectral variants from SCC controls and use them
 #'   automatically while unmixing controls and later samples.
@@ -448,6 +455,9 @@ unmix_controls <- function(
     save_report = TRUE,
     output_file = NULL,
     use_scatter_gating = TRUE,
+    clean_scc_with_unstained = TRUE,
+    scc_background_method = c("scatter_knn", "none"),
+    scc_background_k = 3L,
     optimize_spectral_variants = TRUE,
     spectral_variant_som_nodes = 16L,
     spectral_variant_top_k = 3L,
@@ -457,6 +467,14 @@ unmix_controls <- function(
     ...
 ) {
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
+    scc_background_args <- .validate_scc_background_args(
+        clean_scc_with_unstained = clean_scc_with_unstained,
+        scc_background_method = scc_background_method,
+        scc_background_k = scc_background_k
+    )
+    clean_scc_with_unstained <- scc_background_args$enabled
+    scc_background_method <- scc_background_args$method
+    scc_background_k <- scc_background_args$k
     .with_optional_seed(seed)
 
     control_file <- .resolve_control_file_path(control_file)
@@ -522,6 +540,9 @@ unmix_controls <- function(
         af_refine_problem_quantile = af_refine_problem_quantile,
         include_multi_af = include_multi_af,
         use_scatter_gating = use_scatter_gating,
+        clean_scc_with_unstained = clean_scc_with_unstained,
+        scc_background_method = scc_background_method,
+        scc_background_k = scc_background_k,
         seed = seed,
         ...
     )
@@ -540,6 +561,11 @@ unmix_controls <- function(
                 cosine_threshold = spectral_variant_cosine_threshold,
                 max_variants = spectral_variant_max_variants,
                 min_events = spectral_variant_min_events,
+                clean_scc_with_unstained = clean_scc_with_unstained,
+                scc_background_method = scc_background_method,
+                scc_background_k = scc_background_k,
+                include_multi_af = include_multi_af,
+                exclude_af = exclude_af,
                 seed = seed,
                 warn = TRUE
             ),

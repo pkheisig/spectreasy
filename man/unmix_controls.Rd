@@ -32,6 +32,9 @@ unmix_controls(
   save_report = TRUE,
   output_file = NULL,
   use_scatter_gating = TRUE,
+  clean_scc_with_unstained = TRUE,
+  scc_background_method = c("scatter_knn", "none"),
+  scc_background_k = 3L,
   optimize_spectral_variants = TRUE,
   spectral_variant_som_nodes = 16L,
   spectral_variant_top_k = 3L,
@@ -121,6 +124,16 @@ unmixing.}
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,
 use the legacy one-dimensional histogram gate.}
+
+\item{clean_scc_with_unstained}{Logical; if `TRUE`, clean cell SCC spectra
+with scatter-matched unstained/AF events before deriving spectra and
+spectral variants.}
+
+\item{scc_background_method}{Background method for cell SCC cleaning.
+`"scatter_knn"` matches stained cells to unstained cells by FSC/SSC.}
+
+\item{scc_background_k}{Number of nearest unstained cells averaged for
+scatter-matched background subtraction.}
 
 \item{optimize_spectral_variants}{Logical; if `TRUE`, learn conservative
 per-fluorophore spectral variants from SCC controls and use them

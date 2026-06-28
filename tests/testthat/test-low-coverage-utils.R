@@ -205,6 +205,8 @@ test_that("adjust_matrix internal helpers validate packaged assets and dev-mode 
 })
 
 test_that("adjust_matrix dev-server helper starts npm with API base and restores working directory", {
+    skip_slow_tests("dev-server helper starts npm")
+
     tmp_gui_path <- tempfile("spectreasy_gui_dev_server_")
     dir.create(tmp_gui_path, recursive = TRUE, showWarnings = FALSE)
 

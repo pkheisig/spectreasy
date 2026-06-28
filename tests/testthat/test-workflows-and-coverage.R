@@ -207,6 +207,8 @@ test_that("unmix_controls does not overwrite an existing invalid control file", 
 })
 
 test_that("unmix_controls runs end-to-end on synthetic SCC files", {
+    skip_slow_tests("full SCC control workflow with QC report plots")
+
     wf <- make_synthetic_workflow()
     output_dir <- tempfile("spectreasy_covr_auto_")
     control_csv <- tempfile(fileext = ".csv")
@@ -267,6 +269,7 @@ test_that("unmix_controls handles WLS output and exclude_af branch", {
         output_dir = output_dir,
         exclude_af = TRUE,
         unmix_method = "WLS",
+        save_report = FALSE,
         seed = 1,
         subsample_n = 400
     )
@@ -292,6 +295,7 @@ test_that("unmix_controls tolerates a missing unstained mapping row", {
         control_file = control_csv,
         output_dir = output_dir,
         unmix_method = "WLS",
+        save_report = FALSE,
         seed = 1,
         subsample_n = 300
     )
@@ -332,7 +336,8 @@ test_that("unmix_samples runs WLS without recomputing missing SCC variances", {
         scc_dir = wf$scc_dir,
         control_file = wf$control_df,
         output_dir = output_dir,
-        write_fcs = TRUE
+        write_fcs = TRUE,
+        save_report = FALSE
     )
 
     expect_s3_class(res, "spectreasy_unmixed_results")
@@ -362,7 +367,8 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
             sample_dir = sample_dir,
             M = M,
             method = "OLS",
-            output_dir = output_dir
+            output_dir = output_dir,
+            save_report = FALSE
         )
     )
 
@@ -370,23 +376,27 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
     expect_setequal(names(call_result$value), c("sample_a", "sample_b"))
     expect_true(file.exists(file.path(output_dir, "sample_a_unmixed.fcs")))
     expect_true(file.exists(file.path(output_dir, "sample_b_unmixed.fcs")))
-    expect_true(file.exists(attr(call_result$value, "qc_report_file")))
+    expect_null(attr(call_result$value, "qc_report_file"))
 
-    qc_png_dir <- tempfile("spectreasy_sample_qc_pngs_")
-    res_with_pngs <- spectreasy::unmix_samples(
-        sample_dir = sample_dir,
-        M = M,
-        method = "OLS",
-        output_dir = tempfile("spectreasy_covr_unmixed_png_"),
-        save_qc_plots = TRUE,
-        qc_plot_dir = qc_png_dir,
-        write_fcs = FALSE
-    )
-    expect_true(dir.exists(attr(res_with_pngs, "qc_plot_dir")))
-    expect_true(length(list.files(qc_png_dir, pattern = "\\.png$", full.names = TRUE)) > 0)
+    if (run_slow_tests()) {
+        qc_png_dir <- tempfile("spectreasy_sample_qc_pngs_")
+        res_with_pngs <- spectreasy::unmix_samples(
+            sample_dir = sample_dir,
+            M = M,
+            method = "OLS",
+            output_dir = tempfile("spectreasy_covr_unmixed_png_"),
+            save_qc_plots = TRUE,
+            qc_plot_dir = qc_png_dir,
+            write_fcs = FALSE
+        )
+        expect_true(dir.exists(attr(res_with_pngs, "qc_plot_dir")))
+        expect_true(length(list.files(qc_png_dir, pattern = "\\.png$", full.names = TRUE)) > 0)
+    }
 })
 
 test_that("qc_controls writes a PDF from synthetic SCC files", {
+    skip_slow_tests("SCC QC PDF generation")
+
     wf <- make_synthetic_workflow()
     output_pdf <- tempfile(fileext = ".pdf")
     qc_plot_dir <- tempfile("spectreasy_covr_scc_report_")
@@ -427,6 +437,8 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
 })
 
 test_that("qc_controls does not retain QC PNGs unless requested", {
+    skip_slow_tests("SCC QC PDF generation")
+
     wf <- make_synthetic_workflow()
     output_pdf <- tempfile(fileext = ".pdf")
     qc_plot_dir <- tempfile("spectreasy_scc_report_no_retain_")
@@ -448,6 +460,7 @@ test_that("qc_controls does not retain QC PNGs unless requested", {
 })
 
 test_that("adjust_matrix starts packaged GUI on localhost", {
+    skip_slow_tests("packaged GUI localhost smoke test")
     skip_on_os("windows")
     skip_if_not_installed("plumber")
 

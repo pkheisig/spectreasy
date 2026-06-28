@@ -17,6 +17,7 @@ make_variant_ff <- function(shapes, n_each = 120, bg = 20, noise_sd = 2) {
 }
 
 make_variant_control_set <- function() {
+    set.seed(11)
     scc_dir <- tempfile("spectreasy_variant_scc_")
     dir.create(scc_dir, recursive = TRUE, showWarnings = FALSE)
     detectors <- c("B1-A", "YG1-A", "R1-A")
@@ -55,6 +56,7 @@ test_that("unmix_controls variant optimization can be disabled", {
         unmix_method = "OLS",
         optimize_spectral_variants = FALSE,
         save_qc_plots = FALSE,
+        save_report = FALSE,
         seed = 1
     )
 
@@ -79,6 +81,7 @@ test_that("unmix_controls creates a spectral variant library from SCC controls",
         spectral_variant_som_nodes = 4,
         spectral_variant_cosine_threshold = 0.90,
         spectral_variant_min_events = 20,
+        save_report = FALSE,
         seed = 2
     )
 

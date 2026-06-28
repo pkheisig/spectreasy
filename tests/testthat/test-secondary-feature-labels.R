@@ -42,7 +42,8 @@ testthat::test_that("unmix_samples writes secondary feature names from control m
         M = M,
         method = "OLS",
         output_dir = output_dir,
-        write_fcs = TRUE
+        write_fcs = TRUE,
+        save_report = FALSE
     )
 
     out_ff <- flowCore::read.FCS(

@@ -29,6 +29,9 @@ build_reference_matrix(
   default_sample_type = "beads",
   cytometer = "auto",
   use_scatter_gating = TRUE,
+  clean_scc_with_unstained = TRUE,
+  scc_background_method = c("scatter_knn", "none"),
+  scc_background_k = 3L,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
@@ -119,6 +122,17 @@ as an explicit alternative.}
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,
 use the legacy one-dimensional histogram gate.}
+
+\item{clean_scc_with_unstained}{Logical; if `TRUE`, cell SCC spectra are
+cleaned with scatter-matched unstained/AF events before spectrum
+derivation. Bead controls keep their existing background subtraction.}
+
+\item{scc_background_method}{Background method for cell SCC cleaning.
+`"scatter_knn"` matches each stained event to unstained events by FSC/SSC.
+Use `"none"` to disable matched background subtraction.}
+
+\item{scc_background_k}{Number of nearest unstained events averaged for
+`"scatter_knn"` cell SCC background subtraction.}
 
 \item{histogram_pct_beads}{Quantile width for the bead histogram gate.}
 

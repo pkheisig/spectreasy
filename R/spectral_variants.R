@@ -101,9 +101,29 @@
     paths[file.exists(paths)]
 }
 
+.spectral_variant_control_type <- function(path, control_df) {
+    if (is.null(control_df) || !is.data.frame(control_df) || !("filename" %in% colnames(control_df))) {
+        return("beads")
+    }
+    key <- basename(path)
+    row <- control_df[basename(as.character(control_df$filename)) == key, , drop = FALSE]
+    if (nrow(row) == 0) {
+        return("beads")
+    }
+    if ("control.type" %in% colnames(row)) {
+        type <- tolower(trimws(as.character(row$control.type[1])))
+        if (type %in% c("beads", "cells")) return(type)
+    }
+    "beads"
+}
+
 .learn_one_spectral_variant_set <- function(fcs_files,
                                             fluorophore,
                                             M,
+                                            control_df = NULL,
+                                            scc_background = NULL,
+                                            scc_background_method = "none",
+                                            scc_background_k = 3L,
                                             som_nodes = 16L,
                                             cosine_threshold = 0.98,
                                             max_variants = 8L,
@@ -137,12 +157,27 @@
         neg <- Y[is.finite(peak) & peak <= neg_cutoff, , drop = FALSE]
         if (nrow(pos) < min_events) next
 
-        bg <- if (nrow(neg) >= 10L) {
-            apply(neg, 2, stats::median, na.rm = TRUE)
+        control_type <- .spectral_variant_control_type(path, control_df)
+        clean <- if (identical(control_type, "cells") &&
+            identical(scc_background_method, "scatter_knn") &&
+            !is.null(scc_background)) {
+            .scc_background_clean_events(
+                events = raw[is.finite(peak) & peak >= pos_cutoff, , drop = FALSE],
+                detector_names = detectors,
+                background = scc_background,
+                k = scc_background_k
+            )
         } else {
-            rep(0, ncol(Y))
+            NULL
         }
-        clean <- sweep(pos, 2, bg, "-")
+        if (is.null(clean)) {
+            bg <- if (nrow(neg) >= 10L) {
+                apply(neg, 2, stats::median, na.rm = TRUE)
+            } else {
+                rep(0, ncol(Y))
+            }
+            clean <- sweep(pos, 2, bg, "-")
+        }
         shapes <- .normalize_spectral_variant_shapes(clean)
         if (nrow(shapes) > 0) {
             event_shapes[[length(event_shapes) + 1L]] <- shapes
@@ -203,6 +238,12 @@
                                             cosine_threshold = 0.98,
                                             max_variants = 8L,
                                             min_events = 50L,
+                                            clean_scc_with_unstained = TRUE,
+                                            scc_background_method = "scatter_knn",
+                                            scc_background_k = 3L,
+                                            include_multi_af = FALSE,
+                                            af_dir = "af",
+                                            exclude_af = FALSE,
                                             seed = NULL,
                                             warn = TRUE) {
     M <- .as_reference_matrix(M, "M")
@@ -224,6 +265,27 @@
         if (isTRUE(warn)) warning("Spectral-variant optimization could not find SCC control metadata; using the base reference matrix.", call. = FALSE)
         return(out)
     }
+    bg_args <- .validate_scc_background_args(
+        clean_scc_with_unstained = clean_scc_with_unstained,
+        scc_background_method = scc_background_method,
+        scc_background_k = scc_background_k
+    )
+    scc_background <- if (isTRUE(bg_args$enabled)) {
+        .collect_scc_background_from_controls(
+            scc_dir = scc_dir,
+            control_df = control_df,
+            detector_names = colnames(M),
+            k = bg_args$k,
+            include_multi_af = include_multi_af,
+            af_dir = af_dir,
+            exclude_af = exclude_af
+        )
+    } else {
+        NULL
+    }
+    out$settings$clean_scc_with_unstained <- isTRUE(bg_args$enabled)
+    out$settings$scc_background_method <- if (!is.null(scc_background)) bg_args$method else "none"
+    out$settings$scc_background_k <- bg_args$k
 
     fluorophores <- rownames(M)[.spectral_variant_row_mask(M)]
     rows <- list()
@@ -233,6 +295,10 @@
             fcs_files = files,
             fluorophore = fluor,
             M = M,
+            control_df = control_df,
+            scc_background = scc_background,
+            scc_background_method = if (!is.null(scc_background)) bg_args$method else "none",
+            scc_background_k = bg_args$k,
             som_nodes = som_nodes,
             cosine_threshold = cosine_threshold,
             max_variants = max_variants,

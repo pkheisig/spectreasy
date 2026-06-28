@@ -1011,6 +1011,8 @@
 
     list(
         events = scatter_info$gated_data[, detector_names, drop = FALSE],
+        scatter = scatter_info$gated_data[, c(scatter_info$fsc, scatter_info$ssc), drop = FALSE],
+        scatter_names = c(scatter_info$fsc, scatter_info$ssc),
         source = data.table::data.table(
             file = basename(fcs_file),
             path = normalizePath(fcs_file, mustWork = FALSE),
@@ -1051,10 +1053,16 @@
     af_data_raw <- NULL
     af_signatures_norm <- NULL
     af_bank_info <- NULL
+    scc_background <- NULL
     af_fn <- .resolve_reference_af_name(control_df = control_df, fcs_files = fcs_files, exclude_af = exclude_af)
 
     if (isTRUE(exclude_af)) {
-        return(list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info))
+        return(list(
+            af_data_raw = af_data_raw,
+            af_signatures_norm = af_signatures_norm,
+            af_bank_info = af_bank_info,
+            scc_background = scc_background
+        ))
     }
 
     af_paths <- character()
@@ -1085,10 +1093,19 @@
         af_gated_list <- af_gated_list[keep_gated]
         af_source_types <- af_source_types[keep_gated]
         if (length(af_gated_list) == 0) {
-            return(list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info))
+            return(list(
+                af_data_raw = af_data_raw,
+                af_signatures_norm = af_signatures_norm,
+                af_bank_info = af_bank_info,
+                scc_background = scc_background
+            ))
         }
 
         af_events <- do.call(rbind, lapply(af_gated_list, `[[`, "events"))
+        scc_background <- .scc_background_from_gated_af_list(
+            af_gated_list = af_gated_list,
+            detector_names = detector_names
+        )
         n_af_sources <- length(af_gated_list)
         requested_bands <- af_n_bands
         af_data_raw <- apply(af_events, 2, stats::median, na.rm = TRUE)
@@ -1159,7 +1176,12 @@
         }
     }
 
-    list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info)
+    list(
+        af_data_raw = af_data_raw,
+        af_signatures_norm = af_signatures_norm,
+        af_bank_info = af_bank_info,
+        scc_background = scc_background
+    )
 }
 
 # Checks if a file path points to an extra autofluorescence file.
@@ -1426,7 +1448,14 @@
 # infers the channel via the 99.9% quantile across all detectors, and cross-references/validates
 # it against the target channel in metadata.
 # Returns a list containing the resolved peak channel and 99.9% quantiles for all channels.
-.select_reference_peak_channel <- function(gated_data, detector_names, row_info, channel_alias_map, sn_ext, sn) {
+.select_reference_peak_channel <- function(gated_data,
+                                           detector_names,
+                                           row_info,
+                                           channel_alias_map,
+                                           sn_ext,
+                                           sn,
+                                           af_data_raw = NULL,
+                                           clean_with_af = FALSE) {
     is_unstained <- grepl("unstained|autofluorescence|\\bAF\\b", paste(sn_ext, sn), ignore.case = TRUE)
     if (nrow(row_info) > 0) {
         is_unstained <- is_unstained || .is_af_control_row(
@@ -1436,8 +1465,18 @@
         )
     }
 
+    peak_matrix <- if (isTRUE(clean_with_af) && !is_unstained) {
+        .scc_background_clean_peak_matrix(
+            gated_data = gated_data,
+            detector_names = detector_names,
+            af_data_raw = af_data_raw
+        )
+    } else {
+        gated_data[, detector_names, drop = FALSE]
+    }
+
     q999_by_channel <- apply(
-        gated_data[, detector_names, drop = FALSE],
+        peak_matrix,
         2,
         function(x) stats::quantile(x, 0.999, na.rm = TRUE)
     )
@@ -2218,51 +2257,79 @@
                                         vals_log,
                                         detector_names,
                                         row_info,
+                                        sample_type = "beads",
                                         af_data_raw = NULL,
-                                        universal_negatives = NULL) {
-    pos_spectrum_raw <- apply(final_gated_data[, detector_names, drop = FALSE], 2, median, na.rm = TRUE)
+                                        universal_negatives = NULL,
+                                        scc_background = NULL,
+                                        scc_background_method = "none",
+                                        scc_background_k = 3L) {
+    use_matched_background <- identical(scc_background_method, "scatter_knn") &&
+        identical(sample_type, "cells") &&
+        !is.null(scc_background)
+
+    clean_pos <- if (use_matched_background) {
+        .scc_background_clean_events(
+            events = final_gated_data,
+            detector_names = detector_names,
+            background = scc_background,
+            k = scc_background_k
+        )
+    } else {
+        NULL
+    }
+    if (!is.null(clean_pos)) {
+        pos_spectrum_raw <- apply(pmax(clean_pos, 0), 2, median, na.rm = TRUE)
+        final_neg <- rep(0, length(detector_names))
+        names(final_neg) <- detector_names
+        neg_events <- matrix(0, nrow = 0, ncol = length(detector_names), dimnames = list(NULL, detector_names))
+    } else {
+        pos_spectrum_raw <- apply(final_gated_data[, detector_names, drop = FALSE], 2, median, na.rm = TRUE)
+    }
     neg_log_min <- attr(vals_log, "neg_log_min")
     neg_log_max <- attr(vals_log, "neg_log_max")
-    if (isTRUE(attr(vals_log, "negative_gate_present")) &&
-        is.finite(neg_log_min) && is.finite(neg_log_max) && neg_log_max > neg_log_min) {
-        neg_events <- gated_data[
-            peak_vals >= 10^neg_log_min & peak_vals <= 10^neg_log_max,
-            detector_names,
-            drop = FALSE
-        ]
-    } else {
-        neg_events <- gated_data[
-            peak_vals <= 10^quantile(vals_log, 0.15, na.rm = TRUE),
-            detector_names,
-            drop = FALSE
-        ]
-    }
-    if (nrow(neg_events) < 10) {
-        neg_events <- gated_data[
-            peak_vals <= 10^quantile(vals_log, 0.15, na.rm = TRUE),
-            detector_names,
-            drop = FALSE
-        ]
-    }
-    neg_spectrum_raw <- apply(neg_events, 2, median, na.rm = TRUE)
-    uv_val <- if (nrow(row_info) > 0 && "universal.negative" %in% colnames(row_info)) {
-        trimws(as.character(row_info$universal.negative[1]))
-    } else {
-        ""
-    }
-    uv_upper <- toupper(uv_val)
-    uv_key <- tools::file_path_sans_ext(basename(uv_val))
-    use_af_negative <- uv_upper %in% c("TRUE", "AF")
-    use_named_negative <- nzchar(uv_key) &&
-        !uv_upper %in% c("FALSE", "TRUE", "AF") &&
-        !is.null(universal_negatives) &&
-        uv_key %in% names(universal_negatives)
-    final_neg <- if (use_af_negative && !is.null(af_data_raw)) {
-        af_data_raw
-    } else if (use_named_negative) {
-        universal_negatives[[uv_key]]
-    } else {
-        neg_spectrum_raw
+
+    if (is.null(clean_pos)) {
+        if (isTRUE(attr(vals_log, "negative_gate_present")) &&
+            is.finite(neg_log_min) && is.finite(neg_log_max) && neg_log_max > neg_log_min) {
+            neg_events <- gated_data[
+                peak_vals >= 10^neg_log_min & peak_vals <= 10^neg_log_max,
+                detector_names,
+                drop = FALSE
+            ]
+        } else {
+            neg_events <- gated_data[
+                peak_vals <= 10^quantile(vals_log, 0.15, na.rm = TRUE),
+                detector_names,
+                drop = FALSE
+            ]
+        }
+        if (nrow(neg_events) < 10) {
+            neg_events <- gated_data[
+                peak_vals <= 10^quantile(vals_log, 0.15, na.rm = TRUE),
+                detector_names,
+                drop = FALSE
+            ]
+        }
+        neg_spectrum_raw <- apply(neg_events, 2, median, na.rm = TRUE)
+        uv_val <- if (nrow(row_info) > 0 && "universal.negative" %in% colnames(row_info)) {
+            trimws(as.character(row_info$universal.negative[1]))
+        } else {
+            ""
+        }
+        uv_upper <- toupper(uv_val)
+        uv_key <- tools::file_path_sans_ext(basename(uv_val))
+        use_af_negative <- uv_upper %in% c("TRUE", "AF")
+        use_named_negative <- nzchar(uv_key) &&
+            !uv_upper %in% c("FALSE", "TRUE", "AF") &&
+            !is.null(universal_negatives) &&
+            uv_key %in% names(universal_negatives)
+        final_neg <- if (use_af_negative && !is.null(af_data_raw)) {
+            af_data_raw
+        } else if (use_named_negative) {
+            universal_negatives[[uv_key]]
+        } else {
+            neg_spectrum_raw
+        }
     }
     sig_pure <- pmax(pos_spectrum_raw - final_neg, 0)
     max_val <- max(sig_pure, na.rm = TRUE)
@@ -2271,14 +2338,23 @@
 
     # Keep positive/negative population spread as reference QC metadata. These
     # values are not used as default WLS detector-error weights.
-    pos_var <- apply(final_gated_data[, detector_names, drop = FALSE], 2, stats::var, na.rm = TRUE)
-    neg_var <- apply(neg_events, 2, stats::var, na.rm = TRUE)
+    pos_var <- if (!is.null(clean_pos)) {
+        apply(pmax(clean_pos, 0), 2, stats::var, na.rm = TRUE)
+    } else {
+        apply(final_gated_data[, detector_names, drop = FALSE], 2, stats::var, na.rm = TRUE)
+    }
+    neg_var <- if (nrow(neg_events) > 1L) apply(neg_events, 2, stats::var, na.rm = TRUE) else rep(0, length(detector_names))
     tot_var <- pos_var + neg_var
     tot_var[is.na(tot_var) | tot_var <= 0] <- 0
     if (max_val > 0) {
         tot_var <- tot_var / (max_val^2)
     }
     attr(res, "variance") <- tot_var
+    attr(res, "scc_background") <- list(
+        method = if (!is.null(clean_pos)) "scatter_knn" else "none",
+        k = if (!is.null(clean_pos)) as.integer(scc_background_k) else NA_integer_,
+        matched_events = if (!is.null(clean_pos)) nrow(clean_pos) else 0L
+    )
 
     res
 }
@@ -2568,7 +2644,14 @@
 # Reads the file, performs scatter gating, identifies the peak channel, runs histogram gating
 # to separate positive and negative events, calculates the normalized spectrum, and saves QC plots.
 # Returns a list containing the processed spectrum, QC summary row, and sample name metadata.
-.process_reference_file <- function(fcs_file, control_df, sample_patterns, metadata, config, af_data_raw = NULL, universal_negatives = NULL) {
+.process_reference_file <- function(fcs_file,
+                                    control_df,
+                                    sample_patterns,
+                                    metadata,
+                                    config,
+                                    af_data_raw = NULL,
+                                    universal_negatives = NULL,
+                                    scc_background = NULL) {
     sn_ext <- basename(fcs_file)
     sn <- tools::file_path_sans_ext(sn_ext)
 
@@ -2635,7 +2718,9 @@
         row_info = row_info,
         channel_alias_map = metadata$channel_alias_map,
         sn_ext = sn_ext,
-        sn = sn
+        sn = sn,
+        af_data_raw = af_data_raw,
+        clean_with_af = isTRUE(config$clean_scc_with_unstained) && identical(sample_info$type, "cells")
     )
     peak_channel <- peak_info$peak_channel
     message("  Peak channel: ", peak_channel)
@@ -2691,8 +2776,12 @@
         vals_log = hist_info$vals_log,
         detector_names = metadata$detector_names,
         row_info = row_info,
+        sample_type = sample_info$type,
         af_data_raw = af_data_raw,
-        universal_negatives = universal_negatives
+        universal_negatives = universal_negatives,
+        scc_background = scc_background,
+        scc_background_method = if (isTRUE(config$clean_scc_with_unstained)) config$scc_background_method else "none",
+        scc_background_k = config$scc_background_k
     )
 
     if (isTRUE(config$save_qc_plots)) {
@@ -2746,6 +2835,10 @@
             intensity_gate_type = {
                 gate_type <- attr(hist_info$vals_log, "gate_type")
                 if (!is.null(gate_type) && nzchar(gate_type)) gate_type else if (isTRUE(config$use_scatter_gating)) "scatter" else "histogram"
+            },
+            scc_background_method = {
+                bg_info <- attr(spectrum_norm, "scc_background")
+                if (!is.null(bg_info) && !is.null(bg_info$method)) bg_info$method else "none"
             },
             stain_index = round(stain_index, 1),
             saturated = ifelse(any_sat, "YES", "OK")
@@ -2881,6 +2974,14 @@
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
 #'   use the legacy one-dimensional histogram gate.
+#' @param clean_scc_with_unstained Logical; if `TRUE`, cell SCC spectra are
+#'   cleaned with scatter-matched unstained/AF events before spectrum
+#'   derivation. Bead controls keep their existing background subtraction.
+#' @param scc_background_method Background method for cell SCC cleaning.
+#'   `"scatter_knn"` matches each stained event to unstained events by FSC/SSC.
+#'   Use `"none"` to disable matched background subtraction.
+#' @param scc_background_k Number of nearest unstained events averaged for
+#'   `"scatter_knn"` cell SCC background subtraction.
 #' @param histogram_pct_beads Quantile width for the bead histogram gate.
 #' @param histogram_direction_beads Histogram gate direction for beads: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.
@@ -2941,6 +3042,9 @@ build_reference_matrix <- function(
   default_sample_type = "beads",
   cytometer = "auto",
   use_scatter_gating = TRUE,
+  clean_scc_with_unstained = TRUE,
+  scc_background_method = c("scatter_knn", "none"),
+  scc_background_k = 3L,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
@@ -2984,6 +3088,14 @@ build_reference_matrix <- function(
         stop("af_contaminant_threshold must be a number > 0 and <= 1.")
     }
     af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment"))
+    scc_background_args <- .validate_scc_background_args(
+        clean_scc_with_unstained = clean_scc_with_unstained,
+        scc_background_method = scc_background_method,
+        scc_background_k = scc_background_k
+    )
+    clean_scc_with_unstained <- scc_background_args$enabled
+    scc_background_method <- scc_background_args$method
+    scc_background_k <- scc_background_args$k
     af_refine_problem_quantile <- as.numeric(af_refine_problem_quantile[1])
     if (!is.finite(af_refine_problem_quantile) || is.na(af_refine_problem_quantile) ||
         af_refine_problem_quantile <= 0 || af_refine_problem_quantile >= 1) {
@@ -3017,6 +3129,9 @@ build_reference_matrix <- function(
         gate_contour_cells = gate_contour_cells,
         bead_gate_scale = bead_gate_scale,
         use_scatter_gating = use_scatter_gating,
+        clean_scc_with_unstained = clean_scc_with_unstained,
+        scc_background_method = scc_background_method,
+        scc_background_k = scc_background_k,
         histogram_pct_beads = histogram_pct_beads,
         histogram_direction_beads = histogram_direction_beads,
         histogram_pct_cells = histogram_pct_cells,
@@ -3083,7 +3198,8 @@ build_reference_matrix <- function(
             metadata = metadata,
             config = config,
             af_data_raw = af_profiles_raw$af_data_raw,
-            universal_negatives = universal_negatives
+            universal_negatives = universal_negatives,
+            scc_background = if (isTRUE(clean_scc_with_unstained)) af_profiles_raw$scc_background else NULL
         )
         if (is.null(processed)) {
             next

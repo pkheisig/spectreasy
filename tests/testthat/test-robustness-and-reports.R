@@ -58,6 +58,8 @@ test_that("calculate_nps excludes AF markers by default", {
 })
 
 test_that("qc_samples accepts unmix_samples results directly", {
+    skip_slow_tests("sample QC PDF generation")
+
     M <- matrix(c(
         1.0, 0.2, 0.1,
         0.1, 1.0, 0.2,
@@ -92,7 +94,8 @@ test_that("qc_samples accepts unmix_samples results directly", {
         M = M,
         method = "OLS",
         output_dir = tempdir(),
-        write_fcs = FALSE
+        write_fcs = FALSE,
+        save_report = FALSE
     )
 
     expect_s3_class(unmixed, "spectreasy_unmixed_results")
@@ -129,6 +132,7 @@ test_that("qc_samples accepts unmix_samples results directly", {
 })
 
 test_that("qc_samples has stable pages and no recommendation page", {
+    skip_slow_tests("sample QC PDF content inspection")
     skip_if_not_installed("pdftools")
 
     set.seed(1)
@@ -165,6 +169,7 @@ test_that("qc_samples has stable pages and no recommendation page", {
 })
 
 test_that("qc_samples skips negative population spread for NNLS", {
+    skip_slow_tests("sample QC PDF content inspection")
     skip_if_not_installed("pdftools")
 
     set.seed(1)
@@ -196,6 +201,7 @@ test_that("qc_samples skips negative population spread for NNLS", {
 })
 
 test_that("qc_samples can include NxN pages for all samples", {
+    skip_slow_tests("sample QC PDF content inspection")
     skip_if_not_installed("pdftools")
 
     set.seed(1)
@@ -308,6 +314,8 @@ test_that("qc_samples matrix pages split markers into balanced groups", {
 })
 
 test_that("qc_samples loads M from unmixing_matrix_file", {
+    skip_slow_tests("sample QC PDF generation")
+
     set.seed(1)
     n <- 120
     results <- data.frame(
@@ -415,6 +423,8 @@ test_that("unmix_samples errors instead of dynamically rebuilding a missing matr
 })
 
 test_that("unmix_controls supports af_n_bands and include_multi_af", {
+    skip_slow_tests("multi-AF unmix_controls integration")
+
     scc_dir <- tempfile("scc_dir_controls_")
     dir.create(scc_dir)
     
@@ -563,6 +573,8 @@ test_that("Plumber gui_api load_matrix and save_matrix filter and merge AF rows"
 })
 
 test_that("Plumber gui_api serves spectral panel payloads", {
+    skip_slow_tests("spectral panel PDF export through GUI API")
+
     api_file <- system.file("api/gui_api.R", package = "spectreasy")
     if (api_file == "") {
         api_file <- "../../inst/api/gui_api.R"
@@ -636,6 +648,7 @@ test_that("unmix_samples supports in-memory subsampling via subsample_n", {
         method = "OLS",
         output_dir = tmp_dir,
         write_fcs = TRUE,
+        save_report = FALSE,
         subsample_n = 10,
         seed = 42
     )
@@ -678,7 +691,8 @@ test_that("unmix_samples excludes secondary AF bands from written FCS files", {
         M = M,
         method = "OLS",
         output_dir = tmp_dir,
-        write_fcs = TRUE
+        write_fcs = TRUE,
+        save_report = FALSE
     )
 
     fcs_path <- file.path(tmp_dir, "Sample1_unmixed.fcs")

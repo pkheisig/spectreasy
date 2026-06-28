@@ -61,6 +61,8 @@ testthat::test_that("panel export table and overview PDF are generated", {
     testthat::expect_equal(export_table$Marker, c("CD8", "CD4"))
     testthat::expect_equal(export_table$Fluorophore, c("FITC", "PE"))
 
+    skip_slow_tests("spectral panel overview PDF generation")
+
     output_file <- tempfile(fileext = ".pdf")
     spectreasy:::.write_spectral_panel_overview_pdf(
         cytometer = "aurora",

@@ -455,6 +455,7 @@ test_that("unmix_samples can estimate missing AF from stained samples", {
         M = M_marker,
         method = "WLS",
         write_fcs = FALSE,
+        save_report = FALSE,
         verbose = FALSE
     )
     with_af <- spectreasy::unmix_samples(
@@ -463,6 +464,7 @@ test_that("unmix_samples can estimate missing AF from stained samples", {
         method = "WLS",
         estimate_af = TRUE,
         write_fcs = FALSE,
+        save_report = FALSE,
         verbose = FALSE,
         seed = 11
     )
@@ -629,7 +631,8 @@ test_that("unmix_samples writes unmixed FCS with passthrough acquisition paramet
         M = M,
         method = "OLS",
         output_dir = output_dir,
-        write_fcs = TRUE
+        write_fcs = TRUE,
+        save_report = FALSE
     )
     expect_setequal(colnames(unmixed$sample1$data), c("FITC", "PE", "Time", "FSC-A", "FSC-H", "SSC-A", "SSC-W", "File"))
 
@@ -672,6 +675,7 @@ test_that("unmix_samples uses safe output filenames and supports flowSet return"
         method = "OLS",
         output_dir = output_dir,
         write_fcs = TRUE,
+        save_report = FALSE,
         return_type = "flowSet"
     )
 
@@ -724,6 +728,7 @@ test_that("unmix_samples supports SingleCellExperiment input and output", {
             M = M,
             method = "OLS",
             write_fcs = FALSE,
+            save_report = FALSE,
             return_type = "SingleCellExperiment"
         )
     )
@@ -1509,7 +1514,8 @@ test_that("unmix_samples integrates with variances CSV file", {
         variances_file = tmp_var,
         method = "WLS",
         output_dir = output_dir,
-        write_fcs = TRUE
+        write_fcs = TRUE,
+        save_report = FALSE
     )
     
     expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
@@ -1577,7 +1583,8 @@ test_that("unmix_samples finds sibling variances for saved reference matrix", {
         unmixing_matrix_file = tmp_ref,
         method = "WLS",
         output_dir = output_dir,
-        write_fcs = TRUE
+        write_fcs = TRUE,
+        save_report = FALSE
     )
 
     expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
