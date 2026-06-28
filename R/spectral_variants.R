@@ -90,33 +90,6 @@
     .normalize_spectral_variant_shapes(centers)
 }
 
-.spectral_variant_control_files <- function(scc_dir, control_df, fluorophore) {
-    if (is.null(control_df) || nrow(control_df) == 0 || !all(c("filename", "fluorophore") %in% colnames(control_df))) {
-        return(character())
-    }
-    fluor_vals <- trimws(as.character(control_df$fluorophore))
-    files <- trimws(as.character(control_df$filename[fluor_vals == fluorophore]))
-    files <- files[nzchar(files) & !is.na(files)]
-    paths <- file.path(scc_dir, files)
-    paths[file.exists(paths)]
-}
-
-.spectral_variant_control_type <- function(path, control_df) {
-    if (is.null(control_df) || !is.data.frame(control_df) || !("filename" %in% colnames(control_df))) {
-        return("beads")
-    }
-    key <- basename(path)
-    row <- control_df[basename(as.character(control_df$filename)) == key, , drop = FALSE]
-    if (nrow(row) == 0) {
-        return("beads")
-    }
-    if ("control.type" %in% colnames(row)) {
-        type <- tolower(trimws(as.character(row$control.type[1])))
-        if (type %in% c("beads", "cells")) return(type)
-    }
-    "beads"
-}
-
 .finalize_spectral_variant_shapes <- function(shape_mat,
                                               fluorophore,
                                               M,
@@ -205,92 +178,6 @@
     )
 }
 
-.learn_one_spectral_variant_set <- function(fcs_files,
-                                            fluorophore,
-                                            M,
-                                            control_df = NULL,
-                                            scc_background = NULL,
-                                            scc_background_method = "none",
-                                            scc_background_k = 3L,
-                                            som_nodes = 16L,
-                                            cosine_threshold = 0.98,
-                                            max_variants = 8L,
-                                            min_events = 50L,
-                                            seed = NULL) {
-    if (!length(fcs_files) || !(fluorophore %in% rownames(M))) {
-        return(NULL)
-    }
-    detectors <- colnames(M)
-    base <- M[fluorophore, , drop = FALSE]
-    peak_channel <- detectors[[which.max(base[1, ])]]
-    event_shapes <- list()
-    event_count <- 0L
-
-    for (path in fcs_files) {
-        ff <- tryCatch(
-            flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE),
-            error = function(e) NULL
-        )
-        if (is.null(ff)) next
-        raw <- flowCore::exprs(ff)
-        if (!all(detectors %in% colnames(raw))) next
-        Y <- raw[, detectors, drop = FALSE]
-        Y <- Y[stats::complete.cases(Y), , drop = FALSE]
-        if (nrow(Y) < min_events || !(peak_channel %in% colnames(Y))) next
-
-        peak <- Y[, peak_channel]
-        pos_cutoff <- stats::quantile(peak, 0.70, na.rm = TRUE, names = FALSE)
-        neg_cutoff <- stats::quantile(peak, 0.15, na.rm = TRUE, names = FALSE)
-        pos <- Y[is.finite(peak) & peak >= pos_cutoff, , drop = FALSE]
-        neg <- Y[is.finite(peak) & peak <= neg_cutoff, , drop = FALSE]
-        if (nrow(pos) < min_events) next
-
-        control_type <- .spectral_variant_control_type(path, control_df)
-        clean <- if (identical(control_type, "cells") &&
-            identical(scc_background_method, "scatter_knn") &&
-            !is.null(scc_background)) {
-            .scc_background_clean_events(
-                events = raw[is.finite(peak) & peak >= pos_cutoff, , drop = FALSE],
-                detector_names = detectors,
-                background = scc_background,
-                k = scc_background_k
-            )
-        } else {
-            NULL
-        }
-        if (is.null(clean)) {
-            bg <- if (nrow(neg) >= 10L) {
-                apply(neg, 2, stats::median, na.rm = TRUE)
-            } else {
-                rep(0, ncol(Y))
-            }
-            clean <- sweep(pos, 2, bg, "-")
-        }
-        shapes <- .normalize_spectral_variant_shapes(clean)
-        if (nrow(shapes) > 0) {
-            event_shapes[[length(event_shapes) + 1L]] <- shapes
-            event_count <- event_count + nrow(shapes)
-        }
-    }
-
-    shape_mat <- do.call(rbind, event_shapes)
-    if (is.null(shape_mat) || nrow(shape_mat) < min_events) {
-        return(list(variants = NULL, info = list(reason = "insufficient_events", event_count = event_count)))
-    }
-
-    .finalize_spectral_variant_shapes(
-        shape_mat = shape_mat,
-        fluorophore = fluorophore,
-        M = M,
-        event_count = event_count,
-        som_nodes = som_nodes,
-        cosine_threshold = cosine_threshold,
-        max_variants = max_variants,
-        min_events = min_events,
-        seed = seed
-    )
-}
-
 .learn_spectral_variant_library <- function(scc_dir,
                                             control_df,
                                             M,
@@ -324,10 +211,16 @@
     if (!isTRUE(enabled)) return(out)
     fluorophores <- rownames(M)[.spectral_variant_row_mask(M)]
     reference_positive_events <- attr(M, "scc_positive_events")
-    has_reference_events <- is.list(reference_positive_events) && length(reference_positive_events) > 0L
-    can_use_fcs_controls <- is.data.frame(control_df) && nrow(control_df) > 0L && dir.exists(scc_dir)
-    if (!has_reference_events && !can_use_fcs_controls) {
-        if (isTRUE(warn)) warning("Spectral-variant optimization could not find SCC control metadata; using the base reference matrix.", call. = FALSE)
+    if (!is.list(reference_positive_events) || length(reference_positive_events) == 0L) {
+        out$enabled <- FALSE
+        if (isTRUE(warn)) {
+            warning(
+                "Spectral variants require SCC positive events stored on the reference matrix. ",
+                "No `scc_positive_events` attribute was found, so variant optimization is disabled. ",
+                "Re-run build_reference_matrix()/unmix_controls() with the current version.",
+                call. = FALSE
+            )
+        }
         return(out)
     }
     bg_args <- .validate_scc_background_args(
@@ -335,21 +228,8 @@
         scc_background_method = scc_background_method,
         scc_background_k = scc_background_k
     )
-    scc_background <- if (isTRUE(bg_args$enabled) && can_use_fcs_controls) {
-        .collect_scc_background_from_controls(
-            scc_dir = scc_dir,
-            control_df = control_df,
-            detector_names = colnames(M),
-            k = bg_args$k,
-            include_multi_af = include_multi_af,
-            af_dir = af_dir,
-            exclude_af = exclude_af
-        )
-    } else {
-        NULL
-    }
     out$settings$clean_scc_with_unstained <- isTRUE(bg_args$enabled)
-    out$settings$scc_background_method <- if (!is.null(scc_background)) bg_args$method else "none"
+    out$settings$scc_background_method <- bg_args$method
     out$settings$scc_background_k <- bg_args$k
 
     rows <- list()
@@ -371,24 +251,10 @@
                 seed = seed
             )
         } else {
-            files <- .spectral_variant_control_files(scc_dir, control_df, fluor)
-            .learn_one_spectral_variant_set(
-                fcs_files = files,
-                fluorophore = fluor,
-                M = M,
-                control_df = control_df,
-                scc_background = scc_background,
-                scc_background_method = if (!is.null(scc_background)) bg_args$method else "none",
-                scc_background_k = bg_args$k,
-                som_nodes = som_nodes,
-                cosine_threshold = cosine_threshold,
-                max_variants = max_variants,
-                min_events = min_events,
-                seed = seed
-            )
+            list(variants = NULL, info = list(reason = "missing_scc_positive_events", event_count = 0L))
         }
         if (is.null(learned)) {
-            rows[[length(rows) + 1L]] <- data.frame(fluorophore = fluor, variants = 0L, reason = "missing_control", stringsAsFactors = FALSE)
+            rows[[length(rows) + 1L]] <- data.frame(fluorophore = fluor, variants = 0L, reason = "missing_scc_positive_events", stringsAsFactors = FALSE)
             next
         }
         if (!is.null(learned$variants) && nrow(learned$variants) > 0) {

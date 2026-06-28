@@ -137,6 +137,35 @@ test_that("spectral variants reuse cleaned positive SCC events from the referenc
     expect_equal(lib$info$event_count[lib$info$fluorophore == "FITC"], nrow(events))
 })
 
+test_that("spectral variant learning skips instead of falling back without stored SCC positives", {
+    wf <- make_variant_control_set()
+    M <- rbind(
+        FITC = c(1.00, 0.18, 0.02),
+        PE = c(0.04, 0.18, 1.00)
+    )
+    colnames(M) <- wf$detectors
+
+    expect_warning(
+        lib <- spectreasy:::.learn_spectral_variant_library(
+            scc_dir = wf$scc_dir,
+            control_df = wf$control_df,
+            M = M,
+            enabled = TRUE,
+            som_nodes = 4,
+            cosine_threshold = 0.85,
+            max_variants = 4,
+            min_events = 20,
+            seed = 13
+        ),
+        "No `scc_positive_events` attribute was found"
+    )
+
+    expect_s3_class(lib, "spectreasy_spectral_variant_library")
+    expect_false(lib$enabled)
+    expect_length(lib$variants, 0)
+    expect_equal(nrow(lib$info), 0)
+})
+
 test_that("per-cell spectral variants improve shifted fluorophore recovery", {
     M <- rbind(
         FITC = c(1.00, 0.15, 0.02),
