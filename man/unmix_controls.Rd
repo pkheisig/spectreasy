@@ -30,8 +30,7 @@ unmix_controls(
   n_threads = "auto",
   save_qc_plots = FALSE,
   save_report = TRUE,
-  report = NULL,
-  report_file = NULL,
+  output_file = NULL,
   use_scatter_gating = TRUE,
   optimize_spectral_variants = TRUE,
   spectral_variant_som_nodes = 16L,
@@ -117,9 +116,7 @@ intensity-gate, and spectrum PNGs under `output_dir`.}
 matrix and unmixed controls produced by this call, without rerunning SCC
 unmixing.}
 
-\item{report}{Optional compatibility alias for `save_report`.}
-
-\item{report_file}{Optional output path for the SCC QC PDF report.}
+\item{output_file}{Optional output path for the SCC QC PDF report.}
 
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,

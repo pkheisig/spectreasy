@@ -41,8 +41,7 @@ unmix_samples(
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
   save_report = TRUE,
-  report = NULL,
-  report_file = NULL,
+  output_file = NULL,
   save_qc_plots = FALSE,
   qc_plot_dir = NULL,
   subsample_n = NULL,
@@ -177,9 +176,7 @@ Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
 \item{save_report}{Logical; if `TRUE`, write a sample QC PDF report from the
 in-memory unmixing results without rerunning unmixing.}
 
-\item{report}{Optional compatibility alias for `save_report`.}
-
-\item{report_file}{Optional output path for the sample QC PDF report.}
+\item{output_file}{Optional output path for the sample QC PDF report.}
 
 \item{save_qc_plots}{Logical; if `TRUE`, save QC report plots as PNG files
 in `qc_plot_dir` while creating the PDF report.}

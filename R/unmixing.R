@@ -688,8 +688,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.
 #' @param save_report Logical; if `TRUE`, write a sample QC PDF report from the
 #'   in-memory unmixing results without rerunning unmixing.
-#' @param report Optional compatibility alias for `save_report`.
-#' @param report_file Optional output path for the sample QC PDF report.
+#' @param output_file Optional output path for the sample QC PDF report.
 #' @param save_qc_plots Logical; if `TRUE`, save QC report plots as PNG files
 #'   in `qc_plot_dir` while creating the PDF report.
 #' @param qc_plot_dir Directory for sample QC report PNG files when
@@ -781,8 +780,7 @@ unmix_samples <- function(sample_dir = "samples",
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
                           save_report = TRUE,
-                          report = NULL,
-                          report_file = NULL,
+                          output_file = NULL,
                           save_qc_plots = FALSE,
                           qc_plot_dir = NULL,
                           subsample_n = NULL,
@@ -790,9 +788,6 @@ unmix_samples <- function(sample_dir = "samples",
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
                           verbose = TRUE) {
     return_type <- match.arg(return_type)
-    if (!is.null(report)) {
-        save_report <- isTRUE(report)
-    }
     .with_optional_seed(seed)
     af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
     variances_file_was_missing <- missing(variances_file)
@@ -976,13 +971,13 @@ unmix_samples <- function(sample_dir = "samples",
     attr(results, "qc_plot_dir") <- NULL
 
     if (isTRUE(save_report)) {
-        if (is.null(report_file)) {
-            report_file <- .default_unmix_samples_report_file(output_dir)
+        if (is.null(output_file)) {
+            output_file <- .default_unmix_samples_report_file(output_dir)
         }
         report_res <- qc_samples(
             results = results,
             M = M,
-            output_file = report_file,
+            output_file = output_file,
             method = method_upper,
             qc_plot_dir = qc_plot_dir,
             save_qc_pngs = save_qc_plots

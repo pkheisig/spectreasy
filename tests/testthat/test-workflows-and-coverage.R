@@ -246,7 +246,7 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     expect_no_error(
         suppressMessages(
             spectreasy::qc_controls(
-                output_dir = output_dir,
+                unmix_controls_dir = output_dir,
                 scc_dir = tempfile("missing_scc_"),
                 output_file = output_dir_pdf
             )

@@ -539,7 +539,8 @@
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param scc_dir Directory containing SCC FCS files.
 #' @param output_file Path to save the PDF report. Defaults to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.
-#' @param output_dir Optional `unmix_controls()` output directory. When supplied,
+#' @param unmix_controls_dir Optional directory from a previous `unmix_controls()`
+#'   run. When supplied,
 #'   defaults for `output_file`, `qc_plot_dir`, and `unmixing_matrix_file` are
 #'   resolved relative to this directory.
 #' @param control_file Control mapping CSV path.
@@ -584,7 +585,7 @@ qc_controls <- function(
     unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
     scc_dir = "scc",
     output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
-    output_dir = NULL,
+    unmix_controls_dir = NULL,
     control_file = "fcs_mapping.csv",
     cytometer = "auto",
     method = "WLS",
@@ -602,15 +603,15 @@ qc_controls <- function(
     output_file_missing <- missing(output_file)
     qc_plot_dir_missing <- missing(qc_plot_dir)
     method_missing <- missing(method)
-    if (!is.null(output_dir)) {
+    if (!is.null(unmix_controls_dir)) {
         if (output_file_missing) {
-            output_file <- file.path(output_dir, "qc_controls_report.pdf")
+            output_file <- file.path(unmix_controls_dir, "qc_controls_report.pdf")
         }
         if (qc_plot_dir_missing) {
-            qc_plot_dir <- output_dir
+            qc_plot_dir <- unmix_controls_dir
         }
         if (missing(unmixing_matrix_file)) {
-            unmixing_matrix_file <- file.path(output_dir, "scc_reference_matrix.csv")
+            unmixing_matrix_file <- file.path(unmix_controls_dir, "scc_reference_matrix.csv")
         }
     }
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
@@ -651,12 +652,12 @@ qc_controls <- function(
         ))
     }
 
-    if (!is.null(output_dir) && file.exists(unmixing_matrix_file)) {
+    if (!is.null(unmix_controls_dir) && file.exists(unmixing_matrix_file)) {
         M_built <- .read_unmixing_matrix_csv(unmixing_matrix_file)
         M_built <- .as_reference_matrix(M_built, "unmixing_matrix_file")
         M_report <- if (!is.null(M)) .as_reference_matrix(M, "M") else M_built
-        report_plot_dir <- if (dir.exists(file.path(output_dir, "fsc_ssc"))) output_dir else NULL
-        unmixed_list <- .read_scc_report_unmixed_fcs(file.path(output_dir, "unmixed_fcs"))
+        report_plot_dir <- if (dir.exists(file.path(unmix_controls_dir, "fsc_ssc"))) unmix_controls_dir else NULL
+        unmixed_list <- .read_scc_report_unmixed_fcs(file.path(unmix_controls_dir, "unmixed_fcs"))
         return(.write_scc_qc_report(
             M_built = M_built,
             M_report = M_report,

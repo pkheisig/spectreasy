@@ -387,8 +387,7 @@
 #' @param save_report Logical; if `TRUE`, write the SCC QC PDF report from the
 #'   matrix and unmixed controls produced by this call, without rerunning SCC
 #'   unmixing.
-#' @param report Optional compatibility alias for `save_report`.
-#' @param report_file Optional output path for the SCC QC PDF report.
+#' @param output_file Optional output path for the SCC QC PDF report.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
 #'   use the legacy one-dimensional histogram gate.
@@ -447,8 +446,7 @@ unmix_controls <- function(
     n_threads = "auto",
     save_qc_plots = FALSE,
     save_report = TRUE,
-    report = NULL,
-    report_file = NULL,
+    output_file = NULL,
     use_scatter_gating = TRUE,
     optimize_spectral_variants = TRUE,
     spectral_variant_som_nodes = 16L,
@@ -459,9 +457,6 @@ unmix_controls <- function(
     ...
 ) {
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
-    if (!is.null(report)) {
-        save_report <- isTRUE(report)
-    }
     .with_optional_seed(seed)
 
     control_file <- .resolve_control_file_path(control_file)
@@ -631,8 +626,8 @@ unmix_controls <- function(
         seed = seed
     )
 
-    if (is.null(report_file)) {
-        report_file <- output_paths$qc_report_pdf
+    if (is.null(output_file)) {
+        output_file <- output_paths$qc_report_pdf
     }
     qc_report <- NULL
     if (isTRUE(save_report)) {
@@ -643,7 +638,7 @@ unmix_controls <- function(
             report_plot_dir = attr(M, "qc_plot_dir"),
             unmixed_list = unmixed_list,
             scc_dir = scc_dir,
-            output_file = report_file,
+            output_file = output_file,
             cytometer = cytometer,
             method = unmix_method,
             use_scatter_gating = use_scatter_gating,
@@ -668,7 +663,7 @@ unmix_controls <- function(
         spectral_variant_info = if (!is.null(spectral_variant_library)) spectral_variant_library$info else NULL,
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
         variances_file = output_paths$variances_csv,
-        qc_report_file = if (isTRUE(save_report)) report_file else NULL,
+        qc_report_file = if (isTRUE(save_report)) output_file else NULL,
         qc_report = qc_report,
         qc_summary = attr(M, "qc_summary"),
         af_bank_info = attr(M, "af_bank_info"),

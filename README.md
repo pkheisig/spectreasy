@@ -8,6 +8,7 @@
 - **Background Subtraction**: Automatically subtract internal negative populations to isolate pure fluorophore signatures
 - **Pre-Unmix SCC Review**: Generate a PDF with per-control gating, histogram, and spectrum diagnostics before unmixing
 - **SCC-Variance WLS Unmixing**: Weighted unmixing using detector noise measured from the single-color controls
+- **Per-Cell Spectral Matching**: Background AF selection and fluorophore spectral-variant optimization happen automatically during the control/sample workflow
 - **SCC Diagnostics & Visualization**: Spectra, gating plots, and SCC unmixing scatter outputs for control-stage QC
 - **Interactive GUI**: Web-based interface for manual matrix adjustment
 - **Bioconductor-Native In-Memory Workflows**: `unmix_samples()` accepts `flowSet` and `SingleCellExperiment`, and can return either container
@@ -143,23 +144,24 @@ The same `unmix_controls()` call then continues and writes the control-stage out
 #> [13] "scc_af_spectra.png"
 #> [14] "scc_detector_noise.csv"
 #> [15] "scc_reference_matrix.csv"
-#> [16] "scc_spectra.png"
-#> [17] "scc_unmixing_matrix.csv"
-#> [18] "scc_unmixing_scatter_matrix.png"
-#> [19] "scc_variances.csv"
-#> [20] "spectrum/Alexa Fluor 700 (Beads)_spectrum.png"
-#> [21] "spectrum/BUV395 (Beads)_spectrum.png"
-#> [22] "spectrum/BV510 (Beads)_spectrum.png"
-#> [23] "spectrum/FITC (Beads)_spectrum.png"
-#> [24] "spectrum/LIVE DEAD NIR (Cells)_spectrum.png"
-#> [25] "spectrum/PerCP-Cy5.5 (Beads)_spectrum.png"
-#> [26] "unmixed_fcs/Alexa Fluor 700 (Beads)_unmixed.fcs"
-#> [27] "unmixed_fcs/BUV395 (Beads)_unmixed.fcs"
-#> [28] "unmixed_fcs/BV510 (Beads)_unmixed.fcs"
-#> [29] "unmixed_fcs/FITC (Beads)_unmixed.fcs"
-#> [30] "unmixed_fcs/LIVE DEAD NIR (Cells)_unmixed.fcs"
-#> [31] "unmixed_fcs/PerCP-Cy5.5 (Beads)_unmixed.fcs"
-#> [32] "unmixed_fcs/Unstained (Cells)_unmixed.fcs"
+#> [16] "scc_spectral_variants.rds"
+#> [17] "scc_spectra.png"
+#> [18] "scc_unmixing_matrix.csv"
+#> [19] "scc_unmixing_scatter_matrix.png"
+#> [20] "scc_variances.csv"
+#> [21] "spectrum/Alexa Fluor 700 (Beads)_spectrum.png"
+#> [22] "spectrum/BUV395 (Beads)_spectrum.png"
+#> [23] "spectrum/BV510 (Beads)_spectrum.png"
+#> [24] "spectrum/FITC (Beads)_spectrum.png"
+#> [25] "spectrum/LIVE DEAD NIR (Cells)_spectrum.png"
+#> [26] "spectrum/PerCP-Cy5.5 (Beads)_spectrum.png"
+#> [27] "unmixed_fcs/Alexa Fluor 700 (Beads)_unmixed.fcs"
+#> [28] "unmixed_fcs/BUV395 (Beads)_unmixed.fcs"
+#> [29] "unmixed_fcs/BV510 (Beads)_unmixed.fcs"
+#> [30] "unmixed_fcs/FITC (Beads)_unmixed.fcs"
+#> [31] "unmixed_fcs/LIVE DEAD NIR (Cells)_unmixed.fcs"
+#> [32] "unmixed_fcs/PerCP-Cy5.5 (Beads)_unmixed.fcs"
+#> [33] "unmixed_fcs/Unstained (Cells)_unmixed.fcs"
 ```
 
 Key outputs from this step include:
@@ -167,6 +169,7 @@ Key outputs from this step include:
 - `fcs_mapping.csv`
 - `spectreasy_outputs/unmix_controls/scc_detector_noise.csv`
 - `spectreasy_outputs/unmix_controls/scc_reference_matrix.csv`
+- `spectreasy_outputs/unmix_controls/scc_spectral_variants.rds`
 - `spectreasy_outputs/unmix_controls/scc_variances.csv`
 - `spectreasy_outputs/unmix_controls/scc_spectra.png`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
@@ -199,9 +202,11 @@ When `method = "WLS"`, `spectreasy` uses an event-wise detector-error model: det
 
 The `control.type` column in `fcs_mapping.csv` also matters for this step. It tells `spectreasy` whether each control should be gated as `beads` or `cells`. If `control.type` is empty, `spectreasy` falls back to filename-based guessing.
 
+By default, this control-stage run also learns a conservative fluorophore spectral-variant library from the single-color controls and writes it to `scc_spectral_variants.rds`. This follows the same high-level idea as AutoSpectral's per-cell fluorophore spectrum optimization: learn plausible within-fluorophore spectral shapes from controls, then use them only when they improve per-cell residuals without overfitting noise.
+
 ## 5. Unmix the experimental sample
 
-After the control-stage workflow has completed, unmix the experimental files with `unmix_samples()`. The reference matrix written by `unmix_controls()` is loaded by default.
+After the control-stage workflow has completed, unmix the experimental files with `unmix_samples()`. The reference matrix written by `unmix_controls()` is loaded by default. If `scc_spectral_variants.rds` is present beside that matrix, `unmix_samples()` reuses it automatically.
 
 ```r
 unmixed <- unmix_samples(
@@ -260,6 +265,8 @@ The sections below are useful extensions, but they are not required for the core
 
 By default, `unmix_controls()` uses `af_n_bands = "auto"` to build a FlowSOM autofluorescence bank from pooled unstained/AF control events. If your cells have different AF shapes from cell to cell, the SOM bank represents those shapes as multiple candidate AF signatures.
 
+This per-cell AF matching layer is inspired by AutoSpectral's cell-specific autofluorescence-matching strategy, while keeping the AF signatures separate from fluorophore spectra in the `spectreasy` reference matrix.
+
 Use the two multi-AF settings in the control-stage call. `af_n_bands` controls the size of the shared pooled AF bank, while `include_multi_af` tells `spectreasy` to include additional AF controls from the `af/` directory when those files are available.
 
 ```r
@@ -290,6 +297,14 @@ unmixed_multi_af <- unmix_samples(
 `af_n_bands` is like choosing how many AF "flavors" to model. With `af_n_bands = "auto"`, spectreasy builds a SOM bank with up to `af_auto_max_bands = 100` SOM nodes by default, then prepends a mean AF row. That gives 101 AF rows before any contaminant QC removals. During unmixing, each event chooses one AF profile with a joint covariance + residual score, so the larger AF bank can describe varied autofluorescence without using every AF profile in the final fit.
 
 For direct control over the multi-AF bank size, set `af_auto_max_bands` or pass an explicit integer to `af_n_bands`. For difficult samples with structured AF left after the first pass, set `af_refine = TRUE` to append second-pass modulated AF spectra from high-error unstained cells. Keep it off unless benchmark metrics show it helps your panel.
+
+## Per-cell Fluorophore Spectral-Variant Optimization
+
+`unmix_controls()` also enables `optimize_spectral_variants = TRUE` by default. During the control stage, `spectreasy` looks for reproducible shape differences within each fluorophore control, keeps only variants that remain close to the base spectrum, and saves the result as `scc_spectral_variants.rds`.
+
+During `unmix_samples()`, only fluorophores that are positive in a given event are eligible for variant matching. The optimizer tests a small number of candidate variants, accepts a change only when detector residuals improve, and falls back to the base spectrum for weak, negative, noisy, or unsupported events.
+
+This feature is also inspired by AutoSpectral's per-cell fluorophore spectrum optimization. In `spectreasy`, it is implemented as a conservative background step inside `unmix_controls()` and `unmix_samples()`, so users do not have to run a separate selector by hand.
 
 ## Use a reviewed control CSV in non-interactive workflows
 
@@ -364,6 +379,16 @@ plot_nps(calculate_nps(sample_results), output_file = NULL)
 <p align="center">
   <img src="man/figures/vignette_nps.png" width="80%" />
 </p>
+
+---
+
+## References and Related Work
+
+The per-cell autofluorescence matching and fluorophore spectral-variant ideas in `spectreasy` are inspired by AutoSpectral:
+
+- [AutoSpectral package website](https://drcytometer.github.io/AutoSpectral/)
+- [AutoSpectral GitHub repository](https://github.com/DrCytometer/AutoSpectral)
+- Burton OT, Bücken L, De Vuyst L, Humblet-Baron S, Lopez Menoz De Leon A, Khan S, Cerveira J, Dooley J, Liston A. [AutoSpectral improves spectral flow cytometry accuracy through optimised spectral unmixing and autofluorescence-matching at the cellular level](https://www.biorxiv.org/content/10.1101/2025.10.27.684855v1). bioRxiv, 2025.
 
 ---
 

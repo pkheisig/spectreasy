@@ -11,7 +11,7 @@ qc_controls(
     "scc_reference_matrix.csv"),
   scc_dir = "scc",
   output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
-  output_dir = NULL,
+  unmix_controls_dir = NULL,
   control_file = "fcs_mapping.csv",
   cytometer = "auto",
   method = "WLS",
@@ -43,7 +43,8 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{output_file}{Path to save the PDF report. Defaults to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.}
 
-\item{output_dir}{Optional `unmix_controls()` output directory. When supplied,
+\item{unmix_controls_dir}{Optional directory from a previous `unmix_controls()`
+run. When supplied,
 defaults for `output_file`, `qc_plot_dir`, and `unmixing_matrix_file` are
 resolved relative to this directory.}
 
