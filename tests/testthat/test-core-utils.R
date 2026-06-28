@@ -285,6 +285,10 @@ test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_false(formals(spectreasy::unmix_controls)$multithreading)
     expect_true("estimate_af" %in% names(formals(spectreasy::unmix_samples)))
     expect_false(formals(spectreasy::unmix_samples)$estimate_af)
+    expect_true("optimize_spectral_variants" %in% names(formals(spectreasy::unmix_samples)))
+    expect_true(formals(spectreasy::unmix_samples)$optimize_spectral_variants)
+    expect_true("optimize_spectral_variants" %in% names(formals(spectreasy::unmix_controls)))
+    expect_true(formals(spectreasy::unmix_controls)$optimize_spectral_variants)
     expect_equal(formals(spectreasy::unmix_samples)$method, "WLS")
 })
 
@@ -404,7 +408,8 @@ test_that("unmix_samples loads sibling SCC detector-noise file for WLS", {
         unmixing_matrix_file = tmp_ref,
         method = "WLS",
         output_dir = output_dir,
-        write_fcs = FALSE
+        write_fcs = FALSE,
+        save_report = FALSE
     )
 
     M_with_noise <- M

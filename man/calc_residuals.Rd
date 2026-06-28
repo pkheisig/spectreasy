@@ -16,7 +16,13 @@ calc_residuals(
   rwls_max_iter = 1L,
   multithreading = FALSE,
   n_threads = "auto",
-  af_assignment = "projection"
+  af_assignment = "projection",
+  spectral_variant_library = NULL,
+  optimize_spectral_variants = !is.null(spectral_variant_library),
+  spectral_variant_top_k = 3L,
+  spectral_variant_min_abundance = 1,
+  spectral_variant_positive_fraction = 0.02,
+  spectral_variant_min_improvement = 0.01
 )
 }
 \arguments{
@@ -59,6 +65,28 @@ fluorophore space and picks the candidate that brings apparent fluorophore
 abundance closest to zero. `"residual_alignment"` uses detector residual
 alignment as an explicit alternative. `"legacy"` uses the previous C++
 residual/covariance selector.}
+
+\item{spectral_variant_library}{Optional per-fluorophore spectral-variant
+library learned from single-colour controls. When supplied and
+`optimize_spectral_variants = TRUE`, positive fluorophores may be refit
+with cell-specific spectral variants if doing so improves detector
+residuals.}
+
+\item{optimize_spectral_variants}{Logical; enable cell-specific
+fluorophore-variant optimization when `spectral_variant_library` is
+available.}
+
+\item{spectral_variant_top_k}{Number of best variant candidates to test per
+positive fluorophore.}
+
+\item{spectral_variant_min_abundance}{Minimum unmixed abundance for a
+fluorophore to be eligible for variant testing.}
+
+\item{spectral_variant_positive_fraction}{Additional positivity threshold
+as a fraction of the event's strongest fluorophore abundance.}
+
+\item{spectral_variant_min_improvement}{Minimum fractional residual
+improvement required before accepting a cell-specific variant refit.}
 }
 \value{
 Data frame with unmixed abundances and retained acquisition parameters

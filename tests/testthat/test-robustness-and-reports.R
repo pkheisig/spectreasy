@@ -389,58 +389,7 @@ test_that("per-cell AF selection unmix selects exactly one AF band per cell", {
     }
 })
 
-test_that("unmix_samples can dynamically construct reference matrix and handle multi-AF", {
-    # 1. Create a temporary SCC directory
-    scc_dir <- tempfile("scc_dir_")
-    dir.create(scc_dir)
-    
-    # 2. Generate a flowFrame with some channels: "B1-A", "YG1-A"
-    # FITC control
-    fitc_exprs <- cbind(
-        "B1-A" = rnorm(200, mean = 1000, sd = 50),
-        "YG1-A" = rnorm(200, mean = 10, sd = 2),
-        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
-    )
-    fitc_ff <- flowCore::flowFrame(fitc_exprs)
-    flowCore::write.FCS(fitc_ff, file.path(scc_dir, "FITC (Beads).fcs"))
-    
-    # PE control
-    pe_exprs <- cbind(
-        "B1-A" = rnorm(200, mean = 10, sd = 2),
-        "YG1-A" = rnorm(200, mean = 1500, sd = 75),
-        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
-    )
-    pe_ff <- flowCore::flowFrame(pe_exprs)
-    flowCore::write.FCS(pe_ff, file.path(scc_dir, "PE (Beads).fcs"))
-    
-    # Unstained / AF control
-    af_exprs <- cbind(
-        "B1-A" = rnorm(200, mean = 15, sd = 3),
-        "YG1-A" = rnorm(200, mean = 15, sd = 3),
-        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
-    )
-    af_ff <- flowCore::flowFrame(af_exprs)
-    flowCore::write.FCS(af_ff, file.path(scc_dir, "Unstained (Cells).fcs"))
-    
-    # 3. Create a control_file mapping
-    control_df <- data.frame(
-        filename = c("FITC (Beads).fcs", "PE (Beads).fcs", "Unstained (Cells).fcs"),
-        fluorophore = c("FITC", "PE", "AF"),
-        marker = c("CD4", "CD8", "Autofluorescence"),
-        channel = c("B1-A", "YG1-A", "B1-A"),
-        control.type = c("beads", "beads", "cells"),
-        universal.negative = c("", "", ""),
-        large.gate = c("", "", ""),
-        is.viability = c("", "", ""),
-        stringsAsFactors = FALSE
-    )
-    control_file <- tempfile(fileext = ".csv")
-    write.csv(control_df, control_file, row.names = FALSE)
-    
-    # 4. Create sample flowSet to unmix
+test_that("unmix_samples errors instead of dynamically rebuilding a missing matrix", {
     sample_exprs <- matrix(c(
         500, 200, 1, 100000, 50000,
         100, 800, 2, 100000, 50000
@@ -448,30 +397,21 @@ test_that("unmix_samples can dynamically construct reference matrix and handle m
     colnames(sample_exprs) <- c("B1-A", "YG1-A", "Time", "FSC-A", "SSC-A")
     sample_ff <- flowCore::flowFrame(sample_exprs)
     toy_fs <- flowCore::flowSet(list(Sample1 = sample_ff))
-    
-    # 5. Call unmix_samples with scc_dir and af_n_bands = 2
-    # Ensure unmixing_matrix_file points to a non-existent temp file so it triggers build
+
     temp_matrix_file <- tempfile(fileext = ".csv")
-    
-    unmixed <- spectreasy::unmix_samples(
-        sample_dir = toy_fs,
-        unmixing_matrix_file = temp_matrix_file,
-        scc_dir = scc_dir,
-        control_file = control_file,
-        af_n_bands = 2,
-        write_fcs = FALSE,
-        return_type = "list"
+
+    expect_error(
+        spectreasy::unmix_samples(
+            sample_dir = toy_fs,
+            unmixing_matrix_file = temp_matrix_file,
+            scc_dir = tempfile("existing_scc_"),
+            control_file = tempfile(fileext = ".csv"),
+            af_n_bands = 2,
+            write_fcs = FALSE,
+            return_type = "list"
+        ),
+        regexp = "Run unmix_controls\\(\\) first"
     )
-    
-    expect_s3_class(unmixed, "spectreasy_unmixed_results")
-    unmixed_df <- as.data.frame(unmixed)
-    
-    # Check that columns FITC, PE, AF, and AF_2 exist in the output
-    expect_true(all(c("FITC", "PE", "AF", "AF_2") %in% colnames(unmixed_df)))
-    
-    # Verify that selection unmix worked: for each cell, at most one of AF and AF_2 is non-zero
-    expect_true(sum(unmixed_df[1, c("AF", "AF_2")] != 0) <= 1)
-    expect_true(sum(unmixed_df[2, c("AF", "AF_2")] != 0) <= 1)
 })
 
 test_that("unmix_controls supports af_n_bands and include_multi_af", {

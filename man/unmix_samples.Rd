@@ -30,11 +30,21 @@ unmix_samples(
   af_deduplication_threshold = 0.99,
   af_contaminant_threshold = 0.99,
   af_assignment = "projection",
+  optimize_spectral_variants = TRUE,
+  spectral_variant_library = NULL,
+  spectral_variant_library_file = NULL,
+  spectral_variant_top_k = 3L,
+  spectral_variant_min_abundance = 1,
   exclude_af = FALSE,
   include_multi_af = FALSE,
   estimate_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
+  save_report = TRUE,
+  report = NULL,
+  report_file = NULL,
+  save_qc_plots = FALSE,
+  qc_plot_dir = NULL,
   subsample_n = NULL,
   seed = NULL,
   return_type = c("list", "flowSet", "SingleCellExperiment"),
@@ -78,28 +88,28 @@ single-threaded.}
 Integers larger than the available thread count are clipped to the
 available count.}
 
-\item{cytometer}{Cytometer name used only when `unmix_samples()` must build a
-reference matrix dynamically. The default, `"auto"`, infers the cytometer
-from FCS detector names when possible.}
+\item{cytometer}{Legacy compatibility argument. Reference-matrix construction
+now belongs in [unmix_controls()]; `unmix_samples()` requires either `M` or
+a valid `unmixing_matrix_file`.}
 
-\item{scc_dir}{Directory containing single-color control files. Used to
-dynamically build the reference matrix if `M` and `unmixing_matrix_file`
-are missing.}
+\item{scc_dir}{Optional SCC directory used only to locate saved detector-noise
+metadata when available. It is not used to rebuild a missing reference
+matrix.}
 
-\item{control_file}{Path to the control mapping CSV.
-Used when dynamically building the reference matrix.}
+\item{control_file}{Legacy compatibility argument. To create a reference
+matrix from a control mapping, run [unmix_controls()] first.}
 
 \item{af_n_bands}{Number of AF basis signatures to extract from the pooled
 unstained/AF control events. Use `"auto"` to build the default SOM AF bank.
-Only used when `unmix_samples()` has to build a reference matrix itself.}
+Legacy compatibility argument; build AF references with [unmix_controls()].}
 
 \item{af_bands_per_file}{Deprecated compatibility argument. Multiple AF
 sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
 control the size of the one shared AF bank.}
 
 \item{af_auto_max_bands}{Maximum SOM nodes that `"auto"` may create before
-prepending the mean AF row. Only used when `unmix_samples()` has to build a
-reference matrix itself.}
+prepending the mean AF row. Legacy compatibility argument; build AF
+references with [unmix_controls()].}
 
 \item{af_min_cluster_events}{Compatibility argument retained for older
 workflows.}
@@ -111,32 +121,47 @@ workflows.}
 workflows.}
 
 \item{af_refine}{Logical; if `TRUE`, run the optional second-pass AF
-refinement. Only used when `unmix_samples()` has to build a reference
-matrix itself.}
+refinement. Legacy compatibility argument; build refined AF references with
+[unmix_controls()].}
 
 \item{af_refine_problem_quantile}{Quantile used to choose high-error
-unstained cells for AF refinement. Only used when `unmix_samples()` has to
-build a reference matrix itself.}
+unstained cells for AF refinement. Legacy compatibility argument.}
 
 \item{af_deduplicate}{Logical; if `TRUE`, remove near-identical AF spectra
-when building a reference matrix dynamically.}
+when building a reference matrix. Legacy compatibility argument.}
 
 \item{af_deduplication_threshold}{Cosine similarity threshold used when
 `af_deduplicate = TRUE`.}
 
 \item{af_contaminant_threshold}{Cosine similarity threshold used to remove
-AF candidates that are too similar to known fluorophore spectra when
-building a reference matrix dynamically.}
+AF candidates that are too similar to known fluorophore spectra. Legacy
+compatibility argument.}
 
 \item{af_assignment}{How to choose one AF row per event when a reference
 matrix contains multiple AF rows. `"projection"` is the default.
 `"residual_alignment"` and `"legacy"` are available for comparison.}
 
-\item{exclude_af}{Logical; whether to exclude AF from unmixing. Only used
-when `unmix_samples()` has to build a reference matrix itself.}
+\item{optimize_spectral_variants}{Logical; if `TRUE`, reuse a saved or
+attached single-colour-control spectral-variant library when available.}
 
-\item{include_multi_af}{Logical; whether to include multi-AF controls. Only
-used when `unmix_samples()` has to build a reference matrix itself.}
+\item{spectral_variant_library}{Optional in-memory spectral-variant library,
+usually returned by [unmix_controls()].}
+
+\item{spectral_variant_library_file}{Optional `.rds` path to a saved
+spectral-variant library. If omitted, `unmix_samples()` looks for
+`scc_spectral_variants.rds` beside `unmixing_matrix_file`.}
+
+\item{spectral_variant_top_k}{Number of best variant candidates to test per
+positive fluorophore.}
+
+\item{spectral_variant_min_abundance}{Minimum unmixed abundance for a
+fluorophore to be eligible for variant testing.}
+
+\item{exclude_af}{Legacy compatibility argument. Exclude AF while building
+the matrix in [unmix_controls()], not in `unmix_samples()`.}
+
+\item{include_multi_af}{Legacy compatibility argument. Include multi-AF while
+building the matrix in [unmix_controls()], not in `unmix_samples()`.}
 
 \item{estimate_af}{Logical; if `TRUE`, estimate AF signatures directly from
 stained sample event-wise WLS residuals, select the best candidate model by
@@ -148,6 +173,19 @@ unstained cell control is available. Default is `FALSE`.}
 
 \item{write_fcs}{Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
+
+\item{save_report}{Logical; if `TRUE`, write a sample QC PDF report from the
+in-memory unmixing results without rerunning unmixing.}
+
+\item{report}{Optional compatibility alias for `save_report`.}
+
+\item{report_file}{Optional output path for the sample QC PDF report.}
+
+\item{save_qc_plots}{Logical; if `TRUE`, save QC report plots as PNG files
+in `qc_plot_dir` while creating the PDF report.}
+
+\item{qc_plot_dir}{Directory for sample QC report PNG files when
+`save_qc_plots = TRUE`.}
 
 \item{subsample_n}{Optional integer; if provided, subsample the returned in-memory
 results to at most `subsample_n` events per sample. The full unsampled unmixed

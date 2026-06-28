@@ -5,11 +5,13 @@
 \title{Generate SCC QC Report}
 \usage{
 qc_controls(
+  results = NULL,
   M = NULL,
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
   scc_dir = "scc",
   output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
+  output_dir = NULL,
   control_file = "fcs_mapping.csv",
   cytometer = "auto",
   method = "WLS",
@@ -26,6 +28,10 @@ qc_controls(
 )
 }
 \arguments{
+\item{results}{Optional result list returned by [unmix_controls()]. When
+supplied, its in-memory matrix and unmixed SCCs are reused instead of
+rerunning SCC unmixing.}
+
 \item{M}{Optional precomputed reference matrix. If omitted, the report uses the
 matrix generated from the supplied SCC files.}
 
@@ -36,6 +42,10 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 \item{scc_dir}{Directory containing SCC FCS files.}
 
 \item{output_file}{Path to save the PDF report. Defaults to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.}
+
+\item{output_dir}{Optional `unmix_controls()` output directory. When supplied,
+defaults for `output_file`, `qc_plot_dir`, and `unmixing_matrix_file` are
+resolved relative to this directory.}
 
 \item{control_file}{Control mapping CSV path.}
 

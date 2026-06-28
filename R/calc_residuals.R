@@ -157,6 +157,22 @@
 #'   abundance closest to zero. `"residual_alignment"` uses detector residual
 #'   alignment as an explicit alternative. `"legacy"` uses the previous C++
 #'   residual/covariance selector.
+#' @param spectral_variant_library Optional per-fluorophore spectral-variant
+#'   library learned from single-colour controls. When supplied and
+#'   `optimize_spectral_variants = TRUE`, positive fluorophores may be refit
+#'   with cell-specific spectral variants if doing so improves detector
+#'   residuals.
+#' @param optimize_spectral_variants Logical; enable cell-specific
+#'   fluorophore-variant optimization when `spectral_variant_library` is
+#'   available.
+#' @param spectral_variant_top_k Number of best variant candidates to test per
+#'   positive fluorophore.
+#' @param spectral_variant_min_abundance Minimum unmixed abundance for a
+#'   fluorophore to be eligible for variant testing.
+#' @param spectral_variant_positive_fraction Additional positivity threshold
+#'   as a fraction of the event's strongest fluorophore abundance.
+#' @param spectral_variant_min_improvement Minimum fractional residual
+#'   improvement required before accepting a cell-specific variant refit.
 #' @return Data frame with unmixed abundances and retained acquisition parameters
 #'   (`Time` plus all `FSC*`/`SSC*` columns, when available).
 #'         If return_residuals=TRUE, returns a list with [[data]] and [[residuals]].
@@ -198,7 +214,13 @@ calc_residuals <- function(flow_frame,
                            rwls_max_iter = 1L,
                            multithreading = FALSE,
                            n_threads = "auto",
-                           af_assignment = "projection") {
+                           af_assignment = "projection",
+                           spectral_variant_library = NULL,
+                           optimize_spectral_variants = !is.null(spectral_variant_library),
+                           spectral_variant_top_k = 3L,
+                           spectral_variant_min_abundance = 1,
+                           spectral_variant_positive_fraction = 0.02,
+                           spectral_variant_min_improvement = 0.01) {
     M <- .as_reference_matrix(M, "M")
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(multithreading = multithreading, n_threads = n_threads)
@@ -271,7 +293,27 @@ calc_residuals <- function(flow_frame,
         )
     }
 
-    Fitted <- A %*% M
+    variant_info <- NULL
+    if (isTRUE(optimize_spectral_variants) && !is.null(spectral_variant_library)) {
+        variant_fit <- .apply_spectral_variant_optimization(
+            Y = Y,
+            M = M,
+            A = A,
+            method = method,
+            wls_noise = wls_noise,
+            rwls_max_iter = rwls_max_iter,
+            spectral_variant_library = spectral_variant_library,
+            top_k = spectral_variant_top_k,
+            min_abundance = spectral_variant_min_abundance,
+            positive_fraction = spectral_variant_positive_fraction,
+            min_improvement_fraction = spectral_variant_min_improvement
+        )
+        A <- variant_fit$A
+        Fitted <- variant_fit$fitted
+        variant_info <- variant_fit$info
+    } else {
+        Fitted <- A %*% M
+    }
     R <- Y - Fitted
     out <- as.data.frame(A)
     colnames(out) <- rownames(M)
@@ -281,7 +323,9 @@ calc_residuals <- function(flow_frame,
     if (!is.null(file_name)) out$File <- file_name
 
     if (return_residuals) {
-        return(list(data = out, residuals = R))
+        ans <- list(data = out, residuals = R)
+        if (!is.null(variant_info)) ans$spectral_variant_info <- variant_info
+        return(ans)
     } else {
         return(out)
     }

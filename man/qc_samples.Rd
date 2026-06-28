@@ -22,7 +22,9 @@ qc_samples(
   sample_nxn_transform = c("none", "asinh"),
   sample_nxn_asinh_cofactor = 150,
   sample_nxn_axis_limit = NULL,
-  nxn_all_samples = FALSE
+  nxn_all_samples = FALSE,
+  qc_plot_dir = NULL,
+  save_qc_pngs = FALSE
 )
 }
 \arguments{
@@ -79,9 +81,16 @@ The default `NULL` uses local per-panel ranges. Use `1e5` for
 
 \item{nxn_all_samples}{Logical; if `TRUE`, include per-sample NxN pages for all samples.
 If `FALSE` (default), only include NxN pages for the first sample in `results`.}
+
+\item{qc_plot_dir}{Directory where report PNG plots are written when
+`save_qc_pngs = TRUE`.}
+
+\item{save_qc_pngs}{Logical; if `TRUE`, save report plot pages as PNG files
+alongside the PDF report.}
 }
 \value{
-Invisibly returns `NULL`; writes report to disk.
+Invisibly returns a list with `output_file` and `qc_plot_dir`; writes
+  report artifacts to disk.
 }
 \description{
 Creates a multi-page report summarizing unmixing quality, including spectra,

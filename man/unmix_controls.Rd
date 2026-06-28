@@ -29,7 +29,16 @@ unmix_controls(
   multithreading = FALSE,
   n_threads = "auto",
   save_qc_plots = FALSE,
+  save_report = TRUE,
+  report = NULL,
+  report_file = NULL,
   use_scatter_gating = TRUE,
+  optimize_spectral_variants = TRUE,
+  spectral_variant_som_nodes = 16L,
+  spectral_variant_top_k = 3L,
+  spectral_variant_cosine_threshold = 0.98,
+  spectral_variant_max_variants = 8L,
+  spectral_variant_min_events = 50L,
   ...
 )
 }
@@ -104,9 +113,36 @@ available count.}
 \item{save_qc_plots}{Logical; whether to write per-control FSC/SSC,
 intensity-gate, and spectrum PNGs under `output_dir`.}
 
+\item{save_report}{Logical; if `TRUE`, write the SCC QC PDF report from the
+matrix and unmixed controls produced by this call, without rerunning SCC
+unmixing.}
+
+\item{report}{Optional compatibility alias for `save_report`.}
+
+\item{report_file}{Optional output path for the SCC QC PDF report.}
+
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,
 use the legacy one-dimensional histogram gate.}
+
+\item{optimize_spectral_variants}{Logical; if `TRUE`, learn conservative
+per-fluorophore spectral variants from SCC controls and use them
+automatically while unmixing controls and later samples.}
+
+\item{spectral_variant_som_nodes}{Number of SOM nodes used per fluorophore
+when learning spectral variants.}
+
+\item{spectral_variant_top_k}{Number of best variant candidates to test per
+positive fluorophore during event-wise optimization.}
+
+\item{spectral_variant_cosine_threshold}{Minimum cosine similarity to the
+base fluorophore spectrum required for a variant to be retained.}
+
+\item{spectral_variant_max_variants}{Maximum retained variants per
+fluorophore.}
+
+\item{spectral_variant_min_events}{Minimum cleaned positive events required
+to learn variants for one fluorophore.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }

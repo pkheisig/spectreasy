@@ -258,7 +258,7 @@ The sections below are useful extensions, but they are not required for the core
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `unmix_controls()` and dynamic `unmix_samples()` reference-matrix builds use `af_n_bands = "auto"` to build a FlowSOM autofluorescence bank from pooled unstained/AF control events. If your cells have different AF shapes from cell to cell, the SOM bank represents those shapes as multiple candidate AF signatures.
+By default, `unmix_controls()` uses `af_n_bands = "auto"` to build a FlowSOM autofluorescence bank from pooled unstained/AF control events. If your cells have different AF shapes from cell to cell, the SOM bank represents those shapes as multiple candidate AF signatures.
 
 Use the two multi-AF settings in the control-stage call. `af_n_bands` controls the size of the shared pooled AF bank, while `include_multi_af` tells `spectreasy` to include additional AF controls from the `af/` directory when those files are available.
 
@@ -276,18 +276,13 @@ ctrl_multi_af <- unmix_controls(
 )
 ```
 
-If you want `unmix_samples()` to rebuild the reference matrix dynamically from the SCC files, pass the same two AF settings there as well:
+Then pass the saved control-stage matrix to `unmix_samples()`. `unmix_samples()` does not rebuild missing matrices from SCC files; if the matrix is absent, run `unmix_controls()` first.
 
 ```r
 unmixed_multi_af <- unmix_samples(
   sample_dir = "sample",
-  unmixing_matrix_file = NULL,
-  scc_dir = "scc",
-  control_file = "fcs_mapping.csv",
+  unmixing_matrix_file = ctrl_multi_af$reference_matrix_file,
   method = "WLS",
-  include_multi_af = TRUE,
-  af_n_bands = "auto",
-  af_auto_max_bands = 100,
   output_dir = "spectreasy_outputs/unmix_samples_multi_af"
 )
 ```
@@ -329,14 +324,14 @@ na_idx <- is.na(mapped_names)
 mapped_names[na_idx] <- rownames(reference_matrix)[na_idx]
 rownames(reference_matrix) <- unname(mapped_names)
 
-unmixed_dynamic <- unmix_samples(
+unmixed_direct <- unmix_samples(
   sample_dir = file.path(project_dir, "sample"),
   M = reference_matrix,
   method = "WLS",
-  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples_dynamic")
+  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples_direct")
 )
 
-names(unmixed_dynamic)
+names(unmixed_direct)
 #> [1] "sample"
 ```
 

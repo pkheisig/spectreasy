@@ -218,8 +218,10 @@
         reference_matrix_csv = file.path(output_dir, "scc_reference_matrix.csv"),
         detector_noise_csv = file.path(output_dir, "scc_detector_noise.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
+        spectral_variant_library_rds = file.path(output_dir, "scc_spectral_variants.rds"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
-        variances_csv = file.path(output_dir, "scc_variances.csv")
+        variances_csv = file.path(output_dir, "scc_variances.csv"),
+        qc_report_pdf = file.path(output_dir, "qc_controls_report.pdf")
     )
 }
 
@@ -382,9 +384,27 @@
 #'   available count.
 #' @param save_qc_plots Logical; whether to write per-control FSC/SSC,
 #'   intensity-gate, and spectrum PNGs under `output_dir`.
+#' @param save_report Logical; if `TRUE`, write the SCC QC PDF report from the
+#'   matrix and unmixed controls produced by this call, without rerunning SCC
+#'   unmixing.
+#' @param report Optional compatibility alias for `save_report`.
+#' @param report_file Optional output path for the SCC QC PDF report.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
 #'   use the legacy one-dimensional histogram gate.
+#' @param optimize_spectral_variants Logical; if `TRUE`, learn conservative
+#'   per-fluorophore spectral variants from SCC controls and use them
+#'   automatically while unmixing controls and later samples.
+#' @param spectral_variant_som_nodes Number of SOM nodes used per fluorophore
+#'   when learning spectral variants.
+#' @param spectral_variant_top_k Number of best variant candidates to test per
+#'   positive fluorophore during event-wise optimization.
+#' @param spectral_variant_cosine_threshold Minimum cosine similarity to the
+#'   base fluorophore spectrum required for a variant to be retained.
+#' @param spectral_variant_max_variants Maximum retained variants per
+#'   fluorophore.
+#' @param spectral_variant_min_events Minimum cleaned positive events required
+#'   to learn variants for one fluorophore.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #'
 #' @return List with `M`, `W`, `unmixed_list`, and key output file paths,
@@ -426,10 +446,22 @@ unmix_controls <- function(
     multithreading = FALSE,
     n_threads = "auto",
     save_qc_plots = FALSE,
+    save_report = TRUE,
+    report = NULL,
+    report_file = NULL,
     use_scatter_gating = TRUE,
+    optimize_spectral_variants = TRUE,
+    spectral_variant_som_nodes = 16L,
+    spectral_variant_top_k = 3L,
+    spectral_variant_cosine_threshold = 0.98,
+    spectral_variant_max_variants = 8L,
+    spectral_variant_min_events = 50L,
     ...
 ) {
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
+    if (!is.null(report)) {
+        save_report <- isTRUE(report)
+    }
     .with_optional_seed(seed)
 
     control_file <- .resolve_control_file_path(control_file)
@@ -469,10 +501,19 @@ unmix_controls <- function(
     }
 
     output_paths <- .unmix_output_paths(output_dir)
+    report_plot_output_dir <- output_dir
+    cleanup_report_plot_dir <- NULL
+    build_report_plots <- isTRUE(save_qc_plots) || isTRUE(save_report)
+    if (isTRUE(save_report) && !isTRUE(save_qc_plots)) {
+        report_plot_output_dir <- tempfile("spectreasy_controls_report_plots_")
+        cleanup_report_plot_dir <- report_plot_output_dir
+        on.exit(unlink(cleanup_report_plot_dir, recursive = TRUE, force = TRUE), add = TRUE)
+    }
+
     M <- build_reference_matrix(
         input_folder = scc_dir,
-        output_folder = output_dir,
-        save_qc_plots = save_qc_plots,
+        output_folder = report_plot_output_dir,
+        save_qc_plots = build_report_plots,
         control_df = control_df,
         cytometer = cytometer,
         exclude_af = exclude_af,
@@ -490,6 +531,38 @@ unmix_controls <- function(
         ...
     )
     if (is.null(M) || nrow(M) == 0) stop("No valid spectra found while building reference matrix.")
+
+    spectral_variant_library <- NULL
+    spectral_variant_library_file <- NULL
+    if (isTRUE(optimize_spectral_variants)) {
+        spectral_variant_library <- tryCatch(
+            .learn_spectral_variant_library(
+                scc_dir = scc_dir,
+                control_df = control_df,
+                M = M,
+                enabled = TRUE,
+                som_nodes = spectral_variant_som_nodes,
+                cosine_threshold = spectral_variant_cosine_threshold,
+                max_variants = spectral_variant_max_variants,
+                min_events = spectral_variant_min_events,
+                seed = seed,
+                warn = TRUE
+            ),
+            error = function(e) {
+                warning(
+                    "Spectral-variant optimization could not build a variant library; using the base reference matrix. Reason: ",
+                    conditionMessage(e),
+                    call. = FALSE
+                )
+                NULL
+            }
+        )
+        if (!is.null(spectral_variant_library)) {
+            attr(M, "spectral_variant_library") <- spectral_variant_library
+            .save_spectral_variant_library(spectral_variant_library, output_paths$spectral_variant_library_rds)
+            spectral_variant_library_file <- output_paths$spectral_variant_library_rds
+        }
+    }
 
     .save_reference_matrix_csv(M, output_paths$reference_matrix_csv)
     if (!is.null(attr(M, "variances"))) {
@@ -524,7 +597,11 @@ unmix_controls <- function(
         n_threads = n_threads,
         cytometer = cytometer,
         output_dir = output_paths$unmixed_dir,
-        write_fcs = TRUE
+        write_fcs = TRUE,
+        save_report = FALSE,
+        optimize_spectral_variants = isTRUE(optimize_spectral_variants),
+        spectral_variant_library = spectral_variant_library,
+        spectral_variant_top_k = spectral_variant_top_k
     )
     unmixed_list <- .filter_unmix_excluded_af_outputs(
         unmixed_list = unmixed_list,
@@ -554,14 +631,47 @@ unmix_controls <- function(
         seed = seed
     )
 
+    if (is.null(report_file)) {
+        report_file <- output_paths$qc_report_pdf
+    }
+    qc_report <- NULL
+    if (isTRUE(save_report)) {
+        qc_report <- .write_scc_qc_report(
+            M_built = M,
+            M_report = M,
+            qc_summary = attr(M, "qc_summary"),
+            report_plot_dir = attr(M, "qc_plot_dir"),
+            unmixed_list = unmixed_list,
+            scc_dir = scc_dir,
+            output_file = report_file,
+            cytometer = cytometer,
+            method = unmix_method,
+            use_scatter_gating = use_scatter_gating,
+            seed = seed,
+            retained_qc_plot_dir = if (isTRUE(save_qc_plots)) output_dir else NULL
+        )
+    }
+
+    M_return <- M
+    if (!isTRUE(save_qc_plots)) {
+        attr(M_return, "qc_plot_dir") <- NULL
+    }
+
     invisible(list(
-        M = M,
+        M = M_return,
         W = W,
         unmixed_list = unmixed_list,
         reference_matrix_file = output_paths$reference_matrix_csv,
         detector_noise_file = output_paths$detector_noise_csv,
+        spectral_variant_library = spectral_variant_library,
+        spectral_variant_library_file = spectral_variant_library_file,
+        spectral_variant_info = if (!is.null(spectral_variant_library)) spectral_variant_library$info else NULL,
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
         variances_file = output_paths$variances_csv,
+        qc_report_file = if (isTRUE(save_report)) report_file else NULL,
+        qc_report = qc_report,
+        qc_summary = attr(M, "qc_summary"),
+        af_bank_info = attr(M, "af_bank_info"),
         spectra_file = if (isTRUE(save_qc_plots)) output_paths$spectra_file else NULL,
         af_spectra_file = if (isTRUE(save_qc_plots) && nrow(M_af) > 0) output_paths$af_spectra_file else NULL,
         unmixing_scatter_file = if (isTRUE(save_qc_plots)) output_paths$unmixing_scatter_png else NULL,

@@ -281,11 +281,257 @@
     invisible(NULL)
 }
 
+.normalize_scc_report_summary <- function(qc_summary) {
+    if (is.null(qc_summary)) {
+        return(data.frame())
+    }
+    qc_summary <- as.data.frame(qc_summary, stringsAsFactors = FALSE)
+    if (nrow(qc_summary) > 0 && all(c("fluorophore", "sample") %in% colnames(qc_summary))) {
+        qc_summary <- qc_summary[order(qc_summary$fluorophore, qc_summary$sample), , drop = FALSE]
+    }
+    qc_summary
+}
+
+.resolve_scc_report_marker_mapping <- function(qc_summary) {
+    sample_to_marker <- NULL
+    marker_display <- NULL
+    if (nrow(qc_summary) == 0) {
+        return(list(sample_to_marker = sample_to_marker, marker_display = marker_display))
+    }
+
+    sample_keys <- as.character(qc_summary$sample)
+    primary_vals <- trimws(as.character(qc_summary$fluorophore))
+    secondary_vals <- if ("marker" %in% colnames(qc_summary)) {
+        trimws(as.character(qc_summary$marker))
+    } else {
+        rep("", length(primary_vals))
+    }
+    secondary_vals[is.na(secondary_vals)] <- ""
+
+    keep <- !is.na(sample_keys) & sample_keys != "" & !is.na(primary_vals) & primary_vals != ""
+    if (any(keep)) {
+        sample_to_marker <- stats::setNames(primary_vals[keep], sample_keys[keep])
+        sample_to_marker <- sample_to_marker[!duplicated(names(sample_to_marker))]
+
+        display_vals <- primary_vals
+        show_secondary <- secondary_vals != "" &
+            toupper(secondary_vals) != "AUTOFLUORESCENCE" &
+            tolower(secondary_vals) != tolower(primary_vals)
+        display_vals[show_secondary] <- paste0(primary_vals[show_secondary], " / ", secondary_vals[show_secondary])
+        marker_display <- stats::setNames(display_vals[keep], primary_vals[keep])
+        marker_display <- marker_display[names(marker_display) != ""]
+        marker_display <- marker_display[!duplicated(names(marker_display))]
+    }
+
+    list(sample_to_marker = sample_to_marker, marker_display = marker_display)
+}
+
+.infer_scc_report_marker_mapping <- function(sample_ids, markers) {
+    sample_ids <- as.character(sample_ids)
+    markers <- as.character(markers)
+    markers <- markers[!is.na(markers) & markers != ""]
+    if (length(sample_ids) == 0 || length(markers) == 0) {
+        return(NULL)
+    }
+
+    marker_key <- stats::setNames(markers, tolower(markers))
+    sample_base <- tools::file_path_sans_ext(basename(sample_ids))
+    sample_base <- trimws(sub("\\s*\\([^)]*\\)\\s*$", "", sample_base))
+    hits <- marker_key[tolower(sample_base)]
+    keep <- !is.na(hits) & hits != ""
+    if (!any(keep)) {
+        return(NULL)
+    }
+    stats::setNames(as.character(hits[keep]), sample_ids[keep])
+}
+
+.read_scc_report_unmixed_fcs <- function(unmixed_dir) {
+    if (is.null(unmixed_dir) || !dir.exists(unmixed_dir)) {
+        return(NULL)
+    }
+    fcs_files <- list.files(unmixed_dir, pattern = "_unmixed\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+    if (length(fcs_files) == 0) {
+        return(NULL)
+    }
+
+    out <- lapply(fcs_files, function(path) {
+        ff <- flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE)
+        data <- as.data.frame(flowCore::exprs(ff), stringsAsFactors = FALSE, check.names = FALSE)
+        list(data = data, residuals = NULL)
+    })
+    names(out) <- sub("_unmixed\\.fcs$", "", basename(fcs_files), ignore.case = TRUE)
+    class(out) <- c("spectreasy_unmixed_results", "list")
+    out
+}
+
+.write_scc_qc_report <- function(M_built,
+                                 M_report = NULL,
+                                 qc_summary = NULL,
+                                 report_plot_dir = NULL,
+                                 unmixed_list = NULL,
+                                 scc_dir = "scc",
+                                 output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
+                                 cytometer = "auto",
+                                 method = "WLS",
+                                 use_scatter_gating = TRUE,
+                                 unmix_scatter_max_points = 1000,
+                                 unmix_scatter_axis_limit = NULL,
+                                 seed = NULL,
+                                 retained_qc_plot_dir = NULL) {
+    if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
+        stop("Please supply output_file to save the SCC PDF report.", call. = FALSE)
+    }
+    method <- toupper(as.character(method)[1])
+    if (!(method %in% c("WLS", "RWLS", "OLS", "NNLS"))) {
+        stop("method must be one of: WLS, RWLS, OLS, NNLS", call. = FALSE)
+    }
+    if (is.null(M_built) || nrow(M_built) == 0) {
+        stop("No valid spectra found while generating the SCC report.")
+    }
+    if (is.null(M_report)) {
+        M_report <- M_built
+    } else {
+        M_report <- .as_reference_matrix(M_report, "M_report")
+    }
+    qc_summary <- .normalize_scc_report_summary(qc_summary)
+    if (is.null(report_plot_dir) || !dir.exists(report_plot_dir)) {
+        report_plot_dir <- attr(M_built, "qc_plot_dir")
+    }
+
+    fcs_files <- if (dir.exists(scc_dir)) {
+        list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+    } else {
+        character()
+    }
+    pd <- attr(M_built, "detector_pd")
+    if (length(fcs_files) > 0) {
+        ff_meta <- flowCore::read.FCS(fcs_files[1], transformation = FALSE, truncate_max_range = FALSE)
+        pd <- flowCore::pData(flowCore::parameters(ff_meta))
+    }
+    if (!is.data.frame(pd)) {
+        pd <- NULL
+    }
+
+    if (!requireNamespace("png", quietly = TRUE)) {
+        stop("Package 'png' is required to embed SCC QC plots in the report.")
+    }
+
+    out_dir <- dirname(output_file)
+    if (!is.na(out_dir) && nzchar(out_dir) && out_dir != ".") {
+        dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+    }
+    grDevices::pdf(output_file, width = 11, height = 8.5)
+    on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
+
+    scc_dir_line <- paste(strwrap(paste0("SCC directory: ", normalizePath(scc_dir, mustWork = FALSE)), width = 85), collapse = "\n")
+
+    grid::grid.newpage()
+    grid::grid.text("spectreasy: Single-Color Control Review", x = 0.5, y = 0.7, gp = grid::gpar(fontsize = 20, fontface = "bold"))
+    grid::grid.text(
+        paste0(
+            "Generated on: ", Sys.time(), "\n",
+            scc_dir_line, "\n",
+            "Controls processed: ", nrow(qc_summary), "\n",
+            "Unmixing method for scatter matrix: ", method, "\n",
+            "Workflow intent: review SCC quality tied to the reported unmixing matrix."
+        ),
+        x = 0.5,
+        y = 0.48,
+        just = "center",
+        gp = grid::gpar(fontsize = 11, lineheight = 1.3)
+    )
+
+    if (nrow(qc_summary) > 0) {
+        rows_per_page <- 24
+        page_starts <- seq(1, nrow(qc_summary), by = rows_per_page)
+        for (start_idx in page_starts) {
+            end_idx <- min(start_idx + rows_per_page - 1, nrow(qc_summary))
+            block <- qc_summary[start_idx:end_idx, , drop = FALSE]
+            grid::grid.newpage()
+            grid::grid.text("SCC Summary", x = 0.05, y = 0.95, just = c("left", "top"), gp = grid::gpar(fontsize = 16, fontface = "bold"))
+            grid::grid.text(
+                paste(.format_scc_summary_lines(block), collapse = "\n"),
+                x = 0.05,
+                y = 0.9,
+                just = c("left", "top"),
+                gp = grid::gpar(fontsize = 9, fontfamily = "mono", lineheight = 1.15)
+            )
+        }
+    }
+
+    .draw_af_bank_qc_pages(M_built, attr(M_built, "af_bank_info"), pd = pd)
+
+    keep_non_af <- !grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
+    M_no_af <- M_report[keep_non_af, , drop = FALSE]
+
+    if (nrow(M_no_af) > 0) {
+        .draw_report_ggplot_page(plot_spectra(M_no_af, pd = pd, output_file = NULL), height_ratio = 0.6)
+    }
+
+    if (nrow(M_no_af) > 1) {
+        sim_mat <- calculate_similarity_matrix(M_no_af)
+        .draw_report_ggplot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
+        ssm_method <- if (method %in% c("NNLS", "RWLS")) {
+            if (identical(method, "RWLS")) "WLS" else "OLS"
+        } else {
+            method
+        }
+        .draw_report_ggplot_page(plot_ssm(calculate_ssm(M_no_af, method = ssm_method), output_file = NULL))
+
+        if (is.null(unmixed_list)) {
+            unmixed_list <- unmix_samples(
+                sample_dir = scc_dir,
+                M = M_report,
+                method = method,
+                cytometer = cytometer,
+                write_fcs = FALSE,
+                save_report = FALSE,
+                verbose = FALSE
+            )
+        }
+        marker_mapping <- .resolve_scc_report_marker_mapping(qc_summary)
+        if (is.null(marker_mapping$sample_to_marker) && !is.null(unmixed_list)) {
+            marker_mapping$sample_to_marker <- .infer_scc_report_marker_mapping(
+                sample_ids = names(unmixed_list),
+                markers = rownames(M_no_af)
+            )
+        }
+        p_scatter <- tryCatch(
+            plot_unmixing_scatter_matrix(
+                unmixed_list = unmixed_list,
+                sample_to_marker = marker_mapping$sample_to_marker,
+                markers = rownames(M_no_af),
+                marker_display = NULL,
+                output_file = NULL,
+                max_points_per_sample = unmix_scatter_max_points,
+                axis_limit = unmix_scatter_axis_limit,
+                seed = seed
+            ),
+            error = function(e) NULL
+        )
+        if (!is.null(p_scatter)) {
+            .draw_report_ggplot_page(p_scatter, square = TRUE)
+        }
+    }
+
+    if (nrow(qc_summary) > 0 && !is.null(report_plot_dir) && dir.exists(report_plot_dir)) {
+        for (i in seq_len(nrow(qc_summary))) {
+            .draw_scc_report_sample_page(qc_summary[i, , drop = FALSE], report_plot_dir = report_plot_dir, use_scatter_gating = use_scatter_gating)
+        }
+    }
+
+    message("SCC report saved to: ", output_file)
+    invisible(list(M = M_built, qc_summary = qc_summary, qc_plot_dir = retained_qc_plot_dir, af_bank_info = attr(M_built, "af_bank_info"), method = method))
+}
+
 #' Generate SCC QC Report
 #'
 #' Builds a reference matrix from single-color controls, assembles a PDF report
 #' for pre-unmix review, and can optionally retain the intermediate QC PNG plots.
 #'
+#' @param results Optional result list returned by [unmix_controls()]. When
+#'   supplied, its in-memory matrix and unmixed SCCs are reused instead of
+#'   rerunning SCC unmixing.
 #' @param M Optional precomputed reference matrix. If omitted, the report uses the
 #'   matrix generated from the supplied SCC files.
 #' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
@@ -293,6 +539,9 @@
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param scc_dir Directory containing SCC FCS files.
 #' @param output_file Path to save the PDF report. Defaults to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.
+#' @param output_dir Optional `unmix_controls()` output directory. When supplied,
+#'   defaults for `output_file`, `qc_plot_dir`, and `unmixing_matrix_file` are
+#'   resolved relative to this directory.
 #' @param control_file Control mapping CSV path.
 #' @param cytometer Cytometer name passed to [build_reference_matrix()]. The
 #'   default, `"auto"`, infers the cytometer from FCS detector names when possible.
@@ -330,10 +579,12 @@
 #' }
 #' @export
 qc_controls <- function(
+    results = NULL,
     M = NULL,
     unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
     scc_dir = "scc",
     output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
+    output_dir = NULL,
     control_file = "fcs_mapping.csv",
     cytometer = "auto",
     method = "WLS",
@@ -348,6 +599,20 @@ qc_controls <- function(
     seed = NULL,
     ...
 ) {
+    output_file_missing <- missing(output_file)
+    qc_plot_dir_missing <- missing(qc_plot_dir)
+    method_missing <- missing(method)
+    if (!is.null(output_dir)) {
+        if (output_file_missing) {
+            output_file <- file.path(output_dir, "qc_controls_report.pdf")
+        }
+        if (qc_plot_dir_missing) {
+            qc_plot_dir <- output_dir
+        }
+        if (missing(unmixing_matrix_file)) {
+            unmixing_matrix_file <- file.path(output_dir, "scc_reference_matrix.csv")
+        }
+    }
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the SCC PDF report.", call. = FALSE)
     }
@@ -357,9 +622,57 @@ qc_controls <- function(
     }
 
     message("Generating SCC QC report...")
-    out_dir <- dirname(output_file)
-    if (!is.na(out_dir) && nzchar(out_dir) && out_dir != ".") {
-        dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+    if (!is.null(results)) {
+        M_built <- .as_reference_matrix(results$M, "results$M")
+        M_report <- if (!is.null(M)) .as_reference_matrix(M, "M") else M_built
+        qc_summary <- if (!is.null(results$qc_summary)) results$qc_summary else attr(M_built, "qc_summary")
+        report_plot_dir <- if (!is.null(results$qc_plot_dir)) results$qc_plot_dir else attr(M_built, "qc_plot_dir")
+        retained_qc_plot_dir <- if (isTRUE(save_qc_pngs)) report_plot_dir else NULL
+        method <- if (method_missing && !is.null(results$static_unmixing_matrix_method)) {
+            results$static_unmixing_matrix_method
+        } else {
+            method
+        }
+        return(.write_scc_qc_report(
+            M_built = M_built,
+            M_report = M_report,
+            qc_summary = qc_summary,
+            report_plot_dir = report_plot_dir,
+            unmixed_list = results$unmixed_list,
+            scc_dir = scc_dir,
+            output_file = output_file,
+            cytometer = cytometer,
+            method = method,
+            use_scatter_gating = use_scatter_gating,
+            unmix_scatter_max_points = unmix_scatter_max_points,
+            unmix_scatter_axis_limit = unmix_scatter_axis_limit,
+            seed = seed,
+            retained_qc_plot_dir = retained_qc_plot_dir
+        ))
+    }
+
+    if (!is.null(output_dir) && file.exists(unmixing_matrix_file)) {
+        M_built <- .read_unmixing_matrix_csv(unmixing_matrix_file)
+        M_built <- .as_reference_matrix(M_built, "unmixing_matrix_file")
+        M_report <- if (!is.null(M)) .as_reference_matrix(M, "M") else M_built
+        report_plot_dir <- if (dir.exists(file.path(output_dir, "fsc_ssc"))) output_dir else NULL
+        unmixed_list <- .read_scc_report_unmixed_fcs(file.path(output_dir, "unmixed_fcs"))
+        return(.write_scc_qc_report(
+            M_built = M_built,
+            M_report = M_report,
+            qc_summary = attr(M_built, "qc_summary"),
+            report_plot_dir = report_plot_dir,
+            unmixed_list = unmixed_list,
+            scc_dir = scc_dir,
+            output_file = output_file,
+            cytometer = cytometer,
+            method = method,
+            use_scatter_gating = use_scatter_gating,
+            unmix_scatter_max_points = unmix_scatter_max_points,
+            unmix_scatter_axis_limit = unmix_scatter_axis_limit,
+            seed = seed,
+            retained_qc_plot_dir = if (isTRUE(save_qc_pngs)) report_plot_dir else NULL
+        ))
     }
 
     plot_dir_info <- .prepare_scc_report_plot_dir(qc_plot_dir = qc_plot_dir, save_qc_pngs = save_qc_pngs)
@@ -416,130 +729,20 @@ qc_controls <- function(
         M_report <- M_built
     }
 
-    fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-    if (length(fcs_files) == 0) {
-        stop("No FCS files found in scc_dir: ", scc_dir)
-    }
-    ff_meta <- flowCore::read.FCS(fcs_files[1], transformation = FALSE, truncate_max_range = FALSE)
-    pd <- flowCore::pData(flowCore::parameters(ff_meta))
-
-    if (!requireNamespace("png", quietly = TRUE)) {
-        stop("Package 'png' is required to embed SCC QC plots in the report.")
-    }
-
-    grDevices::pdf(output_file, width = 11, height = 8.5)
-    on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
-
-    scc_dir_line <- paste(strwrap(paste0("SCC directory: ", normalizePath(scc_dir, mustWork = FALSE)), width = 85), collapse = "\n")
-
-    grid::grid.newpage()
-    grid::grid.text("spectreasy: Single-Color Control Review", x = 0.5, y = 0.7, gp = grid::gpar(fontsize = 20, fontface = "bold"))
-    grid::grid.text(
-        paste0(
-            "Generated on: ", Sys.time(), "\n",
-            scc_dir_line, "\n",
-            "Controls processed: ", nrow(qc_summary), "\n",
-            "Unmixing method for scatter matrix: ", method, "\n",
-            "Workflow intent: review SCC quality before unmix_controls()."
-        ),
-        x = 0.5,
-        y = 0.48,
-        just = "center",
-        gp = grid::gpar(fontsize = 11, lineheight = 1.3)
+    .write_scc_qc_report(
+        M_built = M_built,
+        M_report = M_report,
+        qc_summary = qc_summary,
+        report_plot_dir = report_plot_dir,
+        unmixed_list = NULL,
+        scc_dir = scc_dir,
+        output_file = output_file,
+        cytometer = cytometer,
+        method = method,
+        use_scatter_gating = use_scatter_gating,
+        unmix_scatter_max_points = unmix_scatter_max_points,
+        unmix_scatter_axis_limit = unmix_scatter_axis_limit,
+        seed = seed,
+        retained_qc_plot_dir = retained_qc_plot_dir
     )
-
-    if (nrow(qc_summary) > 0) {
-        rows_per_page <- 24
-        page_starts <- seq(1, nrow(qc_summary), by = rows_per_page)
-        for (start_idx in page_starts) {
-            end_idx <- min(start_idx + rows_per_page - 1, nrow(qc_summary))
-            block <- qc_summary[start_idx:end_idx, , drop = FALSE]
-            grid::grid.newpage()
-            grid::grid.text("SCC Summary", x = 0.05, y = 0.95, just = c("left", "top"), gp = grid::gpar(fontsize = 16, fontface = "bold"))
-            grid::grid.text(
-                paste(.format_scc_summary_lines(block), collapse = "\n"),
-                x = 0.05,
-                y = 0.9,
-                just = c("left", "top"),
-                gp = grid::gpar(fontsize = 9, fontfamily = "mono", lineheight = 1.15)
-            )
-        }
-    }
-
-    .draw_af_bank_qc_pages(M_built, attr(M_built, "af_bank_info"), pd = pd)
-
-    keep_non_af <- !grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
-    M_no_af <- M_report[keep_non_af, , drop = FALSE]
-
-    if (nrow(M_no_af) > 0) {
-        .draw_report_ggplot_page(plot_spectra(M_no_af, pd = pd, output_file = NULL), height_ratio = 0.6)
-    }
-
-    if (nrow(M_no_af) > 1) {
-        sim_mat <- calculate_similarity_matrix(M_no_af)
-        .draw_report_ggplot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
-        ssm_method <- if (method %in% c("NNLS", "RWLS")) {
-            if (identical(method, "RWLS")) "WLS" else "OLS"
-        } else {
-            method
-        }
-        .draw_report_ggplot_page(plot_ssm(calculate_ssm(M_no_af, method = ssm_method), output_file = NULL))
-
-        unmixed_list <- unmix_samples(
-            sample_dir = scc_dir,
-            M = M_report,
-            method = method,
-            cytometer = cytometer,
-            write_fcs = FALSE,
-            verbose = FALSE
-        )
-        sample_to_marker <- NULL
-        marker_display <- NULL
-        if (nrow(qc_summary) > 0) {
-            sample_keys <- as.character(qc_summary$sample)
-            primary_vals <- trimws(as.character(qc_summary$fluorophore))
-            secondary_vals <- if ("marker" %in% colnames(qc_summary)) {
-                trimws(as.character(qc_summary$marker))
-            } else {
-                rep("", length(primary_vals))
-            }
-            secondary_vals[is.na(secondary_vals)] <- ""
-
-            keep <- !is.na(sample_keys) & sample_keys != "" & !is.na(primary_vals) & primary_vals != ""
-            if (any(keep)) {
-                sample_to_marker <- stats::setNames(primary_vals[keep], sample_keys[keep])
-                sample_to_marker <- sample_to_marker[!duplicated(names(sample_to_marker))]
-
-                display_vals <- primary_vals
-                show_secondary <- secondary_vals != "" &
-                    toupper(secondary_vals) != "AUTOFLUORESCENCE" &
-                    tolower(secondary_vals) != tolower(primary_vals)
-                display_vals[show_secondary] <- paste0(primary_vals[show_secondary], " / ", secondary_vals[show_secondary])
-                marker_display <- stats::setNames(display_vals[keep], primary_vals[keep])
-                marker_display <- marker_display[names(marker_display) != ""]
-                marker_display <- marker_display[!duplicated(names(marker_display))]
-            }
-        }
-        scatter_markers <- rownames(M_no_af)
-        p_scatter <- plot_unmixing_scatter_matrix(
-            unmixed_list = unmixed_list,
-            sample_to_marker = sample_to_marker,
-            markers = scatter_markers,
-            marker_display = NULL,
-            output_file = NULL,
-            max_points_per_sample = unmix_scatter_max_points,
-            axis_limit = unmix_scatter_axis_limit,
-            seed = seed
-        )
-        .draw_report_ggplot_page(p_scatter, square = TRUE)
-    }
-
-    if (nrow(qc_summary) > 0) {
-        for (i in seq_len(nrow(qc_summary))) {
-            .draw_scc_report_sample_page(qc_summary[i, , drop = FALSE], report_plot_dir = report_plot_dir, use_scatter_gating = use_scatter_gating)
-        }
-    }
-
-    message("SCC report saved to: ", output_file)
-    invisible(list(M = M_built, qc_summary = qc_summary, qc_plot_dir = retained_qc_plot_dir, af_bank_info = attr(M_built, "af_bank_info"), method = method))
 }

@@ -123,6 +123,34 @@
     invisible(NULL)
 }
 
+.prepare_qc_report_png_dir <- function(qc_plot_dir = NULL, save_qc_pngs = FALSE, output_file = NULL) {
+    if (!isTRUE(save_qc_pngs)) {
+        return(NULL)
+    }
+    if (is.null(qc_plot_dir) || !nzchar(trimws(as.character(qc_plot_dir)[1]))) {
+        report_dir <- if (!is.null(output_file)) dirname(output_file) else "."
+        qc_plot_dir <- file.path(report_dir, "qc_samples_plots")
+    }
+    qc_plot_dir <- normalizePath(qc_plot_dir, mustWork = FALSE)
+    dir.create(qc_plot_dir, showWarnings = FALSE, recursive = TRUE)
+    qc_plot_dir
+}
+
+.save_qc_report_png <- function(p, qc_plot_dir, filename, width = 11, height = 8.5) {
+    if (is.null(p) || is.null(qc_plot_dir)) {
+        return(invisible(NULL))
+    }
+    ggplot2::ggsave(
+        filename = file.path(qc_plot_dir, filename),
+        plot = p,
+        width = width,
+        height = height,
+        units = "in",
+        dpi = 200
+    )
+    invisible(file.path(qc_plot_dir, filename))
+}
+
 .split_qc_report_batches <- function(values, max_per_page = 15) {
     values <- as.character(values)
     values <- values[!is.na(values) & values != ""]
@@ -741,8 +769,13 @@
 #'   `c(-1e5, 1e5)` on every NxN panel.
 #' @param nxn_all_samples Logical; if `TRUE`, include per-sample NxN pages for all samples.
 #'   If `FALSE` (default), only include NxN pages for the first sample in `results`.
+#' @param qc_plot_dir Directory where report PNG plots are written when
+#'   `save_qc_pngs = TRUE`.
+#' @param save_qc_pngs Logical; if `TRUE`, save report plot pages as PNG files
+#'   alongside the PDF report.
 #'
-#' @return Invisibly returns `NULL`; writes report to disk.
+#' @return Invisibly returns a list with `output_file` and `qc_plot_dir`; writes
+#'   report artifacts to disk.
 #' @export
 #' @examples
 #' M_demo <- rbind(
@@ -784,7 +817,9 @@ qc_samples <- function(results,
                        sample_nxn_transform = c("none", "asinh"),
                        sample_nxn_asinh_cofactor = 150,
                        sample_nxn_axis_limit = NULL,
-                       nxn_all_samples = FALSE) {
+                       nxn_all_samples = FALSE,
+                       qc_plot_dir = NULL,
+                       save_qc_pngs = FALSE) {
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the QC PDF report.", call. = FALSE)
     }
@@ -849,6 +884,11 @@ qc_samples <- function(results,
     if (!is.na(out_dir) && nzchar(out_dir) && out_dir != ".") {
         dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
     }
+    retained_qc_plot_dir <- .prepare_qc_report_png_dir(
+        qc_plot_dir = qc_plot_dir,
+        save_qc_pngs = save_qc_pngs,
+        output_file = output_file
+    )
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
 
@@ -879,7 +919,9 @@ qc_samples <- function(results,
             M = M,
             max_files_per_page = overview_files_per_page
         )
-        for (p in rms_pages) {
+        for (i in seq_along(rms_pages)) {
+            p <- rms_pages[[i]]
+            .save_qc_report_png(p, retained_qc_plot_dir, sprintf("rms_residuals_%02d.png", i))
             .draw_qc_report_plot_page(
                 p,
                 height_ratio = 0.72,
@@ -890,7 +932,9 @@ qc_samples <- function(results,
 
     message("  - Adding spectra overlay...")
     if (nrow(M_no_af) > 0) {
-        .draw_qc_report_spectra_page(plot_spectra(M_no_af, pd = pd, output_file = NULL))
+        spectra_plot <- plot_spectra(M_no_af, pd = pd, output_file = NULL)
+        .save_qc_report_png(spectra_plot, retained_qc_plot_dir, "spectra_overlay.png")
+        .draw_qc_report_spectra_page(spectra_plot)
     }
 
     if (nrow(M_no_af) > 1) {
@@ -902,7 +946,9 @@ qc_samples <- function(results,
             max_markers_per_page = matrix_markers_per_page,
             item_label = "Markers"
         )
-        for (p in sim_pages) {
+        for (i in seq_along(sim_pages)) {
+            p <- sim_pages[[i]]
+            .save_qc_report_png(p, retained_qc_plot_dir, sprintf("similarity_matrix_%02d.png", i))
             .draw_qc_report_plot_page(p)
         }
     }
@@ -921,7 +967,9 @@ qc_samples <- function(results,
             max_markers_per_page = matrix_markers_per_page,
             item_label = "Markers"
         )
-        for (p in ssm_pages) {
+        for (i in seq_along(ssm_pages)) {
+            p <- ssm_pages[[i]]
+            .save_qc_report_png(p, retained_qc_plot_dir, sprintf("spread_matrix_%02d.png", i))
             .draw_qc_report_plot_page(p)
         }
     }
@@ -937,7 +985,9 @@ qc_samples <- function(results,
                 nps_scores,
                 max_files_per_page = overview_files_per_page
             )
-            for (p in nps_pages) {
+            for (i in seq_along(nps_pages)) {
+                p <- nps_pages[[i]]
+                .save_qc_report_png(p, retained_qc_plot_dir, sprintf("negative_population_spread_%02d.png", i))
                 .draw_qc_report_plot_page(p)
             }
         }
@@ -956,9 +1006,12 @@ qc_samples <- function(results,
         axis_limit = sample_nxn_axis_limit,
         all_samples = nxn_all_samples
     )
-    for (p in scatter_pages) {
+    for (i in seq_along(scatter_pages)) {
+        p <- scatter_pages[[i]]
+        .save_qc_report_png(p, retained_qc_plot_dir, sprintf("sample_nxn_scatter_%02d.png", i))
         .draw_qc_report_plot_page(p, square = TRUE)
     }
 
     message("Report saved to: ", output_file)
+    invisible(list(output_file = output_file, qc_plot_dir = retained_qc_plot_dir))
 }

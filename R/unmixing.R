@@ -129,6 +129,19 @@
     invisible(NULL)
 }
 
+.default_unmix_samples_report_file <- function(output_dir) {
+    output_dir <- as.character(output_dir)[1]
+    if (is.na(output_dir) || !nzchar(output_dir)) {
+        output_dir <- file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs")
+    }
+    report_dir <- if (identical(basename(normalizePath(output_dir, mustWork = FALSE)), "unmixed_fcs")) {
+        dirname(output_dir)
+    } else {
+        output_dir
+    }
+    file.path(report_dir, "qc_samples_report.pdf")
+}
+
 .read_unmixing_matrix_csv <- function(path) {
     if (!file.exists(path)) stop("unmixing_matrix_file not found: ", path)
     df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
@@ -612,23 +625,23 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   `multithreading = TRUE`. `"auto"` uses `RcppParallel::defaultNumThreads()`.
 #'   Integers larger than the available thread count are clipped to the
 #'   available count.
-#' @param cytometer Cytometer name used only when `unmix_samples()` must build a
-#'   reference matrix dynamically. The default, `"auto"`, infers the cytometer
-#'   from FCS detector names when possible.
-#' @param scc_dir Directory containing single-color control files. Used to
-#'   dynamically build the reference matrix if `M` and `unmixing_matrix_file`
-#'   are missing.
-#' @param control_file Path to the control mapping CSV.
-#'   Used when dynamically building the reference matrix.
+#' @param cytometer Legacy compatibility argument. Reference-matrix construction
+#'   now belongs in [unmix_controls()]; `unmix_samples()` requires either `M` or
+#'   a valid `unmixing_matrix_file`.
+#' @param scc_dir Optional SCC directory used only to locate saved detector-noise
+#'   metadata when available. It is not used to rebuild a missing reference
+#'   matrix.
+#' @param control_file Legacy compatibility argument. To create a reference
+#'   matrix from a control mapping, run [unmix_controls()] first.
 #' @param af_n_bands Number of AF basis signatures to extract from the pooled
 #'   unstained/AF control events. Use `"auto"` to build the default SOM AF bank.
-#'   Only used when `unmix_samples()` has to build a reference matrix itself.
+#'   Legacy compatibility argument; build AF references with [unmix_controls()].
 #' @param af_bands_per_file Deprecated compatibility argument. Multiple AF
 #'   sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
 #'   control the size of the one shared AF bank.
 #' @param af_auto_max_bands Maximum SOM nodes that `"auto"` may create before
-#'   prepending the mean AF row. Only used when `unmix_samples()` has to build a
-#'   reference matrix itself.
+#'   prepending the mean AF row. Legacy compatibility argument; build AF
+#'   references with [unmix_controls()].
 #' @param af_min_cluster_events Compatibility argument retained for older
 #'   workflows.
 #' @param af_min_cluster_proportion Compatibility argument retained for older
@@ -636,25 +649,35 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param af_n_bands_sensitivity Compatibility argument retained for older
 #'   workflows.
 #' @param af_refine Logical; if `TRUE`, run the optional second-pass AF
-#'   refinement. Only used when `unmix_samples()` has to build a reference
-#'   matrix itself.
+#'   refinement. Legacy compatibility argument; build refined AF references with
+#'   [unmix_controls()].
 #' @param af_refine_problem_quantile Quantile used to choose high-error
-#'   unstained cells for AF refinement. Only used when `unmix_samples()` has to
-#'   build a reference matrix itself.
+#'   unstained cells for AF refinement. Legacy compatibility argument.
 #' @param af_deduplicate Logical; if `TRUE`, remove near-identical AF spectra
-#'   when building a reference matrix dynamically.
+#'   when building a reference matrix. Legacy compatibility argument.
 #' @param af_deduplication_threshold Cosine similarity threshold used when
 #'   `af_deduplicate = TRUE`.
 #' @param af_contaminant_threshold Cosine similarity threshold used to remove
-#'   AF candidates that are too similar to known fluorophore spectra when
-#'   building a reference matrix dynamically.
+#'   AF candidates that are too similar to known fluorophore spectra. Legacy
+#'   compatibility argument.
 #' @param af_assignment How to choose one AF row per event when a reference
 #'   matrix contains multiple AF rows. `"projection"` is the default.
 #'   `"residual_alignment"` and `"legacy"` are available for comparison.
-#' @param exclude_af Logical; whether to exclude AF from unmixing. Only used
-#'   when `unmix_samples()` has to build a reference matrix itself.
-#' @param include_multi_af Logical; whether to include multi-AF controls. Only
-#'   used when `unmix_samples()` has to build a reference matrix itself.
+#' @param optimize_spectral_variants Logical; if `TRUE`, reuse a saved or
+#'   attached single-colour-control spectral-variant library when available.
+#' @param spectral_variant_library Optional in-memory spectral-variant library,
+#'   usually returned by [unmix_controls()].
+#' @param spectral_variant_library_file Optional `.rds` path to a saved
+#'   spectral-variant library. If omitted, `unmix_samples()` looks for
+#'   `scc_spectral_variants.rds` beside `unmixing_matrix_file`.
+#' @param spectral_variant_top_k Number of best variant candidates to test per
+#'   positive fluorophore.
+#' @param spectral_variant_min_abundance Minimum unmixed abundance for a
+#'   fluorophore to be eligible for variant testing.
+#' @param exclude_af Legacy compatibility argument. Exclude AF while building
+#'   the matrix in [unmix_controls()], not in `unmix_samples()`.
+#' @param include_multi_af Legacy compatibility argument. Include multi-AF while
+#'   building the matrix in [unmix_controls()], not in `unmix_samples()`.
 #' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
 #'   stained sample event-wise WLS residuals, select the best candidate model by
 #'   held-out WLS residual score, and append the selected AF rows to the
@@ -663,6 +686,14 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param output_dir Directory to save unmixed FCS files when `write_fcs = TRUE`.
 #' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 #'   Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.
+#' @param save_report Logical; if `TRUE`, write a sample QC PDF report from the
+#'   in-memory unmixing results without rerunning unmixing.
+#' @param report Optional compatibility alias for `save_report`.
+#' @param report_file Optional output path for the sample QC PDF report.
+#' @param save_qc_plots Logical; if `TRUE`, save QC report plots as PNG files
+#'   in `qc_plot_dir` while creating the PDF report.
+#' @param qc_plot_dir Directory for sample QC report PNG files when
+#'   `save_qc_plots = TRUE`.
 #' @param subsample_n Optional integer; if provided, subsample the returned in-memory
 #'   results to at most `subsample_n` events per sample. The full unsampled unmixed
 #'   data will still be written to the FCS files.
@@ -739,16 +770,29 @@ unmix_samples <- function(sample_dir = "samples",
                           af_deduplication_threshold = 0.99,
                           af_contaminant_threshold = 0.99,
                           af_assignment = "projection",
+                          optimize_spectral_variants = TRUE,
+                          spectral_variant_library = NULL,
+                          spectral_variant_library_file = NULL,
+                          spectral_variant_top_k = 3L,
+                          spectral_variant_min_abundance = 1,
                           exclude_af = FALSE,
                           include_multi_af = FALSE,
                           estimate_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
+                          save_report = TRUE,
+                          report = NULL,
+                          report_file = NULL,
+                          save_qc_plots = FALSE,
+                          qc_plot_dir = NULL,
                           subsample_n = NULL,
                           seed = NULL,
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
                           verbose = TRUE) {
     return_type <- match.arg(return_type)
+    if (!is.null(report)) {
+        save_report <- isTRUE(report)
+    }
     .with_optional_seed(seed)
     af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
     variances_file_was_missing <- missing(variances_file)
@@ -778,41 +822,18 @@ unmix_samples <- function(sample_dir = "samples",
             scc_dir = scc_dir
         )
     } else {
-        # Try to build reference matrix dynamically
-        resolved_scc_dir <- if (!is.null(scc_dir)) scc_dir else "scc"
-        if (dir.exists(resolved_scc_dir)) {
-            message("Building reference matrix dynamically from: ", resolved_scc_dir)
-            M <- build_reference_matrix(
-                input_folder = resolved_scc_dir,
-                control_df = control_file,
-                af_n_bands = af_n_bands,
-                af_bands_per_file = af_bands_per_file,
-                af_auto_max_bands = af_auto_max_bands,
-                af_min_cluster_events = af_min_cluster_events,
-                af_min_cluster_proportion = af_min_cluster_proportion,
-                af_n_bands_sensitivity = af_n_bands_sensitivity,
-                af_refine = af_refine,
-                af_refine_problem_quantile = af_refine_problem_quantile,
-                af_deduplicate = af_deduplicate,
-                af_deduplication_threshold = af_deduplication_threshold,
-                af_contaminant_threshold = af_contaminant_threshold,
-                af_assignment = if (identical(af_assignment, "legacy")) "projection" else af_assignment,
-                exclude_af = exclude_af,
-                include_multi_af = include_multi_af,
-                cytometer = cytometer
-            )
-            M <- .load_detector_noise_for_unmixing(
-                M,
-                detector_noise_file = detector_noise_file,
-                scc_dir = resolved_scc_dir
+        if (!is.null(unmixing_matrix_file)) {
+            stop(
+                "Reference matrix not found: ", unmixing_matrix_file, ".\n",
+                "Run unmix_controls() first, or pass an explicit reference matrix with M.",
+                call. = FALSE
             )
         } else {
-            if (!is.null(unmixing_matrix_file)) {
-                stop("unmixing_matrix_file not found: ", unmixing_matrix_file, 
-                     ". Also, no reference matrix provided and 'scc' directory not found.")
-            } else {
-                stop("No reference matrix provided, and 'scc' directory not found. Supply M, a valid unmixing_matrix_file, or an scc_dir.")
-            }
+            stop(
+                "No reference matrix was provided.\n",
+                "Run unmix_controls() first, or pass an explicit reference matrix with M.",
+                call. = FALSE
+            )
         }
     }
 
@@ -824,6 +845,12 @@ unmix_samples <- function(sample_dir = "samples",
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(multithreading = multithreading, n_threads = n_threads)
     estimate_af <- isTRUE(estimate_af)
+    spectral_variant_library <- .resolve_spectral_variant_library_for_unmixing(
+        M = M,
+        spectral_variant_library = spectral_variant_library,
+        spectral_variant_library_file = spectral_variant_library_file,
+        unmixing_matrix_file = unmixing_matrix_file
+    )
     M <- .ensure_wls_variances(
         M = M,
         method = method_upper,
@@ -897,6 +924,10 @@ unmix_samples <- function(sample_dir = "samples",
             multithreading = multithreading,
             n_threads = n_threads,
             af_assignment = af_assignment,
+            spectral_variant_library = spectral_variant_library,
+            optimize_spectral_variants = isTRUE(optimize_spectral_variants) && .spectral_variant_library_has_variants(spectral_variant_library),
+            spectral_variant_top_k = spectral_variant_top_k,
+            spectral_variant_min_abundance = spectral_variant_min_abundance,
             return_residuals = TRUE
         )
         
@@ -936,17 +967,36 @@ unmix_samples <- function(sample_dir = "samples",
         .tick_unmix_samples_progress(progress_bar, entry_i)
     }
 
+    class(results) <- c("spectreasy_unmixed_results", "list")
+    attr(results, "method") <- method_upper
+    attr(results, "reference_matrix") <- M
+    attr(results, "blind_af_info") <- attr(M, "blind_af_info")
+    attr(results, "spectral_variant_library") <- spectral_variant_library
+    attr(results, "qc_report_file") <- NULL
+    attr(results, "qc_plot_dir") <- NULL
+
+    if (isTRUE(save_report)) {
+        if (is.null(report_file)) {
+            report_file <- .default_unmix_samples_report_file(output_dir)
+        }
+        report_res <- qc_samples(
+            results = results,
+            M = M,
+            output_file = report_file,
+            method = method_upper,
+            qc_plot_dir = qc_plot_dir,
+            save_qc_pngs = save_qc_plots
+        )
+        attr(results, "qc_report_file") <- report_res$output_file
+        attr(results, "qc_plot_dir") <- report_res$qc_plot_dir
+    }
+
     if (identical(return_type, "flowSet")) {
         return(invisible(.unmixed_results_to_flowset(results)))
     }
     if (identical(return_type, "SingleCellExperiment")) {
         return(invisible(.unmixed_results_to_sce(results, sample_entries = sample_entries)))
     }
-
-    class(results) <- c("spectreasy_unmixed_results", "list")
-    attr(results, "method") <- method_upper
-    attr(results, "reference_matrix") <- M
-    attr(results, "blind_af_info") <- attr(M, "blind_af_info")
 
     invisible(results)
 }

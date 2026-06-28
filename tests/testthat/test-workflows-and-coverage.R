@@ -226,8 +226,33 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     expect_true(file.exists(ctrl$unmixing_matrix_file))
     expect_true(file.exists(ctrl$spectra_file))
     expect_true(file.exists(ctrl$unmixing_scatter_file))
+    expect_true(file.exists(ctrl$qc_report_file))
     expect_s3_class(ctrl$unmixing_scatter_plot, "ggplot")
     expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))
+
+    regenerated_pdf <- tempfile(fileext = ".pdf")
+    expect_no_error(
+        suppressMessages(
+            spectreasy::qc_controls(
+                results = ctrl,
+                scc_dir = wf$scc_dir,
+                output_file = regenerated_pdf
+            )
+        )
+    )
+    expect_true(file.exists(regenerated_pdf))
+
+    output_dir_pdf <- tempfile(fileext = ".pdf")
+    expect_no_error(
+        suppressMessages(
+            spectreasy::qc_controls(
+                output_dir = output_dir,
+                scc_dir = tempfile("missing_scc_"),
+                output_file = output_dir_pdf
+            )
+        )
+    )
+    expect_true(file.exists(output_dir_pdf))
 })
 
 test_that("unmix_controls handles WLS output and exclude_af branch", {
@@ -345,6 +370,20 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
     expect_setequal(names(call_result$value), c("sample_a", "sample_b"))
     expect_true(file.exists(file.path(output_dir, "sample_a_unmixed.fcs")))
     expect_true(file.exists(file.path(output_dir, "sample_b_unmixed.fcs")))
+    expect_true(file.exists(attr(call_result$value, "qc_report_file")))
+
+    qc_png_dir <- tempfile("spectreasy_sample_qc_pngs_")
+    res_with_pngs <- spectreasy::unmix_samples(
+        sample_dir = sample_dir,
+        M = M,
+        method = "OLS",
+        output_dir = tempfile("spectreasy_covr_unmixed_png_"),
+        save_qc_plots = TRUE,
+        qc_plot_dir = qc_png_dir,
+        write_fcs = FALSE
+    )
+    expect_true(dir.exists(attr(res_with_pngs, "qc_plot_dir")))
+    expect_true(length(list.files(qc_png_dir, pattern = "\\.png$", full.names = TRUE)) > 0)
 })
 
 test_that("qc_controls writes a PDF from synthetic SCC files", {

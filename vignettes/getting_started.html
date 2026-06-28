@@ -837,14 +837,14 @@ remains useful as control-spread QC metadata.</p>
 <span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a>mapped_names[na_idx] <span class="ot">&lt;-</span> <span class="fu">rownames</span>(reference_matrix)[na_idx]</span>
 <span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a><span class="fu">rownames</span>(reference_matrix) <span class="ot">&lt;-</span> <span class="fu">unname</span>(mapped_names)</span>
 <span id="cb14-8"><a href="#cb14-8" tabindex="-1"></a></span>
-<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a>unmixed_dynamic <span class="ot">&lt;-</span> <span class="fu">unmix_samples</span>(</span>
+<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a>unmixed_direct <span class="ot">&lt;-</span> <span class="fu">unmix_samples</span>(</span>
 <span id="cb14-10"><a href="#cb14-10" tabindex="-1"></a>  <span class="at">sample_dir =</span> <span class="fu">file.path</span>(project_dir, <span class="st">&quot;sample&quot;</span>),</span>
 <span id="cb14-11"><a href="#cb14-11" tabindex="-1"></a>  <span class="at">M =</span> reference_matrix,</span>
 <span id="cb14-12"><a href="#cb14-12" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
-<span id="cb14-13"><a href="#cb14-13" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="fu">file.path</span>(project_dir, <span class="st">&quot;spectreasy_outputs&quot;</span>, <span class="st">&quot;unmix_samples_dynamic&quot;</span>)</span>
+<span id="cb14-13"><a href="#cb14-13" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="fu">file.path</span>(project_dir, <span class="st">&quot;spectreasy_outputs&quot;</span>, <span class="st">&quot;unmix_samples_direct&quot;</span>)</span>
 <span id="cb14-14"><a href="#cb14-14" tabindex="-1"></a>)</span>
 <span id="cb14-15"><a href="#cb14-15" tabindex="-1"></a></span>
-<span id="cb14-16"><a href="#cb14-16" tabindex="-1"></a><span class="fu">names</span>(unmixed_dynamic)</span>
+<span id="cb14-16"><a href="#cb14-16" tabindex="-1"></a><span class="fu">names</span>(unmixed_direct)</span>
 <span id="cb14-17"><a href="#cb14-17" tabindex="-1"></a><span class="co">#&gt; [1] &quot;sample&quot;</span></span></code></pre></div>
 </div>
 <div id="inspect-quick-qc-plots" class="section level2">
