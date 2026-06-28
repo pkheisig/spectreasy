@@ -13,7 +13,7 @@ build_reference_matrix(
   exclude_af = FALSE,
   af_dir = "af",
   af_n_bands = "auto",
-  af_bands_per_file = 5,
+  af_bands_per_file = NULL,
   af_max_cells = 50000,
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,
@@ -21,6 +21,10 @@ build_reference_matrix(
   af_n_bands_sensitivity = 1.5,
   af_refine = FALSE,
   af_refine_problem_quantile = 0.99,
+  af_deduplicate = FALSE,
+  af_deduplication_threshold = 0.99,
+  af_contaminant_threshold = 0.99,
+  af_assignment = "projection",
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
@@ -58,14 +62,14 @@ even when they are present in `control_df`, the SCC folder, or `af_dir`.}
 \item{af_dir}{Directory with extra AF controls when `include_multi_af = TRUE`.}
 
 \item{af_n_bands}{Number of AF basis signatures to extract from the pooled
-unstained/AF control when only one AF source is available (`1` = classic
-single AF signature). The default, `"auto"`, chooses the number from AF
-event shapes. For `"auto"`, `af_auto_max_bands` controls the number of SOM
-nodes and a mean AF row is prepended.}
+unstained/AF control events (`1` = classic single AF signature). The
+default, `"auto"`, chooses the number from AF event shapes. For `"auto"`,
+`af_auto_max_bands` controls the number of SOM nodes and a mean AF row is
+prepended.}
 
-\item{af_bands_per_file}{Number of AF basis signatures requested per AF file
-when multiple AF sources are pooled (`5` files with the default `5` yields
-up to `25` shared AF bank signatures).}
+\item{af_bands_per_file}{Deprecated compatibility argument. Multiple AF
+sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
+control the size of the one shared AF bank.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used when
 deriving AF basis signatures.}
@@ -87,6 +91,23 @@ that modulates SOM AF spectra from high-error unstained cells.}
 
 \item{af_refine_problem_quantile}{Quantile used to choose high-error
 unstained cells for AF refinement. Default is 0.99.}
+
+\item{af_deduplicate}{Logical; if `TRUE`, remove near-identical AF spectra
+after SOM extraction/refinement using cosine similarity. Default is
+`FALSE` for backward compatibility.}
+
+\item{af_deduplication_threshold}{Cosine similarity threshold used when
+`af_deduplicate = TRUE`. Default is 0.99.}
+
+\item{af_contaminant_threshold}{Cosine similarity threshold used to remove
+AF candidates that are too similar to known fluorophore spectra. Default is
+0.99.}
+
+\item{af_assignment}{AF candidate assignment used during AF refinement.
+`"projection"` (default) chooses the AF band whose expected fluorophore
+spillover best brings apparent fluorophore signal toward zero.
+`"residual_alignment"` keeps the older detector-residual alignment score
+as an explicit alternative.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

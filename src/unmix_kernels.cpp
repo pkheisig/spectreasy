@@ -470,6 +470,55 @@ arma::mat spectreasy_rwls_unmix_cpp(const arma::mat& Y,
 }
 
 // [[Rcpp::export]]
+Rcpp::IntegerVector spectreasy_assign_af_projection_cpp(const arma::mat& Y,
+                                                        const arma::mat& F,
+                                                        const arma::mat& AF,
+                                                        const double tol = 1e-10) {
+    const arma::uword n_cells = Y.n_rows;
+    const arma::uword n_detectors = Y.n_cols;
+    const arma::uword n_fluors = F.n_rows;
+    const arma::uword n_af = AF.n_rows;
+    if (n_cells == 0 || n_detectors == 0 || n_fluors == 0 || n_af == 0) {
+        Rcpp::stop("Projection AF assignment requires non-empty Y, fluorophore matrix, and AF matrix.");
+    }
+    if (F.n_cols != n_detectors || AF.n_cols != n_detectors) {
+        Rcpp::stop("Y, F, and AF must have the same detector columns.");
+    }
+
+    const double eps = (std::isfinite(tol) && tol > 0) ? tol : 1e-10;
+    const arma::mat U = safe_inverse_cpp(F * F.t(), eps) * F;
+    const arma::mat V = U * AF.t();
+    const arma::mat Rlib = AF.t() - F.t() * V;
+    arma::rowvec denominator = arma::sum(arma::square(Rlib), 0);
+    for (arma::uword k = 0; k < n_af; ++k) {
+        if (!std::isfinite(denominator(k)) || denominator(k) <= eps) {
+            denominator(k) = eps;
+        }
+    }
+
+    const arma::mat F0 = Y * U.t();
+    Rcpp::IntegerVector assignments(n_cells);
+    for (arma::uword i = 0; i < n_cells; ++i) {
+        double best_score = arma::datum::inf;
+        arma::uword best_k = 0;
+        for (arma::uword k = 0; k < n_af; ++k) {
+            const double af_scale = arma::dot(Y.row(i), Rlib.col(k).t()) / denominator(k);
+            double score = 0.0;
+            for (arma::uword f = 0; f < n_fluors; ++f) {
+                score += std::abs(F0(i, f) - af_scale * V(f, k));
+            }
+            if (score < best_score) {
+                best_score = score;
+                best_k = k;
+            }
+        }
+        assignments(i) = static_cast<int>(best_k + 1);
+    }
+
+    return assignments;
+}
+
+// [[Rcpp::export]]
 arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
                                        const arma::mat& M,
                                        const arma::uvec& fluor_idx,

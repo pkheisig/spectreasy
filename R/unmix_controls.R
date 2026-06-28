@@ -350,11 +350,12 @@
 #' @param unmix_method SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
-#' @param af_n_bands Number of AF bands to extract from the unstained control
-#'   when only one AF source is available. Use `"auto"` to select the count
-#'   from AF event shapes. Default is `"auto"`.
-#' @param af_bands_per_file Number of AF bands requested per AF file when
-#'   multiple AF sources are pooled. Default is 5.
+#' @param af_n_bands Number of AF basis signatures to extract from the pooled
+#'   unstained/AF control events. Use `"auto"` to build the default SOM AF bank.
+#'   Default is `"auto"`.
+#' @param af_bands_per_file Deprecated compatibility argument. Multiple AF
+#'   sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
+#'   control the size of the one shared AF bank.
 #' @param af_auto_max_bands Maximum SOM nodes that `"auto"` may create before
 #'   prepending the mean AF row.
 #'   Default is 100.
@@ -413,7 +414,7 @@ unmix_controls <- function(
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
     af_n_bands = "auto",
-    af_bands_per_file = 5,
+    af_bands_per_file = NULL,
     af_auto_max_bands = 100,
     af_min_cluster_events = 20,
     af_min_cluster_proportion = 0.005,

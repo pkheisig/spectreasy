@@ -258,9 +258,9 @@ The sections below are useful extensions, but they are not required for the core
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `unmix_controls()` and dynamic `unmix_samples()` reference-matrix builds use `af_n_bands = "auto"` to build a FlowSOM autofluorescence bank from the unstained control. If your cells have different AF shapes from cell to cell, the SOM bank represents those shapes as multiple candidate AF signatures.
+By default, `unmix_controls()` and dynamic `unmix_samples()` reference-matrix builds use `af_n_bands = "auto"` to build a FlowSOM autofluorescence bank from pooled unstained/AF control events. If your cells have different AF shapes from cell to cell, the SOM bank represents those shapes as multiple candidate AF signatures.
 
-Use the two multi-AF settings in the control-stage call. `af_n_bands` controls how many AF basis signatures are extracted from the unstained control, while `include_multi_af` tells `spectreasy` to include additional AF controls from the `af/` directory when those files are available.
+Use the two multi-AF settings in the control-stage call. `af_n_bands` controls the size of the shared pooled AF bank, while `include_multi_af` tells `spectreasy` to include additional AF controls from the `af/` directory when those files are available.
 
 ```r
 ctrl_multi_af <- unmix_controls(

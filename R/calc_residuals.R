@@ -28,6 +28,105 @@
     min(n_threads, available_threads)
 }
 
+.ols_candidate_model_ok <- function(M, tol = 1e-10) {
+    M <- as.matrix(M)
+    cross <- M %*% t(M)
+    is.finite(rcond(cross)) && rcond(cross) >= tol
+}
+
+.unmix_with_fixed_reference <- function(Y, M, method, wls_noise, rwls_max_iter) {
+    if (method == "OLS") {
+        matrix_to_invert <- M %*% t(M)
+        if (rcond(matrix_to_invert) < 1e-10) {
+            stop("Reference Matrix is singular. You likely have collinear spectra.", call. = FALSE)
+        }
+        return(Y %*% t(M) %*% solve(matrix_to_invert))
+    }
+    if (method == "NNLS") {
+        return(spectreasy_nnls_unmix_cpp(Y = Y, M = M))
+    }
+    if (method == "WLS") {
+        return(spectreasy_wls_unmix_cpp(
+            Y = Y,
+            M = M,
+            noise_floor = wls_noise$noise_floor,
+            signal_scale = wls_noise$signal_scale,
+            max_weight_ratio = wls_noise$max_weight_ratio
+        ))
+    }
+    if (method == "RWLS") {
+        return(spectreasy_rwls_unmix_cpp(
+            Y = Y,
+            M = M,
+            noise_floor = wls_noise$noise_floor,
+            signal_scale = wls_noise$signal_scale,
+            max_weight_ratio = wls_noise$max_weight_ratio,
+            max_iter = rwls_max_iter
+        ))
+    }
+    stop("method must be 'OLS', 'NNLS', 'WLS', or 'RWLS'", call. = FALSE)
+}
+
+.unmix_selected_af_groups <- function(Y,
+                                      M,
+                                      af_match,
+                                      method,
+                                      wls_noise,
+                                      rwls_max_iter,
+                                      af_assignment = "projection") {
+    fluor_idx <- which(!af_match)
+    af_idx <- which(af_match)
+    marker_M <- M[fluor_idx, , drop = FALSE]
+    af_M <- M[af_idx, , drop = FALSE]
+
+    if (method == "OLS") {
+        candidate_ok <- vapply(seq_along(af_idx), function(k) {
+            .ols_candidate_model_ok(M[c(fluor_idx, af_idx[[k]]), , drop = FALSE])
+        }, logical(1))
+        if (!any(candidate_ok)) {
+            stop(
+                "No usable AF candidate model for OLS unmixing; all candidate matrices are singular or ill-conditioned.",
+                call. = FALSE
+            )
+        }
+    }
+
+    assignments <- .assign_af_candidates(
+        Y = Y,
+        marker_M = marker_M,
+        af_M = af_M,
+        af_assignment = af_assignment
+    )
+
+    A <- matrix(0, nrow = nrow(Y), ncol = nrow(M), dimnames = list(NULL, rownames(M)))
+    for (k in sort(unique(assignments))) {
+        idx <- which(assignments == k)
+        if (!length(idx) || is.na(k) || k < 1L || k > length(af_idx)) {
+            next
+        }
+        rows <- c(fluor_idx, af_idx[[k]])
+        X <- M[rows, , drop = FALSE]
+        if (method == "OLS" && !.ols_candidate_model_ok(X)) {
+            stop(
+                "The selected AF candidate model for event ",
+                idx[[1]],
+                " is singular or ill-conditioned.",
+                call. = FALSE
+            )
+        }
+        coeff_i <- .unmix_with_fixed_reference(
+            Y = Y[idx, , drop = FALSE],
+            M = X,
+            method = method,
+            wls_noise = wls_noise,
+            rwls_max_iter = rwls_max_iter
+        )
+        A[idx, fluor_idx] <- coeff_i[, seq_along(fluor_idx), drop = FALSE]
+        A[idx, af_idx[[k]]] <- coeff_i[, length(rows), drop = TRUE]
+    }
+    A
+}
+
 #' Calculate unmixing residuals
 #'
 #' @param flow_frame A flowFrame object with raw fluorescence data
@@ -52,6 +151,12 @@
 #'   `multithreading = TRUE`. `"auto"` uses `RcppParallel::defaultNumThreads()`.
 #'   Integers larger than the available thread count are clipped to the
 #'   available count.
+#' @param af_assignment How to choose one AF row per event when `M` contains
+#'   multiple AF rows. `"projection"` (default) projects each AF candidate into
+#'   fluorophore space and picks the candidate that brings apparent fluorophore
+#'   abundance closest to zero. `"residual_alignment"` uses detector residual
+#'   alignment as an explicit alternative. `"legacy"` uses the previous C++
+#'   residual/covariance selector.
 #' @return Data frame with unmixed abundances and retained acquisition parameters
 #'   (`Time` plus all `FSC*`/`SSC*` columns, when available).
 #'         If return_residuals=TRUE, returns a list with [[data]] and [[residuals]].
@@ -92,10 +197,12 @@ calc_residuals <- function(flow_frame,
                            wls_max_weight_ratio = .default_wls_max_weight_ratio(),
                            rwls_max_iter = 1L,
                            multithreading = FALSE,
-                           n_threads = "auto") {
+                           n_threads = "auto",
+                           af_assignment = "projection") {
     M <- .as_reference_matrix(M, "M")
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(multithreading = multithreading, n_threads = n_threads)
+    af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
     full_data <- flowCore::exprs(flow_frame)
     detectors <- colnames(M)
     
@@ -125,49 +232,43 @@ calc_residuals <- function(flow_frame,
         list(noise_floor = numeric(0), signal_scale = numeric(0), max_weight_ratio = .default_wls_max_weight_ratio())
     }
 
-    if (sum(af_match) > 1) {
-        fluor_idx <- which(!af_match) - 1
-        af_idx <- which(af_match) - 1
-        A <- spectreasy_unmix_best_af_cpp(
-            Y = Y,
-            M = M,
-            fluor_idx = fluor_idx,
-            af_idx = af_idx,
-            method = method,
-            noise_floor = wls_noise$noise_floor,
-            signal_scale = wls_noise$signal_scale,
-            max_weight_ratio = wls_noise$max_weight_ratio,
-            rwls_max_iter = rwls_max_iter,
-            n_threads = n_threads
-        )
-    } else {
-        if (method == "OLS") {
-            # Ordinary Least Squares: A = Y * M^T * (M * M^T)^-1
-            matrix_to_invert <- M %*% Mt
-            if (rcond(matrix_to_invert) < 1e-10) {
-                stop("Reference Matrix is singular. You likely have collinear spectra.")
-            }
-            A <- Y %*% Mt %*% solve(matrix_to_invert)
-        } else if (method == "NNLS") {
-            A <- spectreasy_nnls_unmix_cpp(Y = Y, M = M)
-        } else if (method == "WLS") {
-            A <- spectreasy_wls_unmix_cpp(
+    use_eventwise_af_solver <- sum(af_match) > 1 && sum(!af_match) > 0
+
+    if (use_eventwise_af_solver) {
+        if (identical(af_assignment, "legacy")) {
+            fluor_idx <- which(!af_match) - 1
+            af_idx <- which(af_match) - 1
+            A <- spectreasy_unmix_best_af_cpp(
                 Y = Y,
                 M = M,
-                noise_floor = wls_noise$noise_floor,
-                signal_scale = wls_noise$signal_scale,
-                max_weight_ratio = wls_noise$max_weight_ratio
-            )
-        } else if (method == "RWLS") {
-            A <- spectreasy_rwls_unmix_cpp(
-                Y = Y,
-                M = M,
+                fluor_idx = fluor_idx,
+                af_idx = af_idx,
+                method = method,
                 noise_floor = wls_noise$noise_floor,
                 signal_scale = wls_noise$signal_scale,
                 max_weight_ratio = wls_noise$max_weight_ratio,
-                max_iter = rwls_max_iter
+                rwls_max_iter = rwls_max_iter,
+                n_threads = n_threads
+            )
+        } else {
+            A <- .unmix_selected_af_groups(
+                Y = Y,
+                M = M,
+                af_match = af_match,
+                method = method,
+                wls_noise = wls_noise,
+                rwls_max_iter = rwls_max_iter,
+                af_assignment = af_assignment
             )
         }
+    } else {
+        A <- .unmix_with_fixed_reference(
+            Y = Y,
+            M = M,
+            method = method,
+            wls_noise = wls_noise,
+            rwls_max_iter = rwls_max_iter
+        )
     }
 
     Fitted <- A %*% M

@@ -267,7 +267,7 @@
                                   scc_dir = NULL,
                                   control_file = NULL,
                                   af_n_bands = "auto",
-                                  af_bands_per_file = 5,
+                                  af_bands_per_file = NULL,
                                   af_auto_max_bands = 100,
                                   af_min_cluster_events = 20,
                                   af_min_cluster_proportion = 0.005,
@@ -416,6 +416,15 @@
         }
         data_parts[[i]] <- data_df
     }
+
+    all_cols <- unique(unlist(lapply(data_parts, colnames), use.names = FALSE))
+    data_parts <- lapply(data_parts, function(data_df) {
+        missing_cols <- setdiff(all_cols, colnames(data_df))
+        for (col in missing_cols) {
+            data_df[[col]] <- NA
+        }
+        data_df[, all_cols, drop = FALSE]
+    })
 
     do.call(rbind, data_parts)
 }
@@ -611,13 +620,12 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   are missing.
 #' @param control_file Path to the control mapping CSV.
 #'   Used when dynamically building the reference matrix.
-#' @param af_n_bands Number of AF bands to extract from the unstained control
-#'   when only one AF source is available. Use `"auto"` to select the count
-#'   from AF event shapes. Only used when `unmix_samples()` has to build a
-#'   reference matrix itself.
-#' @param af_bands_per_file Number of AF bands requested per AF file when
-#'   multiple AF sources are pooled. Only used when `unmix_samples()` has to
-#'   build a reference matrix itself.
+#' @param af_n_bands Number of AF basis signatures to extract from the pooled
+#'   unstained/AF control events. Use `"auto"` to build the default SOM AF bank.
+#'   Only used when `unmix_samples()` has to build a reference matrix itself.
+#' @param af_bands_per_file Deprecated compatibility argument. Multiple AF
+#'   sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
+#'   control the size of the one shared AF bank.
 #' @param af_auto_max_bands Maximum SOM nodes that `"auto"` may create before
 #'   prepending the mean AF row. Only used when `unmix_samples()` has to build a
 #'   reference matrix itself.
@@ -633,6 +641,16 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param af_refine_problem_quantile Quantile used to choose high-error
 #'   unstained cells for AF refinement. Only used when `unmix_samples()` has to
 #'   build a reference matrix itself.
+#' @param af_deduplicate Logical; if `TRUE`, remove near-identical AF spectra
+#'   when building a reference matrix dynamically.
+#' @param af_deduplication_threshold Cosine similarity threshold used when
+#'   `af_deduplicate = TRUE`.
+#' @param af_contaminant_threshold Cosine similarity threshold used to remove
+#'   AF candidates that are too similar to known fluorophore spectra when
+#'   building a reference matrix dynamically.
+#' @param af_assignment How to choose one AF row per event when a reference
+#'   matrix contains multiple AF rows. `"projection"` is the default.
+#'   `"residual_alignment"` and `"legacy"` are available for comparison.
 #' @param exclude_af Logical; whether to exclude AF from unmixing. Only used
 #'   when `unmix_samples()` has to build a reference matrix itself.
 #' @param include_multi_af Logical; whether to include multi-AF controls. Only
@@ -710,13 +728,17 @@ unmix_samples <- function(sample_dir = "samples",
                           scc_dir = NULL,
                           control_file = NULL,
                           af_n_bands = "auto",
-                          af_bands_per_file = 5,
+                          af_bands_per_file = NULL,
                           af_auto_max_bands = 100,
                           af_min_cluster_events = 20,
                           af_min_cluster_proportion = 0.005,
                           af_n_bands_sensitivity = 1.5,
                           af_refine = FALSE,
                           af_refine_problem_quantile = 0.99,
+                          af_deduplicate = FALSE,
+                          af_deduplication_threshold = 0.99,
+                          af_contaminant_threshold = 0.99,
+                          af_assignment = "projection",
                           exclude_af = FALSE,
                           include_multi_af = FALSE,
                           estimate_af = FALSE,
@@ -728,6 +750,7 @@ unmix_samples <- function(sample_dir = "samples",
                           verbose = TRUE) {
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
+    af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
     variances_file_was_missing <- missing(variances_file)
 
     if (!is.null(M)) {
@@ -770,6 +793,10 @@ unmix_samples <- function(sample_dir = "samples",
                 af_n_bands_sensitivity = af_n_bands_sensitivity,
                 af_refine = af_refine,
                 af_refine_problem_quantile = af_refine_problem_quantile,
+                af_deduplicate = af_deduplicate,
+                af_deduplication_threshold = af_deduplication_threshold,
+                af_contaminant_threshold = af_contaminant_threshold,
+                af_assignment = if (identical(af_assignment, "legacy")) "projection" else af_assignment,
                 exclude_af = exclude_af,
                 include_multi_af = include_multi_af,
                 cytometer = cytometer
@@ -829,6 +856,7 @@ unmix_samples <- function(sample_dir = "samples",
             max_training_events = 20000L,
             max_evaluation_events = 5000L,
             seed = seed,
+            af_assignment = if (identical(af_assignment, "legacy")) "legacy_residual" else af_assignment,
             verbose = verbose
         )
     }
@@ -868,6 +896,7 @@ unmix_samples <- function(sample_dir = "samples",
             rwls_max_iter = rwls_max_iter,
             multithreading = multithreading,
             n_threads = n_threads,
+            af_assignment = af_assignment,
             return_residuals = TRUE
         )
         

@@ -18,7 +18,7 @@ qc_controls(
   use_scatter_gating = TRUE,
   include_multi_af = FALSE,
   af_dir = "af",
-  af_bands_per_file = 5,
+  af_bands_per_file = NULL,
   unmix_scatter_max_points = 1000,
   unmix_scatter_axis_limit = NULL,
   seed = NULL,
@@ -60,8 +60,9 @@ the legacy histogram gate.}
 
 \item{af_dir}{AF directory forwarded to [build_reference_matrix()].}
 
-\item{af_bands_per_file}{Number of AF bands requested per AF file when
-multiple AF sources are pooled.}
+\item{af_bands_per_file}{Deprecated compatibility argument. Multiple AF
+sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
+control the size of the one shared AF bank.}
 
 \item{unmix_scatter_max_points}{Maximum events sampled per control for the
 SCC unmixing scatter matrix.}

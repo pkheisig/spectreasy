@@ -273,9 +273,6 @@
 }
 
 .detect_control_file_marker <- function(stem, marker_names = character(), marker_name_map = character()) {
-    marker_guess <- .detect_control_file_alias(stem, marker_name_map, min_substring_n = 3)
-    if (nzchar(marker_guess)) return(marker_guess)
-
     marker_names <- unique(trimws(as.character(marker_names)))
     marker_names <- marker_names[nzchar(marker_names)]
     if (length(marker_names) > 0) {
@@ -286,6 +283,10 @@
             }
         }
     }
+
+    marker_guess <- .detect_control_file_alias(stem, marker_name_map, min_substring_n = 3)
+    if (nzchar(marker_guess)) return(marker_guess)
+
     ""
 }
 

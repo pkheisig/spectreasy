@@ -381,13 +381,19 @@ plot_spectra <- function(ref_matrix,
         )
 }
 
-.resolve_unmix_scatter_plot_size <- function(markers, panel_size_mm = 30) {
+.resolve_unmix_scatter_plot_size <- function(markers, panel_size_mm = 30, max_size_mm = 1200) {
     n <- length(markers)
     panel_size_mm <- as.numeric(panel_size_mm)[1]
     if (!is.finite(panel_size_mm) || panel_size_mm <= 0) panel_size_mm <- 30
+    max_size_mm <- as.numeric(max_size_mm)[1]
+    if (!is.finite(max_size_mm) || max_size_mm <= 0) max_size_mm <- 1200
+
+    width_mm <- max(220, panel_size_mm * n + 35)
+    height_mm <- max(220, panel_size_mm * n + 30)
+    scale <- min(1, max_size_mm / max(width_mm, height_mm))
     list(
-        width_mm = max(220, panel_size_mm * n + 35),
-        height_mm = max(220, panel_size_mm * n + 30)
+        width_mm = width_mm * scale,
+        height_mm = height_mm * scale
     )
 }
 

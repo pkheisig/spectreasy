@@ -30,12 +30,11 @@
 }
 
 # Validates the Autofluorescence (AF) modeling parameters.
-# Ensures that the number of AF bands, maximum events per file, and bands per file parameters
-# are positive integers, throwing an error if they are invalid.
+# Ensures that AF bank-size parameters and maximum events are valid.
 # Returns a validated list containing these parameters.
 .validate_build_reference_af_args <- function(af_n_bands,
                                               af_max_cells,
-                                              af_bands_per_file = 5,
+                                              af_bands_per_file = NULL,
                                               af_auto_max_bands = 100,
                                               af_min_cluster_events = 20,
                                               af_min_cluster_proportion = 0.005,
@@ -50,9 +49,13 @@
         stop("af_n_bands must be an integer >= 1 or \"auto\".")
     }
 
-    af_bands_per_file <- as.integer(af_bands_per_file[1])
-    if (!is.finite(af_bands_per_file) || is.na(af_bands_per_file) || af_bands_per_file < 1) {
-        stop("af_bands_per_file must be an integer >= 1.")
+    if (is.null(af_bands_per_file) || length(af_bands_per_file) == 0 || is.na(af_bands_per_file[1])) {
+        af_bands_per_file <- NA_integer_
+    } else {
+        af_bands_per_file <- as.integer(af_bands_per_file[1])
+        if (!is.finite(af_bands_per_file) || is.na(af_bands_per_file) || af_bands_per_file < 1) {
+            stop("af_bands_per_file must be an integer >= 1 when supplied.")
+        }
     }
 
     af_max_cells <- as.integer(af_max_cells[1])
@@ -173,6 +176,32 @@
     af_spectra[keep, , drop = FALSE]
 }
 
+.reference_deduplicate_af_spectra <- function(af_spectra,
+                                              threshold = 0.99,
+                                              deduplicate = FALSE) {
+    af_spectra <- as.matrix(af_spectra)
+    if (!isTRUE(deduplicate) || nrow(af_spectra) <= 1L) {
+        return(af_spectra)
+    }
+    threshold <- as.numeric(threshold[1])
+    if (!is.finite(threshold) || is.na(threshold) || threshold <= 0 || threshold > 1) {
+        stop("af_deduplication_threshold must be a number > 0 and <= 1.", call. = FALSE)
+    }
+
+    keep <- integer()
+    for (i in seq_len(nrow(af_spectra))) {
+        if (!length(keep)) {
+            keep <- i
+            next
+        }
+        sim <- .reference_cosine_matrix(af_spectra[i, , drop = FALSE], af_spectra[keep, , drop = FALSE])
+        if (!any(is.finite(sim) & sim >= threshold)) {
+            keep <- c(keep, i)
+        }
+    }
+    af_spectra[keep, , drop = FALSE]
+}
+
 .reference_filter_contaminant_events <- function(event_mat, spectra_mat, threshold = 0.99) {
     event_mat <- as.matrix(event_mat)
     spectra_mat <- as.matrix(spectra_mat)
@@ -195,34 +224,22 @@
 
 .reference_unmix_no_af <- function(events, spectra) {
     spectra <- as.matrix(spectra)
-    unmixing_matrix <- solve(spectra %*% t(spectra), spectra)
+    unmixing_matrix <- .reference_ols_unmixing_matrix(spectra)
     as.matrix(events) %*% t(unmixing_matrix)
 }
 
-.reference_assign_af_fluorophores <- function(events, spectra, af_spectra) {
-    events <- as.matrix(events)
-    spectra <- as.matrix(spectra)
-    af_spectra <- as.matrix(af_spectra)
-    af_n <- nrow(af_spectra)
-    if (af_n <= 1) {
-        return(rep(1L, nrow(events)))
-    }
-
-    S <- t(spectra)
-    unmixing_matrix <- solve(spectra %*% t(spectra), spectra)
-    v_library <- unmixing_matrix %*% t(af_spectra)
-    r_library <- t(af_spectra) - (S %*% v_library)
-    denominator <- colSums(r_library^2)
-    denominator[!is.finite(denominator) | denominator == 0] <- 1e-10
-    k_matrix <- sweep(events %*% r_library, 2, denominator, "/")
-    unmixed <- events %*% t(unmixing_matrix)
-
-    error_matrix <- matrix(0, nrow = nrow(events), ncol = af_n)
-    for (i in seq_len(af_n)) {
-        adjusted_fluors <- unmixed - (k_matrix[, i, drop = FALSE] %*% t(v_library[, i, drop = FALSE]))
-        error_matrix[, i] <- rowSums(abs(adjusted_fluors))
-    }
-    max.col(-error_matrix, ties.method = "first")
+.reference_assign_af_fluorophores <- function(events,
+                                             spectra,
+                                             af_spectra,
+                                             af_assignment = "projection",
+                                             return_details = FALSE) {
+    .assign_af_candidates(
+        Y = events,
+        marker_M = spectra,
+        af_M = af_spectra,
+        af_assignment = af_assignment,
+        return_details = return_details
+    )
 }
 
 .reference_unmix_selected_af <- function(events, spectra, af_spectra, af_assignments) {
@@ -258,6 +275,7 @@
                                          spectra,
                                          af_spectra,
                                          problem_quantile = 0.99,
+                                         af_assignment = "projection",
                                          remove_contaminants = TRUE,
                                          contaminant_threshold = 0.99) {
     events <- as.matrix(events)
@@ -278,7 +296,8 @@
     af_assignments <- .reference_assign_af_fluorophores(
         events = events,
         spectra = spectra,
-        af_spectra = af_spectra
+        af_spectra = af_spectra,
+        af_assignment = af_assignment
     )
     fit <- .reference_unmix_selected_af(
         events = events,
@@ -347,7 +366,7 @@
                 return(NULL)
             }
             updated <- af_spectra[af_id, ] * (1 + median_ratio)
-            peak <- max(updated, na.rm = TRUE)
+            peak <- max(abs(updated), na.rm = TRUE)
             if (is.finite(peak) && peak > 1e-12) {
                 updated <- updated / peak
             }
@@ -377,7 +396,7 @@
         threshold = contaminant_threshold,
         remove = remove_contaminants
     )
-    rownames(combined) <- paste0("AF", seq_len(nrow(combined)))
+    rownames(combined) <- c("AF", if (nrow(combined) > 1L) paste0("AF_", seq.int(2L, nrow(combined))) else NULL)
     colnames(combined) <- colnames(af_spectra)
 
     list(
@@ -737,6 +756,9 @@
                                            fluor_spectra = NULL,
                                            remove_contaminants = TRUE,
                                            contaminant_threshold = 0.99,
+                                           af_deduplicate = FALSE,
+                                           af_deduplication_threshold = 0.99,
+                                           af_assignment = "projection",
                                            refine = FALSE,
                                            refine_problem_quantile = 0.99) {
     if (is.null(af_events)) {
@@ -751,6 +773,7 @@
     if (nrow(af_events) == 0) {
         return(list(raw_median = NULL, signatures = NULL))
     }
+    af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment"))
 
     if (nrow(af_events) > max_cells) {
         af_events <- af_events[sample.int(nrow(af_events), max_cells), , drop = FALSE]
@@ -851,6 +874,11 @@
                 remove = remove_contaminants
             )
         }
+        centers <- .reference_deduplicate_af_spectra(
+            centers,
+            threshold = af_deduplication_threshold,
+            deduplicate = af_deduplicate
+        )
         base_center_count <- nrow(centers)
         if (isTRUE(refine) && !is.null(fluor_spectra) && nrow(fluor_spectra) > 0) {
             refined <- .reference_refine_af_spectra(
@@ -858,10 +886,16 @@
                 spectra = fluor_spectra,
                 af_spectra = centers,
                 problem_quantile = refine_problem_quantile,
+                af_assignment = af_assignment,
                 remove_contaminants = remove_contaminants,
                 contaminant_threshold = contaminant_threshold
             )
             centers <- refined$signatures
+            centers <- .reference_deduplicate_af_spectra(
+                centers,
+                threshold = af_deduplication_threshold,
+                deduplicate = af_deduplicate
+            )
             if (!is.null(selection)) {
                 selection$refine <- refined$info
             }
@@ -1003,6 +1037,10 @@
                                            af_min_cluster_events,
                                            af_min_cluster_proportion,
                                            af_n_bands_sensitivity,
+                                           af_deduplicate = FALSE,
+                                           af_deduplication_threshold = 0.99,
+                                           af_contaminant_threshold = 0.99,
+                                           af_assignment = "projection",
                                            af_refine = FALSE,
                                            af_refine_problem_quantile = 0.99,
                                            exclude_af = FALSE,
@@ -1052,11 +1090,7 @@
 
         af_events <- do.call(rbind, lapply(af_gated_list, `[[`, "events"))
         n_af_sources <- length(af_gated_list)
-        requested_bands <- if (n_af_sources > 1) {
-            n_af_sources * af_bands_per_file
-        } else {
-            af_n_bands
-        }
+        requested_bands <- af_n_bands
         af_data_raw <- apply(af_events, 2, stats::median, na.rm = TRUE)
         af_profiles <- list(raw_median = af_data_raw, signatures = NULL, selection = NULL)
         if (isTRUE(extract_signatures)) {
@@ -1070,6 +1104,10 @@
                 min_cluster_proportion = af_min_cluster_proportion,
                 n_bands_sensitivity = af_n_bands_sensitivity,
                 fluor_spectra = fluor_spectra,
+                contaminant_threshold = af_contaminant_threshold,
+                af_deduplicate = af_deduplicate,
+                af_deduplication_threshold = af_deduplication_threshold,
+                af_assignment = af_assignment,
                 refine = af_refine,
                 refine_problem_quantile = af_refine_problem_quantile
             )
@@ -1084,16 +1122,20 @@
             sources = af_sources,
             pooled_events = nrow(af_events),
             requested_bands = requested_bands,
-            af_bands_per_file = if (n_af_sources > 1) af_bands_per_file else NA_integer_,
+            af_bands_per_file = NA_integer_,
             derived_bands = if (!is.null(af_signatures_norm)) nrow(af_signatures_norm) else 0L,
             af_auto_max_bands = if (identical(requested_bands, "auto")) af_auto_max_bands else NA_integer_,
             af_min_cluster_events = af_min_cluster_events,
             af_min_cluster_proportion = af_min_cluster_proportion,
             af_n_bands_sensitivity = if (identical(requested_bands, "auto")) af_n_bands_sensitivity else NA_real_,
+            af_deduplicate = isTRUE(af_deduplicate),
+            af_deduplication_threshold = if (isTRUE(af_deduplicate)) af_deduplication_threshold else NA_real_,
+            af_contaminant_threshold = af_contaminant_threshold,
+            af_assignment = af_assignment,
             af_refine = isTRUE(af_refine),
             af_refine_problem_quantile = if (isTRUE(af_refine)) af_refine_problem_quantile else NA_real_,
             auto_selection = af_profiles$selection,
-            mode = if (n_af_sources > 1) "pooled_multi_af_per_file_scaled" else "single_af"
+            mode = if (n_af_sources > 1) "pooled_af_sources" else "single_af"
         )
         if (!is.null(af_signatures_norm)) {
             msg <- if (n_af_sources == 1) {
@@ -2798,13 +2840,13 @@
 #'   even when they are present in `control_df`, the SCC folder, or `af_dir`.
 #' @param af_dir Directory with extra AF controls when `include_multi_af = TRUE`.
 #' @param af_n_bands Number of AF basis signatures to extract from the pooled
-#'   unstained/AF control when only one AF source is available (`1` = classic
-#'   single AF signature). The default, `"auto"`, chooses the number from AF
-#'   event shapes. For `"auto"`, `af_auto_max_bands` controls the number of SOM
-#'   nodes and a mean AF row is prepended.
-#' @param af_bands_per_file Number of AF basis signatures requested per AF file
-#'   when multiple AF sources are pooled (`5` files with the default `5` yields
-#'   up to `25` shared AF bank signatures).
+#'   unstained/AF control events (`1` = classic single AF signature). The
+#'   default, `"auto"`, chooses the number from AF event shapes. For `"auto"`,
+#'   `af_auto_max_bands` controls the number of SOM nodes and a mean AF row is
+#'   prepended.
+#' @param af_bands_per_file Deprecated compatibility argument. Multiple AF
+#'   sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
+#'   control the size of the one shared AF bank.
 #' @param af_max_cells Maximum number of scatter-gated AF events used when
 #'   deriving AF basis signatures.
 #' @param af_auto_max_bands Maximum SOM nodes that `"auto"` may create before
@@ -2819,6 +2861,19 @@
 #'   that modulates SOM AF spectra from high-error unstained cells.
 #' @param af_refine_problem_quantile Quantile used to choose high-error
 #'   unstained cells for AF refinement. Default is 0.99.
+#' @param af_deduplicate Logical; if `TRUE`, remove near-identical AF spectra
+#'   after SOM extraction/refinement using cosine similarity. Default is
+#'   `FALSE` for backward compatibility.
+#' @param af_deduplication_threshold Cosine similarity threshold used when
+#'   `af_deduplicate = TRUE`. Default is 0.99.
+#' @param af_contaminant_threshold Cosine similarity threshold used to remove
+#'   AF candidates that are too similar to known fluorophore spectra. Default is
+#'   0.99.
+#' @param af_assignment AF candidate assignment used during AF refinement.
+#'   `"projection"` (default) chooses the AF band whose expected fluorophore
+#'   spillover best brings apparent fluorophore signal toward zero.
+#'   `"residual_alignment"` keeps the older detector-residual alignment score
+#'   as an explicit alternative.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
@@ -2870,7 +2925,7 @@ build_reference_matrix <- function(
   exclude_af = FALSE,
   af_dir = "af",
   af_n_bands = "auto",
-  af_bands_per_file = 5,
+  af_bands_per_file = NULL,
   af_max_cells = 50000,
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,
@@ -2878,6 +2933,10 @@ build_reference_matrix <- function(
   af_n_bands_sensitivity = 1.5,
   af_refine = FALSE,
   af_refine_problem_quantile = 0.99,
+  af_deduplicate = FALSE,
+  af_deduplication_threshold = 0.99,
+  af_contaminant_threshold = 0.99,
+  af_assignment = "projection",
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
@@ -2913,6 +2972,18 @@ build_reference_matrix <- function(
     af_min_cluster_proportion <- af_args$af_min_cluster_proportion
     af_n_bands_sensitivity <- af_args$af_n_bands_sensitivity
     af_refine <- isTRUE(af_refine)
+    af_deduplicate <- isTRUE(af_deduplicate)
+    af_deduplication_threshold <- as.numeric(af_deduplication_threshold[1])
+    if (!is.finite(af_deduplication_threshold) || is.na(af_deduplication_threshold) ||
+        af_deduplication_threshold <= 0 || af_deduplication_threshold > 1) {
+        stop("af_deduplication_threshold must be a number > 0 and <= 1.")
+    }
+    af_contaminant_threshold <- as.numeric(af_contaminant_threshold[1])
+    if (!is.finite(af_contaminant_threshold) || is.na(af_contaminant_threshold) ||
+        af_contaminant_threshold <= 0 || af_contaminant_threshold > 1) {
+        stop("af_contaminant_threshold must be a number > 0 and <= 1.")
+    }
+    af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment"))
     af_refine_problem_quantile <- as.numeric(af_refine_problem_quantile[1])
     if (!is.finite(af_refine_problem_quantile) || is.na(af_refine_problem_quantile) ||
         af_refine_problem_quantile <= 0 || af_refine_problem_quantile >= 1) {
@@ -2957,6 +3028,10 @@ build_reference_matrix <- function(
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
         af_n_bands_sensitivity = af_n_bands_sensitivity,
+        af_deduplicate = af_deduplicate,
+        af_deduplication_threshold = af_deduplication_threshold,
+        af_contaminant_threshold = af_contaminant_threshold,
+        af_assignment = af_assignment,
         af_refine = af_refine,
         af_refine_problem_quantile = af_refine_problem_quantile
     )
@@ -2979,6 +3054,10 @@ build_reference_matrix <- function(
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
         af_n_bands_sensitivity = af_n_bands_sensitivity,
+        af_deduplicate = af_deduplicate,
+        af_deduplication_threshold = af_deduplication_threshold,
+        af_contaminant_threshold = af_contaminant_threshold,
+        af_assignment = af_assignment,
         af_refine = FALSE,
         af_refine_problem_quantile = af_refine_problem_quantile,
         exclude_af = exclude_af,
@@ -3039,6 +3118,10 @@ build_reference_matrix <- function(
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
         af_n_bands_sensitivity = af_n_bands_sensitivity,
+        af_deduplicate = af_deduplicate,
+        af_deduplication_threshold = af_deduplication_threshold,
+        af_contaminant_threshold = af_contaminant_threshold,
+        af_assignment = af_assignment,
         af_refine = af_refine,
         af_refine_problem_quantile = af_refine_problem_quantile,
         exclude_af = exclude_af,

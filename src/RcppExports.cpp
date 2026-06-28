@@ -61,6 +61,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// spectreasy_assign_af_projection_cpp
+Rcpp::IntegerVector spectreasy_assign_af_projection_cpp(const arma::mat& Y, const arma::mat& F, const arma::mat& AF, const double tol);
+RcppExport SEXP _spectreasy_spectreasy_assign_af_projection_cpp(SEXP YSEXP, SEXP FSEXP, SEXP AFSEXP, SEXP tolSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type Y(YSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type F(FSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type AF(AFSEXP);
+    Rcpp::traits::input_parameter< const double >::type tol(tolSEXP);
+    rcpp_result_gen = Rcpp::wrap(spectreasy_assign_af_projection_cpp(Y, F, AF, tol));
+    return rcpp_result_gen;
+END_RCPP
+}
 // spectreasy_unmix_best_af_cpp
 arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y, const arma::mat& M, const arma::uvec& fluor_idx, const arma::uvec& af_idx, const std::string& method, const arma::vec& noise_floor, const arma::vec& signal_scale, const double max_weight_ratio, const double tol, const int max_outer, const int max_inner, const int rwls_max_iter, const int n_threads);
 RcppExport SEXP _spectreasy_spectreasy_unmix_best_af_cpp(SEXP YSEXP, SEXP MSEXP, SEXP fluor_idxSEXP, SEXP af_idxSEXP, SEXP methodSEXP, SEXP noise_floorSEXP, SEXP signal_scaleSEXP, SEXP max_weight_ratioSEXP, SEXP tolSEXP, SEXP max_outerSEXP, SEXP max_innerSEXP, SEXP rwls_max_iterSEXP, SEXP n_threadsSEXP) {
@@ -89,6 +103,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_spectreasy_spectreasy_nnls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_nnls_unmix_cpp, 5},
     {"_spectreasy_spectreasy_wls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_wls_unmix_cpp, 6},
     {"_spectreasy_spectreasy_rwls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_rwls_unmix_cpp, 9},
+    {"_spectreasy_spectreasy_assign_af_projection_cpp", (DL_FUNC) &_spectreasy_spectreasy_assign_af_projection_cpp, 4},
     {"_spectreasy_spectreasy_unmix_best_af_cpp", (DL_FUNC) &_spectreasy_spectreasy_unmix_best_af_cpp, 13},
     {NULL, NULL, 0}
 };

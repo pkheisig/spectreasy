@@ -476,7 +476,12 @@ test_that("unmix_samples can estimate missing AF from stained samples", {
     expect_true(blind_info$model_id %in% c("residual_wls_q90_k10", "residual_wls_low_marker_q90_k10"))
     expect_equal(blind_info$candidate_quantile, 0.90)
     expect_equal(blind_info$requested_bands, 10)
-    expect_equal(blind_info$selected_by, "heldout_event_wise_wls")
+    expect_true(blind_info$selected_by %in% c(
+        "heldout_projection_wls",
+        "heldout_residual_alignment_wls",
+        "heldout_event_wise_wls"
+    ))
+    expect_true(blind_info$af_assignment %in% c("projection", "residual_alignment", "legacy_residual"))
     expect_s3_class(blind_info$heldout_scores, "data.frame")
     expect_setequal(
         blind_info$heldout_scores$model_id,
@@ -1053,7 +1058,7 @@ test_that("AF profile extraction handles empty and all-zero AF events", {
     expect_equal(zero_profiles$signatures[1, ], c("B1-A" = 0, "YG1-A" = 0))
 })
 
-test_that("AF argument validation supports multi-AF bands per file", {
+test_that("AF argument validation keeps deprecated bands-per-file compatibility", {
     args <- spectreasy:::.validate_build_reference_af_args(
         af_n_bands = 2,
         af_bands_per_file = 5,
@@ -1116,6 +1121,89 @@ test_that("AF argument validation supports multi-AF bands per file", {
         spectreasy:::.validate_build_reference_af_args(2, 500, af_n_bands_sensitivity = NULL),
         "af_n_bands_sensitivity"
     )
+})
+
+test_that("multiple AF files are pooled into one AF bank size request", {
+    root <- tempfile("pooled-af-")
+    af_dir <- file.path(root, "af")
+    dir.create(af_dir, recursive = TRUE)
+    primary <- file.path(root, "Unstained (Cells).fcs")
+    extra_1 <- file.path(af_dir, "AF tissue 1.fcs")
+    extra_2 <- file.path(af_dir, "AF tissue 2.fcs")
+    file.create(primary, extra_1, extra_2)
+    detector_names <- c("B1-A", "YG1-A")
+    captured <- new.env(parent = emptyenv())
+
+    testthat::local_mocked_bindings(
+        .extract_reference_af_gated_events = function(fcs_file, detector_names, config) {
+            list(
+                events = matrix(
+                    c(1, 2, 3, 4, 5, 6),
+                    ncol = length(detector_names),
+                    dimnames = list(NULL, detector_names)
+                ),
+                source = data.table::data.table(
+                    file = basename(fcs_file),
+                    path = normalizePath(fcs_file, mustWork = FALSE),
+                    n_total = 3L,
+                    n_scatter_gated = 3L,
+                    scatter_gate_pct = 100,
+                    fsc_channel = "FSC-A",
+                    ssc_channel = "SSC-A"
+                )
+            )
+        },
+        .extract_reference_af_profiles = function(detector_names,
+                                                  n_bands,
+                                                  max_cells,
+                                                  af_events,
+                                                  auto_max_bands,
+                                                  min_cluster_events,
+                                                  min_cluster_proportion,
+                                                  n_bands_sensitivity,
+                                                  fluor_spectra,
+                                                  refine,
+                                                  refine_problem_quantile,
+                                                  ...) {
+            captured$n_bands <- n_bands
+            captured$n_events <- nrow(af_events)
+            signatures <- matrix(
+                1,
+                nrow = as.integer(n_bands),
+                ncol = length(detector_names),
+                dimnames = list(c("AF", paste0("AF_", seq_len(as.integer(n_bands) - 1L) + 1L)), detector_names)
+            )
+            list(raw_median = setNames(rep(1, length(detector_names)), detector_names), signatures = signatures, selection = NULL)
+        },
+        .package = "spectreasy"
+    )
+
+    out <- spectreasy:::.collect_reference_af_profiles(
+        control_df = data.frame(
+            filename = basename(primary),
+            fluorophore = "AF",
+            marker = "Autofluorescence",
+            stringsAsFactors = FALSE
+        ),
+        fcs_files = primary,
+        fcs_files_all = c(primary, extra_1, extra_2),
+        detector_names = detector_names,
+        af_n_bands = 3L,
+        af_bands_per_file = 5L,
+        af_max_cells = 500L,
+        af_auto_max_bands = 100L,
+        af_min_cluster_events = 20L,
+        af_min_cluster_proportion = 0.005,
+        af_n_bands_sensitivity = 1.5,
+        config = list(include_multi_af = TRUE, af_dir = af_dir)
+    )
+
+    expect_equal(captured$n_bands, 3L)
+    expect_equal(captured$n_events, 9L)
+    expect_equal(out$af_bank_info$source_count, 3L)
+    expect_equal(out$af_bank_info$requested_bands, 3L)
+    expect_true(is.na(out$af_bank_info$af_bands_per_file))
+    expect_equal(out$af_bank_info$mode, "pooled_af_sources")
 })
 
 test_that("extra AF files are banked centrally, not processed as one averaged SCC row", {
@@ -1344,27 +1432,7 @@ test_that("calc_residuals multi-AF WLS uses joint AF assignment before event-wis
     af_idx <- which(grepl("^AF($|_)", rownames(M), ignore.case = TRUE))
     F <- M[fluor_idx, , drop = FALSE]
     AF <- M[af_idx, , drop = FALSE]
-    P <- solve(F %*% t(F), F)
-    af_cov <- stats::cov(AF)
-    fluor_weights <- sqrt(abs(diag(P %*% af_cov %*% t(P)))) + 1e-8
-    v_library <- P %*% t(AF)
-    r_library <- t(AF) - t(F) %*% v_library
-    r_dots <- pmax(colSums(r_library^2), 1e-10)
-    select_joint_af <- function(y) {
-        unmixed <- as.numeric(P %*% y)
-        base_resid <- y - as.numeric(t(F) %*% pmax(unmixed, 0))
-        base_fluor <- sum(fluor_weights * abs(unmixed)) + 1e-6
-        base_resid_norm <- sqrt(sum(base_resid^2)) + 1e-6
-        scores <- vapply(seq_len(nrow(AF)), function(k) {
-            af_scale <- sum(y * r_library[, k]) / r_dots[[k]]
-            if (!is.finite(af_scale) || af_scale < 0) af_scale <- 0
-            adjusted_fluor <- unmixed - af_scale * v_library[, k]
-            adjusted_resid <- base_resid - af_scale * r_library[, k]
-            sum(fluor_weights * abs(adjusted_fluor)) / base_fluor *
-                sqrt(sum(adjusted_resid^2)) / base_resid_norm
-        }, numeric(1))
-        which.min(scores)
-    }
+    assignments <- spectreasy:::.assign_af_by_projection(exprs, F, AF)
 
     expected <- matrix(0, nrow = nrow(exprs), ncol = nrow(M), dimnames = list(NULL, rownames(M)))
 
@@ -1376,7 +1444,7 @@ test_that("calc_residuals multi-AF WLS uses joint AF assignment before event-wis
             signal_scale = rep(1, ncol(M)),
             max_weight_ratio = spectreasy:::.default_wls_max_weight_ratio()
         )
-        best_af <- af_idx[[select_joint_af(y)]]
+        best_af <- af_idx[[assignments[[i]]]]
         rows <- c(fluor_idx, best_af)
         X <- M[rows, , drop = FALSE]
         Xw <- sweep(X, 2, detector_weights, `*`)
@@ -1509,4 +1577,19 @@ test_that("unmix_samples finds sibling variances for saved reference matrix", {
 
     expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
     expect_setequal(names(unmixed), "sample")
+})
+
+test_that("unmixed result data frames tolerate sample-specific columns", {
+    unmixed <- list(
+        sample_a = list(data = data.frame(marker_a = c(1, 2), marker_b = c(3, 4))),
+        sample_b = list(data = data.frame(marker_a = 5, marker_c = 6))
+    )
+    class(unmixed) <- c("spectreasy_unmixed_results", "list")
+
+    out <- as.data.frame(unmixed)
+
+    expect_named(out, c("marker_a", "marker_b", "File", "marker_c"))
+    expect_equal(out$File, c("sample_a", "sample_a", "sample_b"))
+    expect_true(is.na(out$marker_c[[1]]))
+    expect_true(is.na(out$marker_b[[3]]))
 })

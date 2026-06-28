@@ -15,7 +15,8 @@ calc_residuals(
   wls_max_weight_ratio = .default_wls_max_weight_ratio(),
   rwls_max_iter = 1L,
   multithreading = FALSE,
-  n_threads = "auto"
+  n_threads = "auto",
+  af_assignment = "projection"
 )
 }
 \arguments{
@@ -51,6 +52,13 @@ single-threaded.}
 `multithreading = TRUE`. `"auto"` uses `RcppParallel::defaultNumThreads()`.
 Integers larger than the available thread count are clipped to the
 available count.}
+
+\item{af_assignment}{How to choose one AF row per event when `M` contains
+multiple AF rows. `"projection"` (default) projects each AF candidate into
+fluorophore space and picks the candidate that brings apparent fluorophore
+abundance closest to zero. `"residual_alignment"` uses detector residual
+alignment as an explicit alternative. `"legacy"` uses the previous C++
+residual/covariance selector.}
 }
 \value{
 Data frame with unmixed abundances and retained acquisition parameters

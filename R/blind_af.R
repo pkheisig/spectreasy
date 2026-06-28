@@ -44,7 +44,7 @@
 
 .prune_blind_af_centers <- function(centers,
                                     marker_M,
-                                    max_marker_cosine = 0.995,
+                                    max_marker_cosine = 0.99,
                                     max_center_cosine = 0.985) {
     centers <- .normalize_blind_af_shapes(centers)
     if (nrow(centers) == 0) {
@@ -331,7 +331,7 @@
     sqrt(mean((residuals^2) / denom, na.rm = TRUE))
 }
 
-.score_blind_af_model <- function(M, splits) {
+.score_blind_af_model <- function(M, splits, af_assignment = "projection") {
     scores <- numeric()
     for (split in splits) {
         ff <- split$eval
@@ -339,7 +339,7 @@
             next
         }
         res <- tryCatch(
-            calc_residuals(ff, M, method = "WLS", return_residuals = TRUE),
+            calc_residuals(ff, M, method = "WLS", return_residuals = TRUE, af_assignment = af_assignment),
             error = function(e) NULL
         )
         if (is.null(res) || is.null(res$residuals)) {
@@ -362,8 +362,10 @@
                                          max_evaluation_events = 5000L,
                                          min_events = 25L,
                                          seed = NULL,
+                                         af_assignment = "projection",
                                          verbose = TRUE) {
     M <- .as_reference_matrix(M, "M")
+    af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy_residual"))
     existing_af <- .blind_af_row_mask(M)
     if (all(existing_af)) {
         warning("estimate_af = TRUE requires at least one non-AF marker row; proceeding with the existing reference matrix.", call. = FALSE)
@@ -410,7 +412,11 @@
             )
             next
         }
-        score <- .score_blind_af_model(model, splits)
+        score <- .score_blind_af_model(
+            model,
+            splits,
+            af_assignment = if (identical(af_assignment, "legacy_residual")) "legacy" else af_assignment
+        )
         models[[spec$id]] <- model
         score_rows[[length(score_rows) + 1L]] <- data.frame(
             model_id = spec$id,
@@ -428,6 +434,7 @@
             out <- fallback
             info <- attr(out, "blind_af_info")
             info$selected_by <- "fallback"
+            info$af_assignment <- af_assignment
             info$heldout_scores <- score_table
             attr(out, "blind_af_info") <- info
             return(out)
@@ -439,7 +446,12 @@
     selected_id <- score_table$model_id[valid][which.min(score_table$heldout_signal_scaled_rmse[valid])]
     out <- models[[selected_id]]
     info <- attr(out, "blind_af_info")
-    info$selected_by <- "heldout_event_wise_wls"
+    info$selected_by <- if (identical(af_assignment, "legacy_residual")) {
+        "heldout_event_wise_wls"
+    } else {
+        paste0("heldout_", af_assignment, "_wls")
+    }
+    info$af_assignment <- af_assignment
     info$heldout_signal_scaled_rmse <- score_table$heldout_signal_scaled_rmse[match(selected_id, score_table$model_id)]
     info$heldout_scores <- score_table
     attr(out, "blind_af_info") <- info

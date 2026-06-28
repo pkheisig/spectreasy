@@ -19,13 +19,17 @@ unmix_samples(
   scc_dir = NULL,
   control_file = NULL,
   af_n_bands = "auto",
-  af_bands_per_file = 5,
+  af_bands_per_file = NULL,
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
   af_n_bands_sensitivity = 1.5,
   af_refine = FALSE,
   af_refine_problem_quantile = 0.99,
+  af_deduplicate = FALSE,
+  af_deduplication_threshold = 0.99,
+  af_contaminant_threshold = 0.99,
+  af_assignment = "projection",
   exclude_af = FALSE,
   include_multi_af = FALSE,
   estimate_af = FALSE,
@@ -85,14 +89,13 @@ are missing.}
 \item{control_file}{Path to the control mapping CSV.
 Used when dynamically building the reference matrix.}
 
-\item{af_n_bands}{Number of AF bands to extract from the unstained control
-when only one AF source is available. Use `"auto"` to select the count
-from AF event shapes. Only used when `unmix_samples()` has to build a
-reference matrix itself.}
+\item{af_n_bands}{Number of AF basis signatures to extract from the pooled
+unstained/AF control events. Use `"auto"` to build the default SOM AF bank.
+Only used when `unmix_samples()` has to build a reference matrix itself.}
 
-\item{af_bands_per_file}{Number of AF bands requested per AF file when
-multiple AF sources are pooled. Only used when `unmix_samples()` has to
-build a reference matrix itself.}
+\item{af_bands_per_file}{Deprecated compatibility argument. Multiple AF
+sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
+control the size of the one shared AF bank.}
 
 \item{af_auto_max_bands}{Maximum SOM nodes that `"auto"` may create before
 prepending the mean AF row. Only used when `unmix_samples()` has to build a
@@ -114,6 +117,20 @@ matrix itself.}
 \item{af_refine_problem_quantile}{Quantile used to choose high-error
 unstained cells for AF refinement. Only used when `unmix_samples()` has to
 build a reference matrix itself.}
+
+\item{af_deduplicate}{Logical; if `TRUE`, remove near-identical AF spectra
+when building a reference matrix dynamically.}
+
+\item{af_deduplication_threshold}{Cosine similarity threshold used when
+`af_deduplicate = TRUE`.}
+
+\item{af_contaminant_threshold}{Cosine similarity threshold used to remove
+AF candidates that are too similar to known fluorophore spectra when
+building a reference matrix dynamically.}
+
+\item{af_assignment}{How to choose one AF row per event when a reference
+matrix contains multiple AF rows. `"projection"` is the default.
+`"residual_alignment"` and `"legacy"` are available for comparison.}
 
 \item{exclude_af}{Logical; whether to exclude AF from unmixing. Only used
 when `unmix_samples()` has to build a reference matrix itself.}
