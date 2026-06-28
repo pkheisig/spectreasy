@@ -2335,6 +2335,13 @@
     max_val <- max(sig_pure, na.rm = TRUE)
     if (max_val <= 0) max_val <- max(pos_spectrum_raw, na.rm = TRUE)
     res <- sig_pure / max_val
+    positive_events <- if (!is.null(clean_pos)) {
+        pmax(clean_pos, 0)
+    } else {
+        detector_mat <- as.matrix(final_gated_data[, detector_names, drop = FALSE])
+        pmax(sweep(detector_mat, 2, final_neg, "-"), 0)
+    }
+    colnames(positive_events) <- detector_names
 
     # Keep positive/negative population spread as reference QC metadata. These
     # values are not used as default WLS detector-error weights.
@@ -2355,6 +2362,7 @@
         k = if (!is.null(clean_pos)) as.integer(scc_background_k) else NA_integer_,
         matched_events = if (!is.null(clean_pos)) nrow(clean_pos) else 0L
     )
+    attr(res, "scc_positive_events") <- positive_events
 
     res
 }
@@ -2862,6 +2870,12 @@
     results_dt <- if (length(results_list) > 0) data.table::rbindlist(results_list) else data.table::data.table()
     spectra_list <- if (nrow(results_dt) > 0) results_dt$spectrum else list()
     if (nrow(results_dt) > 0) names(spectra_list) <- results_dt$fluorophore
+    scc_positive_events <- lapply(spectra_list, function(x) attr(x, "scc_positive_events"))
+    has_scc_positive_events <- vapply(
+        scc_positive_events,
+        function(x) is.matrix(x) && nrow(x) > 0L && ncol(x) == length(detector_names),
+        logical(1)
+    )
 
     if (is.null(af_signatures_norm) && !is.null(af_data_raw)) {
         af_vec <- pmax(af_data_raw, 0)
@@ -2910,6 +2924,9 @@
     }
     if (!is.null(af_bank_info)) {
         attr(M, "af_bank_info") <- af_bank_info
+    }
+    if (length(scc_positive_events) > 0L && any(has_scc_positive_events)) {
+        attr(M, "scc_positive_events") <- scc_positive_events[has_scc_positive_events]
     }
     attr(M, "detector_pd") <- pd_meta
     M

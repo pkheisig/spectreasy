@@ -74,6 +74,12 @@ test_that("cell SCC spectra can use scatter-matched unstained background", {
     expect_lt(clean["FITC", "YG1-A"], raw["FITC", "YG1-A"])
     expect_lt(abs(clean["FITC", "YG1-A"] - 0.10), abs(raw["FITC", "YG1-A"] - 0.10))
     expect_equal(attr(clean, "qc_summary")$scc_background_method[[1]], "scatter_knn")
+
+    positive_events <- attr(clean, "scc_positive_events")
+    expect_true("FITC" %in% names(positive_events))
+    expect_equal(nrow(positive_events$FITC), attr(clean, "qc_summary")[fluorophore == "FITC", n_final])
+    positive_shapes <- spectreasy:::.normalize_spectral_variant_shapes(positive_events$FITC)
+    expect_lt(abs(stats::median(positive_shapes[, "YG1-A"]) - 0.10), 0.06)
 })
 
 test_that("matched background helpers clean local AF from variant events", {

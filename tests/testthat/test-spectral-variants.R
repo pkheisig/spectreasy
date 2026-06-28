@@ -92,6 +92,51 @@ test_that("unmix_controls creates a spectral variant library from SCC controls",
     expect_true("FITC" %in% ctrl$spectral_variant_info$fluorophore)
 })
 
+test_that("spectral variants reuse cleaned positive SCC events from the reference matrix", {
+    set.seed(13)
+    detectors <- c("B1-A", "YG1-A", "R1-A")
+    M <- rbind(
+        FITC = c(1.00, 0.18, 0.02),
+        PE = c(0.04, 0.18, 1.00)
+    )
+    colnames(M) <- detectors
+    shifted <- c(0.78, 0.42, 0.02)
+    events <- rbind(
+        sweep(matrix(M["FITC", ], nrow = 80, ncol = length(detectors), byrow = TRUE), 1, runif(80, 700, 1100), "*"),
+        sweep(matrix(shifted, nrow = 80, ncol = length(detectors), byrow = TRUE), 1, runif(80, 700, 1100), "*")
+    )
+    colnames(events) <- detectors
+    attr(M, "scc_positive_events") <- list(FITC = events)
+
+    scc_dir <- tempfile("spectreasy_variant_stored_events_")
+    dir.create(scc_dir, recursive = TRUE, showWarnings = FALSE)
+    control_df <- data.frame(
+        filename = "FITC file intentionally missing.fcs",
+        fluorophore = "FITC",
+        marker = "CD4",
+        channel = "B1-A",
+        control.type = "cells",
+        stringsAsFactors = FALSE
+    )
+
+    lib <- spectreasy:::.learn_spectral_variant_library(
+        scc_dir = scc_dir,
+        control_df = control_df,
+        M = M,
+        enabled = TRUE,
+        som_nodes = 4,
+        cosine_threshold = 0.85,
+        max_variants = 4,
+        min_events = 20,
+        warn = FALSE,
+        seed = 13
+    )
+
+    expect_true("FITC" %in% names(lib$variants))
+    expect_gte(nrow(lib$variants$FITC), 1)
+    expect_equal(lib$info$event_count[lib$info$fluorophore == "FITC"], nrow(events))
+})
+
 test_that("per-cell spectral variants improve shifted fluorophore recovery", {
     M <- rbind(
         FITC = c(1.00, 0.15, 0.02),

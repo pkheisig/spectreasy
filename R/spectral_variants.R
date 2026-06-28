@@ -117,6 +117,94 @@
     "beads"
 }
 
+.finalize_spectral_variant_shapes <- function(shape_mat,
+                                              fluorophore,
+                                              M,
+                                              event_count,
+                                              som_nodes = 16L,
+                                              cosine_threshold = 0.98,
+                                              max_variants = 8L,
+                                              min_events = 50L,
+                                              seed = NULL) {
+    if (is.null(shape_mat) || nrow(shape_mat) < min_events) {
+        return(list(variants = NULL, info = list(reason = "insufficient_events", event_count = event_count)))
+    }
+
+    detectors <- colnames(M)
+    base <- M[fluorophore, , drop = FALSE]
+    centers <- .cluster_spectral_variant_shapes(shape_mat, n_nodes = som_nodes, seed = seed)
+    sim_to_base <- as.numeric(.spectral_variant_cosine(centers, base))
+    keep <- is.finite(sim_to_base) & sim_to_base >= cosine_threshold
+    centers <- centers[keep, , drop = FALSE]
+    sim_to_base <- sim_to_base[keep]
+    if (nrow(centers) == 0) {
+        return(list(variants = NULL, info = list(reason = "no_plausible_variants", event_count = event_count)))
+    }
+
+    delta_norm <- sqrt(rowSums((centers - matrix(base[1, ], nrow = nrow(centers), ncol = ncol(centers), byrow = TRUE))^2))
+    keep_distinct <- is.finite(delta_norm) & delta_norm > 1e-4
+    centers <- centers[keep_distinct, , drop = FALSE]
+    sim_to_base <- sim_to_base[keep_distinct]
+    delta_norm <- delta_norm[keep_distinct]
+    if (nrow(centers) == 0) {
+        return(list(variants = NULL, info = list(reason = "only_base_like_variants", event_count = event_count)))
+    }
+
+    centers <- centers[order(delta_norm, decreasing = TRUE), , drop = FALSE]
+    centers <- .deduplicate_spectral_variant_shapes(centers, threshold = 0.995)
+    max_variants <- suppressWarnings(as.integer(max_variants[1]))
+    if (!is.finite(max_variants) || is.na(max_variants) || max_variants < 1L) max_variants <- 8L
+    if (nrow(centers) > max_variants) {
+        centers <- centers[seq_len(max_variants), , drop = FALSE]
+    }
+    rownames(centers) <- paste0(fluorophore, "_variant_", seq_len(nrow(centers)))
+    colnames(centers) <- detectors
+
+    list(
+        variants = centers,
+        info = list(
+            reason = "ok",
+            event_count = event_count,
+            retained = nrow(centers),
+            cosine_min = min(as.numeric(.spectral_variant_cosine(centers, base)), na.rm = TRUE),
+            cosine_max = max(as.numeric(.spectral_variant_cosine(centers, base)), na.rm = TRUE)
+        )
+    )
+}
+
+.learn_one_spectral_variant_set_from_events <- function(events,
+                                                        fluorophore,
+                                                        M,
+                                                        som_nodes = 16L,
+                                                        cosine_threshold = 0.98,
+                                                        max_variants = 8L,
+                                                        min_events = 50L,
+                                                        seed = NULL) {
+    if (is.null(events) || !(fluorophore %in% rownames(M))) {
+        return(NULL)
+    }
+    detectors <- colnames(M)
+    events <- as.matrix(events)
+    if (!all(detectors %in% colnames(events))) {
+        return(list(variants = NULL, info = list(reason = "insufficient_events", event_count = 0L)))
+    }
+    events <- events[, detectors, drop = FALSE]
+    events <- events[stats::complete.cases(events), , drop = FALSE]
+    event_count <- nrow(events)
+    shapes <- .normalize_spectral_variant_shapes(events)
+    .finalize_spectral_variant_shapes(
+        shape_mat = shapes,
+        fluorophore = fluorophore,
+        M = M,
+        event_count = event_count,
+        som_nodes = som_nodes,
+        cosine_threshold = cosine_threshold,
+        max_variants = max_variants,
+        min_events = min_events,
+        seed = seed
+    )
+}
+
 .learn_one_spectral_variant_set <- function(fcs_files,
                                             fluorophore,
                                             M,
@@ -190,43 +278,16 @@
         return(list(variants = NULL, info = list(reason = "insufficient_events", event_count = event_count)))
     }
 
-    centers <- .cluster_spectral_variant_shapes(shape_mat, n_nodes = som_nodes, seed = seed)
-    sim_to_base <- as.numeric(.spectral_variant_cosine(centers, base))
-    keep <- is.finite(sim_to_base) & sim_to_base >= cosine_threshold
-    centers <- centers[keep, , drop = FALSE]
-    sim_to_base <- sim_to_base[keep]
-    if (nrow(centers) == 0) {
-        return(list(variants = NULL, info = list(reason = "no_plausible_variants", event_count = event_count)))
-    }
-
-    delta_norm <- sqrt(rowSums((centers - matrix(base[1, ], nrow = nrow(centers), ncol = ncol(centers), byrow = TRUE))^2))
-    keep_distinct <- is.finite(delta_norm) & delta_norm > 1e-4
-    centers <- centers[keep_distinct, , drop = FALSE]
-    sim_to_base <- sim_to_base[keep_distinct]
-    delta_norm <- delta_norm[keep_distinct]
-    if (nrow(centers) == 0) {
-        return(list(variants = NULL, info = list(reason = "only_base_like_variants", event_count = event_count)))
-    }
-
-    centers <- centers[order(delta_norm, decreasing = TRUE), , drop = FALSE]
-    centers <- .deduplicate_spectral_variant_shapes(centers, threshold = 0.995)
-    max_variants <- suppressWarnings(as.integer(max_variants[1]))
-    if (!is.finite(max_variants) || is.na(max_variants) || max_variants < 1L) max_variants <- 8L
-    if (nrow(centers) > max_variants) {
-        centers <- centers[seq_len(max_variants), , drop = FALSE]
-    }
-    rownames(centers) <- paste0(fluorophore, "_variant_", seq_len(nrow(centers)))
-    colnames(centers) <- detectors
-
-    list(
-        variants = centers,
-        info = list(
-            reason = "ok",
-            event_count = event_count,
-            retained = nrow(centers),
-            cosine_min = min(as.numeric(.spectral_variant_cosine(centers, base)), na.rm = TRUE),
-            cosine_max = max(as.numeric(.spectral_variant_cosine(centers, base)), na.rm = TRUE)
-        )
+    .finalize_spectral_variant_shapes(
+        shape_mat = shape_mat,
+        fluorophore = fluorophore,
+        M = M,
+        event_count = event_count,
+        som_nodes = som_nodes,
+        cosine_threshold = cosine_threshold,
+        max_variants = max_variants,
+        min_events = min_events,
+        seed = seed
     )
 }
 
@@ -261,7 +322,11 @@
     )
     class(out) <- c("spectreasy_spectral_variant_library", "list")
     if (!isTRUE(enabled)) return(out)
-    if (is.null(control_df) || nrow(control_df) == 0 || !dir.exists(scc_dir)) {
+    fluorophores <- rownames(M)[.spectral_variant_row_mask(M)]
+    reference_positive_events <- attr(M, "scc_positive_events")
+    has_reference_events <- is.list(reference_positive_events) && length(reference_positive_events) > 0L
+    can_use_fcs_controls <- is.data.frame(control_df) && nrow(control_df) > 0L && dir.exists(scc_dir)
+    if (!has_reference_events && !can_use_fcs_controls) {
         if (isTRUE(warn)) warning("Spectral-variant optimization could not find SCC control metadata; using the base reference matrix.", call. = FALSE)
         return(out)
     }
@@ -270,7 +335,7 @@
         scc_background_method = scc_background_method,
         scc_background_k = scc_background_k
     )
-    scc_background <- if (isTRUE(bg_args$enabled)) {
+    scc_background <- if (isTRUE(bg_args$enabled) && can_use_fcs_controls) {
         .collect_scc_background_from_controls(
             scc_dir = scc_dir,
             control_df = control_df,
@@ -287,24 +352,41 @@
     out$settings$scc_background_method <- if (!is.null(scc_background)) bg_args$method else "none"
     out$settings$scc_background_k <- bg_args$k
 
-    fluorophores <- rownames(M)[.spectral_variant_row_mask(M)]
     rows <- list()
     for (fluor in fluorophores) {
-        files <- .spectral_variant_control_files(scc_dir, control_df, fluor)
-        learned <- .learn_one_spectral_variant_set(
-            fcs_files = files,
-            fluorophore = fluor,
-            M = M,
-            control_df = control_df,
-            scc_background = scc_background,
-            scc_background_method = if (!is.null(scc_background)) bg_args$method else "none",
-            scc_background_k = bg_args$k,
-            som_nodes = som_nodes,
-            cosine_threshold = cosine_threshold,
-            max_variants = max_variants,
-            min_events = min_events,
-            seed = seed
-        )
+        stored_events <- if (!is.null(reference_positive_events) && fluor %in% names(reference_positive_events)) {
+            reference_positive_events[[fluor]]
+        } else {
+            NULL
+        }
+        learned <- if (!is.null(stored_events)) {
+            .learn_one_spectral_variant_set_from_events(
+                events = stored_events,
+                fluorophore = fluor,
+                M = M,
+                som_nodes = som_nodes,
+                cosine_threshold = cosine_threshold,
+                max_variants = max_variants,
+                min_events = min_events,
+                seed = seed
+            )
+        } else {
+            files <- .spectral_variant_control_files(scc_dir, control_df, fluor)
+            .learn_one_spectral_variant_set(
+                fcs_files = files,
+                fluorophore = fluor,
+                M = M,
+                control_df = control_df,
+                scc_background = scc_background,
+                scc_background_method = if (!is.null(scc_background)) bg_args$method else "none",
+                scc_background_k = bg_args$k,
+                som_nodes = som_nodes,
+                cosine_threshold = cosine_threshold,
+                max_variants = max_variants,
+                min_events = min_events,
+                seed = seed
+            )
+        }
         if (is.null(learned)) {
             rows[[length(rows) + 1L]] <- data.frame(fluorophore = fluor, variants = 0L, reason = "missing_control", stringsAsFactors = FALSE)
             next
@@ -330,7 +412,7 @@
             )
         }
     }
-    out$info <- if (length(rows)) do.call(rbind, rows) else data.frame()
+    out$info <- if (length(rows)) data.table::rbindlist(rows, fill = TRUE) else data.frame()
     out
 }
 
