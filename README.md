@@ -175,15 +175,16 @@ Key outputs from this step include:
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
 - `spectreasy_outputs/unmix_controls/fsc_ssc/*.png`
-- `spectreasy_outputs/unmix_controls/spectral_selection/*.png`
+- `spectreasy_outputs/unmix_controls/intensity_scatter/*.png`
+- `spectreasy_outputs/unmix_controls/spectral_selection/*.png` when the experimental AF-cosine selector is enabled, or as an extra diagnostic PNG
 - `spectreasy_outputs/unmix_controls/spectrum/*.png`
 - `spectreasy_outputs/unmix_controls/unmixed_fcs/*.fcs`
 
-The control-stage run also writes visual checks for each single-color control. For one color, the three plots below show the broad FSC/SSC cleanup, the spectral event-selection diagnostic, and the detector spectrum used to build the reference matrix:
+The control-stage run also writes visual checks for each single-color control. For one color, the three plots below show the broad FSC/SSC cleanup, the default GMM/EM scatter gate, and the detector spectrum used to build the reference matrix:
 
 <p align="center">
   <img src="man/figures/vignette_fsc_ssc.png" width="48%" />
-  <img src="man/figures/vignette_spectral_selection.png" width="48%" />
+  <img src="man/figures/vignette_intensity_scatter.png" width="48%" />
 </p>
 
 <p align="center">
@@ -298,7 +299,18 @@ This per-cell AF matching layer follows the AutoSpectral idea of matching AF at 
 
 With `unmix_method = "AutoSpectral"`, `unmix_controls()` learns spectral variants as part of the default method. During the control stage, `spectreasy` looks for reproducible shape differences within each fluorophore control, keeps only variants that remain close to the base spectrum, and saves the result as `scc_spectral_variants.rds`.
 
-For cell-based SCCs, event selection now combines broad FSC/SSC cleanup with AF projection and cosine filtering, so the selector favors events that are bright enough and least AF-like instead of depending on a strict positive fluorescence gate. Bead-based SCCs keep bead-appropriate event selection and use an unstained bead control as their negative background when one is available.
+For both bead-based and cell-based SCCs, the default event selector keeps a broad FSC/SSC cleanup and then uses a GMM/EM intensity-vs-FSC gate to choose positive and negative events. This conservative default is easier to audit in the QC report because the post-FSC/SSC panel shows the scatter gate that selected the events. Bead-based SCCs use an unstained bead control as their negative background when one is available.
+
+An experimental AF projection/cosine selector is available for cell-based SCCs, but it is off by default while this behavior is being validated. Turn it on only when you want to test SCC selection by "bright enough and least AF-like" events:
+
+```r
+ctrl_cosine <- unmix_controls(
+  scc_dir = "scc",
+  use_af_cosine_scc_selection = TRUE
+)
+```
+
+Leave `use_af_cosine_scc_selection = FALSE` or omit the argument to use the default GMM/EM selector for both bead and cell SCCs.
 
 During `unmix_samples()`, only fluorophores that are positive in a given event are eligible for variant matching. The optimizer tests a small number of candidate variants, accepts a change only when detector residuals improve, and falls back to the base spectrum for weak, negative, noisy, or unsupported events.
 

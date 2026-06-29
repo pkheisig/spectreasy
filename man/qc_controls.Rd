@@ -56,16 +56,19 @@ default, `"auto"`, infers the cytometer from FCS detector names when possible.}
 \item{method}{Unmixing method used for the control scatter matrix
 (`"AutoSpectral"`, `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`).}
 
-\item{qc_plot_dir}{Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
-when `save_qc_pngs = TRUE`.}
+\item{qc_plot_dir}{Directory where FSC/SSC, intensity-gate, optional
+spectral-selection, and spectrum PNGs are written when
+`save_qc_pngs = TRUE`.}
 
 \item{save_qc_pngs}{Logical; if `TRUE`, keep the intermediate QC PNG files in
 `qc_plot_dir`. If `FALSE` (default), PNGs are written to a temporary directory
 for report assembly and removed afterward.}
 
-\item{use_scatter_gating}{Logical; if `TRUE` (default), use scatter/intensity
-gating and show scatter gate plots in the report. If `FALSE`, use and show
-the legacy histogram gate.}
+\item{use_scatter_gating}{Logical; if `TRUE` (default), use broad scatter
+cleanup plus the intensity-vs-FSC GMM/EM selector and show the scatter
+gate plot in the report. If `FALSE`, use and show the legacy
+one-dimensional histogram gate. Reports only show the spectral-selection
+plot for controls whose recorded gate type is `af_cosine`.}
 
 \item{include_multi_af}{Logical; forward to [build_reference_matrix()].}
 

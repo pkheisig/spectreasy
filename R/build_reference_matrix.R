@@ -412,8 +412,9 @@
     )
 }
 
-.reference_cell_fsc_upper_fraction <- 0.98
-.reference_cell_ssc_upper_fraction <- 0.98
+.reference_cell_fsc_upper_fraction <- 0.95
+.reference_cell_ssc_upper_fraction <- 0.95
+.reference_detector_saturation_margin_fraction <- 0.995
 .reference_unstained_ssc_fsc_ratio_max <- 1.25
 
 # Helper to retrieve rows in the control mapping that match the given filenames.
@@ -553,8 +554,21 @@
 # Used for gating populations in FSC/SSC scatter plots based on GMM component mean and variance.
 # Returns a data.table containing the ellipse points.
 .get_reference_ellipse <- function(mean, sigma, level = 0.95, n = 100, scale = 1.0) {
+    mean <- as.numeric(mean)
+    sigma <- as.matrix(sigma)
+    if (!all(is.finite(sigma)) || nrow(sigma) != 2L || ncol(sigma) != 2L) {
+        sigma <- diag(pmax(abs(mean) * 0.05, 1)^2, nrow = 2)
+    }
+    diag_sigma <- diag(sigma)
+    bad_diag <- !is.finite(diag_sigma) | diag_sigma <= 0
+    if (any(bad_diag)) {
+        diag_sigma[bad_diag] <- pmax(abs(mean[bad_diag]) * 0.05, 1)^2
+        diag(sigma) <- diag_sigma
+    }
+    sigma <- sigma + diag(pmax(diag(sigma), 1) * 1e-8, nrow = 2)
     chi2_val <- qchisq(level, df = 2)
     eig <- eigen(sigma)
+    eig$values <- pmax(Re(eig$values), 1e-8)
     a <- sqrt(eig$values[1] * chi2_val) * scale
     b <- sqrt(eig$values[2] * chi2_val) * scale
     angle <- atan2(eig$vectors[2, 1], eig$vectors[1, 1])
@@ -662,7 +676,8 @@
                                                fsc_min,
                                                fsc_max = Inf,
                                                ssc_max = Inf,
-                                               ratio_max = Inf) {
+                                               ratio_max = Inf,
+                                               max_populations = 3L) {
     valid <- c()
     means <- gmm_result$means
     fsc <- means[1, ]
@@ -679,6 +694,15 @@
             ratio[k] <= ratio_max) {
             valid <- c(valid, k)
         }
+    }
+    max_populations <- suppressWarnings(as.integer(max_populations[1]))
+    if (!is.finite(max_populations) || is.na(max_populations) || max_populations < 1L) {
+        max_populations <- 3L
+    }
+    if (length(valid) > max_populations && !is.null(gmm_result$proportions)) {
+        prop <- gmm_result$proportions[valid]
+        valid <- valid[order(prop, decreasing = TRUE)][seq_len(max_populations)]
+        valid <- sort(valid)
     }
     list(selected = valid)
 }
@@ -978,7 +1002,7 @@
         max_clusters = .get_reference_config_value(config, "max_clusters", 10),
         min_cluster_proportion = .get_reference_config_value(config, "min_cluster_proportion", 0.03),
         gate_contour_beads = .get_reference_config_value(config, "gate_contour_beads", 0.95),
-        gate_contour_cells = .get_reference_config_value(config, "gate_contour_cells", 0.90),
+        gate_contour_cells = .get_reference_config_value(config, "gate_contour_cells", 0.80),
         bead_gate_scale = .get_reference_config_value(config, "bead_gate_scale", 1.3)
     )
     if (is.null(scatter_info)) {
@@ -1501,7 +1525,9 @@
                                               histogram_direction_beads,
                                               histogram_pct_cells,
                                               histogram_direction_cells,
-                                              is_viability = FALSE) {
+                                              is_viability = FALSE,
+                                              scatter_vals = NULL,
+                                              saturation_mask = NULL) {
     vals_log <- log10(pmax(peak_vals, 1))
     vals_log <- vals_log[is.finite(vals_log)]
     positive_gate_present <- !(sample_type %in% c("unstained"))
@@ -2157,16 +2183,120 @@
     )
 }
 
+.reference_detector_saturation_mask <- function(x, margin_fraction = .reference_detector_saturation_margin_fraction) {
+    x <- as.matrix(x)
+    if (nrow(x) == 0L || ncol(x) == 0L) {
+        return(rep(FALSE, nrow(x)))
+    }
+    margin_fraction <- suppressWarnings(as.numeric(margin_fraction[1]))
+    if (!is.finite(margin_fraction) || is.na(margin_fraction) || margin_fraction <= 0 || margin_fraction >= 1) {
+        margin_fraction <- .reference_detector_saturation_margin_fraction
+    }
+    sat <- rep(FALSE, nrow(x))
+    for (j in seq_len(ncol(x))) {
+        vals <- x[, j]
+        vals <- vals[is.finite(vals)]
+        if (length(vals) < 20L) next
+        hi <- max(vals, na.rm = TRUE)
+        lo <- min(vals, na.rm = TRUE)
+        if (!is.finite(hi) || hi <= 0) next
+        threshold <- hi * margin_fraction
+        if (is.finite(lo) && lo < hi) {
+            threshold <- max(threshold, hi - (1 - margin_fraction) * (hi - lo))
+        }
+        sat <- sat | (x[, j] >= threshold)
+    }
+    sat[is.na(sat)] <- FALSE
+    sat
+}
+
+.reference_regularized_cov <- function(x) {
+    x <- as.matrix(x)
+    sigma <- stats::cov(x, use = "complete.obs")
+    if (!all(is.finite(sigma))) {
+        sigma <- diag(apply(x, 2, stats::var, na.rm = TRUE), nrow = ncol(x))
+    }
+    diag_sigma <- diag(sigma)
+    bad <- !is.finite(diag_sigma) | diag_sigma <= 0
+    if (any(bad)) {
+        fallback <- apply(x[, bad, drop = FALSE], 2, stats::mad, constant = 1.4826, na.rm = TRUE)^2
+        fallback[!is.finite(fallback) | fallback <= 0] <- 1
+        diag_sigma[bad] <- fallback
+        diag(sigma) <- diag_sigma
+    }
+    sigma + diag(pmax(diag(sigma), 1) * 1e-6, nrow = ncol(sigma))
+}
+
+.reference_fit_intensity_scatter_ellipse <- function(vals_log,
+                                                     scatter_vals,
+                                                     candidates,
+                                                     level = 0.90,
+                                                     min_events = 30L,
+                                                     n = 120L) {
+    candidates <- as.logical(candidates)
+    candidates[is.na(candidates)] <- FALSE
+    complete <- candidates & is.finite(vals_log) & is.finite(scatter_vals)
+    if (sum(complete) < min_events) {
+        return(NULL)
+    }
+    x <- cbind(log_intensity = vals_log[complete], scatter = scatter_vals[complete])
+
+    center0 <- apply(x, 2, stats::median, na.rm = TRUE)
+    scale0 <- apply(x, 2, stats::mad, constant = 1.4826, na.rm = TRUE)
+    scale0[!is.finite(scale0) | scale0 <= 0] <- apply(x[, !is.finite(scale0) | scale0 <= 0, drop = FALSE], 2, stats::sd, na.rm = TRUE)
+    scale0[!is.finite(scale0) | scale0 <= 0] <- 1
+    robust_keep <- abs(sweep(x, 2, center0, "-") / matrix(scale0, nrow = nrow(x), ncol = ncol(x), byrow = TRUE)) <= 3.5
+    robust_keep <- rowSums(robust_keep) == ncol(x)
+    if (sum(robust_keep) >= min_events) {
+        x_fit <- x[robust_keep, , drop = FALSE]
+    } else {
+        x_fit <- x
+    }
+
+    center <- colMeans(x_fit, na.rm = TRUE)
+    sigma <- .reference_regularized_cov(x_fit)
+    threshold <- stats::qchisq(level, df = 2)
+    all_x <- cbind(log_intensity = vals_log, scatter = scatter_vals)
+    d2 <- rep(Inf, length(vals_log))
+    ok <- stats::complete.cases(all_x)
+    d2[ok] <- stats::mahalanobis(all_x[ok, , drop = FALSE], center = center, cov = sigma, inverted = FALSE)
+    inside <- candidates & is.finite(d2) & d2 <= threshold
+    if (sum(inside, na.rm = TRUE) < min_events) {
+        return(NULL)
+    }
+
+    ellipse <- .get_reference_ellipse(center, sigma, level = level, n = n)
+    data.table::setnames(ellipse, c("x", "y"), c("log_intensity", "scatter"))
+    list(
+        inside = inside,
+        center = center,
+        sigma = sigma,
+        level = level,
+        ellipse = ellipse
+    )
+}
+
 .compute_reference_scatter_intensity_gate <- function(peak_vals,
                                                       sample_type,
                                                       histogram_pct_beads,
                                                       histogram_direction_beads,
                                                       histogram_pct_cells,
                                                       histogram_direction_cells,
-                                                      is_viability = FALSE) {
+                                                      is_viability = FALSE,
+                                                      scatter_vals = NULL,
+                                                      saturation_mask = NULL) {
     vals_log <- log10(pmax(peak_vals, 1))
     vals_log <- vals_log[is.finite(vals_log)]
     positive_gate_present <- !(sample_type %in% c("unstained"))
+    if (is.null(saturation_mask)) {
+        saturation_mask <- rep(FALSE, length(peak_vals))
+    } else {
+        saturation_mask <- as.logical(saturation_mask)
+        if (length(saturation_mask) != length(peak_vals)) {
+            saturation_mask <- rep(FALSE, length(peak_vals))
+        }
+        saturation_mask[is.na(saturation_mask)] <- FALSE
+    }
     if (!positive_gate_present) {
         out <- .compute_reference_histogram_gate(
             peak_vals = peak_vals,
@@ -2181,12 +2311,16 @@
         return(out)
     }
 
-    gate <- .compute_reference_density_scatter_gate(vals_log)
+    vals_for_gate <- vals_log[!saturation_mask & is.finite(vals_log)]
+    if (length(vals_for_gate) < 80L) {
+        vals_for_gate <- vals_log
+    }
+    gate <- .compute_reference_density_scatter_gate(vals_for_gate)
     if (is.null(gate)) {
-        gate <- .compute_reference_gmm_scatter_gate(vals_log)
+        gate <- .compute_reference_gmm_scatter_gate(vals_for_gate)
     }
     if (is.null(gate)) {
-        gate <- .compute_reference_one_cluster_scatter_gate(vals_log)
+        gate <- .compute_reference_one_cluster_scatter_gate(vals_for_gate)
     }
 
     if (!is.finite(gate$pos_lower) || !is.finite(gate$pos_upper) || gate$pos_upper <= gate$pos_lower) {
@@ -2211,7 +2345,66 @@
     attr(vals_log, "gmm_components") <- gate$components
     attr(vals_log, "gate_type") <- "scatter"
 
-    list(vals_log = vals_log, gate_min = 10^gate$pos_lower, gate_max = 10^gate$pos_upper)
+    positive_idx <- peak_vals >= 10^gate$pos_lower & peak_vals <= 10^gate$pos_upper
+    negative_idx <- peak_vals >= 10^gate$neg_lower & peak_vals <= 10^gate$neg_upper
+    positive_idx[is.na(positive_idx)] <- FALSE
+    negative_idx[is.na(negative_idx)] <- FALSE
+
+    if (sample_type %in% c("cells") && !is.null(scatter_vals) && length(scatter_vals) == length(peak_vals)) {
+        scatter_vals <- as.numeric(scatter_vals)
+        positive_ellipse <- .reference_fit_intensity_scatter_ellipse(
+            vals_log = vals_log,
+            scatter_vals = scatter_vals,
+            candidates = positive_idx & !saturation_mask,
+            level = if (isTRUE(is_viability)) 0.94 else 0.90,
+            min_events = 30L
+        )
+        if (!is.null(positive_ellipse)) {
+            positive_idx <- positive_ellipse$inside & !saturation_mask
+            attr(vals_log, "positive_ellipse") <- positive_ellipse$ellipse
+            attr(vals_log, "positive_ellipse_level") <- positive_ellipse$level
+        } else {
+            positive_idx <- positive_idx & !saturation_mask
+        }
+
+        negative_ellipse <- .reference_fit_intensity_scatter_ellipse(
+            vals_log = vals_log,
+            scatter_vals = scatter_vals,
+            candidates = negative_idx & !saturation_mask,
+            level = 0.92,
+            min_events = 30L
+        )
+        if (!is.null(negative_ellipse)) {
+            negative_idx <- negative_ellipse$inside & !saturation_mask
+            attr(vals_log, "negative_ellipse") <- negative_ellipse$ellipse
+            attr(vals_log, "negative_ellipse_level") <- negative_ellipse$level
+        } else {
+            negative_idx <- negative_idx & !saturation_mask
+        }
+        saturation_excluded <- sum(saturation_mask, na.rm = TRUE)
+        attr(vals_log, "saturation_excluded") <- saturation_excluded
+        attr(vals_log, "gate_method") <- paste0(
+            attr(vals_log, "gate_method"),
+            "; FSC ellipse refinement",
+            if (saturation_excluded > 0L) paste0("; excluded ", saturation_excluded, " near-saturation event(s)") else ""
+        )
+    } else {
+        positive_idx <- positive_idx & !saturation_mask
+        negative_idx <- negative_idx & !saturation_mask
+        if (any(saturation_mask, na.rm = TRUE)) {
+            attr(vals_log, "saturation_excluded") <- sum(saturation_mask, na.rm = TRUE)
+        }
+    }
+
+    attr(vals_log, "positive_idx") <- positive_idx
+    attr(vals_log, "negative_idx") <- negative_idx
+
+    list(
+        vals_log = vals_log,
+        gate_min = 10^gate$pos_lower,
+        gate_max = 10^gate$pos_upper,
+        positive_idx = positive_idx
+    )
 }
 
 .reference_af_selection_basis <- function(detector_names,
@@ -2434,7 +2627,14 @@
     neg_log_max <- attr(vals_log, "neg_log_max")
 
     if (is.null(clean_pos)) {
-        if (isTRUE(attr(vals_log, "negative_gate_present")) &&
+        negative_idx <- attr(vals_log, "negative_idx")
+        if (!is.null(negative_idx) && length(negative_idx) == nrow(gated_data) && sum(negative_idx, na.rm = TRUE) >= 10) {
+            neg_events <- gated_data[
+                as.logical(negative_idx),
+                detector_names,
+                drop = FALSE
+            ]
+        } else if (isTRUE(attr(vals_log, "negative_gate_present")) &&
             is.finite(neg_log_min) && is.finite(neg_log_max) && neg_log_max > neg_log_min) {
             neg_events <- gated_data[
                 peak_vals >= 10^neg_log_min & peak_vals <= 10^neg_log_max,
@@ -3030,6 +3230,9 @@
     positive_gate_present <- isTRUE(attr(vals_log, "positive_gate_present"))
     comp <- attr(vals_log, "gmm_components")
     comp_means <- if (!is.null(comp) && nrow(comp) > 0) comp$mean else numeric()
+    positive_ellipse <- attr(vals_log, "positive_ellipse")
+    negative_ellipse <- attr(vals_log, "negative_ellipse")
+    negative_idx_attr <- attr(vals_log, "negative_idx")
 
     hist_subtitle_lines <- if (positive_gate_present) {
         c(
@@ -3076,13 +3279,19 @@
     if (isTRUE(use_scatter_gating)) {
         scatter_x <- log10(pmax(peak_vals, 1))
         if (!is.null(positive_idx) && length(positive_idx) == nrow(gated_data)) {
+            negative_idx <- if (!is.null(negative_idx_attr) && length(negative_idx_attr) == nrow(gated_data)) {
+                as.logical(negative_idx_attr)
+            } else {
+                negative_gate_present &
+                    peak_vals >= 10^neg_log_min &
+                    peak_vals <= 10^neg_log_max
+            }
+            negative_idx[is.na(negative_idx)] <- FALSE
             scatter_class <- ifelse(
                 positive_idx,
                 "positive",
                 ifelse(
-                    negative_gate_present &
-                        peak_vals >= 10^neg_log_min &
-                        peak_vals <= 10^neg_log_max,
+                    negative_idx,
                     "negative",
                     "other"
                 )
@@ -3105,9 +3314,38 @@
             y = gated_data[, fsc],
             class = factor(scatter_class, levels = c("negative", "other", "positive"))
         )
-        p2_scatter <- ggplot2::ggplot(scatter_dt, ggplot2::aes(x, y, color = class)) +
-            ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#2C7BE5") +
-            ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#D62728") +
+        p2_scatter <- ggplot2::ggplot(scatter_dt, ggplot2::aes(x, y, color = class))
+        if (!is.null(negative_ellipse) && nrow(negative_ellipse) > 2L) {
+            p2_scatter <- p2_scatter +
+                ggplot2::geom_polygon(
+                    data = negative_ellipse,
+                    ggplot2::aes(log_intensity, scatter),
+                    inherit.aes = FALSE,
+                    alpha = 0.12,
+                    fill = "#2C7BE5",
+                    color = "#2C7BE5",
+                    linewidth = 0.7
+                )
+        } else {
+            p2_scatter <- p2_scatter +
+                ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#2C7BE5")
+        }
+        if (!is.null(positive_ellipse) && nrow(positive_ellipse) > 2L) {
+            p2_scatter <- p2_scatter +
+                ggplot2::geom_polygon(
+                    data = positive_ellipse,
+                    ggplot2::aes(log_intensity, scatter),
+                    inherit.aes = FALSE,
+                    alpha = 0.12,
+                    fill = "#D62728",
+                    color = "#D62728",
+                    linewidth = 0.7
+                )
+        } else {
+            p2_scatter <- p2_scatter +
+                ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#D62728")
+        }
+        p2_scatter <- p2_scatter +
             ggplot2::geom_point(size = 0.45, alpha = 0.45) +
             ggplot2::scale_color_manual(values = c(negative = "#2C7BE5", other = "grey55", positive = "#D62728"), drop = FALSE) +
             ggplot2::labs(
@@ -3309,10 +3547,18 @@
         histogram_direction_cells = config$histogram_direction_cells,
         is_viability = nrow(row_info) > 0 &&
             "is.viability" %in% colnames(row_info) &&
-            toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
+            toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE",
+        scatter_vals = scatter_info$gated_data[, scatter_info$fsc],
+        saturation_mask = if (identical(sample_info$type, "cells")) {
+            .reference_detector_saturation_mask(scatter_info$gated_data[, peak_channel, drop = FALSE])
+        } else {
+            NULL
+        }
     )
 
-    spectral_gate <- if (isTRUE(config$use_scatter_gating) && identical(sample_info$type, "cells")) {
+    spectral_gate <- if (isTRUE(config$use_scatter_gating) &&
+        isTRUE(config$use_af_cosine_scc_selection) &&
+        identical(sample_info$type, "cells")) {
         .compute_reference_af_cosine_gate(
             gated_data = scatter_info$gated_data,
             detector_names = metadata$detector_names,
@@ -3334,6 +3580,9 @@
 
     positive_idx <- if (!is.null(hist_info$positive_idx) && length(hist_info$positive_idx) == nrow(scatter_info$gated_data)) {
         hist_info$positive_idx
+    } else if (!is.null(attr(hist_info$vals_log, "positive_idx")) &&
+        length(attr(hist_info$vals_log, "positive_idx")) == nrow(scatter_info$gated_data)) {
+        attr(hist_info$vals_log, "positive_idx")
     } else {
         peak_vals >= hist_info$gate_min & peak_vals <= hist_info$gate_max
     }
@@ -3524,17 +3773,18 @@
 
 #' Build a Reference Matrix from Single-Color Controls
 #'
-#' Reads SCC FCS files, performs broad FSC/SSC cleanup, selects cell SCC events
-#' with AF projection/cosine filtering when AF controls are available, keeps
-#' bead SCCs on bead-appropriate intensity selection, then computes one
-#' normalized spectrum per fluorophore.
+#' Reads SCC FCS files, performs broad FSC/SSC cleanup, uses the default
+#' GMM/EM intensity-vs-FSC selector for bead and cell controls, then computes
+#' one normalized spectrum per fluorophore. The experimental AF-cosine cell
+#' SCC selector is available only when explicitly enabled.
 #'
 #' This is the core matrix-construction step used before unmixing.
 #'
 #' @param input_folder Directory containing SCC `.fcs` files.
 #' @param output_folder Directory where gating/spectrum plots are written.
-#' @param save_qc_plots Logical; if `TRUE`, write FSC/SSC, intensity-gate, and spectrum plots.
-#'   When `FALSE` (default), the function returns the matrix without writing QC files.
+#' @param save_qc_plots Logical; if `TRUE`, write FSC/SSC, intensity-gate,
+#'   optional spectral-selection, and spectrum plots. When `FALSE` (default),
+#'   the function returns the matrix without writing QC files.
 #' @param control_df Optional control mapping as a data.frame or CSV path.
 #'   Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.
 #' @param include_multi_af Logical; if `TRUE`, include additional AF controls from `af_dir`.
@@ -3580,11 +3830,12 @@
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @param use_scatter_gating Logical; if `TRUE` (default), keep broad FSC/SSC
-#'   cleanup and use AF projection/cosine filtering for final cell-SCC event
-#'   selection when AF controls are available. Bead controls keep the
-#'   bead-appropriate intensity-vs-FSC gate. If AF controls are unavailable,
-#'   cell controls also fall back to the intensity-vs-FSC gate. If `FALSE`, use
-#'   the legacy one-dimensional histogram gate.
+#'   cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
+#'   `FALSE`, use the legacy one-dimensional histogram gate.
+#' @param use_af_cosine_scc_selection Logical; if `TRUE`, use the experimental
+#'   AF projection/cosine selector for cell SCCs when AF controls are available.
+#'   The default, `FALSE`, keeps bead and cell SCCs on the same GMM/EM
+#'   intensity-vs-FSC selector after broad FSC/SSC cleanup.
 #' @param clean_scc_with_unstained Logical; if `TRUE`, cell SCC spectra are
 #'   cleaned with scatter-matched unstained/AF events before spectrum
 #'   derivation. Bead controls use a scatter-gated unstained bead control as
@@ -3655,6 +3906,7 @@ build_reference_matrix <- function(
   default_sample_type = "beads",
   cytometer = "auto",
   use_scatter_gating = TRUE,
+  use_af_cosine_scc_selection = FALSE,
   clean_scc_with_unstained = TRUE,
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 3L,
@@ -3668,7 +3920,7 @@ build_reference_matrix <- function(
   max_clusters = 10,
   min_cluster_proportion = 0.03,
   gate_contour_beads = 0.95,
-  gate_contour_cells = 0.90,
+  gate_contour_cells = 0.80,
   subsample_n = 5000
 ) {
     control_df <- .normalize_build_reference_control_df(control_df)
@@ -3742,6 +3994,7 @@ build_reference_matrix <- function(
         gate_contour_cells = gate_contour_cells,
         bead_gate_scale = bead_gate_scale,
         use_scatter_gating = use_scatter_gating,
+        use_af_cosine_scc_selection = use_af_cosine_scc_selection,
         clean_scc_with_unstained = clean_scc_with_unstained,
         scc_background_method = scc_background_method,
         scc_background_k = scc_background_k,

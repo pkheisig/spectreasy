@@ -77,9 +77,38 @@ test_that("cell SCC spectra can use scatter-matched unstained background", {
     positive_events <- attr(clean, "scc_positive_events")
     expect_true("FITC" %in% names(positive_events))
     qc_summary <- attr(clean, "qc_summary")
+    expect_equal(qc_summary$intensity_gate_type[qc_summary$fluorophore == "FITC"], "scatter")
     expect_equal(nrow(positive_events$FITC), qc_summary$n_final[qc_summary$fluorophore == "FITC"])
     positive_shapes <- spectreasy:::.normalize_spectral_variant_shapes(positive_events$FITC)
     expect_lt(abs(stats::median(positive_shapes[, "YG1-A"]) - 0.10), 0.06)
+})
+
+test_that("AF cosine SCC selection is opt-in for cell controls", {
+    set.seed(47)
+    wf <- make_matched_af_scc()
+
+    default <- spectreasy::build_reference_matrix(
+        input_folder = wf$scc_dir,
+        control_df = wf$control_df,
+        clean_scc_with_unstained = TRUE,
+        save_qc_plots = FALSE,
+        seed = 47,
+        subsample_n = 500
+    )
+    opt_in <- spectreasy::build_reference_matrix(
+        input_folder = wf$scc_dir,
+        control_df = wf$control_df,
+        clean_scc_with_unstained = TRUE,
+        use_af_cosine_scc_selection = TRUE,
+        save_qc_plots = FALSE,
+        seed = 47,
+        subsample_n = 500
+    )
+
+    default_summary <- attr(default, "qc_summary")
+    opt_in_summary <- attr(opt_in, "qc_summary")
+    expect_equal(default_summary$intensity_gate_type[default_summary$fluorophore == "FITC"], "scatter")
+    expect_equal(opt_in_summary$intensity_gate_type[opt_in_summary$fluorophore == "FITC"], "af_cosine")
 })
 
 test_that("bead SCCs keep intensity selection even when AF controls exist", {
@@ -159,6 +188,56 @@ test_that("SCC QC plots include spectral selection spectra", {
     )
 
     expect_true(file.exists(file.path(output_dir, "spectral_selection", "FITC (Cells)_spectral_selection.png")))
+})
+
+test_that("SCC report prefers spectral-selection plot only for AF-cosine gates", {
+    testthat::skip_if_not_installed("pdftools")
+
+    plot_dir <- tempfile("spectreasy_report_gate_choice_")
+    sample_id <- "FITC (Cells)"
+    for (subdir in c("fsc_ssc", "intensity_scatter", "spectral_selection", "spectrum")) {
+        dir.create(file.path(plot_dir, subdir), recursive = TRUE, showWarnings = FALSE)
+    }
+    write_blank_png <- function(path) {
+        grDevices::png(path, width = 80, height = 80)
+        on.exit(grDevices::dev.off(), add = TRUE)
+        grid::grid.newpage()
+        grid::grid.rect(gp = grid::gpar(col = "grey80", fill = "white"))
+    }
+    write_blank_png(file.path(plot_dir, "fsc_ssc", paste0(sample_id, "_fsc_ssc.png")))
+    write_blank_png(file.path(plot_dir, "intensity_scatter", paste0(sample_id, "_intensity_scatter.png")))
+    write_blank_png(file.path(plot_dir, "spectral_selection", paste0(sample_id, "_spectral_selection.png")))
+    write_blank_png(file.path(plot_dir, "spectrum", paste0(sample_id, "_spectrum.png")))
+
+    row <- data.table::data.table(
+        sample = sample_id,
+        fluorophore = "FITC",
+        marker = "",
+        type = "cells",
+        peak_channel = "B1-A",
+        n_total = 100L,
+        n_scatter_gated = 80L,
+        scatter_gate_pct = 80,
+        n_final = 40L,
+        histogram_gate_pct = 50,
+        intensity_gate_type = "scatter"
+    )
+
+    scatter_pdf <- tempfile(fileext = ".pdf")
+    grDevices::pdf(scatter_pdf, width = 11, height = 8.5)
+    spectreasy:::.draw_scc_report_sample_page(row, report_plot_dir = plot_dir, use_scatter_gating = TRUE)
+    grDevices::dev.off()
+    scatter_text <- paste(pdftools::pdf_text(scatter_pdf), collapse = "\n")
+    expect_match(scatter_text, "Scatter/Spectral Event Gate", fixed = TRUE)
+    expect_false(grepl("SCC/AF Spectral Selection", scatter_text, fixed = TRUE))
+
+    row$intensity_gate_type <- "af_cosine"
+    cosine_pdf <- tempfile(fileext = ".pdf")
+    grDevices::pdf(cosine_pdf, width = 11, height = 8.5)
+    spectreasy:::.draw_scc_report_sample_page(row, report_plot_dir = plot_dir, use_scatter_gating = TRUE)
+    grDevices::dev.off()
+    cosine_text <- paste(pdftools::pdf_text(cosine_pdf), collapse = "\n")
+    expect_match(cosine_text, "SCC/AF Spectral Selection", fixed = TRUE)
 })
 
 test_that("matched background helpers clean local AF from variant events", {

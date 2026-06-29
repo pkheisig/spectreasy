@@ -3,12 +3,14 @@ test_that("gating_options returns named list", {
     expect_type(opts, "list")
     expect_true(all(c(
         "use_scatter_gating",
+        "use_af_cosine_scc_selection",
         "histogram_pct_beads",
         "histogram_direction_beads",
         "histogram_pct_cells",
         "histogram_direction_cells"
     ) %in% names(opts)))
     expect_true(opts$use_scatter_gating)
+    expect_false(opts$use_af_cosine_scc_selection)
     expect_equal(opts$histogram_pct_beads, 0.9)
     expect_equal(opts$histogram_pct_cells, 0.3)
 })
@@ -1265,6 +1267,50 @@ test_that("scatter intensity gating separates nearest negative and bright positi
     expect_lt(log10(gate$gate_max), 5.6)
 })
 
+test_that("cell scatter intensity gating uses FSC ellipse and saturation margin", {
+    set.seed(73)
+    neg_log <- stats::rnorm(600, 4.0, 0.12)
+    neg_fsc <- 650000 + (neg_log - 4.0) * 900000 + stats::rnorm(600, 0, 90000)
+    pos_log <- stats::rnorm(520, 5.65, 0.12)
+    pos_fsc <- 1600000 + (pos_log - 5.65) * 600000 + stats::rnorm(520, 0, 120000)
+    pos_corner_log <- stats::rnorm(60, 5.65, 0.05)
+    pos_corner_fsc <- stats::rnorm(60, 3100000, 80000)
+    sat_log <- stats::rnorm(30, 6.25, 0.01)
+    sat_fsc <- stats::rnorm(30, 1700000, 90000)
+    vals_log <- c(neg_log, pos_log, pos_corner_log, sat_log)
+    fsc <- c(neg_fsc, pos_fsc, pos_corner_fsc, sat_fsc)
+    labels <- c(
+        rep("negative", length(neg_log)),
+        rep("positive", length(pos_log)),
+        rep("corner", length(pos_corner_log)),
+        rep("saturated", length(sat_log))
+    )
+    peak_vals <- 10^vals_log
+    saturation_mask <- labels == "saturated"
+
+    gate <- spectreasy:::.compute_reference_scatter_intensity_gate(
+        peak_vals = peak_vals,
+        sample_type = "cells",
+        histogram_pct_beads = 0.98,
+        histogram_direction_beads = "right",
+        histogram_pct_cells = 0.35,
+        histogram_direction_cells = "right",
+        scatter_vals = fsc,
+        saturation_mask = saturation_mask
+    )
+
+    positive_idx <- attr(gate$vals_log, "positive_idx")
+    negative_idx <- attr(gate$vals_log, "negative_idx")
+    expect_equal(attr(gate$vals_log, "gate_type"), "scatter")
+    expect_true(is.data.frame(attr(gate$vals_log, "positive_ellipse")))
+    expect_true(is.data.frame(attr(gate$vals_log, "negative_ellipse")))
+    expect_gt(mean(labels[positive_idx] == "positive"), 0.85)
+    expect_lt(mean(labels[positive_idx] == "corner"), 0.05)
+    expect_false(any(labels[positive_idx] == "saturated"))
+    expect_gt(mean(labels[negative_idx] == "negative"), 0.85)
+    expect_equal(attr(gate$vals_log, "saturation_excluded"), sum(saturation_mask))
+})
+
 test_that("AF cosine gate selects spectral events instead of peak-channel bright AF", {
     set.seed(72)
     detector_names <- c("B1-A", "YG1-A")
@@ -1310,6 +1356,51 @@ test_that("AF cosine gate selects spectral events instead of peak-channel bright
     fallback_shape <- stats::median(gated_data[fallback_idx, "YG1-A"] / gated_data[fallback_idx, "B1-A"])
     expect_lt(selected_shape, 0.25)
     expect_gt(fallback_shape, 0.75)
+})
+
+test_that("AF spectrum legends use numeric band order", {
+    M <- matrix(
+        stats::runif(5 * 4),
+        nrow = 5,
+        dimnames = list(c("AF", "AF_10", "AF_2", "AF_101", "AF_11"), paste0("D", 1:4))
+    )
+
+    p <- spectreasy::plot_spectra(M, output_file = NULL)
+    expect_equal(
+        levels(p$data$Fluorophore),
+        c("AF", "AF_2", "AF_10", "AF_11", "AF_101")
+    )
+
+    mixed <- M[c("AF", "AF_10", "AF_2"), , drop = FALSE]
+    mixed <- rbind(FITC = mixed[1, ], PE = mixed[1, ], mixed)
+    p_mixed <- spectreasy::plot_spectra(mixed, output_file = NULL)
+    expect_equal(levels(p_mixed$data$Fluorophore), c("FITC", "PE", "AF", "AF_2", "AF_10"))
+})
+
+test_that("plot_spectra annotates regular peak labels with abbreviations", {
+    M <- matrix(
+        c(
+            0.1, 1.0, 0.2,
+            0.0, 0.1, 1.0
+        ),
+        nrow = 2,
+        byrow = TRUE,
+        dimnames = list(c("Alexa Fluor 405", "Brilliant Violet 510"), c("UV1-A", "V1-A", "B1-A"))
+    )
+
+    p <- spectreasy::plot_spectra(M, output_file = NULL)
+    text_layers <- vapply(p$layers, function(layer) inherits(layer$geom, "GeomText"), logical(1))
+    expect_true(any(text_layers))
+    label_data <- p$layers[[which(text_layers)[1]]]$data
+    expect_setequal(label_data$Label, c("Alexa405", "BV510"))
+
+    af_bank <- matrix(
+        stats::runif(101 * 3),
+        nrow = 101,
+        dimnames = list(c("AF", paste0("AF_", 2:101)), paste0("D", 1:3))
+    )
+    p_af <- spectreasy::plot_spectra(af_bank, output_file = NULL)
+    expect_false(any(vapply(p_af$layers, function(layer) inherits(layer$geom, "GeomText"), logical(1))))
 })
 
 test_that("histogram gating cutoff detection extends right gate leftwards", {

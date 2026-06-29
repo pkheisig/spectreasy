@@ -6,6 +6,7 @@
 \usage{
 gating_options(
   use_scatter_gating = TRUE,
+  use_af_cosine_scc_selection = FALSE,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
@@ -13,9 +14,14 @@ gating_options(
 )
 }
 \arguments{
-\item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
-scatter gate for final positive/negative population selection. If `FALSE`,
-use the legacy one-dimensional histogram gate.}
+\item{use_scatter_gating}{Logical; if `TRUE` (default), keep broad FSC/SSC
+cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
+`FALSE`, use the legacy one-dimensional histogram gate.}
+
+\item{use_af_cosine_scc_selection}{Logical; if `TRUE`, use the experimental
+AF projection/cosine selector for cell SCCs when AF controls are available.
+The default, `FALSE`, keeps bead and cell SCCs on the same GMM/EM
+intensity-vs-FSC selector after broad FSC/SSC cleanup.}
 
 \item{histogram_pct_beads}{Quantile width for the bead histogram gate.}
 
@@ -31,7 +37,7 @@ use the legacy one-dimensional histogram gate.}
 Named list with gating settings.
 }
 \description{
-Helper constructor for intensity-gating settings.
+Helper constructor for SCC event-selection settings.
 }
 \examples{
 opts <- gating_options(histogram_pct_beads = 0.98, histogram_pct_cells = 0.35)

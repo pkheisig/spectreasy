@@ -29,6 +29,7 @@ build_reference_matrix(
   default_sample_type = "beads",
   cytometer = "auto",
   use_scatter_gating = TRUE,
+  use_af_cosine_scc_selection = FALSE,
   clean_scc_with_unstained = TRUE,
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 3L,
@@ -42,7 +43,7 @@ build_reference_matrix(
   max_clusters = 10,
   min_cluster_proportion = 0.03,
   gate_contour_beads = 0.95,
-  gate_contour_cells = 0.9,
+  gate_contour_cells = 0.8,
   subsample_n = 5000
 )
 }
@@ -51,8 +52,9 @@ build_reference_matrix(
 
 \item{output_folder}{Directory where gating/spectrum plots are written.}
 
-\item{save_qc_plots}{Logical; if `TRUE`, write FSC/SSC, intensity-gate, and spectrum plots.
-When `FALSE` (default), the function returns the matrix without writing QC files.}
+\item{save_qc_plots}{Logical; if `TRUE`, write FSC/SSC, intensity-gate,
+optional spectral-selection, and spectrum plots. When `FALSE` (default),
+the function returns the matrix without writing QC files.}
 
 \item{control_df}{Optional control mapping as a data.frame or CSV path.
 Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.}
@@ -118,13 +120,20 @@ as an explicit alternative.}
 \item{cytometer}{Cytometer name used as a channel-mapping hint. The default,
 `"auto"`, infers the cytometer from FCS detector names when possible.}
 
-\item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
-scatter gate for final positive/negative population selection. If `FALSE`,
-use the legacy one-dimensional histogram gate.}
+\item{use_scatter_gating}{Logical; if `TRUE` (default), keep broad FSC/SSC
+cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
+`FALSE`, use the legacy one-dimensional histogram gate.}
+
+\item{use_af_cosine_scc_selection}{Logical; if `TRUE`, use the experimental
+AF projection/cosine selector for cell SCCs when AF controls are available.
+The default, `FALSE`, keeps bead and cell SCCs on the same GMM/EM
+intensity-vs-FSC selector after broad FSC/SSC cleanup.}
 
 \item{clean_scc_with_unstained}{Logical; if `TRUE`, cell SCC spectra are
 cleaned with scatter-matched unstained/AF events before spectrum
-derivation. Bead controls keep their existing background subtraction.}
+derivation. Bead controls use a scatter-gated unstained bead control as
+their negative spectrum when one is available; otherwise they keep the
+positive/negative populations estimated from the stained bead control.}
 
 \item{scc_background_method}{Background method for cell SCC cleaning.
 `"scatter_knn"` matches each stained event to unstained events by FSC/SSC.
@@ -166,8 +175,10 @@ Numeric matrix with rows = fluorophores and columns = detectors
   in `attr(M, "detector_noise")` for default WLS unmixing.
 }
 \description{
-Reads SCC FCS files, performs FSC/SSC gating and positive-peak intensity gating,
-then computes one normalized spectrum per fluorophore.
+Reads SCC FCS files, performs broad FSC/SSC cleanup, uses the default
+GMM/EM intensity-vs-FSC selector for bead and cell controls, then computes
+one normalized spectrum per fluorophore. The experimental AF-cosine cell
+SCC selector is available only when explicitly enabled.
 }
 \details{
 This is the core matrix-construction step used before unmixing.

@@ -3,10 +3,12 @@
 #' Helper constructor for SCC event-selection settings.
 #'
 #' @param use_scatter_gating Logical; if `TRUE` (default), keep broad FSC/SSC
-#'   cleanup and use AF projection/cosine filtering for cell SCCs when AF
-#'   controls are available. Bead SCCs keep bead-appropriate
-#'   intensity-vs-FSC selection. If `FALSE`, use the legacy one-dimensional
-#'   histogram gate.
+#'   cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
+#'   `FALSE`, use the legacy one-dimensional histogram gate.
+#' @param use_af_cosine_scc_selection Logical; if `TRUE`, use the experimental
+#'   AF projection/cosine selector for cell SCCs when AF controls are available.
+#'   The default, `FALSE`, keeps bead and cell SCCs on the same GMM/EM
+#'   intensity-vs-FSC selector after broad FSC/SSC cleanup.
 #' @param histogram_pct_beads Quantile width for the bead histogram gate.
 #' @param histogram_direction_beads Gate direction for beads: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.
@@ -19,12 +21,14 @@
 #' str(opts)
 #' @export
 gating_options <- function(use_scatter_gating = TRUE,
+                           use_af_cosine_scc_selection = FALSE,
                            histogram_pct_beads = 0.98,
                            histogram_direction_beads = "right",
                            histogram_pct_cells = 0.35,
                            histogram_direction_cells = "right") {
     list(
         use_scatter_gating = use_scatter_gating,
+        use_af_cosine_scc_selection = use_af_cosine_scc_selection,
         histogram_pct_beads = histogram_pct_beads,
         histogram_direction_beads = histogram_direction_beads,
         histogram_pct_cells = histogram_pct_cells,

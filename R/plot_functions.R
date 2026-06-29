@@ -1,3 +1,82 @@
+.natural_reference_row_order <- function(x) {
+    x <- as.character(x)
+    af_match <- grepl("^AF(?:_(\\d+))?$", x, ignore.case = TRUE, perl = TRUE)
+    if (!any(af_match)) {
+        return(seq_along(x))
+    }
+    af_names <- x[af_match]
+    af_suffix <- suppressWarnings(as.integer(sub("^AF_(\\d+)$", "\\1", af_names, ignore.case = TRUE, perl = TRUE)))
+    af_suffix[is.na(af_suffix)] <- 1L
+    af_order <- order(af_suffix, af_names, na.last = TRUE)
+    out <- seq_along(x)
+    out[which(af_match)] <- which(af_match)[af_order]
+    out
+}
+
+.natural_reference_row_levels <- function(x) {
+    x <- as.character(x)
+    x[.natural_reference_row_order(x)]
+}
+
+.abbreviate_reference_peak_label <- function(x) {
+    x <- trimws(as.character(x))
+    x[is.na(x)] <- ""
+    out <- x
+
+    out <- gsub("\\bAlexa\\s+Fluor\\s*([0-9]+)\\b", "Alexa\\1", out, ignore.case = TRUE, perl = TRUE)
+    out <- gsub("\\bBrilliant\\s+Ultra\\s+Violet\\s*([0-9]+)\\b", "BUV\\1", out, ignore.case = TRUE, perl = TRUE)
+    out <- gsub("\\bBrilliant\\s+Violet\\s*([0-9]+)\\b", "BV\\1", out, ignore.case = TRUE, perl = TRUE)
+    out <- gsub("\\bBrilliant\\s+Blue\\s*([0-9]+)\\b", "BB\\1", out, ignore.case = TRUE, perl = TRUE)
+    out <- gsub("\\beFluor\\s*([0-9]+)\\b", "eF\\1", out, ignore.case = TRUE, perl = TRUE)
+    out <- gsub("\\bLIVE\\s*/?\\s*DEAD\\b", "LD", out, ignore.case = TRUE, perl = TRUE)
+    out <- gsub("\\s+", "", out, perl = TRUE)
+    out
+}
+
+.build_reference_peak_label_df <- function(ref_matrix,
+                                           detectors,
+                                           labels,
+                                           fluor_levels,
+                                           min_peak_intensity = 0.2) {
+    if (nrow(ref_matrix) == 0L || ncol(ref_matrix) == 0L) {
+        return(data.frame())
+    }
+    mat <- ref_matrix[fluor_levels, detectors, drop = FALSE]
+    rows <- lapply(seq_len(nrow(mat)), function(i) {
+        vals <- as.numeric(mat[i, ])
+        vals[!is.finite(vals)] <- -Inf
+        if (!any(is.finite(vals)) || max(vals, na.rm = TRUE) < min_peak_intensity) {
+            return(NULL)
+        }
+        peak_idx <- which.max(vals)
+        data.frame(
+            Fluorophore = rownames(mat)[i],
+            Detector = detectors[peak_idx],
+            DetectorLabel = labels[peak_idx],
+            Intensity = vals[peak_idx],
+            Label = .abbreviate_reference_peak_label(rownames(mat)[i]),
+            stringsAsFactors = FALSE
+        )
+    })
+    rows <- rows[!vapply(rows, is.null, logical(1))]
+    if (!length(rows)) {
+        return(data.frame())
+    }
+    out <- do.call(rbind, rows)
+    out$Fluorophore <- factor(out$Fluorophore, levels = fluor_levels)
+    out$Detector <- factor(out$Detector, levels = detectors, labels = labels)
+
+    split_idx <- split(seq_len(nrow(out)), as.character(out$Detector))
+    out$LabelY <- pmax(out$Intensity + 0.035, 1.035)
+    for (idx in split_idx) {
+        if (length(idx) > 1L) {
+            idx <- idx[order(as.integer(out$Fluorophore[idx]))]
+            out$LabelY[idx] <- 1.035 + (seq_along(idx) - 1L) * 0.055
+        }
+    }
+    out
+}
+
 #' Plot Spectral Overlays
 #' 
 #' @param ref_matrix Reference matrix (Markers x Detectors)
@@ -8,6 +87,11 @@
 #' @param unit Plot size unit.
 #' @param dpi Output resolution.
 #' @param theme_custom Optional ggplot theme object (reserved).
+#' @param annotate_peaks `"auto"` (default), `TRUE`, or `FALSE`. In auto mode,
+#'   compact peak labels are added for regular marker spectra but skipped for
+#'   all-AF-bank overlays.
+#' @param peak_label_max Maximum number of spectra to label in auto mode.
+#' @param peak_label_size Text size for peak labels.
 #' @return A `ggplot` object.
 #' @export
 #' @examples
@@ -23,7 +107,10 @@ plot_spectra <- function(ref_matrix,
                          height = 100,
                          unit = "mm",
                          dpi = 600,
-                         theme_custom = NULL) {
+                         theme_custom = NULL,
+                         annotate_peaks = "auto",
+                         peak_label_max = 40L,
+                         peak_label_size = 2.6) {
     ref_matrix <- .as_reference_matrix(ref_matrix, "ref_matrix")
     detectors <- colnames(ref_matrix)
     
@@ -79,9 +166,25 @@ plot_spectra <- function(ref_matrix,
     )
     
     long$Detector <- factor(long$Detector, levels = detectors, labels = labels)
+    fluor_levels <- .natural_reference_row_levels(rownames(ref_matrix))
+    long$Fluorophore <- factor(long$Fluorophore, levels = fluor_levels)
 
     n_fluor <- nrow(ref_matrix)
     legend_cols <- if (n_fluor > 16) 3L else if (n_fluor > 8) 2L else 1L
+    all_af_rows <- all(grepl("^AF(?:_\\d+)?$", rownames(ref_matrix), ignore.case = TRUE, perl = TRUE))
+    annotate_mode <- annotate_peaks
+    if (is.logical(annotate_mode)) {
+        do_annotate_peaks <- isTRUE(annotate_mode)
+    } else {
+        annotate_mode <- match.arg(as.character(annotate_mode)[1], c("auto", "always", "never"))
+        do_annotate_peaks <- if (identical(annotate_mode, "always")) {
+            TRUE
+        } else if (identical(annotate_mode, "never")) {
+            FALSE
+        } else {
+            n_fluor <= peak_label_max && !all_af_rows
+        }
+    }
 
     p <- ggplot2::ggplot(long, ggplot2::aes(Detector, Intensity, color = Fluorophore, group = Fluorophore)) +
         ggplot2::geom_line(linewidth = 0.7) +
@@ -90,7 +193,8 @@ plot_spectra <- function(ref_matrix,
             axis.text.x = ggplot2::element_text(size = 6.25, angle = 90, hjust = 1, vjust = 0.5),
             legend.text = ggplot2::element_text(size = 7.5),
             legend.key.size = ggplot2::unit(4, "mm"),
-            legend.spacing.y = ggplot2::unit(0.5, "mm")
+            legend.spacing.y = ggplot2::unit(0.5, "mm"),
+            plot.margin = ggplot2::margin(8, 14, 6, 6)
         ) +
         ggplot2::guides(color = ggplot2::guide_legend(ncol = legend_cols)) +
         ggplot2::labs(
@@ -98,6 +202,30 @@ plot_spectra <- function(ref_matrix,
             x = "Detector",
             y = "Normalized Intensity"
         )
+
+    if (isTRUE(do_annotate_peaks)) {
+        peak_df <- .build_reference_peak_label_df(
+            ref_matrix = ref_matrix,
+            detectors = detectors,
+            labels = labels,
+            fluor_levels = fluor_levels
+        )
+        if (nrow(peak_df) > 0L) {
+            y_max <- max(c(long$Intensity, peak_df$LabelY), na.rm = TRUE)
+            p <- p +
+                ggplot2::geom_text(
+                    data = peak_df,
+                    ggplot2::aes(x = Detector, y = LabelY, label = Label),
+                    inherit.aes = FALSE,
+                    color = "black",
+                    angle = 45,
+                    hjust = 0,
+                    vjust = 0.5,
+                    size = peak_label_size
+                ) +
+                ggplot2::coord_cartesian(ylim = c(0, y_max + 0.04), clip = "off")
+        }
+    }
 
     if (!is.null(output_file)) {
         ggplot2::ggsave(output_file, p, width = width, height = height, units = unit, dpi = dpi)

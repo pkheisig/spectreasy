@@ -393,11 +393,12 @@
 #'   unmixing.
 #' @param output_file Optional output path for the SCC QC PDF report.
 #' @param use_scatter_gating Logical; if `TRUE` (default), keep broad FSC/SSC
-#'   cleanup and use AF projection/cosine filtering for cell SCC event
-#'   selection when AF controls are available. Bead controls keep the
-#'   bead-appropriate intensity-vs-FSC gate. If AF controls are unavailable,
-#'   cell controls also fall back to the intensity-vs-FSC gate. If `FALSE`, use
-#'   the legacy one-dimensional histogram gate.
+#'   cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
+#'   `FALSE`, use the legacy one-dimensional histogram gate.
+#' @param use_af_cosine_scc_selection Logical; if `TRUE`, use the experimental
+#'   AF projection/cosine selector for cell SCCs when AF controls are available.
+#'   The default, `FALSE`, keeps bead and cell SCCs on the same GMM/EM
+#'   intensity-vs-FSC selector after broad FSC/SSC cleanup.
 #' @param clean_scc_with_unstained Logical; if `TRUE`, clean cell SCC spectra
 #'   with scatter-matched unstained/AF events before deriving spectra and
 #'   spectral variants. Bead SCCs use a scatter-gated unstained bead control as
@@ -461,6 +462,7 @@ unmix_controls <- function(
     save_report = TRUE,
     output_file = NULL,
     use_scatter_gating = TRUE,
+    use_af_cosine_scc_selection = FALSE,
     clean_scc_with_unstained = TRUE,
     scc_background_method = c("scatter_knn", "none"),
     scc_background_k = 3L,
@@ -547,6 +549,7 @@ unmix_controls <- function(
         af_refine_problem_quantile = af_refine_problem_quantile,
         include_multi_af = include_multi_af,
         use_scatter_gating = use_scatter_gating,
+        use_af_cosine_scc_selection = use_af_cosine_scc_selection,
         clean_scc_with_unstained = clean_scc_with_unstained,
         scc_background_method = scc_background_method,
         scc_background_k = scc_background_k,

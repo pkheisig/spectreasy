@@ -168,8 +168,13 @@
         width = grid::unit(0.46, "npc"),
         height = grid::unit(0.44, "npc")
     )
+    gate_type <- if ("intensity_gate_type" %in% colnames(row)) {
+        trimws(as.character(row$intensity_gate_type[[1]]))
+    } else {
+        ""
+    }
     spectral_selection_path <- file.path(report_plot_dir, "spectral_selection", paste0(sample_id, "_spectral_selection.png"))
-    if (file.exists(spectral_selection_path)) {
+    if (identical(gate_type, "af_cosine") && file.exists(spectral_selection_path)) {
         gate_path <- spectral_selection_path
         gate_title <- "SCC/AF Spectral Selection"
     } else {
@@ -552,16 +557,17 @@
 #'   default, `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @param method Unmixing method used for the control scatter matrix
 #'   (`"AutoSpectral"`, `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`).
-#' @param qc_plot_dir Directory where FSC/SSC, spectral-selection, intensity-gate,
-#'   and spectrum PNGs are written
-#'   when `save_qc_pngs = TRUE`.
+#' @param qc_plot_dir Directory where FSC/SSC, intensity-gate, optional
+#'   spectral-selection, and spectrum PNGs are written when
+#'   `save_qc_pngs = TRUE`.
 #' @param save_qc_pngs Logical; if `TRUE`, keep the intermediate QC PNG files in
 #'   `qc_plot_dir`. If `FALSE` (default), PNGs are written to a temporary directory
 #'   for report assembly and removed afterward.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use broad scatter
-#'   cleanup plus spectral event selection when available. Reports prefer the
-#'   spectral-selection spectra plot and fall back to scatter/histogram plots
-#'   when that PNG is unavailable.
+#'   cleanup plus the intensity-vs-FSC GMM/EM selector and show the scatter
+#'   gate plot in the report. If `FALSE`, use and show the legacy
+#'   one-dimensional histogram gate. Reports only show the spectral-selection
+#'   plot for controls whose recorded gate type is `af_cosine`.
 #' @param include_multi_af Logical; forward to [build_reference_matrix()].
 #' @param af_dir AF directory forwarded to [build_reference_matrix()].
 #' @param af_bands_per_file Deprecated compatibility argument. Multiple AF

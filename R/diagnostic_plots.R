@@ -37,6 +37,7 @@
     M_long <- tidyr::pivot_longer(M_overlay, cols = -Fluorophore, names_to = "Detector", values_to = "Signature")
     M_long$Signature <- M_long$Signature * max_res
     M_long$Detector <- factor(M_long$Detector, levels = levels_sorted, labels = labels_sorted)
+    M_long$Fluorophore <- factor(M_long$Fluorophore, levels = .natural_reference_row_levels(rownames(M)))
     M_long
 }
 
