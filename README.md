@@ -4,13 +4,13 @@
 
 ## Key Features
 
-- **Automated Gating**: Isolate positive populations from beads or cells using Gaussian Mixture Models
-- **Background Subtraction**: Automatically subtract internal negative populations to isolate pure fluorophore signatures
-- **Pre-Unmix SCC Review**: Generate a PDF with per-control gating, histogram, and spectrum diagnostics before unmixing
+- **Broad Scatter QC**: Remove debris, saturated events, acquisition junk, and extreme FSC/SSC outliers before spectral work
+- **Reference Background Handling**: Use unstained cell controls for AF extraction and unstained bead controls as bead backgrounds when present
+- **Pre-Unmix SCC Review**: Generate a PDF with per-control event selection, histogram, and spectrum diagnostics before unmixing
 - **SCC-Variance WLS Unmixing**: Weighted unmixing using detector noise measured from the single-color controls
-- **Per-Cell Spectral Matching**: Background AF selection and fluorophore spectral-variant optimization happen automatically during the control/sample workflow
+- **AutoSpectral by Default**: Per-cell AF matching and fluorophore spectral-variant optimization happen automatically during the control/sample workflow
 - **SCC Diagnostics & Visualization**: Spectra, gating plots, and SCC unmixing scatter outputs for control-stage QC
-- **Interactive GUI**: Web-based interface for manual matrix adjustment
+- **Browser Tools**: Interactive spectral panel builder and manual matrix adjustment module
 - **Bioconductor-Native In-Memory Workflows**: `unmix_samples()` accepts `flowSet` and `SingleCellExperiment`, and can return either container
 
 ---
@@ -47,7 +47,7 @@ The user-facing workflow is:
 3. review and supplement the generated `fcs_mapping.csv`
 4. confirm the control file in the console so `unmix_controls()` can finish
 5. run `unmix_samples()`
-6. generate QC reports for the controls and unmixed samples (optional)
+6. review the QC reports that are generated during unmixing by default
 
 ## 1. Download the example data
 
@@ -79,7 +79,7 @@ Run `unmix_controls()` first. If `fcs_mapping.csv` is missing, `auto_create_cont
 ```r
 setwd(project_dir)
 
-unmix_controls(
+ctrl <- unmix_controls(
   scc_dir = "scc",
   auto_create_control = TRUE,
   cytometer = "Aurora",
@@ -134,12 +134,12 @@ The same `unmix_controls()` call then continues and writes the control-stage out
 #>  [4] "fsc_ssc/FITC (Beads)_fsc_ssc.png"
 #>  [5] "fsc_ssc/LIVE DEAD NIR (Cells)_fsc_ssc.png"
 #>  [6] "fsc_ssc/PerCP-Cy5.5 (Beads)_fsc_ssc.png"
-#>  [7] "intensity_scatter/Alexa Fluor 700 (Beads)_intensity_scatter.png"
-#>  [8] "intensity_scatter/BUV395 (Beads)_intensity_scatter.png"
-#>  [9] "intensity_scatter/BV510 (Beads)_intensity_scatter.png"
-#> [10] "intensity_scatter/FITC (Beads)_intensity_scatter.png"
-#> [11] "intensity_scatter/LIVE DEAD NIR (Cells)_intensity_scatter.png"
-#> [12] "intensity_scatter/PerCP-Cy5.5 (Beads)_intensity_scatter.png"
+#>  [7] "spectral_selection/Alexa Fluor 700 (Beads)_spectral_selection.png"
+#>  [8] "spectral_selection/BUV395 (Beads)_spectral_selection.png"
+#>  [9] "spectral_selection/BV510 (Beads)_spectral_selection.png"
+#> [10] "spectral_selection/FITC (Beads)_spectral_selection.png"
+#> [11] "spectral_selection/LIVE DEAD NIR (Cells)_spectral_selection.png"
+#> [12] "spectral_selection/PerCP-Cy5.5 (Beads)_spectral_selection.png"
 #> [13] "scc_af_spectra.png"
 #> [14] "scc_detector_noise.csv"
 #> [15] "scc_reference_matrix.csv"
@@ -170,19 +170,20 @@ Key outputs from this step include:
 - `spectreasy_outputs/unmix_controls/scc_reference_matrix.csv`
 - `spectreasy_outputs/unmix_controls/scc_spectral_variants.rds`
 - `spectreasy_outputs/unmix_controls/scc_variances.csv`
+- `spectreasy_outputs/unmix_controls/qc_controls_report.pdf`
 - `spectreasy_outputs/unmix_controls/scc_spectra.png`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
 - `spectreasy_outputs/unmix_controls/fsc_ssc/*.png`
-- `spectreasy_outputs/unmix_controls/intensity_scatter/*.png`
+- `spectreasy_outputs/unmix_controls/spectral_selection/*.png`
 - `spectreasy_outputs/unmix_controls/spectrum/*.png`
 - `spectreasy_outputs/unmix_controls/unmixed_fcs/*.fcs`
 
-The control-stage run also writes visual checks for each single-color control. For one color, the three plots below show the FSC/SSC gate, the intensity-vs-FSC scatter gate, and the detector spectrum used to build the reference matrix:
+The control-stage run also writes visual checks for each single-color control. For one color, the three plots below show the broad FSC/SSC cleanup, the spectral event-selection diagnostic, and the detector spectrum used to build the reference matrix:
 
 <p align="center">
   <img src="man/figures/vignette_fsc_ssc.png" width="48%" />
-  <img src="man/figures/vignette_intensity_scatter.png" width="48%" />
+  <img src="man/figures/vignette_spectral_selection.png" width="48%" />
 </p>
 
 <p align="center">
@@ -195,15 +196,15 @@ The same run creates the NxN scatter matrix for the single-color controls. Each 
   <img src="man/figures/vignette_scatter_matrix.png" width="100%" />
 </p>
 
-### What AutoSpectral Uses
+### AutoSpectral in spectreasy
 
-By default, `spectreasy` uses `method = "AutoSpectral"`. AutoSpectral chooses one AF band per cell, tests plausible single-color-control spectral variants for positive fluorophores, and then refits that cell with OLS. The regular `OLS`, `WLS`, `NNLS`, and `RWLS` methods remain available as separate methods.
+By default, `spectreasy` uses `method = "AutoSpectral"`. In other words, `spectreasy` is using AutoSpectral as the default unmixing strategy, not treating it as a separate manual add-on. During unmixing, AutoSpectral chooses one AF band per cell, tests plausible single-color-control spectral variants for positive fluorophores, and then refits that cell with OLS. The regular `OLS`, `WLS`, `NNLS`, and `RWLS` methods remain available as separate methods.
 
 When you explicitly choose `method = "WLS"`, `spectreasy` uses an event-wise detector-error model: detectors with higher non-negative signal in an event get lower weight for that event. The detector noise floor is estimated from the low-signal tail of the SCC files and written to `scc_detector_noise.csv`; if no estimate is available, `spectreasy` falls back to a scalar floor of 125. The SCC population variances in `scc_variances.csv` are still written as reference QC metadata, but they are not used as default WLS detector weights.
 
 The `control.type` column in `fcs_mapping.csv` also matters for this step. It tells `spectreasy` whether each control should be gated as `beads` or `cells`. If `control.type` is empty, `spectreasy` falls back to filename-based guessing.
 
-With `unmix_method = "AutoSpectral"`, `spectreasy` learns a conservative fluorophore spectral-variant library from the single-color controls and writes it to `scc_spectral_variants.rds`. This follows the same high-level idea as AutoSpectral's per-cell fluorophore spectrum optimization: learn plausible within-fluorophore spectral shapes from controls, then use them when they improve per-cell residuals without overfitting noise.
+With `unmix_method = "AutoSpectral"`, `spectreasy` learns a conservative fluorophore spectral-variant library from the single-color controls and writes it to `scc_spectral_variants.rds`. This follows the same high-level idea as AutoSpectral's per-cell fluorophore spectrum optimization: learn plausible within-fluorophore spectral shapes from controls, then use them when they improve per-cell residuals without overfitting noise. The SCC event-selection and variant-detection design is also inspired by [Spectracle](https://github.com/nlaniewski/spectracle), which separates true spectral signal from AF-like contamination before local AF cleanup.
 
 ## 5. Unmix the experimental sample
 
@@ -231,13 +232,13 @@ and returns a named list with one element per sample.
 |      8233.14537| 16461.14920| 1683.2967|  1009.26887|      32.07973|  -257.83746|  3400.9268|sample |
 |       -42.85445|  -235.11592| -247.3907|   -55.22978|     218.27591|  -157.39362|   263.2533|sample |
 
-## 6. Generate quality control reports (optional)
+## 6. Review quality control reports
 
-After unmixing, you can generate comprehensive PDF reports to inspect the quality of both the single-color controls and the unmixed experimental samples.
+`unmix_controls()` and `unmix_samples()` generate comprehensive PDF reports by default. You can open those files directly, or call the report helpers below when you want to regenerate reports with different paths or limits.
 
 ### Single-Color Control (SCC) Report
 
-The SCC report reviews gating, peak channels, and signal distributions for each control file. By default, it writes the report to `"spectreasy_outputs/unmix_samples/qc_controls_report.pdf"`.
+The SCC report reviews event selection, peak channels, and signal distributions for each control file. By default, `unmix_controls()` writes it to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.
 
 ```r
 qc_controls(
@@ -249,7 +250,7 @@ qc_controls(
 
 ### Samples Report
 
-The overall sample report visualizes unmixing quality across samples, including spectra overlays, detector residuals, spread matrices, and marker scatter plots. By default, it writes the report to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.
+The overall sample report visualizes unmixing quality across samples, including spectra overlays, detector residuals, spread matrices, and marker scatter plots. By default, `unmix_samples()` writes it to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.
 
 ```r
 qc_samples(
@@ -258,17 +259,15 @@ qc_samples(
 )
 ```
 
-# Optional steps
+# Advanced topics
 
-The sections below are useful extensions, but they are not required for the core `unmix_controls()` -> `unmix_samples()` workflow shown above.
+The sections below are for understanding, tuning, or reusing pieces of the workflow. Per-cell AF matching, fluorophore spectral-variant optimization, and QC report generation are already built into the default `unmix_controls()` -> `unmix_samples()` path.
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `unmix_controls()` uses `af_n_bands = "auto"` to build a FlowSOM autofluorescence bank from pooled unstained/AF control events. If your cells have different AF shapes from cell to cell, the SOM bank represents those shapes as multiple candidate AF signatures.
+By default, `unmix_controls()` uses `af_n_bands = "auto"` to build a FlowSOM AF bank from pooled unstained/AF control events. The first AF row is the mean AF profile, and additional SOM-derived AF rows represent common AF shapes seen in the unstained cells. During AutoSpectral unmixing, each event chooses one AF profile before the final OLS fit.
 
-This per-cell AF matching layer is inspired by AutoSpectral's cell-specific autofluorescence-matching strategy, while keeping the AF signatures separate from fluorophore spectra in the `spectreasy` reference matrix.
-
-Use the two multi-AF settings in the control-stage call. `af_n_bands` controls the size of the shared pooled AF bank, while `include_multi_af` tells `spectreasy` to include additional AF controls from the `af/` directory when those files are available.
+Most users should leave the AF settings at their defaults. Tune `af_auto_max_bands`, pass an explicit integer to `af_n_bands`, or set `include_multi_af = TRUE` only when you have a reason to add external AF files or benchmark a difficult panel.
 
 ```r
 ctrl_multi_af <- unmix_controls(
@@ -293,23 +292,44 @@ unmixed_multi_af <- unmix_samples(
 )
 ```
 
-`af_n_bands` is like choosing how many AF "flavors" to model. With `af_n_bands = "auto"`, spectreasy builds a SOM bank with up to `af_auto_max_bands = 100` SOM nodes by default, then prepends a mean AF row. That gives 101 AF rows before any contaminant QC removals. During AutoSpectral unmixing, each event chooses one AF profile before the final OLS fit, so the larger AF bank can describe varied autofluorescence without using every AF profile in the final fit.
-
-For direct control over the multi-AF bank size, set `af_auto_max_bands` or pass an explicit integer to `af_n_bands`. For difficult samples with structured AF left after the first pass, set `af_refine = TRUE` to append second-pass modulated AF spectra from high-error unstained cells. Keep it off unless benchmark metrics show it helps your panel.
+This per-cell AF matching layer follows the AutoSpectral idea of matching AF at the event level, while keeping AF signatures separate from fluorophore spectra in the `spectreasy` reference matrix. For difficult samples with structured AF left after the first pass, `af_refine = TRUE` can append second-pass modulated AF spectra from high-error unstained cells. Keep it off unless benchmark metrics show it helps your panel.
 
 ## Per-cell Fluorophore Spectral-Variant Optimization
 
-With `unmix_method = "AutoSpectral"`, `unmix_controls()` learns spectral variants as part of the method. During the control stage, `spectreasy` looks for reproducible shape differences within each fluorophore control, keeps only variants that remain close to the base spectrum, and saves the result as `scc_spectral_variants.rds`.
+With `unmix_method = "AutoSpectral"`, `unmix_controls()` learns spectral variants as part of the default method. During the control stage, `spectreasy` looks for reproducible shape differences within each fluorophore control, keeps only variants that remain close to the base spectrum, and saves the result as `scc_spectral_variants.rds`.
+
+For cell-based SCCs, event selection now combines broad FSC/SSC cleanup with AF projection and cosine filtering, so the selector favors events that are bright enough and least AF-like instead of depending on a strict positive fluorescence gate. Bead-based SCCs keep bead-appropriate event selection and use an unstained bead control as their negative background when one is available.
 
 During `unmix_samples()`, only fluorophores that are positive in a given event are eligible for variant matching. The optimizer tests a small number of candidate variants, accepts a change only when detector residuals improve, and falls back to the base spectrum for weak, negative, noisy, or unsupported events.
 
-This feature is also inspired by AutoSpectral's per-cell fluorophore spectrum optimization. In `spectreasy`, it is part of the `AutoSpectral` method, so users do not have to run a separate selector by hand.
+This feature is part of `spectreasy`'s AutoSpectral workflow. Its per-cell optimization follows AutoSpectral, and the SCC event-selection and variant-detection strategy is inspired by [Spectracle](https://github.com/nlaniewski/spectracle).
+
+## AF Profile Library
+
+For reuse across projects, `spectreasy` can store AF profiles in a small global library. This is useful when you have a well-characterized unstained sample or instrument-specific AF profile that you want to inspect, save, reload, and add to a reference matrix.
+
+```r
+afp <- extract_af_profile(
+  fcs_file = "scc/Unstained (Cells).fcs",
+  show_plot = TRUE
+)
+
+save_af_profile("aurora_pbmc_baseline", afp, overwrite = TRUE)
+list_af_profiles()
+
+saved_af <- load_af_profile("aurora_pbmc_baseline", show_plot = TRUE)
+M_with_saved_af <- add_af_profile(ctrl$M, saved_af)
+```
+
+Profiles are stored under `af_profile_dir()`, which defaults to the user-level `spectreasy` data directory. Use `plot_af_profile()` to inspect a saved profile and `delete_af_profile()` to remove one.
 
 ## Use a reviewed control CSV in non-interactive workflows
 
 For scripts, reports, or CI jobs, you can supply a pre-existing, reviewed control CSV file via `control_file` to `unmix_controls()` to skip the confirmation prompt.
 
 ```r
+control_file <- file.path(project_dir, "fcs_mapping.csv")
+
 ctrl_noninteractive <- unmix_controls(
   scc_dir = file.path(project_dir, "scc"),
   control_file = control_file,
@@ -326,10 +346,11 @@ dim(ctrl_noninteractive$M)
 
 You can pass the in-memory reference matrix returned by `unmix_controls()` directly to `unmix_samples()` instead of loading it from the saved CSV file.
 
-For WLS, `unmix_samples()` will also load `scc_detector_noise.csv` beside the saved reference matrix when it is available. The optional `scc_variances.csv` remains useful as control-spread QC metadata.
+For WLS, `unmix_samples()` will also load `scc_detector_noise.csv` beside the saved reference matrix when it is available. `scc_variances.csv` remains useful as control-spread QC metadata.
 
 ```r
 fluor_reference_matrix <- ctrl$M
+control_df <- utils::read.csv(file.path(project_dir, "fcs_mapping.csv"), stringsAsFactors = FALSE)
 marker_map <- stats::setNames(control_df$marker, control_df$fluorophore)
 reference_matrix <- fluor_reference_matrix
 mapped_names <- marker_map[rownames(reference_matrix)]
@@ -370,6 +391,7 @@ plot_ssm(calculate_ssm(reference_matrix_no_af), output_file = NULL)
 </p>
 
 ```r
+sample_results <- do.call(rbind, lapply(unmixed, function(x) x$data))
 plot_nps(calculate_nps(sample_results), output_file = NULL)
 ```
 
@@ -379,13 +401,40 @@ plot_nps(calculate_nps(sample_results), output_file = NULL)
 
 ---
 
+## Appendix: Browser Tools
+
+### Spectral panel builder
+
+`build_spectral_panel()` opens a browser-based panel builder backed by packaged theoretical spectra. It currently supports Cytek Aurora, BD FACSDiscover, Sony ID7000, and Thermo Fisher Attune Xenith libraries.
+
+```r
+build_spectral_panel()
+```
+
+Use it before an experiment when you want a quick browser view of candidate fluorophore spectra, detector overlap, similarity, and panel complexity.
+
+### Matrix adjustment module
+
+`adjust_matrix()` opens the browser-based matrix adjustment module. By default, it looks for matrix files in `spectreasy_outputs/unmix_controls` under the current working directory, serves bundled browser assets, and runs locally through the R session.
+
+```r
+adjust_matrix()
+```
+
+Use it after the automated control-stage workflow when you need to inspect or manually adjust an unmixing matrix in the browser. Screenshots for the panel builder and matrix adjustment module are not currently included in `man/figures/`; add them there when captured so this appendix can show the live interfaces.
+
+---
+
 ## References and Related Work
 
-The per-cell autofluorescence matching and fluorophore spectral-variant ideas in `spectreasy` are inspired by AutoSpectral:
+`spectreasy` uses AutoSpectral as its default unmixing method and builds on common R/Bioconductor flow-cytometry tooling. The SCC event-selection and spectral-variant detection design is additionally inspired by Spectracle:
 
 - [AutoSpectral package website](https://drcytometer.github.io/AutoSpectral/)
 - [AutoSpectral GitHub repository](https://github.com/DrCytometer/AutoSpectral)
 - Burton OT, Bücken L, De Vuyst L, Humblet-Baron S, Lopez Menoz De Leon A, Khan S, Cerveira J, Dooley J, Liston A. [AutoSpectral improves spectral flow cytometry accuracy through optimised spectral unmixing and autofluorescence-matching at the cellular level](https://www.biorxiv.org/content/10.1101/2025.10.27.684855v1). bioRxiv, 2025.
+- [Spectracle by nlaniewski](https://github.com/nlaniewski/spectracle)
+- [FlowSOM](https://bioconductor.org/packages/FlowSOM/)
+- [flowCore](https://bioconductor.org/packages/flowCore/)
 
 ---
 

@@ -479,6 +479,7 @@
         dir.create(file.path(out_path, "fsc_ssc"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "histogram"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "intensity_scatter"), showWarnings = FALSE, recursive = TRUE)
+        dir.create(file.path(out_path, "spectral_selection"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "spectrum"), showWarnings = FALSE, recursive = TRUE)
     }
     out_path
@@ -2369,14 +2370,23 @@
 
     positive_idx <- rep(FALSE, nrow(gated_data))
     positive_idx[selected_idx] <- TRUE
+    af_cosine_full <- rep(NA_real_, nrow(gated_data))
+    residual_signal_full <- rep(NA_real_, nrow(gated_data))
+    raw_signal_full <- rep(NA_real_, nrow(gated_data))
+    score_full <- rep(NA_real_, nrow(gated_data))
+    af_cosine_full[complete_idx] <- projected$cosine
+    residual_signal_full[complete_idx] <- residual_signal
+    raw_signal_full[complete_idx] <- raw_signal
+    score_full[complete_idx] <- score
     list(
         vals_log = vals_log,
         gate_min = gate_min,
         gate_max = gate_max,
         positive_idx = positive_idx,
-        af_cosine = projected$cosine,
-        residual_signal = residual_signal,
-        score = score,
+        af_cosine = af_cosine_full,
+        residual_signal = residual_signal_full,
+        raw_signal = raw_signal_full,
+        score = score_full,
         af_basis = af_basis
     )
 }
@@ -2708,6 +2718,255 @@
     ch_name
 }
 
+.reference_spectral_selection_centers <- function(events,
+                                                  detector_names,
+                                                  n_centers = 8L,
+                                                  seed = 1L) {
+    if (is.null(events) || nrow(events) == 0L) {
+        return(NULL)
+    }
+    events <- as.matrix(events[, detector_names, drop = FALSE])
+    events <- events[stats::complete.cases(events), , drop = FALSE]
+    if (nrow(events) == 0L) {
+        return(NULL)
+    }
+    shapes <- .normalize_spectral_variant_shapes(events)
+    if (nrow(shapes) == 0L) {
+        return(NULL)
+    }
+    n_centers <- min(as.integer(n_centers[1]), nrow(shapes))
+    if (!is.finite(n_centers) || is.na(n_centers) || n_centers < 1L) {
+        n_centers <- 1L
+    }
+    if (nrow(shapes) <= n_centers) {
+        out <- unique(as.data.frame(round(shapes, digits = 6)))
+        out <- as.matrix(out)
+        colnames(out) <- detector_names
+        return(out)
+    }
+    .cluster_spectral_variant_shapes(shapes, n_nodes = n_centers, seed = seed)
+}
+
+.reference_spectral_selection_long <- function(mat,
+                                               group_label,
+                                               detector_names,
+                                               detector_labels,
+                                               max_rows = 8L) {
+    if (is.null(mat) || nrow(mat) == 0L) {
+        return(NULL)
+    }
+    mat <- as.matrix(mat[, detector_names, drop = FALSE])
+    if (nrow(mat) > max_rows) {
+        mat <- mat[seq_len(max_rows), , drop = FALSE]
+    }
+    rownames(mat) <- paste0(group_label, " ", seq_len(nrow(mat)))
+    df <- as.data.frame(mat, check.names = FALSE)
+    df$Band <- rownames(mat)
+    long <- tidyr::pivot_longer(df, cols = dplyr::all_of(detector_names), names_to = "Detector", values_to = "Signal")
+    long$Group <- group_label
+    long$DetectorIndex <- match(long$Detector, detector_names)
+    long$DetectorLabel <- factor(long$Detector, levels = detector_names, labels = detector_labels)
+    long
+}
+
+.reference_contamination_indices <- function(gated_data,
+                                             detector_names,
+                                             peak_vals,
+                                             vals_log,
+                                             positive_idx,
+                                             spectral_gate_info = NULL,
+                                             max_events = 2500L) {
+    positive_idx <- as.logical(positive_idx)
+    positive_idx[is.na(positive_idx)] <- FALSE
+    gate_type <- attr(vals_log, "gate_type")
+    n <- nrow(gated_data)
+    if (identical(gate_type, "af_cosine") && !is.null(spectral_gate_info)) {
+        cosine <- spectral_gate_info$af_cosine
+        raw_signal <- spectral_gate_info$raw_signal
+        if (is.null(raw_signal) || length(raw_signal) != n) {
+            raw_signal <- rowSums(pmax(as.matrix(gated_data[, detector_names, drop = FALSE]), 0), na.rm = TRUE)
+        }
+        if (!is.null(cosine) && length(cosine) == n) {
+            candidates <- which(!positive_idx & is.finite(cosine) & is.finite(raw_signal) & raw_signal > 0)
+            if (length(candidates) > 0L) {
+                bright_cut <- if (any(positive_idx)) {
+                    stats::quantile(raw_signal[positive_idx], 0.10, na.rm = TRUE)
+                } else {
+                    stats::quantile(raw_signal, 0.50, na.rm = TRUE)
+                }
+                bright_candidates <- candidates[raw_signal[candidates] >= bright_cut]
+                if (length(bright_candidates) >= 10L) {
+                    candidates <- bright_candidates
+                }
+                ord <- order(cosine[candidates], raw_signal[candidates], decreasing = TRUE)
+                return(candidates[ord][seq_len(min(length(ord), max_events))])
+            }
+        }
+    }
+
+    neg_log_min <- attr(vals_log, "neg_log_min")
+    neg_log_max <- attr(vals_log, "neg_log_max")
+    if (isTRUE(attr(vals_log, "negative_gate_present")) &&
+        is.finite(neg_log_min) && is.finite(neg_log_max) && neg_log_max > neg_log_min) {
+        candidates <- which(
+            !positive_idx &
+                peak_vals >= 10^neg_log_min &
+                peak_vals <= 10^neg_log_max
+        )
+        if (length(candidates) > 0L) {
+            return(candidates[seq_len(min(length(candidates), max_events))])
+        }
+    }
+
+    candidates <- which(!positive_idx)
+    if (length(candidates) == 0L) {
+        return(integer())
+    }
+    candidates[seq_len(min(length(candidates), max_events))]
+}
+
+.save_reference_spectral_selection_plot <- function(sn,
+                                                    gated_data,
+                                                    final_gated_data,
+                                                    detector_names,
+                                                    detector_labels,
+                                                    det_info,
+                                                    peak_vals,
+                                                    vals_log,
+                                                    positive_idx,
+                                                    out_path,
+                                                    spectral_gate_info = NULL) {
+    selected_centers <- .reference_spectral_selection_centers(
+        events = final_gated_data,
+        detector_names = detector_names,
+        n_centers = 8L,
+        seed = 1L
+    )
+
+    contamination_idx <- .reference_contamination_indices(
+        gated_data = gated_data,
+        detector_names = detector_names,
+        peak_vals = peak_vals,
+        vals_log = vals_log,
+        positive_idx = positive_idx,
+        spectral_gate_info = spectral_gate_info
+    )
+    contamination_events <- if (length(contamination_idx) > 0L) {
+        gated_data[contamination_idx, detector_names, drop = FALSE]
+    } else {
+        NULL
+    }
+    contamination_centers <- .reference_spectral_selection_centers(
+        events = contamination_events,
+        detector_names = detector_names,
+        n_centers = 8L,
+        seed = 2L
+    )
+
+    if ((is.null(contamination_centers) || nrow(contamination_centers) == 0L) &&
+        !is.null(spectral_gate_info) && !is.null(spectral_gate_info$af_basis)) {
+        contamination_centers <- .normalize_spectral_variant_shapes(
+            as.matrix(spectral_gate_info$af_basis[, detector_names, drop = FALSE])
+        )
+    }
+
+    selected_label <- "Selected SCC bands"
+    contamination_label <- if (identical(attr(vals_log, "gate_type"), "af_cosine")) {
+        "AF-like contamination bands"
+    } else {
+        "Background/negative bands"
+    }
+
+    selected_long <- .reference_spectral_selection_long(
+        selected_centers,
+        selected_label,
+        detector_names,
+        detector_labels
+    )
+    contamination_long <- .reference_spectral_selection_long(
+        contamination_centers,
+        contamination_label,
+        detector_names,
+        detector_labels
+    )
+    long_parts <- list(selected_long, contamination_long)
+    long_parts <- long_parts[!vapply(long_parts, is.null, logical(1))]
+    long <- if (length(long_parts)) {
+        data.table::rbindlist(long_parts, fill = TRUE)
+    } else {
+        data.table::data.table()
+    }
+    if (nrow(long) == 0L) {
+        return(invisible(NULL))
+    }
+
+    vlines <- if (!is.null(det_info) && "laser_nm" %in% names(det_info)) {
+        which(diff(det_info$laser_nm) != 0) + 0.5
+    } else {
+        numeric()
+    }
+    subtitle <- paste(
+        unlist(lapply(c(
+            attr(vals_log, "gate_method"),
+            paste0(
+                nrow(final_gated_data),
+                " selected event(s); ",
+                length(contamination_idx),
+                if (identical(attr(vals_log, "gate_type"), "af_cosine")) {
+                    " AF-like/background event(s) summarized"
+                } else {
+                    " background/negative event(s) summarized"
+                }
+            )
+        ), strwrap, width = 110), use.names = FALSE),
+        collapse = "\n"
+    )
+
+    p <- ggplot2::ggplot(long, ggplot2::aes(DetectorIndex, Signal, group = Band, color = Group)) +
+        ggplot2::geom_line(alpha = 0.78, linewidth = 0.75) +
+        ggplot2::geom_point(alpha = 0.85, size = 0.9) +
+        ggplot2::scale_color_manual(
+            values = stats::setNames(
+                c("#2166AC", "#B2182B"),
+                c(selected_label, contamination_label)
+            ),
+            drop = FALSE
+        ) +
+        ggplot2::scale_x_continuous(
+            breaks = seq_along(detector_names),
+            labels = detector_labels,
+            expand = ggplot2::expansion(mult = c(0.01, 0.01))
+        ) +
+        ggplot2::scale_y_continuous(limits = c(0, 1.05), expand = ggplot2::expansion(mult = c(0, 0.03))) +
+        ggplot2::labs(
+            title = paste0(sn, " - SCC spectral selection"),
+            subtitle = subtitle,
+            x = NULL,
+            y = "Normalized spectral shape",
+            color = NULL
+        ) +
+        ggplot2::theme_minimal(base_size = 11) +
+        ggplot2::theme(
+            legend.position = "bottom",
+            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+            plot.subtitle = ggplot2::element_text(size = 8.4, lineheight = 1.05),
+            panel.background = ggplot2::element_rect(fill = "white", color = NA)
+        )
+    if (length(vlines) > 0L) {
+        p <- p + ggplot2::geom_vline(xintercept = vlines, color = "grey80", linewidth = 0.35)
+    }
+
+    ggplot2::ggsave(
+        file.path(out_path, "spectral_selection", paste0(sn, "_spectral_selection.png")),
+        p,
+        width = 6.5,
+        height = 4,
+        dpi = 300
+    )
+
+    invisible(NULL)
+}
+
 # Generates and saves PDF quality control (QC) plots for a processed sample.
 # Produces three plots: a 2D density plot of FSC-SSC gating, a 1D density histogram of positive/negative
 # peak gating, and a spectral profile plot of the normalized signature.
@@ -2732,7 +2991,8 @@
                                      det_info,
                                      out_path,
                                      use_scatter_gating = TRUE,
-                                     positive_idx = NULL) {
+                                     positive_idx = NULL,
+                                     spectral_gate_info = NULL) {
     fsc_desc <- .get_reference_axis_label(fsc, pd)
     ssc_desc <- .get_reference_axis_label(ssc, pd)
     dt_plot_gating <- data.table::data.table(x = raw_data[, fsc], y = raw_data[, ssc])
@@ -2881,6 +3141,22 @@
         ggplot2::ggsave(file.path(out_path, "intensity_scatter", paste0(sn, "_intensity_scatter.png")), p2_scatter, width = 6.5, height = 4, dpi = 300)
     } else {
         ggplot2::ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, width = 6.5, height = 4, dpi = 300)
+    }
+
+    if (!is.null(positive_idx) && length(positive_idx) == nrow(gated_data)) {
+        .save_reference_spectral_selection_plot(
+            sn = sn,
+            gated_data = gated_data,
+            final_gated_data = final_gated_data,
+            detector_names = detector_names,
+            detector_labels = detector_labels,
+            det_info = det_info,
+            peak_vals = peak_vals,
+            vals_log = vals_log,
+            positive_idx = positive_idx,
+            out_path = out_path,
+            spectral_gate_info = spectral_gate_info
+        )
     }
 
     log_mat <- log10(pmax(final_gated_data[, detector_names, drop = FALSE], 1e-3))
@@ -3051,6 +3327,7 @@
     } else {
         NULL
     }
+    spectral_gate_info <- spectral_gate
     if (!is.null(spectral_gate)) {
         hist_info <- spectral_gate
     }
@@ -3125,7 +3402,8 @@
             det_info = metadata$det_info,
             out_path = config$out_path,
             use_scatter_gating = config$use_scatter_gating,
-            positive_idx = positive_idx
+            positive_idx = positive_idx,
+            spectral_gate_info = spectral_gate_info
         )
     }
 

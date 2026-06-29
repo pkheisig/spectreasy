@@ -168,11 +168,18 @@
         width = grid::unit(0.46, "npc"),
         height = grid::unit(0.44, "npc")
     )
-    gate_dir <- if (isTRUE(use_scatter_gating)) "intensity_scatter" else "histogram"
-    gate_suffix <- if (isTRUE(use_scatter_gating)) "_intensity_scatter.png" else "_histogram.png"
-    gate_title <- if (isTRUE(use_scatter_gating)) "Scatter/Spectral Event Gate" else "Peak-Channel Histogram Gate"
+    spectral_selection_path <- file.path(report_plot_dir, "spectral_selection", paste0(sample_id, "_spectral_selection.png"))
+    if (file.exists(spectral_selection_path)) {
+        gate_path <- spectral_selection_path
+        gate_title <- "SCC/AF Spectral Selection"
+    } else {
+        gate_dir <- if (isTRUE(use_scatter_gating)) "intensity_scatter" else "histogram"
+        gate_suffix <- if (isTRUE(use_scatter_gating)) "_intensity_scatter.png" else "_histogram.png"
+        gate_path <- file.path(report_plot_dir, gate_dir, paste0(sample_id, gate_suffix))
+        gate_title <- if (isTRUE(use_scatter_gating)) "Scatter/Spectral Event Gate" else "Peak-Channel Histogram Gate"
+    }
     .draw_report_image_panel(
-        file.path(report_plot_dir, gate_dir, paste0(sample_id, gate_suffix)),
+        gate_path,
         gate_title,
         x = grid::unit(0.74, "npc"),
         y = grid::unit(0.62, "npc"),
@@ -545,14 +552,16 @@
 #'   default, `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @param method Unmixing method used for the control scatter matrix
 #'   (`"AutoSpectral"`, `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`).
-#' @param qc_plot_dir Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
+#' @param qc_plot_dir Directory where FSC/SSC, spectral-selection, intensity-gate,
+#'   and spectrum PNGs are written
 #'   when `save_qc_pngs = TRUE`.
 #' @param save_qc_pngs Logical; if `TRUE`, keep the intermediate QC PNG files in
 #'   `qc_plot_dir`. If `FALSE` (default), PNGs are written to a temporary directory
 #'   for report assembly and removed afterward.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use broad scatter
-#'   cleanup plus spectral event selection when available and show scatter gate
-#'   plots in the report. If `FALSE`, use and show the legacy histogram gate.
+#'   cleanup plus spectral event selection when available. Reports prefer the
+#'   spectral-selection spectra plot and fall back to scatter/histogram plots
+#'   when that PNG is unavailable.
 #' @param include_multi_af Logical; forward to [build_reference_matrix()].
 #' @param af_dir AF directory forwarded to [build_reference_matrix()].
 #' @param af_bands_per_file Deprecated compatibility argument. Multiple AF

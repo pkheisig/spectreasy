@@ -143,6 +143,24 @@ test_that("bead SCCs keep intensity selection even when AF controls exist", {
     expect_equal(attr(M, "af_bank_info")$sources$file[1], "Unstained (Cells).fcs")
 })
 
+test_that("SCC QC plots include spectral selection spectra", {
+    set.seed(46)
+    wf <- make_matched_af_scc()
+    output_dir <- tempfile("spectreasy_spectral_selection_qc_")
+
+    spectreasy::build_reference_matrix(
+        input_folder = wf$scc_dir,
+        output_folder = output_dir,
+        control_df = wf$control_df,
+        clean_scc_with_unstained = TRUE,
+        save_qc_plots = TRUE,
+        seed = 46,
+        subsample_n = 500
+    )
+
+    expect_true(file.exists(file.path(output_dir, "spectral_selection", "FITC (Cells)_spectral_selection.png")))
+})
+
 test_that("matched background helpers clean local AF from variant events", {
     bg_exprs <- make_matched_af_exprs(n = 300, positive = FALSE)
     pos_exprs <- make_matched_af_exprs(n = 120, positive = TRUE)
