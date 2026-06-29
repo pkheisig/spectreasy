@@ -631,9 +631,10 @@
     top_channels <- character()
     top_ratio <- NA_real_
     entropy_hi <- NA_real_
+    read_error <- ""
 
     tryCatch({
-        ff <- flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE)
+        ff <- suppressWarnings(flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE))
         pd <- flowCore::pData(flowCore::parameters(ff))
         channel_alias_map <- .merge_control_file_alias_map(channel_alias_map, .build_channel_alias_map_from_pd(pd))
         fl_pd <- get_sorted_detectors(pd)
@@ -676,7 +677,9 @@
                 }
             }
         }
-    }, error = function(e) NULL)
+    }, error = function(e) {
+        read_error <<- conditionMessage(e)
+    })
 
     list(
         pd = pd,
@@ -684,8 +687,14 @@
         top_channels = top_channels,
         top_ratio = top_ratio,
         entropy_hi = entropy_hi,
+        read_error = read_error,
         channel_alias_map = channel_alias_map
     )
+}
+
+.control_file_should_warn_read_error <- function(path) {
+    size <- suppressWarnings(file.info(path)$size)
+    is.finite(size) && !is.na(size) && size > 0
 }
 
 .control_file_is_af_like <- function(current_fluor,
@@ -727,6 +736,16 @@
         path <- .control_file_row_path(fn, input_folder = input_folder, af_folder = af_folder, include_af_folder = include_af_folder)
         summary <- .summarize_control_file_fcs(path, channel_alias_map = channel_alias_map)
         channel_alias_map <- summary$channel_alias_map
+
+        if (nzchar(summary$read_error) && .control_file_should_warn_read_error(path)) {
+            warning(
+                "Could not read FCS file while auto-detecting peak channel: ",
+                path,
+                "\n",
+                summary$read_error,
+                call. = FALSE
+            )
+        }
 
         if (nzchar(summary$peak_channel)) {
             df$channel[i] <- summary$peak_channel

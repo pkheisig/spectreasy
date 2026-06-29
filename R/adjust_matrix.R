@@ -189,6 +189,12 @@
     if (isTRUE(open_browser)) utils::browseURL(frontend_url)
 
     pr <- plumber::plumb(paths$api_path)
+    pr <- plumber::pr_filter(pr, "nocache", function(req, res) {
+        res$setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        res$setHeader("Pragma", "no-cache")
+        res$setHeader("Expires", "0")
+        plumber::forward()
+    })
     if (!isTRUE(dev_mode)) {
         plumber::pr_static(pr, "/", paths$dist_path)
     }

@@ -131,6 +131,25 @@ testthat::test_that("detector fallback matches whole detector codes", {
     testthat::expect_equal(infer("R10-A", fluor_channel_map = character()), "APC")
 })
 
+testthat::test_that("create_control_file warns when peak detection cannot read an FCS", {
+    scc_dir <- tempfile("spectreasy_bad_scc_")
+    dir.create(scc_dir, recursive = TRUE, showWarnings = FALSE)
+    writeBin(as.raw(rep(0, 128)), file.path(scc_dir, "BV510 (Cells).fcs"))
+
+    out_csv <- tempfile(fileext = ".csv")
+    testthat::expect_warning(
+        df <- spectreasy::create_control_file(
+            input_folder = scc_dir,
+            include_af_folder = FALSE,
+            output_file = out_csv
+        ),
+        regexp = "Could not read FCS file while auto-detecting peak channel"
+    )
+
+    testthat::expect_equal(df$fluorophore[[1]], "BV510")
+    testthat::expect_equal(df$channel[[1]], "")
+})
+
 testthat::test_that("supported cytometer metadata is normalized", {
     ids <- spectreasy::supported_cytometers()
 

@@ -89,6 +89,33 @@ test_that("validate_control_file_mapping validates synthetic SCC setup", {
     expect_true(any(grepl("Invalid channel", preflight_bad$errors)))
 })
 
+test_that("validate_control_file_mapping reports unreadable SCC files", {
+    scc_dir <- tempfile("spectreasy_bad_scc_")
+    dir.create(scc_dir, recursive = TRUE, showWarnings = FALSE)
+    writeBin(as.raw(rep(0, 128)), file.path(scc_dir, "BV510 (Cells).fcs"))
+
+    control_df <- data.frame(
+        filename = "BV510 (Cells).fcs",
+        fluorophore = "BV510",
+        marker = "",
+        channel = "",
+        control.type = "cells",
+        universal.negative = "",
+        is.viability = "",
+        stringsAsFactors = FALSE
+    )
+
+    preflight <- spectreasy::validate_control_file_mapping(
+        control_df = control_df,
+        scc_dir = scc_dir,
+        require_channels = TRUE
+    )
+
+    expect_false(preflight$ok)
+    expect_true(any(grepl("Missing channel", preflight$errors)))
+    expect_true(any(grepl("Could not read FCS file for validation", preflight$errors)))
+})
+
 test_that("build_reference_matrix works on synthetic SCC files", {
     wf <- make_synthetic_workflow()
 
