@@ -614,7 +614,9 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
 #'   estimates the floors from `scc_dir` when available, and otherwise falls
 #'   back to the built-in scalar noise floor.
-#' @param method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).
+#' @param method Unmixing method (`"AutoSpectral"`, `"OLS"`, `"WLS"`,
+#'   `"RWLS"`, or `"NNLS"`). `AutoSpectral` is the default and combines
+#'   per-cell SCC/AF band matching with an OLS refit.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
@@ -664,8 +666,6 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param af_assignment How to choose one AF row per event when a reference
 #'   matrix contains multiple AF rows. `"projection"` is the default.
 #'   `"residual_alignment"` and `"legacy"` are available for comparison.
-#' @param optimize_spectral_variants Logical; if `TRUE`, reuse a saved or
-#'   attached single-colour-control spectral-variant library when available.
 #' @param spectral_variant_library Optional in-memory spectral-variant library,
 #'   usually returned by [unmix_controls()].
 #' @param spectral_variant_library_file Optional `.rds` path to a saved
@@ -751,7 +751,7 @@ unmix_samples <- function(sample_dir = "samples",
                           unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
                           variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
                           detector_noise_file = NULL,
-                          method = "WLS", 
+                          method = "AutoSpectral",
                           rwls_max_iter = 1L,
                           multithreading = FALSE,
                           n_threads = "auto",
@@ -770,7 +770,6 @@ unmix_samples <- function(sample_dir = "samples",
                           af_deduplication_threshold = 0.99,
                           af_contaminant_threshold = 0.99,
                           af_assignment = "projection",
-                          optimize_spectral_variants = TRUE,
                           spectral_variant_library = NULL,
                           spectral_variant_library_file = NULL,
                           spectral_variant_top_k = 3L,
@@ -790,7 +789,6 @@ unmix_samples <- function(sample_dir = "samples",
                           verbose = TRUE) {
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
-    af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
     variances_file_was_missing <- missing(variances_file)
 
     if (!is.null(M)) {
@@ -833,10 +831,12 @@ unmix_samples <- function(sample_dir = "samples",
         }
     }
 
-    method_upper <- toupper(method)
-    allowed_methods <- c("WLS", "RWLS", "OLS", "NNLS")
-    if (!(method_upper %in% allowed_methods)) {
-        stop("method must be one of: ", paste(allowed_methods, collapse = ", "))
+    method_label <- .normalize_unmix_method(method)
+    solver_method <- .solver_method_for_unmix(method_label)
+    af_assignment <- if (identical(method_label, "AutoSpectral")) {
+        "projection"
+    } else {
+        .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
     }
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(multithreading = multithreading, n_threads = n_threads)
@@ -849,7 +849,7 @@ unmix_samples <- function(sample_dir = "samples",
     )
     M <- .ensure_wls_variances(
         M = M,
-        method = method_upper,
+        method = solver_method,
         variances_file = variances_file,
         scc_dir = scc_dir,
         control_file = control_file,
@@ -914,14 +914,13 @@ unmix_samples <- function(sample_dir = "samples",
         res_obj <- calc_residuals(
             ff,
             M,
-            method = method_upper,
+            method = method_label,
             file_name = sn,
             rwls_max_iter = rwls_max_iter,
             multithreading = multithreading,
             n_threads = n_threads,
             af_assignment = af_assignment,
             spectral_variant_library = spectral_variant_library,
-            optimize_spectral_variants = isTRUE(optimize_spectral_variants) && .spectral_variant_library_has_variants(spectral_variant_library),
             spectral_variant_top_k = spectral_variant_top_k,
             spectral_variant_min_abundance = spectral_variant_min_abundance,
             return_residuals = TRUE
@@ -964,7 +963,7 @@ unmix_samples <- function(sample_dir = "samples",
     }
 
     class(results) <- c("spectreasy_unmixed_results", "list")
-    attr(results, "method") <- method_upper
+    attr(results, "method") <- method_label
     attr(results, "reference_matrix") <- M
     attr(results, "blind_af_info") <- attr(M, "blind_af_info")
     attr(results, "spectral_variant_library") <- spectral_variant_library
@@ -979,7 +978,7 @@ unmix_samples <- function(sample_dir = "samples",
             results = results,
             M = M,
             output_file = output_file,
-            method = method_upper,
+            method = method_label,
             qc_plot_dir = qc_plot_dir,
             save_qc_pngs = save_qc_plots
         )

@@ -43,7 +43,7 @@ make_variant_control_set <- function() {
     list(scc_dir = scc_dir, control_df = control_df, detectors = detectors)
 }
 
-test_that("unmix_controls variant optimization can be disabled", {
+test_that("regular unmix_controls methods do not learn spectral variant libraries", {
     wf <- make_variant_control_set()
     output_dir <- tempfile("spectreasy_variant_disabled_")
     control_csv <- tempfile(fileext = ".csv")
@@ -54,7 +54,6 @@ test_that("unmix_controls variant optimization can be disabled", {
         control_file = control_csv,
         output_dir = output_dir,
         unmix_method = "OLS",
-        optimize_spectral_variants = FALSE,
         save_qc_plots = FALSE,
         save_report = FALSE,
         seed = 1
@@ -66,7 +65,7 @@ test_that("unmix_controls variant optimization can be disabled", {
     expect_false(file.exists(file.path(output_dir, "scc_spectral_variants.rds")))
 })
 
-test_that("unmix_controls creates a spectral variant library from SCC controls", {
+test_that("AutoSpectral unmix_controls creates a spectral variant library from SCC controls", {
     wf <- make_variant_control_set()
     output_dir <- tempfile("spectreasy_variant_enabled_")
     control_csv <- tempfile(fileext = ".csv")
@@ -76,8 +75,7 @@ test_that("unmix_controls creates a spectral variant library from SCC controls",
         scc_dir = wf$scc_dir,
         control_file = control_csv,
         output_dir = output_dir,
-        unmix_method = "OLS",
-        optimize_spectral_variants = TRUE,
+        unmix_method = "AutoSpectral",
         spectral_variant_som_nodes = 4,
         spectral_variant_cosine_threshold = 0.90,
         spectral_variant_min_events = 20,
@@ -194,9 +192,8 @@ test_that("per-cell spectral variants improve shifted fluorophore recovery", {
     opt <- spectreasy::calc_residuals(
         ff,
         M,
-        method = "OLS",
+        method = "AutoSpectral",
         spectral_variant_library = lib,
-        optimize_spectral_variants = TRUE,
         spectral_variant_min_abundance = 5,
         return_residuals = TRUE
     )
@@ -227,9 +224,8 @@ test_that("spectral variants do not switch on pure detector noise", {
     res <- spectreasy::calc_residuals(
         flowCore::flowFrame(Y),
         M,
-        method = "OLS",
+        method = "AutoSpectral",
         spectral_variant_library = lib,
-        optimize_spectral_variants = TRUE,
         spectral_variant_min_abundance = 5,
         return_residuals = TRUE
     )
@@ -237,7 +233,7 @@ test_that("spectral variants do not switch on pure detector noise", {
     expect_equal(res$spectral_variant_info$changed_events, 0)
 })
 
-test_that("unmix_samples reuses a saved spectral variant library", {
+test_that("AutoSpectral reuses a saved spectral variant library by default", {
     M <- rbind(
         FITC = c(1.00, 0.15, 0.02),
         PE = c(0.02, 0.20, 1.00)
@@ -269,14 +265,56 @@ test_that("unmix_samples reuses a saved spectral variant library", {
     res <- spectreasy::unmix_samples(
         sample_dir = sample_dir,
         unmixing_matrix_file = ref_file,
-        method = "OLS",
         write_fcs = FALSE,
         save_report = FALSE,
-        optimize_spectral_variants = TRUE,
         spectral_variant_min_abundance = 5,
         verbose = FALSE
     )
 
+    expect_equal(attr(res, "method"), "AutoSpectral")
     expect_s3_class(attr(res, "spectral_variant_library"), "spectreasy_spectral_variant_library")
     expect_gt(res$sample$spectral_variant_info$changed_events, 0)
+})
+
+test_that("regular unmixing methods stay separate from AutoSpectral by default", {
+    M <- rbind(
+        FITC = c(1.00, 0.15, 0.02),
+        PE = c(0.02, 0.20, 1.00)
+    )
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A")
+    shifted <- matrix(c(0.78, 0.42, 0.02), nrow = 1, dimnames = list("FITC_variant_1", colnames(M)))
+    lib <- list(
+        enabled = TRUE,
+        detector_names = colnames(M),
+        variants = list(FITC = shifted),
+        info = data.frame(fluorophore = "FITC", variants = 1L, reason = "ok"),
+        settings = list()
+    )
+    class(lib) <- c("spectreasy_spectral_variant_library", "list")
+
+    matrix_dir <- tempfile("spectreasy_variant_matrix_")
+    dir.create(matrix_dir, recursive = TRUE)
+    ref_file <- file.path(matrix_dir, "scc_reference_matrix.csv")
+    spectreasy:::.save_reference_matrix_csv(M, ref_file)
+    spectreasy:::.save_spectral_variant_library(lib, file.path(matrix_dir, "scc_spectral_variants.rds"))
+
+    sample_dir <- tempfile("spectreasy_variant_samples_")
+    dir.create(sample_dir, recursive = TRUE)
+    truth <- c(FITC = 180, PE = 60)
+    Y <- matrix(truth[["FITC"]] * shifted[1, ] + truth[["PE"]] * M["PE", ], nrow = 1)
+    colnames(Y) <- colnames(M)
+    flowCore::write.FCS(flowCore::flowFrame(Y), file.path(sample_dir, "sample.fcs"))
+
+    res <- spectreasy::unmix_samples(
+        sample_dir = sample_dir,
+        unmixing_matrix_file = ref_file,
+        method = "WLS",
+        write_fcs = FALSE,
+        save_report = FALSE,
+        spectral_variant_min_abundance = 5,
+        verbose = FALSE
+    )
+
+    expect_equal(attr(res, "method"), "WLS")
+    expect_null(res$sample$spectral_variant_info)
 })

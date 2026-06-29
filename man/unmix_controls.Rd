@@ -13,7 +13,7 @@ unmix_controls(
   auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
   output_dir = "spectreasy_outputs/unmix_controls",
   exclude_af = FALSE,
-  unmix_method = "WLS",
+  unmix_method = "AutoSpectral",
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
   af_n_bands = "auto",
@@ -35,7 +35,6 @@ unmix_controls(
   clean_scc_with_unstained = TRUE,
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 3L,
-  optimize_spectral_variants = TRUE,
   spectral_variant_som_nodes = 16L,
   spectral_variant_top_k = 3L,
   spectral_variant_cosine_threshold = 0.98,
@@ -64,7 +63,9 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 \item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls even when
 they are present in the SCC folder or control mapping.}
 
-\item{unmix_method}{SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).}
+\item{unmix_method}{SCC unmixing method (`"AutoSpectral"`, `"OLS"`,
+`"WLS"`, `"RWLS"`, `"NNLS"`). `AutoSpectral` is the default and combines
+per-cell SCC/AF band matching with an OLS refit.}
 
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
 
@@ -135,10 +136,6 @@ spectral variants.}
 
 \item{scc_background_k}{Number of nearest unstained cells averaged for
 scatter-matched background subtraction.}
-
-\item{optimize_spectral_variants}{Logical; if `TRUE`, learn conservative
-per-fluorophore spectral variants from SCC controls and use them
-automatically while unmixing controls and later samples.}
 
 \item{spectral_variant_som_nodes}{Number of SOM nodes used per fluorophore
 when learning spectral variants.}

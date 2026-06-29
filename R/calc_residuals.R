@@ -28,6 +28,32 @@
     min(n_threads, available_threads)
 }
 
+.normalize_unmix_method <- function(method,
+                                    choices = c("AutoSpectral", "OLS", "NNLS", "WLS", "RWLS")) {
+    method_raw <- toupper(trimws(as.character(method[1])))
+    if (length(method_raw) == 0 || is.na(method_raw) || !nzchar(method_raw)) {
+        method_raw <- "AUTOSPECTRAL"
+    }
+    method_raw <- gsub("[_-]", "", method_raw)
+    lookup <- c(
+        AUTOSPECTRAL = "AutoSpectral",
+        OLS = "OLS",
+        NNLS = "NNLS",
+        WLS = "WLS",
+        RWLS = "RWLS"
+    )
+    out <- unname(lookup[method_raw])
+    allowed_lookup <- unname(lookup[gsub("[_-]", "", toupper(choices))])
+    if (is.na(out) || !(out %in% allowed_lookup)) {
+        stop("method must be one of: ", paste(choices, collapse = ", "), call. = FALSE)
+    }
+    out
+}
+
+.solver_method_for_unmix <- function(method) {
+    if (identical(method, "AutoSpectral")) "OLS" else method
+}
+
 .ols_candidate_model_ok <- function(M, tol = 1e-10) {
     M <- as.matrix(M)
     cross <- M %*% t(M)
@@ -64,7 +90,7 @@
             max_iter = rwls_max_iter
         ))
     }
-    stop("method must be 'OLS', 'NNLS', 'WLS', or 'RWLS'", call. = FALSE)
+    stop("method must be one of: AutoSpectral, OLS, NNLS, WLS, RWLS", call. = FALSE)
 }
 
 .unmix_selected_af_groups <- function(Y,
@@ -132,7 +158,9 @@
 #' @param flow_frame A flowFrame object with raw fluorescence data
 #' @param M Reference matrix (fluorophores x detectors)
 #' @param file_name Optional file name to add to output
-#' @param method Unmixing method: "WLS" (default), "RWLS", "OLS", or "NNLS".
+#' @param method Unmixing method: `"AutoSpectral"` (default), `"OLS"`,
+#'   `"WLS"`, `"RWLS"`, or `"NNLS"`. `AutoSpectral` performs per-cell AF/SCC
+#'   band matching followed by an OLS refit.
 #' @param return_residuals Logical. If TRUE, returns a list containing the unmixed
 #'   data and the detector residual matrix.
 #' @param background_noise Scalar or detector-length vector used as the WLS noise
@@ -158,13 +186,9 @@
 #'   alignment as an explicit alternative. `"legacy"` uses the previous C++
 #'   residual/covariance selector.
 #' @param spectral_variant_library Optional per-fluorophore spectral-variant
-#'   library learned from single-colour controls. When supplied and
-#'   `optimize_spectral_variants = TRUE`, positive fluorophores may be refit
-#'   with cell-specific spectral variants if doing so improves detector
-#'   residuals.
-#' @param optimize_spectral_variants Logical; enable cell-specific
-#'   fluorophore-variant optimization when `spectral_variant_library` is
-#'   available.
+#'   library learned from single-colour controls. `AutoSpectral` uses this
+#'   automatically when available; regular `OLS`, `WLS`, `NNLS`, and `RWLS`
+#'   leave fluorophore spectra fixed.
 #' @param spectral_variant_top_k Number of best variant candidates to test per
 #'   positive fluorophore.
 #' @param spectral_variant_min_abundance Minimum unmixed abundance for a
@@ -206,7 +230,7 @@
 calc_residuals <- function(flow_frame,
                            M,
                            file_name = NULL,
-                           method = "WLS",
+                           method = "AutoSpectral",
                            return_residuals = FALSE,
                            background_noise = .default_wls_background_noise(),
                            wls_signal_scale = .default_wls_signal_scale(),
@@ -216,7 +240,6 @@ calc_residuals <- function(flow_frame,
                            n_threads = "auto",
                            af_assignment = "projection",
                            spectral_variant_library = NULL,
-                           optimize_spectral_variants = !is.null(spectral_variant_library),
                            spectral_variant_top_k = 3L,
                            spectral_variant_min_abundance = 1,
                            spectral_variant_positive_fraction = 0.02,
@@ -224,7 +247,15 @@ calc_residuals <- function(flow_frame,
     M <- .as_reference_matrix(M, "M")
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(multithreading = multithreading, n_threads = n_threads)
-    af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
+    method <- .normalize_unmix_method(method)
+    solver_method <- .solver_method_for_unmix(method)
+    af_assignment <- if (identical(method, "AutoSpectral")) {
+        "projection"
+    } else {
+        .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
+    }
+    use_spectral_variants <- identical(method, "AutoSpectral") &&
+        .spectral_variant_library_has_variants(spectral_variant_library)
     full_data <- flowCore::exprs(flow_frame)
     detectors <- colnames(M)
     
@@ -237,13 +268,8 @@ calc_residuals <- function(flow_frame,
     Y <- full_data[, detectors, drop = FALSE]
 
     Mt <- t(M)
-    method <- toupper(method)
-    if (!method %in% c("OLS", "NNLS", "WLS", "RWLS")) {
-        stop("method must be 'OLS', 'NNLS', 'WLS', or 'RWLS'")
-    }
-
     af_match <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
-    wls_noise <- if (method %in% c("WLS", "RWLS")) {
+    wls_noise <- if (solver_method %in% c("WLS", "RWLS")) {
         .resolve_wls_noise_parameters(
             M = M,
             background_noise = background_noise,
@@ -265,7 +291,7 @@ calc_residuals <- function(flow_frame,
                 M = M,
                 fluor_idx = fluor_idx,
                 af_idx = af_idx,
-                method = method,
+                method = solver_method,
                 noise_floor = wls_noise$noise_floor,
                 signal_scale = wls_noise$signal_scale,
                 max_weight_ratio = wls_noise$max_weight_ratio,
@@ -277,7 +303,7 @@ calc_residuals <- function(flow_frame,
                 Y = Y,
                 M = M,
                 af_match = af_match,
-                method = method,
+                method = solver_method,
                 wls_noise = wls_noise,
                 rwls_max_iter = rwls_max_iter,
                 af_assignment = af_assignment
@@ -287,19 +313,19 @@ calc_residuals <- function(flow_frame,
         A <- .unmix_with_fixed_reference(
             Y = Y,
             M = M,
-            method = method,
+            method = solver_method,
             wls_noise = wls_noise,
             rwls_max_iter = rwls_max_iter
         )
     }
 
     variant_info <- NULL
-    if (isTRUE(optimize_spectral_variants) && !is.null(spectral_variant_library)) {
+    if (use_spectral_variants) {
         variant_fit <- .apply_spectral_variant_optimization(
             Y = Y,
             M = M,
             A = A,
-            method = method,
+            method = solver_method,
             wls_noise = wls_noise,
             rwls_max_iter = rwls_max_iter,
             spectral_variant_library = spectral_variant_library,

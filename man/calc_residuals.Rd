@@ -8,7 +8,7 @@ calc_residuals(
   flow_frame,
   M,
   file_name = NULL,
-  method = "WLS",
+  method = "AutoSpectral",
   return_residuals = FALSE,
   background_noise = .default_wls_background_noise(),
   wls_signal_scale = .default_wls_signal_scale(),
@@ -18,7 +18,6 @@ calc_residuals(
   n_threads = "auto",
   af_assignment = "projection",
   spectral_variant_library = NULL,
-  optimize_spectral_variants = !is.null(spectral_variant_library),
   spectral_variant_top_k = 3L,
   spectral_variant_min_abundance = 1,
   spectral_variant_positive_fraction = 0.02,
@@ -32,7 +31,9 @@ calc_residuals(
 
 \item{file_name}{Optional file name to add to output}
 
-\item{method}{Unmixing method: "WLS" (default), "RWLS", "OLS", or "NNLS".}
+\item{method}{Unmixing method: `"AutoSpectral"` (default), `"OLS"`,
+`"WLS"`, `"RWLS"`, or `"NNLS"`. `AutoSpectral` performs per-cell AF/SCC
+band matching followed by an OLS refit.}
 
 \item{return_residuals}{Logical. If TRUE, returns a list containing the unmixed
 data and the detector residual matrix.}
@@ -67,14 +68,9 @@ alignment as an explicit alternative. `"legacy"` uses the previous C++
 residual/covariance selector.}
 
 \item{spectral_variant_library}{Optional per-fluorophore spectral-variant
-library learned from single-colour controls. When supplied and
-`optimize_spectral_variants = TRUE`, positive fluorophores may be refit
-with cell-specific spectral variants if doing so improves detector
-residuals.}
-
-\item{optimize_spectral_variants}{Logical; enable cell-specific
-fluorophore-variant optimization when `spectral_variant_library` is
-available.}
+library learned from single-colour controls. `AutoSpectral` uses this
+automatically when available; regular `OLS`, `WLS`, `NNLS`, and `RWLS`
+leave fluorophore spectra fixed.}
 
 \item{spectral_variant_top_k}{Number of best variant candidates to test per
 positive fluorophore.}

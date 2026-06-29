@@ -43,8 +43,8 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{output_file}{Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.}
 
-\item{method}{Unmixing method used to create `results` (`"WLS"`, `"RWLS"`,
-`"OLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
+\item{method}{Unmixing method used to create `results` (`"AutoSpectral"`,
+`"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
 because constrained NNLS results are non-negative by construction.}
 
 \item{res_list}{Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.}

@@ -9,7 +9,7 @@ get_control_spectra(
   control_file = "fcs_mapping.csv",
   control_dir = "scc",
   af_dir = "af",
-  method = "WLS",
+  method = "AutoSpectral",
   cytometer = "auto"
 )
 }

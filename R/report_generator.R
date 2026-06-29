@@ -743,8 +743,8 @@
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param output_file Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.
-#' @param method Unmixing method used to create `results` (`"WLS"`, `"RWLS"`,
-#'   `"OLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
+#' @param method Unmixing method used to create `results` (`"AutoSpectral"`,
+#'   `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
 #'   because constrained NNLS results are non-negative by construction.
 #' @param res_list Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.
 #' @param png_dir Deprecated and ignored (kept for backward compatibility).
@@ -826,12 +826,9 @@ qc_samples <- function(results,
     sample_nxn_transform <- match.arg(sample_nxn_transform)
     method_attr <- attr(results, "method")
     if (is.null(method)) {
-        method <- if (!is.null(method_attr)) method_attr else "WLS"
+        method <- if (!is.null(method_attr)) method_attr else "AutoSpectral"
     }
-    method <- toupper(as.character(method)[1])
-    if (!(method %in% c("WLS", "RWLS", "OLS", "NNLS"))) {
-        stop("method must be one of: WLS, RWLS, OLS, NNLS", call. = FALSE)
-    }
+    method <- .normalize_unmix_method(method)
 
     message("Generating spectreasy Summary Report...")
     if (!is.null(png_dir)) {
@@ -955,7 +952,7 @@ qc_samples <- function(results,
 
     message("  - Adding Spread Matrix...")
     if (nrow(M_no_af) > 1) {
-        ssm_method <- if (method %in% c("NNLS", "RWLS")) {
+        ssm_method <- if (method %in% c("NNLS", "RWLS", "AutoSpectral")) {
             if (identical(method, "RWLS")) "WLS" else "OLS"
         } else {
             method

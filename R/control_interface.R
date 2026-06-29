@@ -955,7 +955,7 @@ get_control_spectra <- function(flow_frame,
                                 control_file = "fcs_mapping.csv",
                                 control_dir = "scc",
                                 af_dir = "af",
-                                method = "WLS",
+                                method = "AutoSpectral",
                                 cytometer = "auto") {
     # 1. Get detector info
     pd <- flowCore::pData(flowCore::parameters(flow_frame))

@@ -84,7 +84,6 @@ unmix_controls(
   auto_create_control = TRUE,
   cytometer = "Aurora",
   auto_unknown_fluor_policy = "by_channel",
-  unmix_method = "WLS",
   unmix_scatter_panel_size_mm = 30,
   save_qc_plots = TRUE
 )
@@ -196,13 +195,15 @@ The same run creates the NxN scatter matrix for the single-color controls. Each 
   <img src="man/figures/vignette_scatter_matrix.png" width="100%" />
 </p>
 
-### What WLS Uses
+### What AutoSpectral Uses
 
-When `method = "WLS"`, `spectreasy` uses an event-wise detector-error model: detectors with higher non-negative signal in an event get lower weight for that event. The detector noise floor is estimated from the low-signal tail of the SCC files and written to `scc_detector_noise.csv`; if no estimate is available, `spectreasy` falls back to a scalar floor of 125. The SCC population variances in `scc_variances.csv` are still written as reference QC metadata, but they are not used as default WLS detector weights.
+By default, `spectreasy` uses `method = "AutoSpectral"`. AutoSpectral chooses one AF band per cell, tests plausible single-color-control spectral variants for positive fluorophores, and then refits that cell with OLS. The regular `OLS`, `WLS`, `NNLS`, and `RWLS` methods remain available as separate methods.
+
+When you explicitly choose `method = "WLS"`, `spectreasy` uses an event-wise detector-error model: detectors with higher non-negative signal in an event get lower weight for that event. The detector noise floor is estimated from the low-signal tail of the SCC files and written to `scc_detector_noise.csv`; if no estimate is available, `spectreasy` falls back to a scalar floor of 125. The SCC population variances in `scc_variances.csv` are still written as reference QC metadata, but they are not used as default WLS detector weights.
 
 The `control.type` column in `fcs_mapping.csv` also matters for this step. It tells `spectreasy` whether each control should be gated as `beads` or `cells`. If `control.type` is empty, `spectreasy` falls back to filename-based guessing.
 
-By default, this control-stage run also learns a conservative fluorophore spectral-variant library from the single-color controls and writes it to `scc_spectral_variants.rds`. This follows the same high-level idea as AutoSpectral's per-cell fluorophore spectrum optimization: learn plausible within-fluorophore spectral shapes from controls, then use them only when they improve per-cell residuals without overfitting noise.
+With `unmix_method = "AutoSpectral"`, `spectreasy` learns a conservative fluorophore spectral-variant library from the single-color controls and writes it to `scc_spectral_variants.rds`. This follows the same high-level idea as AutoSpectral's per-cell fluorophore spectrum optimization: learn plausible within-fluorophore spectral shapes from controls, then use them when they improve per-cell residuals without overfitting noise.
 
 ## 5. Unmix the experimental sample
 
@@ -275,7 +276,6 @@ ctrl_multi_af <- unmix_controls(
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
   output_dir = "spectreasy_outputs/unmix_controls_multi_af",
-  unmix_method = "WLS",
   include_multi_af = TRUE,
   af_n_bands = "auto",
   af_auto_max_bands = 100,
@@ -289,22 +289,21 @@ Then pass the saved control-stage matrix to `unmix_samples()`. `unmix_samples()`
 unmixed_multi_af <- unmix_samples(
   sample_dir = "sample",
   unmixing_matrix_file = ctrl_multi_af$reference_matrix_file,
-  method = "WLS",
   output_dir = "spectreasy_outputs/unmix_samples_multi_af"
 )
 ```
 
-`af_n_bands` is like choosing how many AF "flavors" to model. With `af_n_bands = "auto"`, spectreasy builds a SOM bank with up to `af_auto_max_bands = 100` SOM nodes by default, then prepends a mean AF row. That gives 101 AF rows before any contaminant QC removals. During unmixing, each event chooses one AF profile with a joint covariance + residual score, so the larger AF bank can describe varied autofluorescence without using every AF profile in the final fit.
+`af_n_bands` is like choosing how many AF "flavors" to model. With `af_n_bands = "auto"`, spectreasy builds a SOM bank with up to `af_auto_max_bands = 100` SOM nodes by default, then prepends a mean AF row. That gives 101 AF rows before any contaminant QC removals. During AutoSpectral unmixing, each event chooses one AF profile before the final OLS fit, so the larger AF bank can describe varied autofluorescence without using every AF profile in the final fit.
 
 For direct control over the multi-AF bank size, set `af_auto_max_bands` or pass an explicit integer to `af_n_bands`. For difficult samples with structured AF left after the first pass, set `af_refine = TRUE` to append second-pass modulated AF spectra from high-error unstained cells. Keep it off unless benchmark metrics show it helps your panel.
 
 ## Per-cell Fluorophore Spectral-Variant Optimization
 
-`unmix_controls()` also enables `optimize_spectral_variants = TRUE` by default. During the control stage, `spectreasy` looks for reproducible shape differences within each fluorophore control, keeps only variants that remain close to the base spectrum, and saves the result as `scc_spectral_variants.rds`.
+With `unmix_method = "AutoSpectral"`, `unmix_controls()` learns spectral variants as part of the method. During the control stage, `spectreasy` looks for reproducible shape differences within each fluorophore control, keeps only variants that remain close to the base spectrum, and saves the result as `scc_spectral_variants.rds`.
 
 During `unmix_samples()`, only fluorophores that are positive in a given event are eligible for variant matching. The optimizer tests a small number of candidate variants, accepts a change only when detector residuals improve, and falls back to the base spectrum for weak, negative, noisy, or unsupported events.
 
-This feature is also inspired by AutoSpectral's per-cell fluorophore spectrum optimization. In `spectreasy`, it is implemented as a conservative background step inside `unmix_controls()` and `unmix_samples()`, so users do not have to run a separate selector by hand.
+This feature is also inspired by AutoSpectral's per-cell fluorophore spectrum optimization. In `spectreasy`, it is part of the `AutoSpectral` method, so users do not have to run a separate selector by hand.
 
 ## Use a reviewed control CSV in non-interactive workflows
 
@@ -316,7 +315,6 @@ ctrl_noninteractive <- unmix_controls(
   control_file = control_file,
   cytometer = "Aurora",
   output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls_noninteractive"),
-  unmix_method = "WLS",
   seed = 1
 )
 
@@ -342,7 +340,6 @@ rownames(reference_matrix) <- unname(mapped_names)
 unmixed_direct <- unmix_samples(
   sample_dir = file.path(project_dir, "sample"),
   M = reference_matrix,
-  method = "WLS",
   output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples_direct")
 )
 

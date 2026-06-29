@@ -11,7 +11,7 @@ unmix_samples(
     "scc_reference_matrix.csv"),
   variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
   detector_noise_file = NULL,
-  method = "WLS",
+  method = "AutoSpectral",
   rwls_max_iter = 1L,
   multithreading = FALSE,
   n_threads = "auto",
@@ -30,7 +30,6 @@ unmix_samples(
   af_deduplication_threshold = 0.99,
   af_contaminant_threshold = 0.99,
   af_assignment = "projection",
-  optimize_spectral_variants = TRUE,
   spectral_variant_library = NULL,
   spectral_variant_library_file = NULL,
   spectral_variant_top_k = 3L,
@@ -72,7 +71,9 @@ omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
 estimates the floors from `scc_dir` when available, and otherwise falls
 back to the built-in scalar noise floor.}
 
-\item{method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}
+\item{method}{Unmixing method (`"AutoSpectral"`, `"OLS"`, `"WLS"`,
+`"RWLS"`, or `"NNLS"`). `AutoSpectral` is the default and combines
+per-cell SCC/AF band matching with an OLS refit.}
 
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
 iterations used when `method = "RWLS"`. The default, 1, preserves the
@@ -140,9 +141,6 @@ compatibility argument.}
 \item{af_assignment}{How to choose one AF row per event when a reference
 matrix contains multiple AF rows. `"projection"` is the default.
 `"residual_alignment"` and `"legacy"` are available for comparison.}
-
-\item{optimize_spectral_variants}{Logical; if `TRUE`, reuse a saved or
-attached single-colour-control spectral-variant library when available.}
 
 \item{spectral_variant_library}{Optional in-memory spectral-variant library,
 usually returned by [unmix_controls()].}

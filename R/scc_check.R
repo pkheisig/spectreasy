@@ -372,7 +372,7 @@
                                  scc_dir = "scc",
                                  output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
                                  cytometer = "auto",
-                                 method = "WLS",
+                                 method = "AutoSpectral",
                                  use_scatter_gating = TRUE,
                                  unmix_scatter_max_points = 1000,
                                  unmix_scatter_axis_limit = NULL,
@@ -381,10 +381,7 @@
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the SCC PDF report.", call. = FALSE)
     }
-    method <- toupper(as.character(method)[1])
-    if (!(method %in% c("WLS", "RWLS", "OLS", "NNLS"))) {
-        stop("method must be one of: WLS, RWLS, OLS, NNLS", call. = FALSE)
-    }
+    method <- .normalize_unmix_method(method)
     if (is.null(M_built) || nrow(M_built) == 0) {
         stop("No valid spectra found while generating the SCC report.")
     }
@@ -471,7 +468,7 @@
     if (nrow(M_no_af) > 1) {
         sim_mat <- calculate_similarity_matrix(M_no_af)
         .draw_report_ggplot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
-        ssm_method <- if (method %in% c("NNLS", "RWLS")) {
+        ssm_method <- if (method %in% c("NNLS", "RWLS", "AutoSpectral")) {
             if (identical(method, "RWLS")) "WLS" else "OLS"
         } else {
             method
@@ -547,7 +544,7 @@
 #' @param cytometer Cytometer name passed to [build_reference_matrix()]. The
 #'   default, `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @param method Unmixing method used for the control scatter matrix
-#'   (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).
+#'   (`"AutoSpectral"`, `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`).
 #' @param qc_plot_dir Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
 #'   when `save_qc_pngs = TRUE`.
 #' @param save_qc_pngs Logical; if `TRUE`, keep the intermediate QC PNG files in
@@ -588,7 +585,7 @@ qc_controls <- function(
     unmix_controls_dir = NULL,
     control_file = "fcs_mapping.csv",
     cytometer = "auto",
-    method = "WLS",
+    method = "AutoSpectral",
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
     save_qc_pngs = FALSE,
     use_scatter_gating = TRUE,
@@ -617,10 +614,7 @@ qc_controls <- function(
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the SCC PDF report.", call. = FALSE)
     }
-    method <- toupper(as.character(method)[1])
-    if (!(method %in% c("WLS", "RWLS", "OLS", "NNLS"))) {
-        stop("method must be one of: WLS, RWLS, OLS, NNLS", call. = FALSE)
-    }
+    method <- .normalize_unmix_method(method)
 
     message("Generating SCC QC report...")
     if (!is.null(results)) {

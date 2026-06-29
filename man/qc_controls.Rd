@@ -14,7 +14,7 @@ qc_controls(
   unmix_controls_dir = NULL,
   control_file = "fcs_mapping.csv",
   cytometer = "auto",
-  method = "WLS",
+  method = "AutoSpectral",
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   save_qc_pngs = FALSE,
   use_scatter_gating = TRUE,
@@ -54,7 +54,7 @@ resolved relative to this directory.}
 default, `"auto"`, infers the cytometer from FCS detector names when possible.}
 
 \item{method}{Unmixing method used for the control scatter matrix
-(`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}
+(`"AutoSpectral"`, `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`).}
 
 \item{qc_plot_dir}{Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
 when `save_qc_pngs = TRUE`.}

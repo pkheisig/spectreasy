@@ -283,11 +283,12 @@
         M_static <- M
     }
 
-    static_unmixing_matrix_method <- toupper(unmix_method)
-    if (static_unmixing_matrix_method %in% c("WLS", "RWLS")) {
+    static_unmixing_matrix_method <- .normalize_unmix_method(unmix_method)
+    static_solver_method <- .solver_method_for_unmix(static_unmixing_matrix_method)
+    if (static_solver_method %in% c("WLS", "RWLS")) {
         W <- derive_unmixing_matrix(M_static, method = "WLS")
     } else {
-        W <- derive_unmixing_matrix(M_static, method = static_unmixing_matrix_method)
+        W <- derive_unmixing_matrix(M_static, method = static_solver_method)
     }
 
     list(W = W, static_unmixing_matrix_method = static_unmixing_matrix_method)
@@ -349,7 +350,9 @@
 #' @param output_dir Output directory for SCC workflow artifacts.
 #' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls even when
 #'   they are present in the SCC folder or control mapping.
-#' @param unmix_method SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).
+#' @param unmix_method SCC unmixing method (`"AutoSpectral"`, `"OLS"`,
+#'   `"WLS"`, `"RWLS"`, `"NNLS"`). `AutoSpectral` is the default and combines
+#'   per-cell SCC/AF band matching with an OLS refit.
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
 #' @param af_n_bands Number of SOM nodes used to extract AF basis signatures
@@ -399,9 +402,6 @@
 #'   `"scatter_knn"` matches stained cells to unstained cells by FSC/SSC.
 #' @param scc_background_k Number of nearest unstained cells averaged for
 #'   scatter-matched background subtraction.
-#' @param optimize_spectral_variants Logical; if `TRUE`, learn conservative
-#'   per-fluorophore spectral variants from SCC controls and use them
-#'   automatically while unmixing controls and later samples.
 #' @param spectral_variant_som_nodes Number of SOM nodes used per fluorophore
 #'   when learning spectral variants.
 #' @param spectral_variant_top_k Number of best variant candidates to test per
@@ -437,7 +437,7 @@ unmix_controls <- function(
     auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
     output_dir = "spectreasy_outputs/unmix_controls",
     exclude_af = FALSE,
-    unmix_method = "WLS",
+    unmix_method = "AutoSpectral",
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
     af_n_bands = "auto",
@@ -459,7 +459,6 @@ unmix_controls <- function(
     clean_scc_with_unstained = TRUE,
     scc_background_method = c("scatter_knn", "none"),
     scc_background_k = 3L,
-    optimize_spectral_variants = TRUE,
     spectral_variant_som_nodes = 16L,
     spectral_variant_top_k = 3L,
     spectral_variant_cosine_threshold = 0.98,
@@ -468,6 +467,8 @@ unmix_controls <- function(
     ...
 ) {
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
+    unmix_method <- .normalize_unmix_method(unmix_method)
+    use_spectral_variants <- identical(unmix_method, "AutoSpectral")
     scc_background_args <- .validate_scc_background_args(
         clean_scc_with_unstained = clean_scc_with_unstained,
         scc_background_method = scc_background_method,
@@ -551,7 +552,7 @@ unmix_controls <- function(
 
     spectral_variant_library <- NULL
     spectral_variant_library_file <- NULL
-    if (isTRUE(optimize_spectral_variants)) {
+    if (use_spectral_variants) {
         spectral_variant_library <- tryCatch(
             .learn_spectral_variant_library(
                 scc_dir = scc_dir,
@@ -621,7 +622,6 @@ unmix_controls <- function(
         output_dir = output_paths$unmixed_dir,
         write_fcs = TRUE,
         save_report = FALSE,
-        optimize_spectral_variants = isTRUE(optimize_spectral_variants),
         spectral_variant_library = spectral_variant_library,
         spectral_variant_top_k = spectral_variant_top_k
     )
