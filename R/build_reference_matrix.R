@@ -2493,8 +2493,69 @@
     )
 }
 
+.reference_rank01 <- function(x, decreasing = FALSE) {
+    ok <- is.finite(x)
+    out <- rep(NA_real_, length(x))
+    if (sum(ok) < 2L) {
+        out[ok] <- 0.5
+        return(out)
+    }
+    rank_input <- if (isTRUE(decreasing)) -x[ok] else x[ok]
+    r <- rank(rank_input, ties.method = "average", na.last = "keep")
+    out[ok] <- (r - 1) / (length(r) - 1)
+    out
+}
+
+.select_reference_af_score_events <- function(score,
+                                              valid,
+                                              min_events = 50L,
+                                              max_fraction = 0.20,
+                                              large_n_min_events = 150L) {
+    idx_all <- which(valid & is.finite(score))
+    if (length(idx_all) < min_events) {
+        return(integer())
+    }
+
+    min_selected <- as.integer(min_events)
+    if (length(idx_all) >= 1000L) {
+        min_selected <- max(min_selected, min(as.integer(large_n_min_events), length(idx_all)))
+    }
+    max_selected <- max(min_selected, ceiling(length(idx_all) * max_fraction))
+    max_selected <- min(max_selected, length(idx_all))
+
+    idx <- integer()
+    max_g <- min(3L, max(1L, floor(length(idx_all) / 80L)))
+    if (requireNamespace("mclust", quietly = TRUE) && max_g >= 2L) {
+        fit <- tryCatch(
+            mclust::Mclust(score[idx_all], G = seq_len(max_g), verbose = FALSE),
+            error = function(e) NULL
+        )
+        if (!is.null(fit) && !is.null(fit$classification)) {
+            means <- tapply(score[idx_all], fit$classification, mean, na.rm = TRUE)
+            high_component <- as.integer(names(which.max(means)))
+            idx <- idx_all[fit$classification == high_component]
+        }
+    }
+
+    if (length(idx) == 0L) {
+        keep_n <- max(min_selected, ceiling(length(idx_all) * 0.05))
+        idx <- idx_all[order(score[idx_all], decreasing = TRUE)[seq_len(min(keep_n, length(idx_all)))]]
+    }
+
+    if (length(idx) > max_selected) {
+        idx <- idx[order(score[idx], decreasing = TRUE)[seq_len(max_selected)]]
+    }
+    if (length(idx) < min_selected) {
+        needed <- min_selected - length(idx)
+        remaining <- setdiff(idx_all[order(score[idx_all], decreasing = TRUE)], idx)
+        idx <- c(idx, remaining[seq_len(min(needed, length(remaining)))])
+    }
+    idx[order(score[idx], decreasing = TRUE)]
+}
+
 .compute_reference_af_cosine_gate <- function(gated_data,
                                               detector_names,
+                                              peak_channel,
                                               peak_vals,
                                               sample_type,
                                               fallback_gate,
@@ -2502,7 +2563,7 @@
                                               scc_background = NULL,
                                               histogram_pct_beads = 0.98,
                                               histogram_pct_cells = 0.35,
-                                              min_events = 10L) {
+                                              min_events = 50L) {
     af_basis <- .reference_af_selection_basis(
         detector_names = detector_names,
         af_data_raw = af_data_raw,
@@ -2521,26 +2582,47 @@
     projected <- .project_reference_events_from_af(event_mat[complete, , drop = FALSE], af_basis)
     residual_signal <- rowSums(projected$residual, na.rm = TRUE)
     raw_signal <- rowSums(pmax(event_mat[complete, , drop = FALSE], 0), na.rm = TRUE)
-    valid <- is.finite(residual_signal) & is.finite(raw_signal) & raw_signal > 0
+    peak_idx <- match(peak_channel, detector_names)
+    residual_peak <- if (!is.na(peak_idx)) {
+        pmax(projected$residual[, peak_idx], 0)
+    } else {
+        residual_signal
+    }
+    target_ratio <- residual_peak / (residual_signal + 1e-9)
+    saturation_mask <- .reference_detector_saturation_mask(peak_vals)
+    saturation_complete <- saturation_mask[complete]
+    valid <- is.finite(residual_signal) &
+        is.finite(raw_signal) &
+        is.finite(residual_peak) &
+        is.finite(target_ratio) &
+        raw_signal > 0 &
+        !saturation_complete
     if (sum(valid) < min_events) {
         return(NULL)
     }
 
-    frac <- if (sample_type %in% c("unstained", "cells")) histogram_pct_cells else histogram_pct_beads
-    frac <- min(max(as.numeric(frac), 0.01), 0.999)
-    n_target <- min(sum(valid), max(as.integer(min_events), ceiling(sum(valid) * frac)))
-
-    rank_non_af <- rank(-projected$cosine, ties.method = "average", na.last = "keep")
-    rank_bright <- rank(residual_signal, ties.method = "average", na.last = "keep")
-    score <- 0.55 * (rank_non_af / sum(valid)) + 0.45 * (rank_bright / sum(valid))
+    max_fraction <- if (sample_type %in% c("unstained", "cells")) {
+        min(max(as.numeric(histogram_pct_cells), 0.05), 0.20)
+    } else {
+        min(max(as.numeric(histogram_pct_beads), 0.05), 0.50)
+    }
+    score <- 0.50 * .reference_rank01(projected$cosine, decreasing = TRUE) +
+        0.30 * .reference_rank01(residual_peak) +
+        0.20 * .reference_rank01(target_ratio)
     score[!valid] <- -Inf
 
-    local_selected <- order(score, decreasing = TRUE)[seq_len(n_target)]
-    complete_idx <- which(complete)
-    selected_idx <- complete_idx[local_selected]
-    if (length(selected_idx) < min_events) {
+    local_selected <- .select_reference_af_score_events(
+        score = score,
+        valid = valid,
+        min_events = min_events,
+        max_fraction = max_fraction,
+        large_n_min_events = 150L
+    )
+    if (length(local_selected) < min_events) {
         return(NULL)
     }
+    complete_idx <- which(complete)
+    selected_idx <- complete_idx[local_selected]
 
     vals_log <- fallback_gate$vals_log
     selected_peak <- peak_vals[selected_idx]
@@ -2554,12 +2636,15 @@
     attr(vals_log, "positive_gate_present") <- TRUE
     attr(vals_log, "gate_type") <- "af_cosine"
     attr(vals_log, "gate_method") <- paste0(
-        "AF projection/cosine spectral gate: selected ",
+        "Adaptive AF projection/cosine spectral gate: selected ",
         length(selected_idx),
-        " bright non-AF-like event(s)"
+        " bright, target-dominant, non-AF-like event(s)"
     )
     attr(vals_log, "af_cosine_max_selected") <- max(projected$cosine[local_selected], na.rm = TRUE)
     attr(vals_log, "af_cosine_median_selected") <- stats::median(projected$cosine[local_selected], na.rm = TRUE)
+    attr(vals_log, "af_score_median_selected") <- stats::median(score[local_selected], na.rm = TRUE)
+    attr(vals_log, "af_score_valid_events") <- sum(valid)
+    attr(vals_log, "saturation_excluded") <- sum(saturation_complete, na.rm = TRUE)
 
     positive_idx <- rep(FALSE, nrow(gated_data))
     positive_idx[selected_idx] <- TRUE
@@ -3562,6 +3647,7 @@
         .compute_reference_af_cosine_gate(
             gated_data = scatter_info$gated_data,
             detector_names = metadata$detector_names,
+            peak_channel = peak_channel,
             peak_vals = peak_vals,
             sample_type = sample_info$type,
             fallback_gate = hist_info,
@@ -3833,9 +3919,11 @@
 #'   cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
 #'   `FALSE`, use the legacy one-dimensional histogram gate.
 #' @param use_af_cosine_scc_selection Logical; if `TRUE`, use the experimental
-#'   AF projection/cosine selector for cell SCCs when AF controls are available.
-#'   The default, `FALSE`, keeps bead and cell SCCs on the same GMM/EM
-#'   intensity-vs-FSC selector after broad FSC/SSC cleanup.
+#'   adaptive AF projection/cosine selector for cell SCCs when AF controls are
+#'   available. This opt-in mode scores events by low AF similarity, residual
+#'   target-channel brightness, and target-channel dominance, then keeps the
+#'   high-score component. The default, `FALSE`, keeps bead and cell SCCs on
+#'   the same GMM/EM intensity-vs-FSC selector after broad FSC/SSC cleanup.
 #' @param clean_scc_with_unstained Logical; if `TRUE`, cell SCC spectra are
 #'   cleaned with scatter-matched unstained/AF events before spectrum
 #'   derivation. Bead controls use a scatter-gated unstained bead control as
@@ -3849,7 +3937,10 @@
 #' @param histogram_pct_beads Quantile width for the bead histogram gate.
 #' @param histogram_direction_beads Histogram gate direction for beads: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.
-#' @param histogram_pct_cells Quantile width for the cell histogram gate.
+#' @param histogram_pct_cells Quantile width for the default cell histogram
+#'   gate. When `use_af_cosine_scc_selection = TRUE`, this acts as a
+#'   conservative maximum cap for the experimental adaptive AF-score selector
+#'   rather than a fixed fraction to keep.
 #' @param histogram_direction_cells Histogram gate direction for cells: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.
 #' @param outlier_percentile Upper-tail FSC/SSC filtering percentile.

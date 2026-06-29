@@ -129,9 +129,11 @@ cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
 `FALSE`, use the legacy one-dimensional histogram gate.}
 
 \item{use_af_cosine_scc_selection}{Logical; if `TRUE`, use the experimental
-AF projection/cosine selector for cell SCCs when AF controls are available.
-The default, `FALSE`, keeps bead and cell SCCs on the same GMM/EM
-intensity-vs-FSC selector after broad FSC/SSC cleanup.}
+adaptive AF projection/cosine selector for cell SCCs when AF controls are
+available. This opt-in mode scores events by low AF similarity, residual
+target-channel brightness, and target-channel dominance, then keeps the
+high-score component. The default, `FALSE`, keeps bead and cell SCCs on
+the same GMM/EM intensity-vs-FSC selector after broad FSC/SSC cleanup.}
 
 \item{clean_scc_with_unstained}{Logical; if `TRUE`, clean cell SCC spectra
 with scatter-matched unstained/AF events before deriving spectra and

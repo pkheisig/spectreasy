@@ -301,7 +301,7 @@ With `unmix_method = "AutoSpectral"`, `unmix_controls()` learns spectral variant
 
 For both bead-based and cell-based SCCs, the default event selector keeps a broad FSC/SSC cleanup and then uses a GMM/EM intensity-vs-FSC gate to choose positive and negative events. This conservative default is easier to audit in the QC report because the post-FSC/SSC panel shows the scatter gate that selected the events. Bead-based SCCs use an unstained bead control as their negative background when one is available.
 
-An experimental AF projection/cosine selector is available for cell-based SCCs, but it is off by default while this behavior is being validated. Turn it on only when you want to test SCC selection by "bright enough and least AF-like" events:
+An experimental adaptive AF projection/cosine selector is available for cell-based SCCs, but it is off by default while this behavior is being benchmarked against the auditable GMM/EM gate. When enabled, Spectreasy projects events against the AF basis, scores events by low AF similarity, residual target-channel brightness, and target-channel dominance, then keeps the high-score spectral component instead of selecting a fixed positive fraction. Turn it on only when you want to test SCC selection by "bright enough and least AF-like" events:
 
 ```r
 ctrl_cosine <- unmix_controls(
@@ -310,7 +310,7 @@ ctrl_cosine <- unmix_controls(
 )
 ```
 
-Leave `use_af_cosine_scc_selection = FALSE` or omit the argument to use the default GMM/EM selector for both bead and cell SCCs.
+Leave `use_af_cosine_scc_selection = FALSE` or omit the argument to use the default GMM/EM selector for both bead and cell SCCs. In experimental mode, `histogram_pct_cells` is treated as a conservative maximum selection cap for the adaptive AF-score selector, not as a fixed percentage to keep.
 
 During `unmix_samples()`, only fluorophores that are positive in a given event are eligible for variant matching. The optimizer tests a small number of candidate variants, accepts a change only when detector residuals improve, and falls back to the base spectrum for weak, negative, noisy, or unsupported events.
 

@@ -19,16 +19,21 @@ cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
 `FALSE`, use the legacy one-dimensional histogram gate.}
 
 \item{use_af_cosine_scc_selection}{Logical; if `TRUE`, use the experimental
-AF projection/cosine selector for cell SCCs when AF controls are available.
-The default, `FALSE`, keeps bead and cell SCCs on the same GMM/EM
-intensity-vs-FSC selector after broad FSC/SSC cleanup.}
+adaptive AF projection/cosine selector for cell SCCs when AF controls are
+available. This opt-in mode scores events by low AF similarity, residual
+target-channel brightness, and target-channel dominance, then keeps the
+high-score component. The default, `FALSE`, keeps bead and cell SCCs on
+the same GMM/EM intensity-vs-FSC selector after broad FSC/SSC cleanup.}
 
 \item{histogram_pct_beads}{Quantile width for the bead histogram gate.}
 
 \item{histogram_direction_beads}{Gate direction for beads: `"right"` starts at the median,
 `"both"` centers on the median, and `"left"` ends at the median.}
 
-\item{histogram_pct_cells}{Quantile width for the cell histogram gate.}
+\item{histogram_pct_cells}{Quantile width for the default cell histogram
+gate. When `use_af_cosine_scc_selection = TRUE`, this acts as a
+conservative maximum cap for the experimental adaptive AF-score selector
+rather than a fixed fraction to keep.}
 
 \item{histogram_direction_cells}{Gate direction for cells: `"right"` starts at the median,
 `"both"` centers on the median, and `"left"` ends at the median.}

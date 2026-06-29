@@ -1341,6 +1341,7 @@ test_that("AF cosine gate selects spectral events instead of peak-channel bright
     gate <- spectreasy:::.compute_reference_af_cosine_gate(
         gated_data = gated_data,
         detector_names = detector_names,
+        peak_channel = "B1-A",
         peak_vals = gated_data[, "B1-A"],
         sample_type = "cells",
         fallback_gate = fallback,
@@ -1350,6 +1351,7 @@ test_that("AF cosine gate selects spectral events instead of peak-channel bright
     )
 
     expect_equal(attr(gate$vals_log, "gate_type"), "af_cosine")
+    expect_match(attr(gate$vals_log, "gate_method"), "Adaptive AF projection/cosine")
     expect_gt(mean(labels[gate$positive_idx] == "positive"), 0.65)
     selected_shape <- stats::median(gated_data[gate$positive_idx, "YG1-A"] / gated_data[gate$positive_idx, "B1-A"])
     fallback_idx <- gated_data[, "B1-A"] >= fallback$gate_min & gated_data[, "B1-A"] <= fallback$gate_max
