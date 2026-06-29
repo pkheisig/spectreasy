@@ -922,7 +922,7 @@ test_that("AF profile extraction uses SOM auto bank", {
     expect_equal(profiles$selection$n_bands, 101)
 })
 
-test_that("AF auto band selection can exceed the old 10-band ceiling", {
+test_that("AF SOM auto bank can exceed the old 10-band ceiling", {
     detector_names <- paste0("D", seq_len(12), "-A")
     centers <- lapply(seq_len(12), function(i) {
         v <- rep(0.01, length(detector_names))
@@ -941,9 +941,7 @@ test_that("AF auto band selection can exceed the old 10-band ceiling", {
         n_bands = "auto",
         max_cells = 1000,
         af_events = af_events,
-        auto_max_bands = 20,
-        min_cluster_events = 20,
-        min_cluster_proportion = 0
+        auto_max_bands = 20
     )
 
     expect_equal(profiles$selection$method, "som_grid")
@@ -951,7 +949,7 @@ test_that("AF auto band selection can exceed the old 10-band ceiling", {
     expect_equal(nrow(profiles$signatures), 21)
 })
 
-test_that("AF auto band selection retains similar AF signatures for covariance assignment", {
+test_that("AF SOM auto bank retains similar AF signatures for covariance assignment", {
     detector_names <- c("B1-A", "YG1-A", "V1-A", "R1-A")
     centers <- list(
         c(1, 0.20, 0.05, 0.02),
@@ -969,9 +967,7 @@ test_that("AF auto band selection retains similar AF signatures for covariance a
         n_bands = "auto",
         max_cells = 1000,
         af_events = af_events,
-        auto_max_bands = 10,
-        min_cluster_events = 20,
-        min_cluster_proportion = 0
+        auto_max_bands = 10
     )
 
     expect_equal(nrow(profiles$signatures), 11)
@@ -1027,28 +1023,24 @@ test_that("AF SOM bank keeps requested sparse AF nodes for covariance assignment
     )
     colnames(af_events) <- detector_names
 
-    event_threshold_profiles <- spectreasy:::.extract_reference_af_profiles(
+    first_profiles <- spectreasy:::.extract_reference_af_profiles(
         detector_names = detector_names,
         n_bands = 2,
         max_cells = 5000,
-        af_events = af_events,
-        min_cluster_events = 20,
-        min_cluster_proportion = 0
+        af_events = af_events
     )
-    proportion_profiles <- spectreasy:::.extract_reference_af_profiles(
+    second_profiles <- spectreasy:::.extract_reference_af_profiles(
         detector_names = detector_names,
         n_bands = 2,
         max_cells = 5000,
-        af_events = af_events,
-        min_cluster_events = 20,
-        min_cluster_proportion = 0.005
+        af_events = af_events
     )
 
-    expect_equal(nrow(event_threshold_profiles$signatures), 3)
-    expect_equal(nrow(proportion_profiles$signatures), 3)
+    expect_equal(nrow(first_profiles$signatures), 3)
+    expect_equal(nrow(second_profiles$signatures), 3)
 })
 
-test_that("AF profile extraction handles empty and all-zero AF events", {
+test_that("AF profile extraction handles empty AF events and rejects zero-signal AF", {
     detector_names <- c("B1-A", "YG1-A")
 
     empty_profiles <- spectreasy:::.extract_reference_af_profiles(
@@ -1058,14 +1050,13 @@ test_that("AF profile extraction handles empty and all-zero AF events", {
     expect_null(empty_profiles$raw_median)
     expect_null(empty_profiles$signatures)
 
-    zero_profiles <- spectreasy:::.extract_reference_af_profiles(
-        detector_names = detector_names,
-        af_events = matrix(0, nrow = 5, ncol = 2, dimnames = list(NULL, detector_names))
+    expect_error(
+        spectreasy:::.extract_reference_af_profiles(
+            detector_names = detector_names,
+            af_events = matrix(0, nrow = 5, ncol = 2, dimnames = list(NULL, detector_names))
+        ),
+        regexp = "positive spectral signal"
     )
-    expect_equal(zero_profiles$raw_median, c("B1-A" = 0, "YG1-A" = 0))
-    expect_equal(dim(zero_profiles$signatures), c(1, 2))
-    expect_equal(rownames(zero_profiles$signatures), "AF")
-    expect_equal(zero_profiles$signatures[1, ], c("B1-A" = 0, "YG1-A" = 0))
 })
 
 test_that("AF argument validation keeps deprecated bands-per-file compatibility", {
@@ -1168,9 +1159,6 @@ test_that("multiple AF files are pooled into one AF bank size request", {
                                                   max_cells,
                                                   af_events,
                                                   auto_max_bands,
-                                                  min_cluster_events,
-                                                  min_cluster_proportion,
-                                                  n_bands_sensitivity,
                                                   fluor_spectra,
                                                   refine,
                                                   refine_problem_quantile,
@@ -1202,9 +1190,6 @@ test_that("multiple AF files are pooled into one AF bank size request", {
         af_bands_per_file = 5L,
         af_max_cells = 500L,
         af_auto_max_bands = 100L,
-        af_min_cluster_events = 20L,
-        af_min_cluster_proportion = 0.005,
-        af_n_bands_sensitivity = 1.5,
         config = list(include_multi_af = TRUE, af_dir = af_dir)
     )
 

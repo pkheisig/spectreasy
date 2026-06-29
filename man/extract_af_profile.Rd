@@ -9,9 +9,6 @@ extract_af_profile(
   af_n_bands = "auto",
   af_max_cells = 50000,
   af_auto_max_bands = 100,
-  af_min_cluster_events = 20,
-  af_min_cluster_proportion = 0.005,
-  af_n_bands_sensitivity = 1.5,
   seed = NULL,
   show_plot = TRUE,
   verbose = TRUE
@@ -27,15 +24,6 @@ builds a SOM bank up to `af_auto_max_bands` nodes plus a mean AF row.}
 
 \item{af_auto_max_bands}{Maximum SOM nodes that `"auto"` may create before
 prepending the mean AF row.}
-
-\item{af_min_cluster_events}{Compatibility argument retained for older
-workflows.}
-
-\item{af_min_cluster_proportion}{Compatibility argument retained for older
-workflows.}
-
-\item{af_n_bands_sensitivity}{Compatibility argument retained for older
-workflows.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

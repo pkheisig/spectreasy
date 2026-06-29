@@ -117,7 +117,7 @@
 
 .reference_som_af_centers <- function(af_shape, n_nodes) {
     if (!requireNamespace("FlowSOM", quietly = TRUE)) {
-        stop("FlowSOM is required for multi-AF SOM extraction. Install FlowSOM or use af_n_bands = 1.", call. = FALSE)
+        stop("FlowSOM is required for AF SOM extraction.", call. = FALSE)
     }
     dims <- .reference_som_grid_dims(n_nodes)
     map <- FlowSOM::SOM(
@@ -750,9 +750,6 @@
                                            max_cells = 50000,
                                            af_events = NULL,
                                            auto_max_bands = 100,
-                                           min_cluster_events = 20,
-                                           min_cluster_proportion = 0.005,
-                                           n_bands_sensitivity = 1.5,
                                            fluor_spectra = NULL,
                                            remove_contaminants = TRUE,
                                            contaminant_threshold = 0.99,
@@ -804,18 +801,7 @@
     row_scale <- apply(af_pos, 1, max, na.rm = TRUE)
     keep <- is.finite(row_scale) & row_scale > 0
     if (!any(keep)) {
-        sig <- pmax(raw_median, 0)
-        sig_max <- max(sig, na.rm = TRUE)
-        if (is.finite(sig_max) && sig_max > 0) {
-            sig <- sig / sig_max
-        } else {
-            sig <- rep(0, length(sig))
-            names(sig) <- detector_names
-        }
-        sig_mat <- matrix(sig, nrow = 1)
-        rownames(sig_mat) <- "AF"
-        colnames(sig_mat) <- detector_names
-        return(list(raw_median = raw_median, signatures = sig_mat))
+        stop("AF events do not contain positive spectral signal for SOM extraction.", call. = FALSE)
     }
 
     af_shape <- af_pos[keep, , drop = FALSE] / row_scale[keep]
@@ -832,86 +818,63 @@
             n_bands = as.integer(n_bands),
             method = "som_grid",
             max_bands = as.integer(auto_max_bands),
-            min_cluster_size = .reference_min_af_cluster_size(
-                n_events = nrow(af_shape),
-                min_cluster_events = min_cluster_events,
-                min_cluster_proportion = min_cluster_proportion
-            ),
-            min_cluster_proportion = min_cluster_proportion,
-            sensitivity = n_bands_sensitivity,
             hit_max_bands = TRUE
         )
     }
     n_eff <- min(as.integer(n_bands), nrow(af_shape))
     if (n_eff < 1) n_eff <- 1
 
-    centers_already_normalized <- FALSE
     base_center_count <- NULL
-    if (n_eff == 1) {
-        centers <- matrix(colMeans(af_shape, na.rm = TRUE), nrow = 1)
-    } else {
-        som <- .reference_som_af_centers(som_input, n_eff)
-        centers <- som$centers[, detector_names, drop = FALSE]
-        centers <- t(apply(centers, 1, function(v) {
-            vmax <- max(abs(v), na.rm = TRUE)
-            if (!is.finite(vmax) || vmax <= 0) {
-                return(rep(0, length(v)))
-            }
-            v / vmax
-        }))
-        centers <- as.matrix(stats::na.omit(centers))
-        if (!is.null(selection)) {
-            selection$xdim <- som$xdim
-            selection$ydim <- som$ydim
+
+    som <- .reference_som_af_centers(som_input, n_eff)
+    centers <- som$centers[, detector_names, drop = FALSE]
+    centers <- t(apply(centers, 1, function(v) {
+        vmax <- max(abs(v), na.rm = TRUE)
+        if (!is.finite(vmax) || vmax <= 0) {
+            return(rep(0, length(v)))
         }
-        mean_af <- colMeans(centers, na.rm = TRUE)
-        centers <- rbind(mean_af, centers)
-        if (!is.null(fluor_spectra) && nrow(fluor_spectra) > 0) {
-            centers <- .reference_qc_af_spectra(
-                af_spectra = centers,
-                spectra = fluor_spectra,
-                threshold = contaminant_threshold,
-                remove = remove_contaminants
-            )
-        }
+        v / vmax
+    }))
+    centers <- as.matrix(stats::na.omit(centers))
+    if (!is.null(selection)) {
+        selection$xdim <- som$xdim
+        selection$ydim <- som$ydim
+    }
+    mean_af <- colMeans(centers, na.rm = TRUE)
+    centers <- rbind(mean_af, centers)
+    if (!is.null(fluor_spectra) && nrow(fluor_spectra) > 0) {
+        centers <- .reference_qc_af_spectra(
+            af_spectra = centers,
+            spectra = fluor_spectra,
+            threshold = contaminant_threshold,
+            remove = remove_contaminants
+        )
+    }
+    centers <- .reference_deduplicate_af_spectra(
+        centers,
+        threshold = af_deduplication_threshold,
+        deduplicate = af_deduplicate
+    )
+    base_center_count <- nrow(centers)
+    if (isTRUE(refine) && !is.null(fluor_spectra) && nrow(fluor_spectra) > 0) {
+        refined <- .reference_refine_af_spectra(
+            events = af_events[keep, detector_names, drop = FALSE],
+            spectra = fluor_spectra,
+            af_spectra = centers,
+            problem_quantile = refine_problem_quantile,
+            af_assignment = af_assignment,
+            remove_contaminants = remove_contaminants,
+            contaminant_threshold = contaminant_threshold
+        )
+        centers <- refined$signatures
         centers <- .reference_deduplicate_af_spectra(
             centers,
             threshold = af_deduplication_threshold,
             deduplicate = af_deduplicate
         )
-        base_center_count <- nrow(centers)
-        if (isTRUE(refine) && !is.null(fluor_spectra) && nrow(fluor_spectra) > 0) {
-            refined <- .reference_refine_af_spectra(
-                events = af_events[keep, detector_names, drop = FALSE],
-                spectra = fluor_spectra,
-                af_spectra = centers,
-                problem_quantile = refine_problem_quantile,
-                af_assignment = af_assignment,
-                remove_contaminants = remove_contaminants,
-                contaminant_threshold = contaminant_threshold
-            )
-            centers <- refined$signatures
-            centers <- .reference_deduplicate_af_spectra(
-                centers,
-                threshold = af_deduplication_threshold,
-                deduplicate = af_deduplicate
-            )
-            if (!is.null(selection)) {
-                selection$refine <- refined$info
-            }
+        if (!is.null(selection)) {
+            selection$refine <- refined$info
         }
-        centers_already_normalized <- TRUE
-    }
-
-    if (!isTRUE(centers_already_normalized)) {
-        centers <- t(apply(centers, 1, function(v) {
-            v <- pmax(v, 0)
-            vmax <- max(v, na.rm = TRUE)
-            if (!is.finite(vmax) || vmax <= 0) {
-                return(rep(0, length(v)))
-            }
-            v / vmax
-        }))
     }
 
     if (is.null(dim(centers))) {
@@ -1036,9 +999,6 @@
                                            af_bands_per_file,
                                            af_max_cells,
                                            af_auto_max_bands,
-                                           af_min_cluster_events,
-                                           af_min_cluster_proportion,
-                                           af_n_bands_sensitivity,
                                            af_deduplicate = FALSE,
                                            af_deduplication_threshold = 0.99,
                                            af_contaminant_threshold = 0.99,
@@ -1117,9 +1077,6 @@
                 max_cells = af_max_cells,
                 af_events = af_events,
                 auto_max_bands = af_auto_max_bands,
-                min_cluster_events = af_min_cluster_events,
-                min_cluster_proportion = af_min_cluster_proportion,
-                n_bands_sensitivity = af_n_bands_sensitivity,
                 fluor_spectra = fluor_spectra,
                 contaminant_threshold = af_contaminant_threshold,
                 af_deduplicate = af_deduplicate,
@@ -1142,9 +1099,6 @@
             af_bands_per_file = NA_integer_,
             derived_bands = if (!is.null(af_signatures_norm)) nrow(af_signatures_norm) else 0L,
             af_auto_max_bands = if (identical(requested_bands, "auto")) af_auto_max_bands else NA_integer_,
-            af_min_cluster_events = af_min_cluster_events,
-            af_min_cluster_proportion = af_min_cluster_proportion,
-            af_n_bands_sensitivity = if (identical(requested_bands, "auto")) af_n_bands_sensitivity else NA_real_,
             af_deduplicate = isTRUE(af_deduplicate),
             af_deduplication_threshold = if (isTRUE(af_deduplicate)) af_deduplication_threshold else NA_real_,
             af_contaminant_threshold = af_contaminant_threshold,
@@ -2949,11 +2903,10 @@
 #' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls entirely,
 #'   even when they are present in `control_df`, the SCC folder, or `af_dir`.
 #' @param af_dir Directory with extra AF controls when `include_multi_af = TRUE`.
-#' @param af_n_bands Number of AF basis signatures to extract from the pooled
-#'   unstained/AF control events (`1` = classic single AF signature). The
-#'   default, `"auto"`, chooses the number from AF event shapes. For `"auto"`,
-#'   `af_auto_max_bands` controls the number of SOM nodes and a mean AF row is
-#'   prepended.
+#' @param af_n_bands Number of SOM nodes used to extract AF basis signatures
+#'   from pooled unstained/AF control events, or `"auto"` to use
+#'   `af_auto_max_bands`. A mean AF row is prepended to the SOM nodes, so the
+#'   default creates 100 SOM rows plus the mean row before QC/removal steps.
 #' @param af_bands_per_file Deprecated compatibility argument. Multiple AF
 #'   sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
 #'   control the size of the one shared AF bank.
@@ -3157,9 +3110,6 @@ build_reference_matrix <- function(
         out_path = out_path,
         cytometer = cytometer,
         af_auto_max_bands = af_auto_max_bands,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity,
         af_deduplicate = af_deduplicate,
         af_deduplication_threshold = af_deduplication_threshold,
         af_contaminant_threshold = af_contaminant_threshold,
@@ -3183,9 +3133,6 @@ build_reference_matrix <- function(
         af_bands_per_file = af_bands_per_file,
         af_max_cells = af_max_cells,
         af_auto_max_bands = af_auto_max_bands,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity,
         af_deduplicate = af_deduplicate,
         af_deduplication_threshold = af_deduplication_threshold,
         af_contaminant_threshold = af_contaminant_threshold,
@@ -3248,9 +3195,6 @@ build_reference_matrix <- function(
         af_bands_per_file = af_bands_per_file,
         af_max_cells = af_max_cells,
         af_auto_max_bands = af_auto_max_bands,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity,
         af_deduplicate = af_deduplicate,
         af_deduplication_threshold = af_deduplication_threshold,
         af_contaminant_threshold = af_contaminant_threshold,

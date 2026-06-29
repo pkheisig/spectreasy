@@ -98,9 +98,10 @@ matrix.}
 \item{control_file}{Legacy compatibility argument. To create a reference
 matrix from a control mapping, run [unmix_controls()] first.}
 
-\item{af_n_bands}{Number of AF basis signatures to extract from the pooled
-unstained/AF control events. Use `"auto"` to build the default SOM AF bank.
-Legacy compatibility argument; build AF references with [unmix_controls()].}
+\item{af_n_bands}{Number of SOM nodes used to extract AF basis signatures
+from pooled unstained/AF control events, or `"auto"` to use
+`af_auto_max_bands`. A mean AF row is prepended to the SOM nodes. Legacy
+compatibility argument; build AF references with [unmix_controls()].}
 
 \item{af_bands_per_file}{Deprecated compatibility argument. Multiple AF
 sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`

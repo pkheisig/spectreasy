@@ -77,7 +77,8 @@ test_that("cell SCC spectra can use scatter-matched unstained background", {
 
     positive_events <- attr(clean, "scc_positive_events")
     expect_true("FITC" %in% names(positive_events))
-    expect_equal(nrow(positive_events$FITC), attr(clean, "qc_summary")[fluorophore == "FITC", n_final])
+    qc_summary <- attr(clean, "qc_summary")
+    expect_equal(nrow(positive_events$FITC), qc_summary$n_final[qc_summary$fluorophore == "FITC"])
     positive_shapes <- spectreasy:::.normalize_spectral_variant_shapes(positive_events$FITC)
     expect_lt(abs(stats::median(positive_shapes[, "YG1-A"]) - 0.10), 0.06)
 })

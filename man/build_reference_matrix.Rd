@@ -64,11 +64,10 @@ even when they are present in `control_df`, the SCC folder, or `af_dir`.}
 
 \item{af_dir}{Directory with extra AF controls when `include_multi_af = TRUE`.}
 
-\item{af_n_bands}{Number of AF basis signatures to extract from the pooled
-unstained/AF control events (`1` = classic single AF signature). The
-default, `"auto"`, chooses the number from AF event shapes. For `"auto"`,
-`af_auto_max_bands` controls the number of SOM nodes and a mean AF row is
-prepended.}
+\item{af_n_bands}{Number of SOM nodes used to extract AF basis signatures
+from pooled unstained/AF control events, or `"auto"` to use
+`af_auto_max_bands`. A mean AF row is prepended to the SOM nodes, so the
+default creates 100 SOM rows plus the mean row before QC/removal steps.}
 
 \item{af_bands_per_file}{Deprecated compatibility argument. Multiple AF
 sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`

@@ -66,21 +66,55 @@ test_that("add_af_profile appends loaded AF bands and replaces existing AF by de
     })
 })
 
-test_that("extract_af_profile can derive a standalone profile from an unstained FCS file", {
-    src_unstained <- testthat::test_path("../../scc/Unstained (Cells).fcs")
-    testthat::skip_if_not(file.exists(src_unstained))
+test_that("extract_af_profile builds the default saved SOM AF bank", {
+    detector_names <- c("B1-A", "YG1-A", "V1-A")
+    af_events <- rbind(
+        matrix(rep(c(100, 15, 5), 120), ncol = 3, byrow = TRUE),
+        matrix(rep(c(10, 90, 20), 120), ncol = 3, byrow = TRUE)
+    )
+    colnames(af_events) <- detector_names
+    src_unstained <- tempfile(fileext = ".fcs")
+    file.create(src_unstained)
+
+    testthat::local_mocked_bindings(
+        .prepare_reference_detector_info = function(fcs_file) {
+            list(
+                detector_names = detector_names,
+                pd_meta = data.frame(name = detector_names, stringsAsFactors = FALSE)
+            )
+        },
+        .extract_reference_af_gated_events = function(fcs_file, detector_names, config) {
+            list(
+                events = af_events,
+                source = data.table::data.table(
+                    file = basename(fcs_file),
+                    path = normalizePath(fcs_file, mustWork = FALSE),
+                    n_total = nrow(af_events),
+                    n_scatter_gated = nrow(af_events),
+                    scatter_gate_pct = 100,
+                    fsc_channel = "FSC-A",
+                    ssc_channel = "SSC-A"
+                )
+            )
+        },
+        .build_af_profile_plot = function(profile, pd = NULL) {
+            ggplot2::ggplot()
+        },
+        .package = "spectreasy"
+    )
 
     afp <- spectreasy::extract_af_profile(
         src_unstained,
-        af_n_bands = 1,
         seed = 1,
         show_plot = FALSE,
         verbose = FALSE
     )
 
     expect_s3_class(afp, "spectreasy_af_profile")
-    expect_equal(rownames(afp$profile), "AF")
-    expect_gt(ncol(afp$profile), 1)
+    expect_equal(nrow(afp$profile), 101)
+    expect_equal(rownames(afp$profile), c("AF", paste0("AF_", seq.int(2, 101))))
+    expect_equal(afp$extraction$auto_selection$method, "som_grid")
+    expect_equal(afp$extraction$auto_selection$n_bands, 101)
     expect_s3_class(afp$plot, "ggplot")
 })
 

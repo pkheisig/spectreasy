@@ -96,12 +96,6 @@ af_profile_dir <- function(create = TRUE) {
 #' @param af_max_cells Maximum number of scatter-gated AF events used.
 #' @param af_auto_max_bands Maximum SOM nodes that `"auto"` may create before
 #'   prepending the mean AF row.
-#' @param af_min_cluster_events Compatibility argument retained for older
-#'   workflows.
-#' @param af_min_cluster_proportion Compatibility argument retained for older
-#'   workflows.
-#' @param af_n_bands_sensitivity Compatibility argument retained for older
-#'   workflows.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param show_plot Logical; print the AF spectra plot after extraction.
 #' @param verbose Logical; print progress updates while extracting.
@@ -112,9 +106,6 @@ extract_af_profile <- function(fcs_file,
                                af_n_bands = "auto",
                                af_max_cells = 50000,
                                af_auto_max_bands = 100,
-                               af_min_cluster_events = 20,
-                               af_min_cluster_proportion = 0.005,
-                               af_n_bands_sensitivity = 1.5,
                                seed = NULL,
                                show_plot = TRUE,
                                verbose = TRUE) {
@@ -132,10 +123,7 @@ extract_af_profile <- function(fcs_file,
         af_n_bands = af_n_bands,
         af_max_cells = af_max_cells,
         af_bands_per_file = 1,
-        af_auto_max_bands = af_auto_max_bands,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity
+        af_auto_max_bands = af_auto_max_bands
     )
     .with_optional_seed(seed)
 
@@ -168,8 +156,8 @@ extract_af_profile <- function(fcs_file,
 
     if (isTRUE(verbose)) {
         message(
-            "  Extracting AF band(s)",
-            if (identical(af_args$af_n_bands, "auto")) " with auto band selection" else paste0(" (requested: ", af_args$af_n_bands, ")"),
+            "  Building SOM AF bank",
+            if (identical(af_args$af_n_bands, "auto")) paste0(" with ", af_args$af_auto_max_bands, " nodes plus the mean AF row") else paste0(" with ", af_args$af_n_bands, " node(s) plus the mean AF row"),
             "..."
         )
     }
@@ -179,10 +167,7 @@ extract_af_profile <- function(fcs_file,
             n_bands = af_args$af_n_bands,
             max_cells = af_args$af_max_cells,
             af_events = gated$events,
-            auto_max_bands = af_args$af_auto_max_bands,
-            min_cluster_events = af_args$af_min_cluster_events,
-            min_cluster_proportion = af_args$af_min_cluster_proportion,
-            n_bands_sensitivity = af_args$af_n_bands_sensitivity
+            auto_max_bands = af_args$af_auto_max_bands
         ),
         warning = function(w) {
             if (grepl("Quick-TRANSfer stage steps exceeded maximum", conditionMessage(w), fixed = TRUE)) {
@@ -207,9 +192,6 @@ extract_af_profile <- function(fcs_file,
             af_n_bands = af_args$af_n_bands,
             af_max_cells = af_args$af_max_cells,
             af_auto_max_bands = af_args$af_auto_max_bands,
-            af_min_cluster_events = af_args$af_min_cluster_events,
-            af_min_cluster_proportion = af_args$af_min_cluster_proportion,
-            af_n_bands_sensitivity = af_args$af_n_bands_sensitivity,
             auto_selection = af_profiles$selection
         )
     )
