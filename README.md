@@ -413,6 +413,10 @@ build_spectral_panel()
 
 Use it before an experiment when you want a quick browser view of candidate fluorophore spectra, detector overlap, similarity, and panel complexity.
 
+<p align="center">
+  <img src="man/figures/spectral_panel_builder.png" width="100%" />
+</p>
+
 ### Matrix adjustment module
 
 `adjust_matrix()` opens the browser-based matrix adjustment module. By default, it looks for matrix files in `spectreasy_outputs/unmix_controls` under the current working directory, serves bundled browser assets, and runs locally through the R session.
@@ -421,7 +425,11 @@ Use it before an experiment when you want a quick browser view of candidate fluo
 adjust_matrix()
 ```
 
-Use it after the automated control-stage workflow when you need to inspect or manually adjust an unmixing matrix in the browser. Screenshots for the panel builder and matrix adjustment module are not currently included in `man/figures/`; add them there when captured so this appendix can show the live interfaces.
+Use it after the automated control-stage workflow when you need to inspect or manually adjust an unmixing matrix in the browser.
+
+<p align="center">
+  <img src="man/figures/matrix_adjustment.png" width="100%" />
+</p>
 
 ---
 
