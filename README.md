@@ -107,15 +107,15 @@ Open the generated `fcs_mapping.csv` in the project directory and complete the p
 
 For the example dataset, the reviewed control file looks like this:
 
-|filename                    |fluorophore     |marker           |channel |control.type |universal.negative |large.gate |is.viability |
-|:---------------------------|:---------------|:----------------|:-------|:------------|:------------------|:----------|:------------|
-|Alexa Fluor 700 (Beads).fcs |Alexa Fluor 700 |CD3              |R4-A    |beads        |                   |           |             |
-|BUV395 (Beads).fcs          |BUV395          |CD45RA           |UV2-A   |beads        |                   |           |             |
-|BV510 (Beads).fcs           |BV510           |CD27             |V7-A    |beads        |                   |           |             |
-|FITC (Beads).fcs            |FITC            |CD8              |B2-A    |beads        |                   |           |             |
-|LIVE DEAD NIR (Cells).fcs   |LIVE DEAD NIR   |Live             |R7-A    |cells        |                   |           |TRUE         |
-|PerCP-Cy5.5 (Beads).fcs     |PerCP-Cy5.5     |CCR7             |B9-A    |beads        |                   |           |             |
-|Unstained (Cells).fcs       |AF              |Autofluorescence |UV7-A   |cells        |                   |           |             |
+|filename                    |fluorophore     |marker           |channel |control.type |universal.negative |is.viability |
+|:---------------------------|:---------------|:----------------|:-------|:------------|:------------------|:------------|
+|Alexa Fluor 700 (Beads).fcs |Alexa Fluor 700 |CD3              |R4-A    |beads        |                   |             |
+|BUV395 (Beads).fcs          |BUV395          |CD45RA           |UV2-A   |beads        |                   |             |
+|BV510 (Beads).fcs           |BV510           |CD27             |V7-A    |beads        |                   |             |
+|FITC (Beads).fcs            |FITC            |CD8              |B2-A    |beads        |                   |             |
+|LIVE DEAD NIR (Cells).fcs   |LIVE DEAD NIR   |Live             |R7-A    |cells        |                   |TRUE         |
+|PerCP-Cy5.5 (Beads).fcs     |PerCP-Cy5.5     |CCR7             |B9-A    |beads        |                   |             |
+|Unstained (Cells).fcs       |AF              |Autofluorescence |UV7-A   |cells        |                   |             |
 
 ## 4. Return to the console and confirm with `y`
 

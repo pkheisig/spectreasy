@@ -465,7 +465,6 @@ test_that("unmix_controls supports af_n_bands and include_multi_af", {
         channel = c("B1-A", "YG1-A", "B1-A"),
         control.type = c("beads", "beads", "cells"),
         universal.negative = c("", "", ""),
-        large.gate = c("", "", ""),
         is.viability = c("", "", ""),
         stringsAsFactors = FALSE
     )

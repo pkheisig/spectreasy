@@ -1265,6 +1265,53 @@ test_that("scatter intensity gating separates nearest negative and bright positi
     expect_lt(log10(gate$gate_max), 5.6)
 })
 
+test_that("AF cosine gate selects spectral events instead of peak-channel bright AF", {
+    set.seed(72)
+    detector_names <- c("B1-A", "YG1-A")
+    af_like <- cbind(
+        "B1-A" = stats::rnorm(220, 900, 35),
+        "YG1-A" = stats::rnorm(220, 850, 35)
+    )
+    positive <- cbind(
+        "B1-A" = stats::rnorm(80, 520, 25),
+        "YG1-A" = stats::rnorm(80, 70, 8)
+    )
+    dim_background <- cbind(
+        "B1-A" = stats::rnorm(180, 80, 10),
+        "YG1-A" = stats::rnorm(180, 75, 10)
+    )
+    gated_data <- rbind(af_like, positive, dim_background)
+    gated_data[gated_data < 1] <- 1
+    labels <- c(rep("af_like", nrow(af_like)), rep("positive", nrow(positive)), rep("background", nrow(dim_background)))
+    fallback <- spectreasy:::.compute_reference_scatter_intensity_gate(
+        peak_vals = gated_data[, "B1-A"],
+        sample_type = "cells",
+        histogram_pct_beads = 0.98,
+        histogram_direction_beads = "right",
+        histogram_pct_cells = 0.20,
+        histogram_direction_cells = "right"
+    )
+
+    gate <- spectreasy:::.compute_reference_af_cosine_gate(
+        gated_data = gated_data,
+        detector_names = detector_names,
+        peak_vals = gated_data[, "B1-A"],
+        sample_type = "cells",
+        fallback_gate = fallback,
+        af_data_raw = c("B1-A" = 900, "YG1-A" = 850),
+        scc_background = list(spectra = af_like),
+        histogram_pct_cells = 0.20
+    )
+
+    expect_equal(attr(gate$vals_log, "gate_type"), "af_cosine")
+    expect_gt(mean(labels[gate$positive_idx] == "positive"), 0.65)
+    selected_shape <- stats::median(gated_data[gate$positive_idx, "YG1-A"] / gated_data[gate$positive_idx, "B1-A"])
+    fallback_idx <- gated_data[, "B1-A"] >= fallback$gate_min & gated_data[, "B1-A"] <= fallback$gate_max
+    fallback_shape <- stats::median(gated_data[fallback_idx, "YG1-A"] / gated_data[fallback_idx, "B1-A"])
+    expect_lt(selected_shape, 0.25)
+    expect_gt(fallback_shape, 0.75)
+})
+
 test_that("histogram gating cutoff detection extends right gate leftwards", {
     # 1. Test .compute_reference_histogram_gate density-based cutoff
     set.seed(42)
@@ -1326,6 +1373,38 @@ test_that("reference spectrum uses histogram negative gate attributes", {
     )
 
     expect_equal(as.numeric(res), c(1, 180 / 9000), tolerance = 1e-6)
+})
+
+test_that("bead reference spectrum prefers automatic unstained bead negative", {
+    detector_names <- c("B1-A", "YG1-A")
+    final_gated_data <- matrix(
+        rep(c(1000, 400), each = 20),
+        ncol = 2,
+        dimnames = list(NULL, detector_names)
+    )
+    gated_data <- rbind(
+        matrix(rep(c(50, 350), each = 20), ncol = 2),
+        matrix(rep(c(1000, 400), each = 20), ncol = 2)
+    )
+    colnames(gated_data) <- detector_names
+    peak_vals <- gated_data[, "B1-A"]
+    vals_log <- log10(pmax(peak_vals, 1))
+    attr(vals_log, "negative_gate_present") <- TRUE
+    attr(vals_log, "neg_log_min") <- 1.6
+    attr(vals_log, "neg_log_max") <- 1.8
+
+    res <- spectreasy:::.compute_reference_spectrum(
+        final_gated_data = final_gated_data,
+        gated_data = gated_data,
+        peak_vals = peak_vals,
+        vals_log = vals_log,
+        detector_names = detector_names,
+        row_info = data.frame(universal.negative = "", stringsAsFactors = FALSE),
+        sample_type = "beads",
+        universal_negatives = list(".__unstained_bead__" = c("B1-A" = 100, "YG1-A" = 300))
+    )
+
+    expect_equal(as.numeric(res), c(1, 100 / 900), tolerance = 1e-6)
 })
 
 test_that("control.type from control file overrides filename fallback", {

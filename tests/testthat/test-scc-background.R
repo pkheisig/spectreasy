@@ -41,7 +41,6 @@ make_matched_af_scc <- function() {
         channel = c("B1-A", "B1-A"),
         control.type = c("cells", "cells"),
         universal.negative = c("", ""),
-        large.gate = c("", ""),
         is.viability = c("", ""),
         stringsAsFactors = FALSE
     )
@@ -81,6 +80,67 @@ test_that("cell SCC spectra can use scatter-matched unstained background", {
     expect_equal(nrow(positive_events$FITC), qc_summary$n_final[qc_summary$fluorophore == "FITC"])
     positive_shapes <- spectreasy:::.normalize_spectral_variant_shapes(positive_events$FITC)
     expect_lt(abs(stats::median(positive_shapes[, "YG1-A"]) - 0.10), 0.06)
+})
+
+test_that("bead SCCs keep intensity selection even when AF controls exist", {
+    set.seed(45)
+    scc_dir <- tempfile("spectreasy_bead_gate_")
+    dir.create(scc_dir, recursive = TRUE, showWarnings = FALSE)
+
+    af_exprs <- make_matched_af_exprs(positive = FALSE)
+    unstained_beads <- cbind(
+        "B1-A" = stats::rnorm(600, 200, 12),
+        "YG1-A" = stats::rnorm(600, 320, 14),
+        "FSC-A" = stats::rnorm(600, 70000, 2500),
+        "SSC-A" = stats::rnorm(600, 35000, 1800)
+    )
+    bead_exprs <- cbind(
+        "B1-A" = stats::rnorm(600, 1200, 35),
+        "YG1-A" = stats::rnorm(600, 420, 12),
+        "FSC-A" = stats::rnorm(600, 70000, 2500),
+        "SSC-A" = stats::rnorm(600, 35000, 1800)
+    )
+    unstained_beads[unstained_beads < 1] <- 1
+    bead_exprs[bead_exprs < 1] <- 1
+
+    flowCore::write.FCS(
+        flowCore::flowFrame(unstained_beads),
+        file.path(scc_dir, "Unstained (Beads).fcs")
+    )
+    flowCore::write.FCS(
+        flowCore::flowFrame(af_exprs),
+        file.path(scc_dir, "Unstained (Cells).fcs")
+    )
+    flowCore::write.FCS(
+        flowCore::flowFrame(bead_exprs),
+        file.path(scc_dir, "FITC (Beads).fcs")
+    )
+    control_df <- data.frame(
+        filename = c("Unstained (Beads).fcs", "Unstained (Cells).fcs", "FITC (Beads).fcs"),
+        fluorophore = c("AF", "AF", "FITC"),
+        marker = c("Autofluorescence", "Autofluorescence", "FITC"),
+        channel = c("B1-A", "B1-A", "B1-A"),
+        control.type = c("beads", "cells", "beads"),
+        universal.negative = c("", "", ""),
+        is.viability = c("", "", ""),
+        stringsAsFactors = FALSE
+    )
+
+    M <- spectreasy::build_reference_matrix(
+        input_folder = scc_dir,
+        control_df = control_df,
+        clean_scc_with_unstained = TRUE,
+        save_qc_plots = FALSE,
+        seed = 45,
+        subsample_n = 500
+    )
+
+    qc_summary <- attr(M, "qc_summary")
+    expect_equal(qc_summary$intensity_gate_type[qc_summary$fluorophore == "FITC"], "scatter")
+    expect_equal(qc_summary$scc_background_method[qc_summary$fluorophore == "FITC"], "none")
+    expect_gt(M["FITC", "B1-A"], 0.95)
+    expect_lt(abs(M["FITC", "YG1-A"] - 0.10), 0.04)
+    expect_equal(attr(M, "af_bank_info")$sources$file[1], "Unstained (Cells).fcs")
 })
 
 test_that("matched background helpers clean local AF from variant events", {

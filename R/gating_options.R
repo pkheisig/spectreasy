@@ -1,10 +1,12 @@
 #' Gating options
 #'
-#' Helper constructor for intensity-gating settings.
+#' Helper constructor for SCC event-selection settings.
 #'
-#' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
-#'   scatter gate for final positive/negative population selection. If `FALSE`,
-#'   use the legacy one-dimensional histogram gate.
+#' @param use_scatter_gating Logical; if `TRUE` (default), keep broad FSC/SSC
+#'   cleanup and use AF projection/cosine filtering for cell SCCs when AF
+#'   controls are available. Bead SCCs keep bead-appropriate
+#'   intensity-vs-FSC selection. If `FALSE`, use the legacy one-dimensional
+#'   histogram gate.
 #' @param histogram_pct_beads Quantile width for the bead histogram gate.
 #' @param histogram_direction_beads Gate direction for beads: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.

@@ -170,7 +170,7 @@
     )
     gate_dir <- if (isTRUE(use_scatter_gating)) "intensity_scatter" else "histogram"
     gate_suffix <- if (isTRUE(use_scatter_gating)) "_intensity_scatter.png" else "_histogram.png"
-    gate_title <- if (isTRUE(use_scatter_gating)) "Intensity-vs-FSC Scatter Gate" else "Peak-Channel Histogram Gate"
+    gate_title <- if (isTRUE(use_scatter_gating)) "Scatter/Spectral Event Gate" else "Peak-Channel Histogram Gate"
     .draw_report_image_panel(
         file.path(report_plot_dir, gate_dir, paste0(sample_id, gate_suffix)),
         gate_title,
@@ -550,9 +550,9 @@
 #' @param save_qc_pngs Logical; if `TRUE`, keep the intermediate QC PNG files in
 #'   `qc_plot_dir`. If `FALSE` (default), PNGs are written to a temporary directory
 #'   for report assembly and removed afterward.
-#' @param use_scatter_gating Logical; if `TRUE` (default), use scatter/intensity
-#'   gating and show scatter gate plots in the report. If `FALSE`, use and show
-#'   the legacy histogram gate.
+#' @param use_scatter_gating Logical; if `TRUE` (default), use broad scatter
+#'   cleanup plus spectral event selection when available and show scatter gate
+#'   plots in the report. If `FALSE`, use and show the legacy histogram gate.
 #' @param include_multi_af Logical; forward to [build_reference_matrix()].
 #' @param af_dir AF directory forwarded to [build_reference_matrix()].
 #' @param af_bands_per_file Deprecated compatibility argument. Multiple AF

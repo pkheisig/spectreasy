@@ -36,7 +36,6 @@ make_variant_control_set <- function() {
         channel = c("B1-A", "R1-A"),
         control.type = c("beads", "beads"),
         universal.negative = c("", ""),
-        large.gate = c("", ""),
         is.viability = c("", ""),
         stringsAsFactors = FALSE
     )

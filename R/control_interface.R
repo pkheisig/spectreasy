@@ -6,7 +6,6 @@
         channel = character(),
         control.type = character(),
         universal.negative = character(),
-        large.gate = character(),
         is.viability = character(),
         stringsAsFactors = FALSE
     )
@@ -303,6 +302,29 @@
     ""
 }
 
+.control_file_is_bead_negative_filename <- function(fn) {
+    stem <- tools::file_path_sans_ext(basename(fn))
+    stem_norm <- .control_file_normalize_token(stem)
+    tok <- .control_file_split_filename_tokens(stem)
+
+    has_bead <- any(tok %in% c("bead", "beads", "compbead", "compbeads")) ||
+        grepl("compbeads?", stem_norm) ||
+        grepl("beads?", stem_norm)
+    has_negative <- any(tok %in% c(
+        "unstained", "unstain", "us", "ut", "usut", "usut1", "neg",
+        "negative", "background", "bg", "blank", "minus"
+    )) ||
+        grepl("us[_ -]?ut", stem, ignore.case = TRUE) ||
+        grepl("unstained|negative|background|blank", stem, ignore.case = TRUE) ||
+        grepl("(^|[^[:alnum:]])(?:us|neg|bg)(?:[^[:alnum:]]|$)", stem, ignore.case = TRUE, perl = TRUE)
+
+    has_bead && has_negative
+}
+
+.control_file_is_cell_af_filename <- function(fn) {
+    !.control_file_is_bead_negative_filename(fn) && .is_af_filename(fn)
+}
+
 .infer_is_viability_from_filename <- function(fn, fluor_guess = "", marker_guess = "") {
     stem <- tools::file_path_sans_ext(basename(fn))
     stem_norm <- .control_file_normalize_token(stem)
@@ -388,6 +410,7 @@
 .infer_marker_from_filename <- function(fn, fluor_guess = "", marker_name_map = character(), marker_names = character()) {
     stem <- tools::file_path_sans_ext(basename(fn))
     stem_lower <- tolower(stem)
+    if (.control_file_is_bead_negative_filename(fn)) return("Bead background")
     if (grepl("unstained|us_ut|^af($|[-_])", stem_lower)) return("Autofluorescence")
     marker_guess <- .detect_control_file_marker(stem, marker_names = marker_names, marker_name_map = marker_name_map)
     if (!nzchar(marker_guess)) return("")
@@ -533,7 +556,12 @@
 
 .control_file_row_from_scc <- function(fn, ref, custom_fluorophores = NULL) {
     fluor <- .infer_fluor_from_filename(fn, ref = ref, custom_fluorophores = custom_fluorophores)
-    if (grepl("Unstained|US_UT", fn, ignore.case = TRUE)) fluor <- "AF_Internal"
+    is_bead_negative <- .control_file_is_bead_negative_filename(fn)
+    if (is_bead_negative) {
+        fluor <- "AF_Bead"
+    } else if (.control_file_is_cell_af_filename(fn)) {
+        fluor <- "AF_Internal"
+    }
     marker <- .infer_marker_from_filename(
         fn,
         fluor_guess = fluor,
@@ -550,8 +578,7 @@
         channel = "",
         control.type = control_type,
         universal.negative = "",
-        large.gate = "",
-        is.viability = viability_flag,
+        is.viability = if (is_bead_negative) "" else viability_flag,
         stringsAsFactors = FALSE
     )
 }
@@ -579,7 +606,6 @@
             channel = "",
             control.type = "cells",
             universal.negative = "",
-            large.gate = "TRUE",
             is.viability = "",
             stringsAsFactors = FALSE
         )
@@ -719,11 +745,10 @@
         )
         if (af_like) {
             new_tag <- .control_file_next_af_tag(df$fluorophore)
-            df$fluorophore[i] <- new_tag
-            df$marker[i] <- "Autofluorescence"
-            df$control.type[i] <- "cells"
-            df$large.gate[i] <- "TRUE"
-            auto_af_files <- c(auto_af_files, fn)
+        df$fluorophore[i] <- new_tag
+        df$marker[i] <- "Autofluorescence"
+        df$control.type[i] <- "cells"
+        auto_af_files <- c(auto_af_files, fn)
         }
 
         current_fluor <- trimws(as.character(df$fluorophore[i]))
@@ -783,7 +808,9 @@
 }
 
 .finalize_control_file_df <- function(df, scc_files, af_files, auto_af_files = character()) {
-    primary_af_candidates <- scc_files[grep("Unstained|US_UT", scc_files, ignore.case = TRUE)]
+    bead_negative_files <- scc_files[vapply(scc_files, .control_file_is_bead_negative_filename, logical(1))]
+    primary_af_candidates <- scc_files[vapply(scc_files, .control_file_is_cell_af_filename, logical(1))]
+    auto_af_files <- auto_af_files[!vapply(auto_af_files, .control_file_is_bead_negative_filename, logical(1))]
     auto_af_primary <- if (length(auto_af_files) > 0) auto_af_files[1] else ""
     primary_af_file <- if (length(af_files) > 0) {
         af_files[1]
@@ -809,7 +836,16 @@
     viability_missing_marker <- df$is.viability == "TRUE" & !nzchar(trimws(as.character(df$marker)))
     df$marker[viability_missing_marker] <- "Live"
 
-    is_af_row <- grepl("^AF($|_)", as.character(df$fluorophore), ignore.case = TRUE)
+    bead_negative_row <- df$filename %in% bead_negative_files |
+        (tolower(df$control.type) == "beads" & grepl("^AF_Bead$", as.character(df$fluorophore), ignore.case = TRUE))
+    if (any(bead_negative_row)) {
+        df$fluorophore[bead_negative_row] <- "AF_Bead"
+        df$marker[bead_negative_row] <- "Bead background"
+        df$control.type[bead_negative_row] <- "beads"
+        df$is.viability[bead_negative_row] <- ""
+    }
+
+    is_af_row <- grepl("^AF($|_)", as.character(df$fluorophore), ignore.case = TRUE) & !bead_negative_row
     df$control.type[is_af_row] <- "cells"
 
     if (primary_af_file != "") {
@@ -825,7 +861,6 @@
         "channel",
         "control.type",
         "universal.negative",
-        "large.gate",
         "is.viability"
     )
     keep <- intersect(preferred_order, colnames(df))
@@ -850,7 +885,9 @@
 #'
 #' The generated file intentionally leaves `universal.negative` empty by default.
 #' It auto-detects `control.type` from filename tokens (for example `"beads"`
-#' or `"cells"`), and forces AF rows to `cells`.
+#' or `"cells"`). Unstained/negative bead files are denoted as `AF_Bead`
+#' with `control.type = "beads"` so they can be used as bead-background
+#' negatives without being mixed into the cellular AF bank.
 #' @export
 #' @examples
 #' make_example_ff <- function(main, n = 250) {

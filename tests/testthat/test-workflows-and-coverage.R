@@ -35,7 +35,6 @@ make_synthetic_workflow <- function(include_af = FALSE) {
         channel = c("B1-A", "YG1-A"),
         control.type = c("beads", "beads"),
         universal.negative = c("", ""),
-        large.gate = c("", ""),
         is.viability = c("", ""),
         stringsAsFactors = FALSE
     )
@@ -52,7 +51,6 @@ make_synthetic_workflow <- function(include_af = FALSE) {
                 channel = "B1-A",
                 control.type = "cells",
                 universal.negative = "",
-                large.gate = "TRUE",
                 is.viability = "",
                 stringsAsFactors = FALSE
             )
@@ -130,7 +128,6 @@ test_that("build_reference_matrix fails when a mapped SCC cannot produce a spect
             channel = "B1-A",
             control.type = "beads",
             universal.negative = "",
-            large.gate = "",
             is.viability = "",
             stringsAsFactors = FALSE
         )
@@ -165,7 +162,6 @@ test_that("build_reference_matrix fails early on SCC detector mismatches", {
             channel = "B1-A",
             control.type = "beads",
             universal.negative = "",
-            large.gate = "",
             is.viability = "",
             stringsAsFactors = FALSE
         )

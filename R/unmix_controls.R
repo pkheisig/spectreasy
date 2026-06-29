@@ -392,12 +392,17 @@
 #'   matrix and unmixed controls produced by this call, without rerunning SCC
 #'   unmixing.
 #' @param output_file Optional output path for the SCC QC PDF report.
-#' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
-#'   scatter gate for final positive/negative population selection. If `FALSE`,
-#'   use the legacy one-dimensional histogram gate.
+#' @param use_scatter_gating Logical; if `TRUE` (default), keep broad FSC/SSC
+#'   cleanup and use AF projection/cosine filtering for cell SCC event
+#'   selection when AF controls are available. Bead controls keep the
+#'   bead-appropriate intensity-vs-FSC gate. If AF controls are unavailable,
+#'   cell controls also fall back to the intensity-vs-FSC gate. If `FALSE`, use
+#'   the legacy one-dimensional histogram gate.
 #' @param clean_scc_with_unstained Logical; if `TRUE`, clean cell SCC spectra
 #'   with scatter-matched unstained/AF events before deriving spectra and
-#'   spectral variants.
+#'   spectral variants. Bead SCCs use a scatter-gated unstained bead control as
+#'   their negative spectrum when one is available; otherwise they use the
+#'   positive/negative populations estimated from the stained bead file.
 #' @param scc_background_method Background method for cell SCC cleaning.
 #'   `"scatter_knn"` matches stained cells to unstained cells by FSC/SSC.
 #' @param scc_background_k Number of nearest unstained cells averaged for

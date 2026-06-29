@@ -915,10 +915,23 @@
         } else {
             data.frame()
         }
-        if (nrow(af_rows) > 0) af_fn <- tools::file_path_sans_ext(basename(af_rows$filename[1]))
+        if (nrow(af_rows) > 0) {
+            control_type <- if ("control.type" %in% colnames(af_rows)) {
+                tolower(trimws(as.character(af_rows$control.type)))
+            } else {
+                rep("", nrow(af_rows))
+            }
+            cell_rows <- which(control_type != "beads")
+            if (length(cell_rows) > 0) {
+                af_rows <- af_rows[cell_rows, , drop = FALSE]
+            }
+            if (nrow(af_rows) > 0) {
+                af_fn <- tools::file_path_sans_ext(basename(af_rows$filename[1]))
+            }
+        }
     }
     if (is.null(af_fn)) {
-        af_idx_tmp <- which(.is_af_filename(fcs_files))
+        af_idx_tmp <- which(.is_af_filename(fcs_files) & !grepl("beads?", basename(fcs_files), ignore.case = TRUE))
         if (length(af_idx_tmp) > 0) af_fn <- tools::file_path_sans_ext(basename(fcs_files[af_idx_tmp[1]]))
     }
 
@@ -2200,6 +2213,174 @@
     list(vals_log = vals_log, gate_min = 10^gate$pos_lower, gate_max = 10^gate$pos_upper)
 }
 
+.reference_af_selection_basis <- function(detector_names,
+                                          af_data_raw = NULL,
+                                          scc_background = NULL,
+                                          max_background_events = 2000L,
+                                          max_centers = 8L) {
+    basis <- list()
+    if (!is.null(af_data_raw) && all(detector_names %in% names(af_data_raw))) {
+        basis[[length(basis) + 1L]] <- pmax(as.numeric(af_data_raw[detector_names]), 0)
+    }
+
+    bg <- if (!is.null(scc_background) && !is.null(scc_background$spectra)) {
+        as.matrix(scc_background$spectra[, detector_names, drop = FALSE])
+    } else {
+        NULL
+    }
+    if (!is.null(bg) && nrow(bg) > 0L) {
+        bg <- bg[stats::complete.cases(bg), , drop = FALSE]
+        bg <- pmax(bg, 0)
+        keep <- rowSums(bg, na.rm = TRUE) > 0
+        bg <- bg[keep, , drop = FALSE]
+        if (nrow(bg) > 0L) {
+            basis[[length(basis) + 1L]] <- apply(bg, 2, stats::median, na.rm = TRUE)
+
+            sample_n <- min(as.integer(max_background_events), nrow(bg))
+            bg_sample <- bg[seq_len(sample_n), , drop = FALSE]
+            if (nrow(bg) > sample_n) {
+                bg_sample <- bg[sample(nrow(bg), sample_n), , drop = FALSE]
+            }
+            bg_norm <- sqrt(rowSums(bg_sample^2)) + 1e-9
+            bg_shape <- sweep(bg_sample, 1, bg_norm, "/")
+            n_centers <- min(as.integer(max_centers), max(1L, floor(sqrt(nrow(bg_shape) / 40))))
+            if (n_centers > 1L && nrow(bg_shape) >= n_centers * 10L) {
+                km <- tryCatch(
+                    stats::kmeans(bg_shape, centers = n_centers, iter.max = 25),
+                    error = function(e) NULL
+                )
+                if (!is.null(km) && !is.null(km$centers)) {
+                    centers <- pmax(as.matrix(km$centers), 0)
+                    for (i in seq_len(nrow(centers))) {
+                        basis[[length(basis) + 1L]] <- centers[i, ]
+                    }
+                }
+            }
+        }
+    }
+
+    if (!length(basis)) {
+        return(NULL)
+    }
+    basis <- do.call(rbind, basis)
+    colnames(basis) <- detector_names
+    keep <- is.finite(rowSums(basis)) & rowSums(basis^2) > 0
+    basis <- basis[keep, , drop = FALSE]
+    if (nrow(basis) == 0L) {
+        return(NULL)
+    }
+    basis
+}
+
+.project_reference_events_from_af <- function(event_mat, af_basis) {
+    event_mat <- pmax(as.matrix(event_mat), 0)
+    af_basis <- pmax(as.matrix(af_basis), 0)
+    af_norm <- sqrt(rowSums(af_basis^2)) + 1e-9
+    af_unit <- sweep(af_basis, 1, af_norm, "/")
+    event_norm <- sqrt(rowSums(event_mat^2)) + 1e-9
+    cosine <- (event_mat %*% t(af_unit)) / event_norm
+    best <- max.col(cosine, ties.method = "first")
+    best_cosine <- cosine[cbind(seq_len(nrow(cosine)), best)]
+
+    residual <- event_mat
+    for (i in sort(unique(best))) {
+        idx <- which(best == i)
+        unit <- af_unit[i, ]
+        projection <- as.numeric(event_mat[idx, , drop = FALSE] %*% unit)
+        residual[idx, ] <- event_mat[idx, , drop = FALSE] - projection %o% unit
+    }
+    residual <- pmax(residual, 0)
+    colnames(residual) <- colnames(event_mat)
+
+    list(
+        residual = residual,
+        cosine = as.numeric(best_cosine),
+        assignment = as.integer(best)
+    )
+}
+
+.compute_reference_af_cosine_gate <- function(gated_data,
+                                              detector_names,
+                                              peak_vals,
+                                              sample_type,
+                                              fallback_gate,
+                                              af_data_raw = NULL,
+                                              scc_background = NULL,
+                                              histogram_pct_beads = 0.98,
+                                              histogram_pct_cells = 0.35,
+                                              min_events = 10L) {
+    af_basis <- .reference_af_selection_basis(
+        detector_names = detector_names,
+        af_data_raw = af_data_raw,
+        scc_background = scc_background
+    )
+    if (is.null(af_basis)) {
+        return(NULL)
+    }
+
+    event_mat <- as.matrix(gated_data[, detector_names, drop = FALSE])
+    complete <- stats::complete.cases(event_mat)
+    if (!any(complete)) {
+        return(NULL)
+    }
+
+    projected <- .project_reference_events_from_af(event_mat[complete, , drop = FALSE], af_basis)
+    residual_signal <- rowSums(projected$residual, na.rm = TRUE)
+    raw_signal <- rowSums(pmax(event_mat[complete, , drop = FALSE], 0), na.rm = TRUE)
+    valid <- is.finite(residual_signal) & is.finite(raw_signal) & raw_signal > 0
+    if (sum(valid) < min_events) {
+        return(NULL)
+    }
+
+    frac <- if (sample_type %in% c("unstained", "cells")) histogram_pct_cells else histogram_pct_beads
+    frac <- min(max(as.numeric(frac), 0.01), 0.999)
+    n_target <- min(sum(valid), max(as.integer(min_events), ceiling(sum(valid) * frac)))
+
+    rank_non_af <- rank(-projected$cosine, ties.method = "average", na.last = "keep")
+    rank_bright <- rank(residual_signal, ties.method = "average", na.last = "keep")
+    score <- 0.55 * (rank_non_af / sum(valid)) + 0.45 * (rank_bright / sum(valid))
+    score[!valid] <- -Inf
+
+    local_selected <- order(score, decreasing = TRUE)[seq_len(n_target)]
+    complete_idx <- which(complete)
+    selected_idx <- complete_idx[local_selected]
+    if (length(selected_idx) < min_events) {
+        return(NULL)
+    }
+
+    vals_log <- fallback_gate$vals_log
+    selected_peak <- peak_vals[selected_idx]
+    gate_min <- suppressWarnings(min(selected_peak, na.rm = TRUE))
+    gate_max <- suppressWarnings(max(selected_peak, na.rm = TRUE))
+    if (!is.finite(gate_min) || !is.finite(gate_max) || gate_max <= gate_min) {
+        gate_min <- fallback_gate$gate_min
+        gate_max <- fallback_gate$gate_max
+    }
+
+    attr(vals_log, "positive_gate_present") <- TRUE
+    attr(vals_log, "gate_type") <- "af_cosine"
+    attr(vals_log, "gate_method") <- paste0(
+        "AF projection/cosine spectral gate: selected ",
+        length(selected_idx),
+        " bright non-AF-like event(s)"
+    )
+    attr(vals_log, "af_cosine_max_selected") <- max(projected$cosine[local_selected], na.rm = TRUE)
+    attr(vals_log, "af_cosine_median_selected") <- stats::median(projected$cosine[local_selected], na.rm = TRUE)
+
+    positive_idx <- rep(FALSE, nrow(gated_data))
+    positive_idx[selected_idx] <- TRUE
+    list(
+        vals_log = vals_log,
+        gate_min = gate_min,
+        gate_max = gate_max,
+        positive_idx = positive_idx,
+        af_cosine = projected$cosine,
+        residual_signal = residual_signal,
+        score = score,
+        af_basis = af_basis
+    )
+}
+
 # Computes the normalized spectral signature for a stained control sample.
 # Calculates the median intensity in each detector for the positive and negative gates,
 # subtracts the negative/background control, normalizes the spectrum by the peak signal,
@@ -2277,10 +2458,15 @@
             !uv_upper %in% c("FALSE", "TRUE", "AF") &&
             !is.null(universal_negatives) &&
             uv_key %in% names(universal_negatives)
+        use_auto_bead_negative <- identical(sample_type, "beads") &&
+            !is.null(universal_negatives) &&
+            ".__unstained_bead__" %in% names(universal_negatives)
         final_neg <- if (use_af_negative && !is.null(af_data_raw)) {
             af_data_raw
         } else if (use_named_negative) {
             universal_negatives[[uv_key]]
+        } else if (use_auto_bead_negative) {
+            universal_negatives[[".__unstained_bead__"]]
         } else {
             neg_spectrum_raw
         }
@@ -2325,6 +2511,27 @@
 # Returns the cleaned character string/vector.
 .reference_negative_key <- function(x) {
     tools::file_path_sans_ext(basename(trimws(as.character(x))))
+}
+
+.reference_is_bead_negative_file <- function(x) {
+    stem <- tools::file_path_sans_ext(basename(trimws(as.character(x))))
+    stem_lower <- tolower(stem)
+    stem_norm <- gsub("[^[:alnum:]]+", "", stem_lower)
+    tokens <- unlist(strsplit(stem_lower, "[^[:alnum:]]+"))
+    tokens <- tokens[nzchar(tokens)]
+
+    has_bead <- any(tokens %in% c("bead", "beads", "compbead", "compbeads")) ||
+        grepl("compbeads?", stem_norm) ||
+        grepl("beads?", stem_norm)
+    has_negative <- any(tokens %in% c(
+        "unstained", "unstain", "us", "ut", "usut", "neg",
+        "negative", "background", "bg", "blank", "minus"
+    )) ||
+        grepl("us[_ -]?ut", stem, ignore.case = TRUE) ||
+        grepl("unstained|negative|background|blank", stem, ignore.case = TRUE) ||
+        grepl("(^|[^[:alnum:]])(?:us|neg|bg)(?:[^[:alnum:]]|$)", stem, ignore.case = TRUE, perl = TRUE)
+
+    has_bead && has_negative
 }
 
 # Identifies and loads the universal/marker-specific negative control profiles.
@@ -2401,6 +2608,92 @@
     out
 }
 
+.collect_reference_unstained_bead_negative <- function(control_df,
+                                                       fcs_files,
+                                                       detector_names,
+                                                       sample_patterns,
+                                                       config) {
+    if (length(fcs_files) == 0) {
+        return(NULL)
+    }
+
+    file_keys <- .reference_negative_key(fcs_files)
+    names(fcs_files) <- file_keys
+    bead_keys <- character()
+
+    if (!is.null(control_df) && is.data.frame(control_df) && nrow(control_df) > 0 && "filename" %in% colnames(control_df)) {
+        is_af <- .is_af_control_row(
+            fluorophore = if ("fluorophore" %in% colnames(control_df)) control_df$fluorophore else NULL,
+            marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
+            filename = control_df$filename
+        )
+        control_type <- if ("control.type" %in% colnames(control_df)) {
+            tolower(trimws(as.character(control_df$control.type)))
+        } else {
+            rep("", nrow(control_df))
+        }
+        file_is_bead <- grepl("beads?", basename(as.character(control_df$filename)), ignore.case = TRUE)
+        file_is_bead_negative <- vapply(control_df$filename, .reference_is_bead_negative_file, logical(1))
+        idx <- which((is_af & (control_type == "beads" | file_is_bead)) | file_is_bead_negative)
+        if (length(idx) > 0) {
+            bead_keys <- .reference_negative_key(control_df$filename[idx])
+        }
+    }
+
+    if (length(bead_keys) == 0) {
+        bead_keys <- file_keys[
+            vapply(fcs_files, .reference_is_bead_negative_file, logical(1))
+        ]
+    }
+    bead_keys <- unique(bead_keys[nzchar(bead_keys) & bead_keys %in% names(fcs_files)])
+    if (length(bead_keys) == 0) {
+        return(NULL)
+    }
+
+    bead_events <- list()
+    for (key in bead_keys) {
+        fcs_file <- unname(fcs_files[[key]])
+        sn_ext <- basename(fcs_file)
+        sn <- tools::file_path_sans_ext(sn_ext)
+        row_info <- .get_control_rows_for_reference(control_df, c(sn_ext, sn))
+        ff <- tryCatch(
+            flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
+            error = function(e) NULL
+        )
+        if (is.null(ff)) {
+            warning("Could not read unstained bead negative file: ", fcs_file)
+            next
+        }
+
+        pd <- flowCore::pData(flowCore::parameters(ff))
+        raw_data <- flowCore::exprs(ff)
+        scatter_info <- .compute_reference_scatter_gate(
+            raw_data = raw_data,
+            pd = pd,
+            sample_type = "beads",
+            outlier_percentile = config$outlier_percentile,
+            debris_percentile = config$debris_percentile,
+            subsample_n = config$subsample_n,
+            max_clusters = config$max_clusters,
+            min_cluster_proportion = config$min_cluster_proportion,
+            gate_contour_beads = config$gate_contour_beads,
+            gate_contour_cells = config$gate_contour_cells,
+            bead_gate_scale = config$bead_gate_scale
+        )
+        neg_data <- if (!is.null(scatter_info)) scatter_info$gated_data else raw_data
+        if (nrow(neg_data) > 0) {
+            bead_events[[length(bead_events) + 1L]] <- neg_data[, detector_names, drop = FALSE]
+            message("Using unstained bead control for bead SCC subtraction: ", basename(fcs_file))
+        }
+    }
+    if (!length(bead_events)) {
+        return(NULL)
+    }
+
+    bead_events <- do.call(rbind, bead_events)
+    apply(bead_events[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
+}
+
 # Helper to extract the description attribute of a channel for plotting.
 # Falls back to the channel name if no description column or value is found.
 # Returns the description string.
@@ -2438,7 +2731,8 @@
                                      detector_labels,
                                      det_info,
                                      out_path,
-                                     use_scatter_gating = TRUE) {
+                                     use_scatter_gating = TRUE,
+                                     positive_idx = NULL) {
     fsc_desc <- .get_reference_axis_label(fsc, pd)
     ssc_desc <- .get_reference_axis_label(ssc, pd)
     dt_plot_gating <- data.table::data.table(x = raw_data[, fsc], y = raw_data[, ssc])
@@ -2481,7 +2775,11 @@
         c(
             paste0(
                 round(100 * nrow(final_gated_data) / nrow(gated_data), 1),
-                "% positive gated | blue = negative gate | red = bright gate"
+                if (identical(attr(vals_log, "gate_type"), "af_cosine")) {
+                    "% selected | blue = negative gate | red = spectral gate"
+                } else {
+                    "% positive gated | blue = negative gate | red = bright gate"
+                }
             ),
             gate_method
         )
@@ -2517,17 +2815,31 @@
     }
     if (isTRUE(use_scatter_gating)) {
         scatter_x <- log10(pmax(peak_vals, 1))
-        scatter_class <- ifelse(
-            peak_vals >= gate_min & peak_vals <= gate_max,
-            "positive",
-            ifelse(
-                negative_gate_present &
-                    peak_vals >= 10^neg_log_min &
-                    peak_vals <= 10^neg_log_max,
-                "negative",
-                "other"
+        if (!is.null(positive_idx) && length(positive_idx) == nrow(gated_data)) {
+            scatter_class <- ifelse(
+                positive_idx,
+                "positive",
+                ifelse(
+                    negative_gate_present &
+                        peak_vals >= 10^neg_log_min &
+                        peak_vals <= 10^neg_log_max,
+                    "negative",
+                    "other"
+                )
             )
-        )
+        } else {
+            scatter_class <- ifelse(
+                peak_vals >= gate_min & peak_vals <= gate_max,
+                "positive",
+                ifelse(
+                    negative_gate_present &
+                        peak_vals >= 10^neg_log_min &
+                        peak_vals <= 10^neg_log_max,
+                    "negative",
+                    "other"
+                )
+            )
+        }
         scatter_dt <- data.table::data.table(
             x = scatter_x,
             y = gated_data[, fsc],
@@ -2539,8 +2851,27 @@
             ggplot2::geom_point(size = 0.45, alpha = 0.45) +
             ggplot2::scale_color_manual(values = c(negative = "#2C7BE5", other = "grey55", positive = "#D62728"), drop = FALSE) +
             ggplot2::labs(
-                title = paste0(sn, " - ", peak_channel, " corrected scatter gate"),
-                subtitle = paste(unlist(lapply(c(attr(vals_log, "gate_method"), paste0(round(100 * nrow(final_gated_data) / nrow(gated_data), 1), "% positive gated | blue = negative gate | red = bright gate")), strwrap, width = 95), use.names = FALSE), collapse = "\n"),
+                title = paste0(
+                    sn,
+                    " - ",
+                    peak_channel,
+                    if (identical(attr(vals_log, "gate_type"), "af_cosine")) {
+                        " spectral event gate"
+                    } else {
+                        " corrected scatter gate"
+                    }
+                ),
+                subtitle = paste(unlist(lapply(c(
+                    attr(vals_log, "gate_method"),
+                    paste0(
+                        round(100 * nrow(final_gated_data) / nrow(gated_data), 1),
+                        if (identical(attr(vals_log, "gate_type"), "af_cosine")) {
+                            "% selected | blue = negative gate | red = spectral gate"
+                        } else {
+                            "% positive gated | blue = negative gate | red = bright gate"
+                        }
+                    )
+                ), strwrap, width = 95), use.names = FALSE), collapse = "\n"),
                 x = paste0("log10(", peak_channel, ")"),
                 y = fsc_desc,
                 color = "class"
@@ -2705,7 +3036,33 @@
             toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
     )
 
-    final_gated_data <- scatter_info$gated_data[peak_vals >= hist_info$gate_min & peak_vals <= hist_info$gate_max, ]
+    spectral_gate <- if (isTRUE(config$use_scatter_gating) && identical(sample_info$type, "cells")) {
+        .compute_reference_af_cosine_gate(
+            gated_data = scatter_info$gated_data,
+            detector_names = metadata$detector_names,
+            peak_vals = peak_vals,
+            sample_type = sample_info$type,
+            fallback_gate = hist_info,
+            af_data_raw = af_data_raw,
+            scc_background = scc_background,
+            histogram_pct_beads = config$histogram_pct_beads,
+            histogram_pct_cells = config$histogram_pct_cells
+        )
+    } else {
+        NULL
+    }
+    if (!is.null(spectral_gate)) {
+        hist_info <- spectral_gate
+    }
+
+    positive_idx <- if (!is.null(hist_info$positive_idx) && length(hist_info$positive_idx) == nrow(scatter_info$gated_data)) {
+        hist_info$positive_idx
+    } else {
+        peak_vals >= hist_info$gate_min & peak_vals <= hist_info$gate_max
+    }
+    positive_idx[is.na(positive_idx)] <- FALSE
+
+    final_gated_data <- scatter_info$gated_data[positive_idx, ]
     if (nrow(final_gated_data) < 10) {
         return(NULL)
     }
@@ -2767,7 +3124,8 @@
             detector_labels = metadata$detector_labels,
             det_info = metadata$det_info,
             out_path = config$out_path,
-            use_scatter_gating = config$use_scatter_gating
+            use_scatter_gating = config$use_scatter_gating,
+            positive_idx = positive_idx
         )
     }
 
@@ -2888,8 +3246,10 @@
 
 #' Build a Reference Matrix from Single-Color Controls
 #'
-#' Reads SCC FCS files, performs FSC/SSC gating and positive-peak intensity gating,
-#' then computes one normalized spectrum per fluorophore.
+#' Reads SCC FCS files, performs broad FSC/SSC cleanup, selects cell SCC events
+#' with AF projection/cosine filtering when AF controls are available, keeps
+#' bead SCCs on bead-appropriate intensity selection, then computes one
+#' normalized spectrum per fluorophore.
 #'
 #' This is the core matrix-construction step used before unmixing.
 #'
@@ -2941,12 +3301,17 @@
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
-#' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
-#'   scatter gate for final positive/negative population selection. If `FALSE`,
-#'   use the legacy one-dimensional histogram gate.
+#' @param use_scatter_gating Logical; if `TRUE` (default), keep broad FSC/SSC
+#'   cleanup and use AF projection/cosine filtering for final cell-SCC event
+#'   selection when AF controls are available. Bead controls keep the
+#'   bead-appropriate intensity-vs-FSC gate. If AF controls are unavailable,
+#'   cell controls also fall back to the intensity-vs-FSC gate. If `FALSE`, use
+#'   the legacy one-dimensional histogram gate.
 #' @param clean_scc_with_unstained Logical; if `TRUE`, cell SCC spectra are
 #'   cleaned with scatter-matched unstained/AF events before spectrum
-#'   derivation. Bead controls keep their existing background subtraction.
+#'   derivation. Bead controls use a scatter-gated unstained bead control as
+#'   their negative spectrum when one is available; otherwise they keep the
+#'   positive/negative populations estimated from the stained bead control.
 #' @param scc_background_method Background method for cell SCC cleaning.
 #'   `"scatter_knn"` matches each stained event to unstained events by FSC/SSC.
 #'   Use `"none"` to disable matched background subtraction.
@@ -3151,6 +3516,16 @@ build_reference_matrix <- function(
         sample_patterns = sample_patterns,
         config = config
     )
+    bead_negative <- .collect_reference_unstained_bead_negative(
+        control_df = control_df,
+        fcs_files = file_info$fcs_files_all,
+        detector_names = metadata$detector_names,
+        sample_patterns = sample_patterns,
+        config = config
+    )
+    if (!is.null(bead_negative)) {
+        universal_negatives[[".__unstained_bead__"]] <- bead_negative
+    }
 
     results_list <- list()
     qc_summary_list <- list()
