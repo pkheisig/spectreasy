@@ -18,8 +18,6 @@ qc_controls(
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   save_qc_pngs = FALSE,
   use_scatter_gating = TRUE,
-  include_multi_af = FALSE,
-  af_dir = "af",
   af_bands_per_file = NULL,
   unmix_scatter_max_points = 1000,
   unmix_scatter_axis_limit = NULL,
@@ -70,10 +68,6 @@ gate plot in the report. If `FALSE`, use and show the legacy
 one-dimensional histogram gate. Reports only show the spectral-selection
 plot for controls whose recorded gate type is `af_cosine`.}
 
-\item{include_multi_af}{Logical; forward to [build_reference_matrix()].}
-
-\item{af_dir}{AF directory forwarded to [build_reference_matrix()].}
-
 \item{af_bands_per_file}{Deprecated compatibility argument. Multiple AF
 sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
 control the size of the one shared AF bank.}
@@ -96,7 +90,8 @@ Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
 }
 \description{
 Builds a reference matrix from single-color controls, assembles a PDF report
-for pre-unmix review, and can optionally retain the intermediate QC PNG plots.
+for pre-unmix review, adds post-unmixing control QC from the already-unmixed
+controls, and can optionally retain the intermediate QC PNG plots.
 }
 \examples{
 if (interactive()) {

@@ -2,14 +2,26 @@
 
 .validate_scc_background_args <- function(clean_scc_with_unstained,
                                           scc_background_method,
-                                          scc_background_k) {
+                                          scc_background_k,
+                                          require_for_af_cosine = FALSE) {
     method <- match.arg(scc_background_method, c("scatter_knn", "none"))
     k <- suppressWarnings(as.integer(scc_background_k[1]))
     if (!is.finite(k) || is.na(k) || k < 1L) {
         stop("scc_background_k must be an integer >= 1.", call. = FALSE)
     }
+    enabled <- isTRUE(clean_scc_with_unstained) && method != "none"
+    if (isTRUE(require_for_af_cosine) && !enabled) {
+        warning(
+            "use_af_cosine_scc_selection = TRUE requires scatter-matched ",
+            "unstained SCC cleaning; enabling clean_scc_with_unstained = TRUE ",
+            "with scc_background_method = 'scatter_knn'.",
+            call. = FALSE
+        )
+        enabled <- TRUE
+        method <- "scatter_knn"
+    }
     list(
-        enabled = isTRUE(clean_scc_with_unstained) && method != "none",
+        enabled = enabled,
         method = method,
         k = k
     )
@@ -170,9 +182,7 @@
         min_cluster_proportion = 0.03,
         gate_contour_beads = 0.95,
         gate_contour_cells = 0.90,
-        bead_gate_scale = 1.3,
-        include_multi_af = FALSE,
-        af_dir = "af"
+        bead_gate_scale = 1.3
     )
 }
 
@@ -180,8 +190,6 @@
                                                   control_df,
                                                   detector_names,
                                                   k = 3L,
-                                                  include_multi_af = FALSE,
-                                                  af_dir = "af",
                                                   exclude_af = FALSE,
                                                   config = NULL) {
     if (isTRUE(exclude_af) || is.null(control_df) || !dir.exists(scc_dir)) {
@@ -191,31 +199,9 @@
     if (!length(fcs_files)) {
         return(NULL)
     }
-    fcs_files_all <- fcs_files
-    if (isTRUE(include_multi_af) && dir.exists(af_dir)) {
-        fcs_files_all <- c(
-            list.files(af_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE),
-            fcs_files
-        )
-    }
     config <- utils::modifyList(.scc_background_default_config(), if (is.null(config)) list() else config)
-    config$include_multi_af <- include_multi_af
-    config$af_dir <- af_dir
 
-    af_fn <- .resolve_reference_af_name(control_df = control_df, fcs_files = fcs_files, exclude_af = exclude_af)
-    af_paths <- character()
-    if (!is.null(af_fn)) {
-        af_path <- fcs_files[grep(af_fn, fcs_files, fixed = TRUE)]
-        if (length(af_path) > 0) af_paths <- c(af_paths, af_path[1])
-    }
-    extra_af_paths <- fcs_files_all[vapply(
-        fcs_files_all,
-        .is_reference_extra_af_file,
-        logical(1),
-        include_multi_af = include_multi_af,
-        af_dir = af_dir
-    )]
-    af_paths <- unique(c(af_paths, extra_af_paths))
+    af_paths <- .resolve_reference_af_paths(control_df = control_df, fcs_files = fcs_files, exclude_af = exclude_af)$path
     if (!length(af_paths)) {
         return(NULL)
     }

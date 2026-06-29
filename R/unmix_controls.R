@@ -49,7 +49,6 @@
     message("Auto-generating control file from SCC filenames and peak channels...")
     create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         cytometer = cytometer,
         default_control_type = auto_default_control_type,
         unknown_fluor_policy = auto_unknown_fluor_policy,
@@ -158,13 +157,11 @@
     control_df[!missing_af, , drop = FALSE]
 }
 
-.run_unmix_preflight <- function(control_df, scc_dir, exclude_af = FALSE, include_multi_af = FALSE) {
+.run_unmix_preflight <- function(control_df, scc_dir, exclude_af = FALSE) {
     validate_control_file_mapping(
         control_df = control_df,
         scc_dir = scc_dir,
-        include_multi_af = include_multi_af,
         exclude_af = exclude_af,
-        af_dir = "af",
         require_all_scc_mapped = TRUE,
         require_channels = TRUE,
         stop_on_error = FALSE
@@ -180,7 +177,6 @@
     message("Control preflight failed; attempting automatic control-file regeneration...")
     create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         cytometer = cytometer,
         default_control_type = auto_default_control_type,
         unknown_fluor_policy = auto_unknown_fluor_policy,
@@ -375,7 +371,6 @@
 #'   refinement while building the reference matrix.
 #' @param af_refine_problem_quantile Quantile used to choose high-error
 #'   unstained cells for AF refinement.
-#' @param include_multi_af Logical; whether to include additional AF files from `af_dir`. Default is FALSE.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
@@ -405,7 +400,9 @@
 #'   with scatter-matched unstained/AF events before deriving spectra and
 #'   spectral variants. Bead SCCs use a scatter-gated unstained bead control as
 #'   their negative spectrum when one is available; otherwise they use the
-#'   positive/negative populations estimated from the stained bead file.
+#'   positive/negative populations estimated from the stained bead file. If
+#'   `use_af_cosine_scc_selection = TRUE`, this cleanup is required and is
+#'   automatically enabled with a warning.
 #' @param scc_background_method Background method for cell SCC cleaning.
 #'   `"scatter_knn"` matches stained cells to unstained cells by FSC/SSC.
 #' @param scc_background_k Number of nearest unstained cells averaged for
@@ -456,7 +453,6 @@ unmix_controls <- function(
     af_n_bands_sensitivity = 1.5,
     af_refine = FALSE,
     af_refine_problem_quantile = 0.99,
-    include_multi_af = FALSE,
     rwls_max_iter = 1L,
     multithreading = FALSE,
     n_threads = "auto",
@@ -481,7 +477,8 @@ unmix_controls <- function(
     scc_background_args <- .validate_scc_background_args(
         clean_scc_with_unstained = clean_scc_with_unstained,
         scc_background_method = scc_background_method,
-        scc_background_k = scc_background_k
+        scc_background_k = scc_background_k,
+        require_for_af_cosine = isTRUE(use_af_cosine_scc_selection)
     )
     clean_scc_with_unstained <- scc_background_args$enabled
     scc_background_method <- scc_background_args$method
@@ -519,7 +516,7 @@ unmix_controls <- function(
         .unmix_confirm_created_control_file(control_file)
     }
 
-    preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af, include_multi_af = include_multi_af)
+    preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af)
     if (!preflight$ok) {
         .stop_unmix_preflight(preflight, auto_unknown_fluor_policy = auto_unknown_fluor_policy)
     }
@@ -549,7 +546,6 @@ unmix_controls <- function(
         af_n_bands_sensitivity = af_n_bands_sensitivity,
         af_refine = af_refine,
         af_refine_problem_quantile = af_refine_problem_quantile,
-        include_multi_af = include_multi_af,
         use_scatter_gating = use_scatter_gating,
         use_af_cosine_scc_selection = use_af_cosine_scc_selection,
         clean_scc_with_unstained = clean_scc_with_unstained,
@@ -576,7 +572,6 @@ unmix_controls <- function(
                 clean_scc_with_unstained = clean_scc_with_unstained,
                 scc_background_method = scc_background_method,
                 scc_background_k = scc_background_k,
-                include_multi_af = include_multi_af,
                 exclude_af = exclude_af,
                 seed = seed,
                 warn = TRUE

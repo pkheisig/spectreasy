@@ -239,7 +239,7 @@ and returns a named list with one element per sample.
 
 ### Single-Color Control (SCC) Report
 
-The SCC report reviews event selection, peak channels, and signal distributions for each control file. By default, `unmix_controls()` writes it to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.
+The SCC report reviews event selection, peak channels, signal distributions, SCC unmixing scatter, and post-unmixing off-target control QC. The post-unmixing pages summarize NPS/spread, false-positive rate, bias, and target-driven slope from the already-unmixed controls. Cell SCCs are compared to unstained cells; bead SCCs are compared to unstained/negative beads when available, otherwise to low-target bead events from the same control. By default, `unmix_controls()` writes it to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.
 
 ```r
 qc_controls(
@@ -268,7 +268,7 @@ The sections below are for understanding, tuning, or reusing pieces of the workf
 
 By default, `unmix_controls()` uses `af_n_bands = "auto"` to build a FlowSOM AF bank from pooled unstained/AF control events. The first AF row is the mean AF profile, and additional SOM-derived AF rows represent common AF shapes seen in the unstained cells. During AutoSpectral unmixing, each event chooses one AF profile before the final OLS fit.
 
-Most users should leave the AF settings at their defaults. Tune `af_auto_max_bands`, pass an explicit integer to `af_n_bands`, or set `include_multi_af = TRUE` only when you have a reason to add external AF files or benchmark a difficult panel.
+Most users should leave the AF settings at their defaults. To use multiple unstained sources, put each unstained cell `.fcs` file in `scc/` and add one AF row per file to `fcs_mapping.csv`. The files are pooled before AF extraction; `af_n_bands` controls how many AF basis spectra are learned from the pooled events.
 
 ```r
 ctrl_multi_af <- unmix_controls(
@@ -276,7 +276,6 @@ ctrl_multi_af <- unmix_controls(
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
   output_dir = "spectreasy_outputs/unmix_controls_multi_af",
-  include_multi_af = TRUE,
   af_n_bands = "auto",
   af_auto_max_bands = 100,
   seed = 1
@@ -310,7 +309,7 @@ ctrl_cosine <- unmix_controls(
 )
 ```
 
-Leave `use_af_cosine_scc_selection = FALSE` or omit the argument to use the default GMM/EM selector for both bead and cell SCCs. In experimental mode, `histogram_pct_cells` is treated as a conservative maximum selection cap for the adaptive AF-score selector, not as a fixed percentage to keep.
+Leave `use_af_cosine_scc_selection = FALSE` or omit the argument to use the default GMM/EM selector for both bead and cell SCCs. In experimental mode, `histogram_pct_cells` is treated as a conservative maximum selection cap for the adaptive AF-score selector, not as a fixed percentage to keep. Because this workflow is meant to be AF-aware selection followed by scatter-matched unstained subtraction, Spectreasy automatically re-enables `clean_scc_with_unstained = TRUE` with `scc_background_method = "scatter_knn"` if AF-cosine selection is requested without SCC cleaning.
 
 During `unmix_samples()`, only fluorophores that are positive in a given event are eligible for variant matching. The optimizer tests a small number of candidate variants, accepts a change only when detector residuals improve, and falls back to the base spectrum for weak, negative, noisy, or unsupported events.
 

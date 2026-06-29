@@ -489,6 +489,12 @@ const App = () => {
 
     const g = glassyTheme;
 
+    useEffect(() => {
+        document.documentElement.style.backgroundColor = g.bgGradient;
+        document.body.style.backgroundColor = g.bgGradient;
+        document.documentElement.style.setProperty('--bg-app', g.bgGradient);
+    }, [g.bgGradient]);
+
     const glassCard = {
         background: g.glassBg,
         backdropFilter: g.glassBlur,
@@ -509,7 +515,8 @@ const App = () => {
     if (loading) return (
         <div style={{
             height: '100vh',
-            width: '100vw',
+            width: '100%',
+            maxWidth: '100%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -528,7 +535,8 @@ const App = () => {
         <div style={{
             minHeight: '100vh',
             height: pageScroll ? 'auto' : '100vh',
-            width: '100vw',
+            width: '100%',
+            maxWidth: '100%',
             display: 'flex',
             flexDirection: 'column',
             background: g.bgGradient,

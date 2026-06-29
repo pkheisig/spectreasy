@@ -357,6 +357,405 @@
     stats::setNames(as.character(hits[keep]), sample_ids[keep])
 }
 
+.as_scc_report_unmixed_data <- function(x) {
+    if (is.list(x) && "data" %in% names(x) && is.data.frame(x$data)) {
+        return(as.data.frame(x$data, stringsAsFactors = FALSE, check.names = FALSE))
+    }
+    if (is.data.frame(x)) {
+        return(as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE))
+    }
+    NULL
+}
+
+.combine_scc_report_unmixed_data <- function(data_list, names_to_keep) {
+    names_to_keep <- intersect(names_to_keep, names(data_list))
+    if (length(names_to_keep) == 0) {
+        return(NULL)
+    }
+    parts <- data_list[names_to_keep]
+    parts <- parts[!vapply(parts, is.null, logical(1))]
+    if (length(parts) == 0) {
+        return(NULL)
+    }
+    data.table::rbindlist(parts, fill = TRUE)
+}
+
+.scc_report_sample_key <- function(x) {
+    tools::file_path_sans_ext(basename(trimws(as.character(x))))
+}
+
+.scc_report_find_sample_name <- function(sample_id, available_names) {
+    if (length(available_names) == 0 || is.na(sample_id) || !nzchar(sample_id)) {
+        return(NA_character_)
+    }
+    if (sample_id %in% available_names) {
+        return(sample_id)
+    }
+    sample_key <- tolower(.scc_report_sample_key(sample_id))
+    available_keys <- tolower(.scc_report_sample_key(available_names))
+    hit <- which(available_keys == sample_key)
+    if (length(hit) > 0) {
+        return(available_names[hit[1]])
+    }
+    NA_character_
+}
+
+.scc_report_zero_negative_data <- function(n, markers) {
+    n <- max(1L, as.integer(n))
+    out <- as.data.frame(matrix(0, nrow = n, ncol = length(markers)))
+    colnames(out) <- markers
+    out
+}
+
+.scc_report_negative_reference <- function(sample_type,
+                                           target,
+                                           source_df,
+                                           data_by_sample,
+                                           cell_negative_names,
+                                           bead_negative_names,
+                                           markers) {
+    if (identical(sample_type, "cells") && length(cell_negative_names) > 0) {
+        neg <- .combine_scc_report_unmixed_data(data_by_sample, cell_negative_names)
+        if (!is.null(neg)) return(list(data = neg, label = "unstained_cells"))
+    }
+    if (identical(sample_type, "beads") && length(bead_negative_names) > 0) {
+        neg <- .combine_scc_report_unmixed_data(data_by_sample, bead_negative_names)
+        if (!is.null(neg)) return(list(data = neg, label = "unstained_beads"))
+    }
+    if (identical(sample_type, "beads") && target %in% colnames(source_df)) {
+        target_vals <- source_df[[target]]
+        cutoff <- stats::quantile(target_vals, 0.20, na.rm = TRUE, names = FALSE)
+        keep <- is.finite(target_vals) & target_vals <= cutoff
+        if (sum(keep) >= 20L) {
+            return(list(data = source_df[keep, , drop = FALSE], label = "low_target_beads"))
+        }
+    }
+    list(data = .scc_report_zero_negative_data(nrow(source_df), markers), label = "zero_fallback")
+}
+
+.scc_report_safe_mad <- function(x) {
+    x <- x[is.finite(x)]
+    if (length(x) == 0) return(NA_real_)
+    stats::mad(x, na.rm = TRUE)
+}
+
+.scc_report_pair_slope <- function(target_vals, off_vals) {
+    ok <- is.finite(target_vals) & is.finite(off_vals)
+    if (sum(ok) < 3L) return(NA_real_)
+    v <- stats::var(target_vals[ok], na.rm = TRUE)
+    if (!is.finite(v) || v <= 1e-9) return(NA_real_)
+    stats::cov(target_vals[ok], off_vals[ok], use = "complete.obs") / v
+}
+
+.scc_report_max_finite <- function(x, default = NA_real_) {
+    x <- x[is.finite(x)]
+    if (length(x) == 0) return(default)
+    max(x, na.rm = TRUE)
+}
+
+.scc_report_floor <- function(x, floor = 1) {
+    if (!is.finite(x) || x < floor) {
+        return(floor)
+    }
+    x
+}
+
+.compute_scc_post_unmix_qc <- function(unmixed_list,
+                                       qc_summary,
+                                       markers) {
+    if (is.null(unmixed_list) || length(unmixed_list) == 0 ||
+        is.null(qc_summary) || nrow(qc_summary) == 0 || length(markers) < 2) {
+        return(NULL)
+    }
+
+    data_by_sample <- lapply(unmixed_list, .as_scc_report_unmixed_data)
+    data_by_sample <- data_by_sample[!vapply(data_by_sample, is.null, logical(1))]
+    if (length(data_by_sample) == 0) {
+        return(NULL)
+    }
+
+    sample_names <- names(data_by_sample)
+    sample_files <- paste0(sample_names, ".fcs")
+    bead_negative <- vapply(sample_files, .reference_is_bead_negative_file, logical(1))
+    cell_negative <- !bead_negative & vapply(
+        sample_files,
+        function(x) .is_af_control_row(filename = x),
+        logical(1)
+    )
+    cell_negative_names <- sample_names[cell_negative]
+    bead_negative_names <- sample_names[bead_negative]
+
+    controls <- qc_summary
+    controls$sample_name <- vapply(
+        as.character(controls$sample),
+        .scc_report_find_sample_name,
+        character(1),
+        available_names = sample_names
+    )
+    controls <- controls[
+        !is.na(controls$sample_name) &
+            controls$fluorophore %in% markers &
+            !grepl("^AF($|_)", controls$fluorophore, ignore.case = TRUE),
+        ,
+        drop = FALSE
+    ]
+    if (nrow(controls) == 0) {
+        return(NULL)
+    }
+
+    pair_rows <- list()
+    overview_rows <- list()
+    for (i in seq_len(nrow(controls))) {
+        target <- as.character(controls$fluorophore[i])
+        source_name <- as.character(controls$sample_name[i])
+        source_df <- data_by_sample[[source_name]]
+        if (is.null(source_df) || !(target %in% colnames(source_df))) next
+        source_type <- tolower(as.character(controls$type[i]))
+        source_type <- if (source_type %in% c("cells", "beads")) source_type else "unknown"
+        off_targets <- setdiff(intersect(markers, colnames(source_df)), target)
+        if (length(off_targets) == 0) next
+
+        neg_ref <- .scc_report_negative_reference(
+            sample_type = source_type,
+            target = target,
+            source_df = source_df,
+            data_by_sample = data_by_sample,
+            cell_negative_names = cell_negative_names,
+            bead_negative_names = bead_negative_names,
+            markers = markers
+        )
+        neg_df <- neg_ref$data
+
+        target_vals <- source_df[[target]]
+        control_pairs <- lapply(off_targets, function(marker) {
+            src <- source_df[[marker]]
+            neg <- if (marker %in% colnames(neg_df)) neg_df[[marker]] else rep(0, max(1L, nrow(neg_df)))
+            src_mad <- .scc_report_safe_mad(src)
+            neg_mad <- .scc_report_safe_mad(neg)
+            src_median <- stats::median(src, na.rm = TRUE)
+            neg_median <- stats::median(neg, na.rm = TRUE)
+            threshold <- stats::quantile(neg, 0.995, na.rm = TRUE, names = FALSE)
+            if (!is.finite(threshold)) threshold <- 0
+            bias <- src_median - neg_median
+            neg_scale <- .scc_report_floor(neg_mad, 1)
+            data.frame(
+                control = source_name,
+                type = source_type,
+                target = target,
+                marker = marker,
+                n_events = nrow(source_df),
+                negative_reference = neg_ref$label,
+                nps = src_mad / neg_scale,
+                source_mad = src_mad,
+                negative_mad = neg_mad,
+                bias = bias,
+                bias_z = abs(bias) / neg_scale,
+                fpr_threshold = threshold,
+                fpr = mean(src > threshold, na.rm = TRUE),
+                slope = .scc_report_pair_slope(target_vals, src),
+                stringsAsFactors = FALSE
+            )
+        })
+        control_pairs <- do.call(rbind, control_pairs)
+        pair_rows[[length(pair_rows) + 1L]] <- control_pairs
+
+        worst_nps <- .scc_report_max_finite(control_pairs$nps)
+        worst_fpr <- .scc_report_max_finite(control_pairs$fpr)
+        worst_bias <- .scc_report_max_finite(abs(control_pairs$bias))
+        worst_slope <- .scc_report_max_finite(abs(control_pairs$slope), default = 0)
+        worst_bias_z <- .scc_report_max_finite(control_pairs$bias_z)
+        flag <- if (identical(neg_ref$label, "zero_fallback")) {
+            "CHECK"
+        } else if (is.finite(worst_nps) && is.finite(worst_fpr) &&
+            (worst_nps > 3 || worst_fpr > 0.01 || worst_bias_z > 3 || worst_slope > 0.05)) {
+            "WARN"
+        } else {
+            "OK"
+        }
+        overview_rows[[length(overview_rows) + 1L]] <- data.frame(
+            control = source_name,
+            type = source_type,
+            target = target,
+            n_events = nrow(source_df),
+            worst_nps = worst_nps,
+            worst_fpr = worst_fpr,
+            worst_abs_bias = worst_bias,
+            worst_abs_slope = worst_slope,
+            negative_reference = neg_ref$label,
+            flag = flag,
+            stringsAsFactors = FALSE
+        )
+    }
+
+    if (length(pair_rows) == 0) {
+        return(NULL)
+    }
+    list(
+        overview = do.call(rbind, overview_rows),
+        pairs = do.call(rbind, pair_rows)
+    )
+}
+
+.format_scc_post_unmix_overview_lines <- function(overview) {
+    if (is.null(overview) || nrow(overview) == 0) {
+        return("No post-unmixing control QC metrics available.")
+    }
+    headers <- c("Control", "Type", "Target", "Events", "Worst NPS", "Worst FPR", "Worst |bias|", "Worst |slope|", "Flag")
+    widths <- c(24, 6, 12, 8, 10, 10, 13, 14, 6)
+    trim_to <- function(x, w) {
+        x <- as.character(x)
+        x[is.na(x)] <- ""
+        vapply(x, function(s) {
+            if (nchar(s, type = "width") > w) paste0(substr(s, 1, max(1, w - 3)), "...") else s
+        }, character(1))
+    }
+    fmt <- function(x, digits = 2) {
+        x <- as.numeric(x)
+        ifelse(is.finite(x), format(round(x, digits), nsmall = digits, trim = TRUE), "")
+    }
+    vals <- list(
+        trim_to(overview$control, widths[1]),
+        trim_to(overview$type, widths[2]),
+        trim_to(overview$target, widths[3]),
+        trim_to(overview$n_events, widths[4]),
+        trim_to(fmt(overview$worst_nps, 2), widths[5]),
+        trim_to(sprintf("%.2f%%", 100 * overview$worst_fpr), widths[6]),
+        trim_to(fmt(overview$worst_abs_bias, 1), widths[7]),
+        trim_to(fmt(overview$worst_abs_slope, 3), widths[8]),
+        trim_to(overview$flag, widths[9])
+    )
+    make_line <- function(parts) {
+        paste(vapply(seq_along(parts), function(i) sprintf(paste0("%-", widths[i], "s"), parts[[i]]), character(1)), collapse = " ")
+    }
+    c(
+        make_line(as.list(headers)),
+        paste(vapply(widths, function(w) paste(rep("-", w), collapse = ""), character(1)), collapse = " "),
+        vapply(seq_len(nrow(overview)), function(i) make_line(lapply(vals, `[[`, i)), character(1))
+    )
+}
+
+.draw_scc_post_unmix_overview_page <- function(metrics) {
+    overview <- metrics$overview
+    overview <- overview[order(match(overview$flag, c("CHECK", "WARN", "OK")), -overview$worst_fpr, -overview$worst_nps), , drop = FALSE]
+    grid::grid.newpage()
+    grid::grid.text("Post-unmixing control QC", x = 0.05, y = 0.95, just = c("left", "top"), gp = grid::gpar(fontsize = 16, fontface = "bold"))
+    grid::grid.text(
+        "Marker-space control diagnostics from already-unmixed SCC controls. Cell SCCs are compared to unstained cells; bead SCCs to bead-negative controls or low-target bead events.",
+        x = 0.05,
+        y = 0.90,
+        just = c("left", "top"),
+        gp = grid::gpar(fontsize = 10, lineheight = 1.15)
+    )
+    grid::grid.text(
+        paste(.format_scc_post_unmix_overview_lines(overview), collapse = "\n"),
+        x = 0.05,
+        y = 0.82,
+        just = c("left", "top"),
+        gp = grid::gpar(fontsize = 8.2, fontfamily = "mono", lineheight = 1.14)
+    )
+}
+
+.plot_scc_pair_heatmap <- function(pair_df,
+                                   value_col,
+                                   title,
+                                   fill_label,
+                                   diverging = FALSE,
+                                   percent = FALSE) {
+    df <- pair_df
+    df$value <- df[[value_col]]
+    df <- df[is.finite(df$value), , drop = FALSE]
+    if (nrow(df) == 0) return(NULL)
+    df$source <- factor(df$target, levels = unique(df$target))
+    df$marker <- factor(df$marker, levels = unique(df$marker))
+    if (isTRUE(percent)) {
+        df$value <- 100 * df$value
+    }
+    p <- ggplot2::ggplot(df, ggplot2::aes(marker, source, fill = value)) +
+        ggplot2::geom_tile(color = "white", linewidth = 0.25) +
+        ggplot2::labs(title = title, x = "Off-target unmixed marker", y = "Source SCC fluorophore", fill = fill_label) +
+        ggplot2::theme_minimal(base_size = 12.5) +
+        ggplot2::theme(
+            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+            axis.text.y = ggplot2::element_text(size = 8),
+            panel.grid = ggplot2::element_blank()
+        )
+    if (isTRUE(diverging)) {
+        lim <- max(abs(df$value), na.rm = TRUE)
+        if (!is.finite(lim) || lim <= 0) {
+            lim <- 1
+        }
+        p + ggplot2::scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B", midpoint = 0, limits = c(-lim, lim))
+    } else {
+        p + ggplot2::scale_fill_gradient(low = "white", high = "#B2182B", na.value = "grey90")
+    }
+}
+
+.plot_scc_nps_marker_summary <- function(pair_df) {
+    df <- pair_df |>
+        dplyr::group_by(marker) |>
+        dplyr::summarise(NPS = max(nps, na.rm = TRUE), .groups = "drop")
+    if (nrow(df) == 0) return(NULL)
+    df <- df[order(df$NPS, decreasing = TRUE), , drop = FALSE]
+    df$marker <- factor(df$marker, levels = df$marker)
+    ggplot2::ggplot(df, ggplot2::aes(marker, NPS)) +
+        ggplot2::geom_col(fill = "#C44E52", width = 0.7) +
+        ggplot2::labs(
+            title = "Off-target negative spread by marker",
+            subtitle = "Bars show the worst source-SCC NPS for each off-target marker.",
+            x = "Off-target unmixed marker",
+            y = "Worst NPS"
+        ) +
+        ggplot2::theme_minimal(base_size = 13) +
+        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7))
+}
+
+.plot_scc_top_fpr_pairs <- function(pair_df, top_n = 15L) {
+    df <- pair_df[is.finite(pair_df$fpr), , drop = FALSE]
+    if (nrow(df) == 0) return(NULL)
+    df <- df[order(df$fpr, df$nps, decreasing = TRUE), , drop = FALSE]
+    df <- df[seq_len(min(as.integer(top_n), nrow(df))), , drop = FALSE]
+    df$pair <- paste0(df$target, " -> ", df$marker)
+    df$pair <- factor(df$pair, levels = rev(df$pair))
+    ggplot2::ggplot(df, ggplot2::aes(pair, 100 * fpr, fill = nps)) +
+        ggplot2::geom_col(width = 0.72) +
+        ggplot2::coord_flip() +
+        ggplot2::scale_fill_gradient(low = "#FEE8C8", high = "#B2182B", na.value = "grey80") +
+        ggplot2::labs(
+            title = "Top false-positive off-target pairs",
+            subtitle = "FPR uses the 99.5th percentile of the matched negative reference as threshold.",
+            x = "Source SCC -> off-target marker",
+            y = "False-positive rate (%)",
+            fill = "NPS"
+        ) +
+        ggplot2::theme_minimal(base_size = 12.5)
+}
+
+.draw_scc_post_unmix_qc_pages <- function(unmixed_list, qc_summary, markers) {
+    metrics <- .compute_scc_post_unmix_qc(
+        unmixed_list = unmixed_list,
+        qc_summary = qc_summary,
+        markers = markers
+    )
+    if (is.null(metrics)) {
+        return(invisible(NULL))
+    }
+    .draw_scc_post_unmix_overview_page(metrics)
+    plot_pages <- list(
+        .plot_scc_nps_marker_summary(metrics$pairs),
+        .plot_scc_pair_heatmap(metrics$pairs, "nps", "Pairwise off-target negative spread", "NPS"),
+        .plot_scc_pair_heatmap(metrics$pairs, "fpr", "Pairwise false-positive rate", "FPR (%)", percent = TRUE),
+        .plot_scc_top_fpr_pairs(metrics$pairs),
+        .plot_scc_pair_heatmap(metrics$pairs, "bias", "Pairwise off-target bias", "Bias", diverging = TRUE),
+        .plot_scc_pair_heatmap(metrics$pairs, "slope", "Pairwise target-driven off-target slope", "Slope", diverging = TRUE)
+    )
+    for (p in plot_pages) {
+        if (!is.null(p)) {
+            .draw_report_ggplot_page(p, height_ratio = 0.78)
+        }
+    }
+    invisible(metrics)
+}
+
 .read_scc_report_unmixed_fcs <- function(unmixed_dir) {
     if (is.null(unmixed_dir) || !dir.exists(unmixed_dir)) {
         return(NULL)
@@ -521,6 +920,12 @@
         if (!is.null(p_scatter)) {
             .draw_report_ggplot_page(p_scatter, square = TRUE)
         }
+
+        .draw_scc_post_unmix_qc_pages(
+            unmixed_list = unmixed_list,
+            qc_summary = qc_summary,
+            markers = rownames(M_no_af)
+        )
     }
 
     if (nrow(qc_summary) > 0 && !is.null(report_plot_dir) && dir.exists(report_plot_dir)) {
@@ -536,7 +941,8 @@
 #' Generate SCC QC Report
 #'
 #' Builds a reference matrix from single-color controls, assembles a PDF report
-#' for pre-unmix review, and can optionally retain the intermediate QC PNG plots.
+#' for pre-unmix review, adds post-unmixing control QC from the already-unmixed
+#' controls, and can optionally retain the intermediate QC PNG plots.
 #'
 #' @param results Optional result list returned by [unmix_controls()]. When
 #'   supplied, its in-memory matrix and unmixed SCCs are reused instead of
@@ -568,8 +974,6 @@
 #'   gate plot in the report. If `FALSE`, use and show the legacy
 #'   one-dimensional histogram gate. Reports only show the spectral-selection
 #'   plot for controls whose recorded gate type is `af_cosine`.
-#' @param include_multi_af Logical; forward to [build_reference_matrix()].
-#' @param af_dir AF directory forwarded to [build_reference_matrix()].
 #' @param af_bands_per_file Deprecated compatibility argument. Multiple AF
 #'   sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
 #'   control the size of the one shared AF bank.
@@ -604,8 +1008,6 @@ qc_controls <- function(
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
     save_qc_pngs = FALSE,
     use_scatter_gating = TRUE,
-    include_multi_af = FALSE,
-    af_dir = "af",
     af_bands_per_file = NULL,
     unmix_scatter_max_points = 1000,
     unmix_scatter_axis_limit = NULL,
@@ -698,8 +1100,6 @@ qc_controls <- function(
         output_folder = plot_dir_info$plot_dir,
         save_qc_plots = TRUE,
         control_df = control_input,
-        include_multi_af = include_multi_af,
-        af_dir = af_dir,
         af_bands_per_file = af_bands_per_file,
         cytometer = cytometer,
         use_scatter_gating = use_scatter_gating,

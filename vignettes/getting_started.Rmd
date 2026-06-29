@@ -63,7 +63,6 @@ from the project directory created above.
 control_file <- file.path(project_dir, "fcs_mapping.csv")
 auto_control_df <- create_control_file(
   input_folder = file.path(project_dir, "scc"),
-  include_af_folder = FALSE,
   cytometer = "Aurora",
   output_file = file.path(project_dir, "fcs_mapping_auto.csv")
 )
@@ -340,10 +339,11 @@ autofluorescence bank from pooled unstained/AF control events. If your cells
 have different AF shapes from cell to cell, the SOM bank represents those shapes
 as multiple candidate AF signatures.
 
-Use the multi-AF settings in the control-stage call. `af_n_bands` controls
-the size of the shared pooled AF bank. Set it to `"auto"` to build a SOM bank
-up to `af_auto_max_bands`. `include_multi_af` tells `spectreasy` to include
-additional AF controls from the `af/` directory when those files are available.
+To use multiple unstained sources, put each unstained cell `.fcs` file in
+`scc/` and add one AF row per file to `fcs_mapping.csv`. Spectreasy pools
+those files before learning the shared AF bank. `af_n_bands` controls the
+size of that bank; set it to `"auto"` to build a SOM bank up to
+`af_auto_max_bands`.
 
 ```{r, eval = FALSE}
 ctrl_multi_af <- unmix_controls(
@@ -351,7 +351,6 @@ ctrl_multi_af <- unmix_controls(
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
   output_dir = "spectreasy_outputs/unmix_controls_multi_af",
-  include_multi_af = TRUE,
   af_n_bands = "auto",
   af_auto_max_bands = 100,
   seed = 1

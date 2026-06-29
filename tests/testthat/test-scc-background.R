@@ -47,6 +47,29 @@ make_matched_af_scc <- function() {
     list(scc_dir = scc_dir, control_df = control_df)
 }
 
+test_that("AF cosine SCC selection enforces scatter-matched SCC cleaning", {
+    expect_warning(
+        args <- spectreasy:::.validate_scc_background_args(
+            clean_scc_with_unstained = FALSE,
+            scc_background_method = "none",
+            scc_background_k = 3L,
+            require_for_af_cosine = TRUE
+        ),
+        "requires scatter-matched unstained SCC cleaning"
+    )
+    expect_true(args$enabled)
+    expect_equal(args$method, "scatter_knn")
+    expect_equal(args$k, 3L)
+
+    relaxed <- spectreasy:::.validate_scc_background_args(
+        clean_scc_with_unstained = FALSE,
+        scc_background_method = "none",
+        scc_background_k = 3L
+    )
+    expect_false(relaxed$enabled)
+    expect_equal(relaxed$method, "none")
+})
+
 test_that("cell SCC spectra can use scatter-matched unstained background", {
     set.seed(44)
     wf <- make_matched_af_scc()
@@ -238,6 +261,80 @@ test_that("SCC report prefers spectral-selection plot only for AF-cosine gates",
     grDevices::dev.off()
     cosine_text <- paste(pdftools::pdf_text(cosine_pdf), collapse = "\n")
     expect_match(cosine_text, "SCC/AF Spectral Selection", fixed = TRUE)
+})
+
+test_that("post-unmixing control QC summarizes off-target metrics", {
+    markers <- c("FITC", "PE")
+    unmixed_list <- list(
+        "FITC (Cells)" = list(data = data.frame(
+            FITC = seq(100, 200, length.out = 80),
+            PE = c(rep(0, 60), rep(15, 20)),
+            check.names = FALSE
+        )),
+        "Unstained (Cells)" = list(data = data.frame(
+            FITC = stats::rnorm(80, 0, 1),
+            PE = stats::rnorm(80, 0, 1),
+            check.names = FALSE
+        ))
+    )
+    qc_summary <- data.frame(
+        sample = "FITC (Cells)",
+        fluorophore = "FITC",
+        type = "cells",
+        stringsAsFactors = FALSE
+    )
+
+    metrics <- spectreasy:::.compute_scc_post_unmix_qc(
+        unmixed_list = unmixed_list,
+        qc_summary = qc_summary,
+        markers = markers
+    )
+
+    expect_s3_class(metrics$overview, "data.frame")
+    expect_s3_class(metrics$pairs, "data.frame")
+    expect_equal(metrics$overview$target, "FITC")
+    expect_equal(metrics$pairs$marker, "PE")
+    expect_true(all(c("nps", "bias", "fpr", "slope") %in% colnames(metrics$pairs)))
+    expect_gte(metrics$pairs$fpr, 0)
+})
+
+test_that("post-unmixing control QC pages render into PDF reports", {
+    testthat::skip_if_not_installed("pdftools")
+
+    markers <- c("FITC", "PE")
+    unmixed_list <- list(
+        "FITC (Beads)" = list(data = data.frame(
+            FITC = stats::rnorm(80, 1200, 80),
+            PE = stats::rnorm(80, 30, 5),
+            check.names = FALSE
+        )),
+        "PE (Beads)" = list(data = data.frame(
+            FITC = stats::rnorm(80, 25, 5),
+            PE = stats::rnorm(80, 1100, 75),
+            check.names = FALSE
+        ))
+    )
+    qc_summary <- data.frame(
+        sample = c("FITC (Beads)", "PE (Beads)"),
+        fluorophore = c("FITC", "PE"),
+        type = c("beads", "beads"),
+        stringsAsFactors = FALSE
+    )
+    output_pdf <- tempfile(fileext = ".pdf")
+
+    grDevices::pdf(output_pdf, width = 11, height = 8.5)
+    on.exit(if (grDevices::dev.cur() > 1) grDevices::dev.off(), add = TRUE)
+    spectreasy:::.draw_scc_post_unmix_qc_pages(
+        unmixed_list = unmixed_list,
+        qc_summary = qc_summary,
+        markers = markers
+    )
+    grDevices::dev.off()
+
+    pdf_text <- paste(pdftools::pdf_text(output_pdf), collapse = "\n")
+    plain_text <- gsub("[^[:alnum:] ]+", " ", pdf_text)
+    expect_match(plain_text, "Post unmixing control QC")
+    expect_match(plain_text, "Pairwise false positive rate")
 })
 
 test_that("matched background helpers clean local AF from variant events", {

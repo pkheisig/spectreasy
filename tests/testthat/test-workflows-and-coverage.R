@@ -137,6 +137,44 @@ test_that("build_reference_matrix works on synthetic SCC files", {
     expect_equal(nrow(qc_summary), 2)
 })
 
+test_that("build_reference_matrix pools duplicate mapped unstained SCC files", {
+    wf <- make_synthetic_workflow(include_af = TRUE)
+    duplicate_name <- "Unstained duplicate (Cells).fcs"
+    duplicate_path <- file.path(wf$scc_dir, duplicate_name)
+    control_csv <- file.path(wf$scc_dir, "fcs_mapping.csv")
+    testthat::expect_true(file.copy(file.path(wf$scc_dir, "Unstained (Cells).fcs"), duplicate_path))
+    on.exit(unlink(c(duplicate_path, control_csv), force = TRUE), add = TRUE)
+
+    control_df <- rbind(
+        wf$control_df,
+        data.frame(
+            filename = duplicate_name,
+            fluorophore = "AF_2",
+            marker = "Autofluorescence",
+            channel = "B1-A",
+            control.type = "cells",
+            universal.negative = "",
+            is.viability = "",
+            stringsAsFactors = FALSE
+        )
+    )
+    utils::write.csv(control_df, control_csv, row.names = FALSE, quote = TRUE)
+
+    M <- spectreasy::build_reference_matrix(
+        input_folder = wf$scc_dir,
+        control_df = control_csv,
+        save_qc_plots = FALSE,
+        af_n_bands = 2,
+        seed = 1,
+        subsample_n = 400
+    )
+
+    af_info <- attr(M, "af_bank_info")
+    expect_equal(af_info$source_count, 2L)
+    expect_setequal(af_info$sources$file, c("Unstained (Cells).fcs", duplicate_name))
+    expect_true(all(c("AF", "AF_2") %in% rownames(M)))
+})
+
 test_that("build_reference_matrix fails when a mapped SCC cannot produce a spectrum", {
     wf <- make_synthetic_workflow()
     bad_ff <- flowCore::flowFrame(cbind(
@@ -368,7 +406,7 @@ test_that("unmix_samples runs WLS without recomputing missing SCC variances", {
     expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
 })
 
-test_that("unmix_samples writes FCS files by default and returns invisibly", {
+test_that("unmix_samples writes by default and suffixes existing outputs", {
     wf <- make_synthetic_workflow()
     sample_dir <- tempfile("spectreasy_covr_samples_")
     output_dir <- tempfile("spectreasy_covr_unmixed_")
@@ -390,8 +428,7 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
             sample_dir = sample_dir,
             M = M,
             method = "OLS",
-            output_dir = output_dir,
-            save_report = FALSE
+            output_dir = output_dir
         )
     )
 
@@ -399,7 +436,20 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
     expect_setequal(names(call_result$value), c("sample_a", "sample_b"))
     expect_true(file.exists(file.path(output_dir, "sample_a_unmixed.fcs")))
     expect_true(file.exists(file.path(output_dir, "sample_b_unmixed.fcs")))
-    expect_null(attr(call_result$value, "qc_report_file"))
+    expect_equal(attr(call_result$value, "qc_report_file"), file.path(output_dir, "qc_samples_report.pdf"))
+    expect_true(file.exists(file.path(output_dir, "qc_samples_report.pdf")))
+
+    suffixed_result <- spectreasy::unmix_samples(
+        sample_dir = sample_dir,
+        M = M,
+        method = "OLS",
+        output_dir = output_dir
+    )
+    expect_s3_class(suffixed_result, "spectreasy_unmixed_results")
+    expect_true(file.exists(file.path(output_dir, "sample_a_unmixed_2.fcs")))
+    expect_true(file.exists(file.path(output_dir, "sample_b_unmixed_2.fcs")))
+    expect_equal(attr(suffixed_result, "qc_report_file"), file.path(output_dir, "qc_samples_report_2.pdf"))
+    expect_true(file.exists(file.path(output_dir, "qc_samples_report_2.pdf")))
 
     if (run_slow_tests()) {
         qc_png_dir <- tempfile("spectreasy_sample_qc_pngs_")
@@ -408,6 +458,7 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
             M = M,
             method = "OLS",
             output_dir = tempfile("spectreasy_covr_unmixed_png_"),
+            save_report = TRUE,
             save_qc_plots = TRUE,
             qc_plot_dir = qc_png_dir,
             write_fcs = FALSE

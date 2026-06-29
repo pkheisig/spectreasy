@@ -757,38 +757,22 @@ for the core <code>unmix_controls()</code> -&gt;
 bank from pooled unstained/AF control events. If your cells have
 different AF shapes from cell to cell, the SOM bank represents those
 shapes as multiple candidate AF signatures.</p>
-<p>Use the multi-AF settings in the control-stage call.
-<code>af_n_bands</code> controls the size of the shared pooled AF bank.
-Set it to <code>&quot;auto&quot;</code> to build a SOM bank up to
-<code>af_auto_max_bands</code>.
-<code>include_multi_af</code> tells <code>spectreasy</code> to include
-additional AF controls from the <code>af/</code> directory when those
-files are available.</p>
+<p>To use multiple unstained sources, put each unstained cell
+<code>.fcs</code> file in <code>scc/</code> and add one AF row per file
+to <code>fcs_mapping.csv</code>. Spectreasy pools those files before
+learning the shared AF bank. <code>af_n_bands</code> controls the size
+of that bank; set it to <code>&quot;auto&quot;</code> to build a SOM bank up to
+<code>af_auto_max_bands</code>.</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>ctrl_multi_af <span class="ot">&lt;-</span> <span class="fu">unmix_controls</span>(</span>
 <span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>  <span class="at">scc_dir =</span> <span class="st">&quot;scc&quot;</span>,</span>
 <span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>  <span class="at">control_file =</span> <span class="st">&quot;fcs_mapping.csv&quot;</span>,</span>
 <span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a>  <span class="at">cytometer =</span> <span class="st">&quot;Aurora&quot;</span>,</span>
 <span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="st">&quot;spectreasy_outputs/unmix_controls_multi_af&quot;</span>,</span>
 <span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>  <span class="at">unmix_method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
-<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>  <span class="at">include_multi_af =</span> <span class="cn">TRUE</span>,</span>
-<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a>  <span class="at">af_n_bands =</span> <span class="st">&quot;auto&quot;</span>,</span>
-<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a>  <span class="at">af_auto_max_bands =</span> <span class="dv">100</span>,</span>
-<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a>  <span class="at">seed =</span> <span class="dv">1</span></span>
-<span id="cb11-11"><a href="#cb11-11" tabindex="-1"></a>)</span></code></pre></div>
-<p>If you want <code>unmix_samples()</code> to rebuild the reference
-matrix dynamically from the SCC files, pass the same two AF settings
-there as well:</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>unmixed_multi_af <span class="ot">&lt;-</span> <span class="fu">unmix_samples</span>(</span>
-<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>  <span class="at">sample_dir =</span> <span class="st">&quot;sample&quot;</span>,</span>
-<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>  <span class="at">unmixing_matrix_file =</span> <span class="cn">NULL</span>,</span>
-<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>  <span class="at">scc_dir =</span> <span class="st">&quot;scc&quot;</span>,</span>
-<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a>  <span class="at">control_file =</span> <span class="st">&quot;fcs_mapping.csv&quot;</span>,</span>
-<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
-<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a>  <span class="at">include_multi_af =</span> <span class="cn">TRUE</span>,</span>
-<span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a>  <span class="at">af_n_bands =</span> <span class="st">&quot;auto&quot;</span>,</span>
-<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a>  <span class="at">af_auto_max_bands =</span> <span class="dv">100</span>,</span>
-<span id="cb12-10"><a href="#cb12-10" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="st">&quot;spectreasy_outputs/unmix_samples_multi_af&quot;</span></span>
-<span id="cb12-11"><a href="#cb12-11" tabindex="-1"></a>)</span></code></pre></div>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>  <span class="at">af_n_bands =</span> <span class="st">&quot;auto&quot;</span>,</span>
+<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a>  <span class="at">af_auto_max_bands =</span> <span class="dv">100</span>,</span>
+<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a>  <span class="at">seed =</span> <span class="dv">1</span></span>
+<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a>)</span></code></pre></div>
 <p><code>af_n_bands</code> is like choosing how many AF “flavors” to
 model. With <code>af_n_bands = &quot;auto&quot;</code>, spectreasy builds a
 SOM bank with up to <code>af_auto_max_bands = 100</code> SOM nodes by

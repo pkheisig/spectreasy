@@ -35,7 +35,6 @@ unmix_samples(
   spectral_variant_top_k = 3L,
   spectral_variant_min_abundance = 1,
   exclude_af = FALSE,
-  include_multi_af = FALSE,
   estimate_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
@@ -158,9 +157,6 @@ fluorophore to be eligible for variant testing.}
 \item{exclude_af}{Legacy compatibility argument. Exclude AF while building
 the matrix in [unmix_controls()], not in `unmix_samples()`.}
 
-\item{include_multi_af}{Legacy compatibility argument. Include multi-AF while
-building the matrix in [unmix_controls()], not in `unmix_samples()`.}
-
 \item{estimate_af}{Logical; if `TRUE`, estimate AF signatures directly from
 stained sample event-wise WLS residuals, select the best candidate model by
 held-out WLS residual score, and append the selected AF rows to the
@@ -170,10 +166,12 @@ unstained cell control is available. Default is `FALSE`.}
 \item{output_dir}{Directory to save unmixed FCS files when `write_fcs = TRUE`.}
 
 \item{write_fcs}{Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
-Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
+Defaults to `TRUE`. Existing FCS files are not overwritten; a numeric suffix
+is added when needed.}
 
 \item{save_report}{Logical; if `TRUE`, write a sample QC PDF report from the
-in-memory unmixing results without rerunning unmixing.}
+in-memory unmixing results without rerunning unmixing. Defaults to `TRUE`.
+Existing report files are not overwritten; a numeric suffix is added when needed.}
 
 \item{output_file}{Optional output path for the sample QC PDF report.}
 
@@ -185,7 +183,7 @@ in `qc_plot_dir` while creating the PDF report.}
 
 \item{subsample_n}{Optional integer; if provided, subsample the returned in-memory
 results to at most `subsample_n` events per sample. The full unsampled unmixed
-data will still be written to the FCS files.}
+data will still be written to the FCS files when `write_fcs = TRUE`.}
 
 \item{seed}{Optional integer seed for deterministic subsampling.}
 

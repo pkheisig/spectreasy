@@ -9,9 +9,7 @@ build_reference_matrix(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  include_multi_af = FALSE,
   exclude_af = FALSE,
-  af_dir = "af",
   af_n_bands = "auto",
   af_bands_per_file = NULL,
   af_max_cells = 50000,
@@ -59,12 +57,8 @@ the function returns the matrix without writing QC files.}
 \item{control_df}{Optional control mapping as a data.frame or CSV path.
 Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.}
 
-\item{include_multi_af}{Logical; if `TRUE`, include additional AF controls from `af_dir`.}
-
 \item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls entirely,
-even when they are present in `control_df`, the SCC folder, or `af_dir`.}
-
-\item{af_dir}{Directory with extra AF controls when `include_multi_af = TRUE`.}
+even when they are present in `control_df` or the SCC folder.}
 
 \item{af_n_bands}{Number of SOM nodes used to extract AF basis signatures
 from pooled unstained/AF control events, or `"auto"` to use
@@ -135,7 +129,9 @@ the same GMM/EM intensity-vs-FSC selector after broad FSC/SSC cleanup.}
 cleaned with scatter-matched unstained/AF events before spectrum
 derivation. Bead controls use a scatter-gated unstained bead control as
 their negative spectrum when one is available; otherwise they keep the
-positive/negative populations estimated from the stained bead control.}
+positive/negative populations estimated from the stained bead control.
+If `use_af_cosine_scc_selection = TRUE`, this cleanup is required and is
+automatically enabled with a warning.}
 
 \item{scc_background_method}{Background method for cell SCC cleaning.
 `"scatter_knn"` matches each stained event to unstained events by FSC/SSC.

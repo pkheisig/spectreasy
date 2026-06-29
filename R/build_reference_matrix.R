@@ -451,23 +451,15 @@
 }
 
 # Prepares the complete list of FCS files to be processed.
-# Locates FCS files in the input folder and applies AF filtering,
-# and optionally appends additional AF files from an external directory (af_dir).
-# Returns a list containing 'fcs_files' (standard controls) and 'fcs_files_all' (all controls including AF).
-.prepare_reference_file_set <- function(input_folder, include_multi_af = FALSE, af_dir = "af", exclude_af = FALSE) {
+# Locates FCS files in the input folder and applies AF filtering.
+# Returns a list containing 'fcs_files' and 'fcs_files_all'.
+.prepare_reference_file_set <- function(input_folder, exclude_af = FALSE) {
     fcs_files <- list.files(input_folder, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     if (length(fcs_files) == 0) stop("No FCS files found in ", input_folder)
 
     fcs_files <- .filter_reference_af_files(fcs_files, input_folder = input_folder, exclude_af = exclude_af)
 
-    fcs_files_all <- fcs_files
-    if (!isTRUE(exclude_af) && isTRUE(include_multi_af) && dir.exists(af_dir)) {
-        af_files <- list.files(af_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-        message("Found ", length(af_files), " extra AF files in '", af_dir, "'")
-        fcs_files_all <- c(af_files, fcs_files)
-    }
-
-    list(fcs_files = fcs_files, fcs_files_all = fcs_files_all)
+    list(fcs_files = fcs_files, fcs_files_all = fcs_files)
 }
 
 # Prepares and returns the normalized path of the output directory.
@@ -921,15 +913,25 @@
     list(raw_median = raw_median, signatures = centers, selection = selection)
 }
 
-# Determines the name of the autofluorescence (unstained) control file.
-# Looks it up in the control mapping or falls back to identifying files matching AF file naming heuristics.
-# Returns the AF file basename (without extension) or NULL.
-.resolve_reference_af_name <- function(control_df, fcs_files, exclude_af = FALSE) {
+# Resolves all cellular autofluorescence (unstained) control files.
+# Uses mapped AF rows first, then falls back to AF-like filenames.
+# Returns a data frame with path and source_type columns.
+.resolve_reference_af_paths <- function(control_df, fcs_files, exclude_af = FALSE) {
     if (isTRUE(exclude_af)) {
-        return(NULL)
+        return(data.frame(path = character(), source_type = character(), stringsAsFactors = FALSE))
     }
 
-    af_fn <- NULL
+    fcs_lookup <- setNames(
+        normalizePath(fcs_files, mustWork = FALSE),
+        tools::file_path_sans_ext(tolower(basename(fcs_files)))
+    )
+    fcs_lookup <- c(fcs_lookup, setNames(
+        normalizePath(fcs_files, mustWork = FALSE),
+        tolower(basename(fcs_files))
+    ))
+
+    af_paths <- character()
+    af_source_types <- character()
     if (!is.null(control_df)) {
         af_rows <- if ("fluorophore" %in% colnames(control_df)) {
             control_df[.is_af_control_row(
@@ -946,21 +948,34 @@
             } else {
                 rep("", nrow(af_rows))
             }
-            cell_rows <- which(control_type != "beads")
-            if (length(cell_rows) > 0) {
-                af_rows <- af_rows[cell_rows, , drop = FALSE]
-            }
-            if (nrow(af_rows) > 0) {
-                af_fn <- tools::file_path_sans_ext(basename(af_rows$filename[1]))
+            control_type[is.na(control_type)] <- ""
+            af_rows <- af_rows[control_type != "beads", , drop = FALSE]
+            for (fn in unique(as.character(af_rows$filename))) {
+                key_ext <- tolower(basename(fn))
+                key_stem <- tools::file_path_sans_ext(key_ext)
+                matched_path <- fcs_lookup[[key_ext]]
+                if (is.null(matched_path)) {
+                    matched_path <- fcs_lookup[[key_stem]]
+                }
+                if (!is.null(matched_path) && nzchar(matched_path)) {
+                    af_paths <- c(af_paths, matched_path)
+                    af_source_types <- c(af_source_types, "mapped_unstained")
+                }
             }
         }
     }
-    if (is.null(af_fn)) {
+    if (length(af_paths) == 0) {
         af_idx_tmp <- which(.is_af_filename(fcs_files) & !grepl("beads?", basename(fcs_files), ignore.case = TRUE))
-        if (length(af_idx_tmp) > 0) af_fn <- tools::file_path_sans_ext(basename(fcs_files[af_idx_tmp[1]]))
+        af_paths <- normalizePath(fcs_files[af_idx_tmp], mustWork = FALSE)
+        af_source_types <- rep("filename_unstained", length(af_paths))
     }
 
-    af_fn
+    keep_unique <- !duplicated(af_paths)
+    data.frame(
+        path = af_paths[keep_unique],
+        source_type = af_source_types[keep_unique],
+        stringsAsFactors = FALSE
+    )
 }
 
 # Safe retriever for key values from the configuration list.
@@ -1026,9 +1041,8 @@
     )
 }
 
-# Gathers all autofluorescence and unstained control files and extracts their signatures.
-# Locates primary and extra AF files, loads and gates them, pools events, and computes
-# the specified number of AF basis signatures.
+# Gathers all mapped autofluorescence and unstained control files, gates them,
+# pools events, and computes the requested number of AF basis signatures.
 # Returns a list containing raw medians, normalized basis matrices, and banking metadata.
 .collect_reference_af_profiles <- function(control_df,
                                            fcs_files,
@@ -1052,7 +1066,6 @@
     af_signatures_norm <- NULL
     af_bank_info <- NULL
     scc_background <- NULL
-    af_fn <- .resolve_reference_af_name(control_df = control_df, fcs_files = fcs_files, exclude_af = exclude_af)
 
     if (isTRUE(exclude_af)) {
         return(list(
@@ -1063,27 +1076,9 @@
         ))
     }
 
-    af_paths <- character()
-    af_source_types <- character()
-    if (!is.null(af_fn)) {
-        af_path <- fcs_files[grep(af_fn, fcs_files, fixed = TRUE)]
-        if (length(af_path) > 0) {
-            af_paths <- c(af_paths, af_path[1])
-            af_source_types <- c(af_source_types, "primary_unstained")
-        }
-    }
-    extra_af_paths <- fcs_files_all[vapply(
-        fcs_files_all,
-        .is_reference_extra_af_file,
-        logical(1),
-        include_multi_af = .get_reference_config_value(config, "include_multi_af", FALSE),
-        af_dir = .get_reference_config_value(config, "af_dir", "af")
-    )]
-    af_paths <- c(af_paths, extra_af_paths)
-    af_source_types <- c(af_source_types, rep("extra_af", length(extra_af_paths)))
-    keep_unique <- !duplicated(normalizePath(af_paths, mustWork = FALSE))
-    af_paths <- af_paths[keep_unique]
-    af_source_types <- af_source_types[keep_unique]
+    af_sources_resolved <- .resolve_reference_af_paths(control_df = control_df, fcs_files = fcs_files_all, exclude_af = exclude_af)
+    af_paths <- af_sources_resolved$path
+    af_source_types <- af_sources_resolved$source_type
 
     if (length(af_paths) > 0) {
         af_gated_list <- lapply(af_paths, .extract_reference_af_gated_events, detector_names = detector_names, config = config)
@@ -1173,20 +1168,6 @@
         af_signatures_norm = af_signatures_norm,
         af_bank_info = af_bank_info,
         scc_background = scc_background
-    )
-}
-
-# Checks if a file path points to an extra autofluorescence file.
-# Specifically checks if the file resides in the designated AF directory and include_multi_af is enabled.
-# Returns TRUE if it is an extra AF file, otherwise FALSE.
-.is_reference_extra_af_file <- function(fcs_file, include_multi_af = FALSE, af_dir = "af") {
-    if (!isTRUE(include_multi_af)) {
-        return(FALSE)
-    }
-    grepl(
-        normalizePath(af_dir, mustWork = FALSE),
-        normalizePath(fcs_file, mustWork = FALSE),
-        fixed = TRUE
     )
 }
 
@@ -3547,12 +3528,6 @@
     sn_ext <- basename(fcs_file)
     sn <- tools::file_path_sans_ext(sn_ext)
 
-    is_extra_af <- .is_reference_extra_af_file(
-        fcs_file = fcs_file,
-        include_multi_af = config$include_multi_af,
-        af_dir = config$af_dir
-    )
-
     row_info <- .get_control_rows_for_reference(control_df, c(sn_ext, sn))
     sample_info <- .resolve_reference_sample_type(
         filename = sn,
@@ -3568,10 +3543,7 @@
         ""
     }
 
-    if (isTRUE(config$exclude_af) && (.is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext) || is_extra_af)) {
-        return(NULL)
-    }
-    if (is_extra_af) {
+    if (isTRUE(config$exclude_af) && .is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext)) {
         return(NULL)
     }
     if (.is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext)) {
@@ -3873,10 +3845,8 @@
 #'   the function returns the matrix without writing QC files.
 #' @param control_df Optional control mapping as a data.frame or CSV path.
 #'   Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.
-#' @param include_multi_af Logical; if `TRUE`, include additional AF controls from `af_dir`.
 #' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls entirely,
-#'   even when they are present in `control_df`, the SCC folder, or `af_dir`.
-#' @param af_dir Directory with extra AF controls when `include_multi_af = TRUE`.
+#'   even when they are present in `control_df` or the SCC folder.
 #' @param af_n_bands Number of SOM nodes used to extract AF basis signatures
 #'   from pooled unstained/AF control events, or `"auto"` to use
 #'   `af_auto_max_bands`. A mean AF row is prepended to the SOM nodes, so the
@@ -3929,6 +3899,8 @@
 #'   derivation. Bead controls use a scatter-gated unstained bead control as
 #'   their negative spectrum when one is available; otherwise they keep the
 #'   positive/negative populations estimated from the stained bead control.
+#'   If `use_af_cosine_scc_selection = TRUE`, this cleanup is required and is
+#'   automatically enabled with a warning.
 #' @param scc_background_method Background method for cell SCC cleaning.
 #'   `"scatter_knn"` matches each stained event to unstained events by FSC/SSC.
 #'   Use `"none"` to disable matched background subtraction.
@@ -3977,9 +3949,7 @@ build_reference_matrix <- function(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  include_multi_af = FALSE,
   exclude_af = FALSE,
-  af_dir = "af",
   af_n_bands = "auto",
   af_bands_per_file = NULL,
   af_max_cells = 50000,
@@ -4047,7 +4017,8 @@ build_reference_matrix <- function(
     scc_background_args <- .validate_scc_background_args(
         clean_scc_with_unstained = clean_scc_with_unstained,
         scc_background_method = scc_background_method,
-        scc_background_k = scc_background_k
+        scc_background_k = scc_background_k,
+        require_for_af_cosine = isTRUE(use_af_cosine_scc_selection)
     )
     clean_scc_with_unstained <- scc_background_args$enabled
     scc_background_method <- scc_background_args$method
@@ -4063,8 +4034,6 @@ build_reference_matrix <- function(
     sample_patterns <- get_fluorophore_patterns()
     file_info <- .prepare_reference_file_set(
         input_folder = input_folder,
-        include_multi_af = include_multi_af,
-        af_dir = af_dir,
         exclude_af = exclude_af
     )
     out_path <- .prepare_reference_output_path(output_folder = output_folder, save_qc_plots = save_qc_plots)
@@ -4072,8 +4041,6 @@ build_reference_matrix <- function(
     cytometer <- .resolve_cytometer_from_pd(cytometer, metadata$pd_meta)
 
     config <- list(
-        include_multi_af = include_multi_af,
-        af_dir = af_dir,
         exclude_af = exclude_af,
         default_sample_type = default_sample_type,
         outlier_percentile = outlier_percentile,

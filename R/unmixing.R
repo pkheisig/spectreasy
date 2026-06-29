@@ -288,7 +288,6 @@
                                   af_refine = FALSE,
                                   af_refine_problem_quantile = 0.99,
                                   exclude_af = FALSE,
-                                  include_multi_af = FALSE,
                                   cytometer = "auto",
                                   seed = NULL) {
     if (!(toupper(method) %in% c("WLS", "RWLS"))) {
@@ -296,6 +295,78 @@
     }
 
     .load_variances_for_unmixing(M, variances_file = variances_file)
+}
+
+.resolve_unmix_samples_matrix <- function(M,
+                                          unmixing_matrix_file,
+                                          variances_file,
+                                          variances_file_was_missing,
+                                          detector_noise_file = NULL,
+                                          scc_dir = NULL) {
+    if (!is.null(M)) {
+        M <- .as_reference_matrix(M, "M")
+        M <- .load_variances_for_unmixing(M, variances_file = variances_file)
+        M <- .load_detector_noise_for_unmixing(
+            M,
+            detector_noise_file = detector_noise_file,
+            scc_dir = scc_dir
+        )
+        return(list(M = M, variances_file = variances_file))
+    }
+
+    if (!is.null(unmixing_matrix_file) && file.exists(unmixing_matrix_file)) {
+        .stop_if_static_unmixing_matrix_path(unmixing_matrix_file, arg_name = "unmixing_matrix_file")
+        M <- .read_unmixing_matrix_csv(unmixing_matrix_file)
+        M <- .as_reference_matrix(M, "M")
+        variances_file <- .resolve_variances_file_for_unmixing(
+            unmixing_matrix_file = unmixing_matrix_file,
+            variances_file = variances_file,
+            prefer_sibling = variances_file_was_missing
+        )
+        M <- .load_variances_for_unmixing(M, variances_file = variances_file)
+        M <- .load_detector_noise_for_unmixing(
+            M,
+            detector_noise_file = detector_noise_file,
+            unmixing_matrix_file = unmixing_matrix_file,
+            scc_dir = scc_dir
+        )
+        return(list(M = M, variances_file = variances_file))
+    }
+
+    if (!is.null(unmixing_matrix_file)) {
+        stop(
+            "Reference matrix not found: ", unmixing_matrix_file, ".\n",
+            "Run unmix_controls() first, or pass an explicit reference matrix with M.",
+            call. = FALSE
+        )
+    }
+
+    stop(
+        "No reference matrix was provided.\n",
+        "Run unmix_controls() first, or pass an explicit reference matrix with M.",
+        call. = FALSE
+    )
+}
+
+.normalize_unmix_samples_options <- function(method,
+                                             af_assignment,
+                                             rwls_max_iter,
+                                             multithreading,
+                                             n_threads) {
+    method_label <- .normalize_unmix_method(method)
+    af_assignment <- if (identical(method_label, "AutoSpectral")) {
+        "projection"
+    } else {
+        .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
+    }
+
+    list(
+        method_label = method_label,
+        solver_method = .solver_method_for_unmix(method_label),
+        af_assignment = af_assignment,
+        rwls_max_iter = .normalize_rwls_max_iter(rwls_max_iter),
+        n_threads = .normalize_unmix_threads(multithreading = multithreading, n_threads = n_threads)
+    )
 }
 
 .resolve_secondary_label_map <- function(primary_names, sample_dir) {
@@ -385,6 +456,23 @@
     target_ff
 }
 
+.ensure_unmix_output_dir <- function(output_dir, write_fcs) {
+    if (!isTRUE(write_fcs)) {
+        return(invisible(NULL))
+    }
+    if (!dir.exists(output_dir)) {
+        dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+        if (!dir.exists(output_dir)) {
+            Sys.sleep(0.5)
+            dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+        }
+    }
+    if (!dir.exists(output_dir)) {
+        stop("Could not create output_dir: ", output_dir, call. = FALSE)
+    }
+    invisible(NULL)
+}
+
 .next_safe_output_path <- function(path) {
     if (!file.exists(path)) {
         return(path)
@@ -403,6 +491,111 @@
         }
         i <- i + 1L
     }
+}
+
+.read_unmix_sample_flow_frame <- function(entry) {
+    if (inherits(entry$flow_frame, "flowFrame")) {
+        return(entry$flow_frame)
+    }
+    flowCore::read.FCS(entry$file_path, transformation = FALSE, truncate_max_range = FALSE)
+}
+
+.make_unmixed_output_frame <- function(res_obj, M, source_ff, secondary_label_map) {
+    marker_source <- rownames(M)
+    marker_source <- marker_source[!grepl("^AF_", marker_source, ignore.case = TRUE)]
+    markers_to_keep <- intersect(colnames(res_obj$data), marker_source)
+    passthrough_cols <- .get_passthrough_parameter_names(colnames(res_obj$data))
+    cols_to_write <- unique(c(markers_to_keep, passthrough_cols))
+    unmixed_exprs <- as.matrix(res_obj$data[, cols_to_write, drop = FALSE])
+
+    new_ff <- flowCore::flowFrame(unmixed_exprs)
+    .apply_feature_secondary_labels(
+        target_ff = new_ff,
+        source_ff = source_ff,
+        marker_cols = markers_to_keep,
+        secondary_label_map = secondary_label_map
+    )
+}
+
+.write_unmixed_sample_fcs <- function(res_obj, M, source_ff, output_dir, sample_name, secondary_label_map) {
+    new_ff <- .make_unmixed_output_frame(
+        res_obj = res_obj,
+        M = M,
+        source_ff = source_ff,
+        secondary_label_map = secondary_label_map
+    )
+
+    default_path <- file.path(output_dir, paste0(sample_name, "_unmixed.fcs"))
+    output_path <- .next_safe_output_path(default_path)
+    if (!identical(output_path, default_path)) {
+        message("    Existing output detected; writing to safe path: ", basename(output_path))
+    }
+    flowCore::write.FCS(new_ff, output_path)
+    output_path
+}
+
+.subsample_unmix_result <- function(res_obj, subsample_n) {
+    if (is.null(subsample_n)) {
+        return(res_obj)
+    }
+
+    n_events <- nrow(res_obj$data)
+    if (n_events > subsample_n) {
+        idx <- sample.int(n_events, subsample_n)
+        res_obj$data <- res_obj$data[idx, , drop = FALSE]
+        if (!is.null(res_obj$residuals)) {
+            res_obj$residuals <- res_obj$residuals[idx, , drop = FALSE]
+        }
+    }
+    res_obj
+}
+
+.unmix_one_sample <- function(entry,
+                              M,
+                              method_label,
+                              rwls_max_iter,
+                              multithreading,
+                              n_threads,
+                              af_assignment,
+                              spectral_variant_library,
+                              spectral_variant_top_k,
+                              spectral_variant_min_abundance,
+                              write_fcs,
+                              output_dir,
+                              secondary_label_map,
+                              subsample_n,
+                              verbose) {
+    sample_name <- entry$sample_name
+    if (isTRUE(verbose)) message("  Unmixing sample: ", sample_name)
+
+    ff <- .read_unmix_sample_flow_frame(entry)
+    res_obj <- calc_residuals(
+        ff,
+        M,
+        method = method_label,
+        file_name = sample_name,
+        rwls_max_iter = rwls_max_iter,
+        multithreading = multithreading,
+        n_threads = n_threads,
+        af_assignment = af_assignment,
+        spectral_variant_library = spectral_variant_library,
+        spectral_variant_top_k = spectral_variant_top_k,
+        spectral_variant_min_abundance = spectral_variant_min_abundance,
+        return_residuals = TRUE
+    )
+
+    if (isTRUE(write_fcs)) {
+        .write_unmixed_sample_fcs(
+            res_obj = res_obj,
+            M = M,
+            source_ff = ff,
+            output_dir = output_dir,
+            sample_name = sample_name,
+            secondary_label_map = secondary_label_map
+        )
+    }
+
+    .subsample_unmix_result(res_obj, subsample_n = subsample_n)
 }
 
 .as_unmixed_results_data_frame <- function(x, arg_name = "x") {
@@ -677,8 +870,6 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   fluorophore to be eligible for variant testing.
 #' @param exclude_af Legacy compatibility argument. Exclude AF while building
 #'   the matrix in [unmix_controls()], not in `unmix_samples()`.
-#' @param include_multi_af Legacy compatibility argument. Include multi-AF while
-#'   building the matrix in [unmix_controls()], not in `unmix_samples()`.
 #' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
 #'   stained sample event-wise WLS residuals, select the best candidate model by
 #'   held-out WLS residual score, and append the selected AF rows to the
@@ -686,9 +877,11 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   unstained cell control is available. Default is `FALSE`.
 #' @param output_dir Directory to save unmixed FCS files when `write_fcs = TRUE`.
 #' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
-#'   Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.
+#'   Defaults to `TRUE`. Existing FCS files are not overwritten; a numeric suffix
+#'   is added when needed.
 #' @param save_report Logical; if `TRUE`, write a sample QC PDF report from the
-#'   in-memory unmixing results without rerunning unmixing.
+#'   in-memory unmixing results without rerunning unmixing. Defaults to `TRUE`.
+#'   Existing report files are not overwritten; a numeric suffix is added when needed.
 #' @param output_file Optional output path for the sample QC PDF report.
 #' @param save_qc_plots Logical; if `TRUE`, save QC report plots as PNG files
 #'   in `qc_plot_dir` while creating the PDF report.
@@ -696,7 +889,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   `save_qc_plots = TRUE`.
 #' @param subsample_n Optional integer; if provided, subsample the returned in-memory
 #'   results to at most `subsample_n` events per sample. The full unsampled unmixed
-#'   data will still be written to the FCS files.
+#'   data will still be written to the FCS files when `write_fcs = TRUE`.
 #' @param seed Optional integer seed for deterministic subsampling.
 #' @param return_type Return format: `"list"` (default), `"flowSet"`, or
 #'   `"SingleCellExperiment"`. When `"flowSet"`, detector residuals are attached
@@ -775,7 +968,6 @@ unmix_samples <- function(sample_dir = "samples",
                           spectral_variant_top_k = 3L,
                           spectral_variant_min_abundance = 1,
                           exclude_af = FALSE,
-                          include_multi_af = FALSE,
                           estimate_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
@@ -791,55 +983,29 @@ unmix_samples <- function(sample_dir = "samples",
     .with_optional_seed(seed)
     variances_file_was_missing <- missing(variances_file)
 
-    if (!is.null(M)) {
-        M <- .as_reference_matrix(M, "M")
-        M <- .load_variances_for_unmixing(M, variances_file = variances_file)
-        M <- .load_detector_noise_for_unmixing(
-            M,
-            detector_noise_file = detector_noise_file,
-            scc_dir = scc_dir
-        )
-    } else if (!is.null(unmixing_matrix_file) && file.exists(unmixing_matrix_file)) {
-        .stop_if_static_unmixing_matrix_path(unmixing_matrix_file, arg_name = "unmixing_matrix_file")
-        M <- .read_unmixing_matrix_csv(unmixing_matrix_file)
-        M <- .as_reference_matrix(M, "M")
-        variances_file <- .resolve_variances_file_for_unmixing(
-            unmixing_matrix_file = unmixing_matrix_file,
-            variances_file = variances_file,
-            prefer_sibling = variances_file_was_missing
-        )
-        M <- .load_variances_for_unmixing(M, variances_file = variances_file)
-        M <- .load_detector_noise_for_unmixing(
-            M,
-            detector_noise_file = detector_noise_file,
-            unmixing_matrix_file = unmixing_matrix_file,
-            scc_dir = scc_dir
-        )
-    } else {
-        if (!is.null(unmixing_matrix_file)) {
-            stop(
-                "Reference matrix not found: ", unmixing_matrix_file, ".\n",
-                "Run unmix_controls() first, or pass an explicit reference matrix with M.",
-                call. = FALSE
-            )
-        } else {
-            stop(
-                "No reference matrix was provided.\n",
-                "Run unmix_controls() first, or pass an explicit reference matrix with M.",
-                call. = FALSE
-            )
-        }
-    }
+    matrix_res <- .resolve_unmix_samples_matrix(
+        M = M,
+        unmixing_matrix_file = unmixing_matrix_file,
+        variances_file = variances_file,
+        variances_file_was_missing = variances_file_was_missing,
+        detector_noise_file = detector_noise_file,
+        scc_dir = scc_dir
+    )
+    M <- matrix_res$M
+    variances_file <- matrix_res$variances_file
 
-    method_label <- .normalize_unmix_method(method)
-    solver_method <- .solver_method_for_unmix(method_label)
-    af_assignment <- if (identical(method_label, "AutoSpectral")) {
-        "projection"
-    } else {
-        .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
-    }
-    rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
-    n_threads <- .normalize_unmix_threads(multithreading = multithreading, n_threads = n_threads)
+    run_options <- .normalize_unmix_samples_options(
+        method = method,
+        af_assignment = af_assignment,
+        rwls_max_iter = rwls_max_iter,
+        multithreading = multithreading,
+        n_threads = n_threads
+    )
+    method_label <- run_options$method_label
+    solver_method <- run_options$solver_method
+    af_assignment <- run_options$af_assignment
+    rwls_max_iter <- run_options$rwls_max_iter
+    n_threads <- run_options$n_threads
     estimate_af <- isTRUE(estimate_af)
     spectral_variant_library <- .resolve_spectral_variant_library_for_unmixing(
         M = M,
@@ -860,7 +1026,6 @@ unmix_samples <- function(sample_dir = "samples",
         af_min_cluster_proportion = af_min_cluster_proportion,
         af_n_bands_sensitivity = af_n_bands_sensitivity,
         exclude_af = exclude_af,
-        include_multi_af = include_multi_af,
         cytometer = cytometer,
         seed = seed
     )
@@ -887,35 +1052,17 @@ unmix_samples <- function(sample_dir = "samples",
     results <- list()
     marker_source_all <- rownames(M)
     secondary_label_map <- .resolve_secondary_label_map(marker_source_all, sample_dir = sample_dir)
-
-    if (isTRUE(write_fcs)) {
-        if (!dir.exists(output_dir)) {
-            dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
-            if (!dir.exists(output_dir)) {
-                Sys.sleep(0.5)
-                dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
-            }
-        }
-    }
+    .ensure_unmix_output_dir(output_dir = output_dir, write_fcs = write_fcs)
 
     progress_bar <- .start_unmix_samples_progress(length(sample_entries), verbose = verbose)
     on.exit(.close_unmix_samples_progress(progress_bar), add = TRUE)
 
     for (entry_i in seq_along(sample_entries)) {
         entry <- sample_entries[[entry_i]]
-        sn <- entry$sample_name
-        if (isTRUE(verbose)) message("  Unmixing sample: ", sn)
-        ff <- if (inherits(entry$flow_frame, "flowFrame")) {
-            entry$flow_frame
-        } else {
-            flowCore::read.FCS(entry$file_path, transformation = FALSE, truncate_max_range = FALSE)
-        }
-
-        res_obj <- calc_residuals(
-            ff,
-            M,
-            method = method_label,
-            file_name = sn,
+        results[[entry$sample_name]] <- .unmix_one_sample(
+            entry = entry,
+            M = M,
+            method_label = method_label,
             rwls_max_iter = rwls_max_iter,
             multithreading = multithreading,
             n_threads = n_threads,
@@ -923,42 +1070,12 @@ unmix_samples <- function(sample_dir = "samples",
             spectral_variant_library = spectral_variant_library,
             spectral_variant_top_k = spectral_variant_top_k,
             spectral_variant_min_abundance = spectral_variant_min_abundance,
-            return_residuals = TRUE
+            write_fcs = write_fcs,
+            output_dir = output_dir,
+            secondary_label_map = secondary_label_map,
+            subsample_n = subsample_n,
+            verbose = verbose
         )
-        
-        if (isTRUE(write_fcs)) {
-            marker_source <- rownames(M)
-            marker_source <- marker_source[!grepl("^AF_", marker_source, ignore.case = TRUE)]
-            markers_to_keep <- intersect(colnames(res_obj$data), marker_source)
-            passthrough_cols <- .get_passthrough_parameter_names(colnames(res_obj$data))
-            cols_to_write <- unique(c(markers_to_keep, passthrough_cols))
-            unmixed_exprs <- as.matrix(res_obj$data[, cols_to_write, drop = FALSE])
-            
-            new_ff <- flowCore::flowFrame(unmixed_exprs)
-            new_ff <- .apply_feature_secondary_labels(
-                target_ff = new_ff,
-                source_ff = ff,
-                marker_cols = markers_to_keep,
-                secondary_label_map = secondary_label_map
-            )
-
-            output_path <- .next_safe_output_path(file.path(output_dir, paste0(sn, "_unmixed.fcs")))
-            if (!identical(output_path, file.path(output_dir, paste0(sn, "_unmixed.fcs")))) {
-                message("    Existing output detected; writing to safe path: ", basename(output_path))
-            }
-            flowCore::write.FCS(new_ff, output_path)
-        }
-        if (!is.null(subsample_n)) {
-            n_events <- nrow(res_obj$data)
-            if (n_events > subsample_n) {
-                idx <- sample.int(n_events, subsample_n)
-                res_obj$data <- res_obj$data[idx, , drop = FALSE]
-                if (!is.null(res_obj$residuals)) {
-                    res_obj$residuals <- res_obj$residuals[idx, , drop = FALSE]
-                }
-            }
-        }
-        results[[sn]] <- res_obj
         .tick_unmix_samples_progress(progress_bar, entry_i)
     }
 
@@ -974,6 +1091,7 @@ unmix_samples <- function(sample_dir = "samples",
         if (is.null(output_file)) {
             output_file <- .default_unmix_samples_report_file(output_dir)
         }
+        output_file <- .next_safe_output_path(output_file)
         report_res <- qc_samples(
             results = results,
             M = M,

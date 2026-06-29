@@ -58,8 +58,8 @@ If omitted, `attr(M, "detector_pd")` is used when available.}
 plots and diagnostics. Defaults to 1000 to keep large FCS reports
 responsive. Set `NULL` to use all events.}
 
-\item{overview_files_per_page}{Maximum files shown on each RMS residual and
-NPS overview page.}
+\item{overview_files_per_page}{Maximum files shown on each overall detector
+reconstruction error and NPS overview page.}
 
 \item{matrix_markers_per_page}{Marker cutoff for similarity and spread
 matrix pages. Up to this many markers are shown on one page; larger panels
@@ -94,7 +94,8 @@ Invisibly returns a list with `output_file` and `qc_plot_dir`; writes
 }
 \description{
 Creates a multi-page report summarizing unmixing quality, including spectra,
-detector residuals, spread matrix, NPS, and per-sample NxN marker scatter pages.
+RMS residuals per detector, matrix diagnostics, NPS, per-sample NxN marker
+scatter pages, and the overall detector reconstruction error per sample.
 }
 \details{
 `qc_samples()` expects a combined data frame or the raw list returned

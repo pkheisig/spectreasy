@@ -188,6 +188,10 @@ plot_spectra <- function(ref_matrix,
 
     p <- ggplot2::ggplot(long, ggplot2::aes(Detector, Intensity, color = Fluorophore, group = Fluorophore)) +
         ggplot2::geom_line(linewidth = 0.7) +
+        ggplot2::scale_y_continuous(
+            breaks = seq(0, 1, by = 0.2),
+            labels = sprintf("%.1f", seq(0, 1, by = 0.2))
+        ) +
         ggplot2::theme_minimal(base_size = 13.75) +
         ggplot2::theme(
             axis.text.x = ggplot2::element_text(size = 6.25, angle = 90, hjust = 1, vjust = 0.5),

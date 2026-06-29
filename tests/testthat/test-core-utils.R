@@ -1128,12 +1128,11 @@ test_that("AF argument validation keeps deprecated bands-per-file compatibility"
 })
 
 test_that("multiple AF files are pooled into one AF bank size request", {
-    root <- tempfile("pooled-af-")
-    af_dir <- file.path(root, "af")
-    dir.create(af_dir, recursive = TRUE)
-    primary <- file.path(root, "Unstained (Cells).fcs")
-    extra_1 <- file.path(af_dir, "AF tissue 1.fcs")
-    extra_2 <- file.path(af_dir, "AF tissue 2.fcs")
+    root <- tempfile("pooled-af-scc-")
+    dir.create(root, recursive = TRUE)
+    primary <- file.path(root, "Unstained lymphocytes.fcs")
+    extra_1 <- file.path(root, "Unstained myeloid.fcs")
+    extra_2 <- file.path(root, "Unstained tumor.fcs")
     file.create(primary, extra_1, extra_2)
     detector_names <- c("B1-A", "YG1-A")
     captured <- new.env(parent = emptyenv())
@@ -1181,19 +1180,19 @@ test_that("multiple AF files are pooled into one AF bank size request", {
 
     out <- spectreasy:::.collect_reference_af_profiles(
         control_df = data.frame(
-            filename = basename(primary),
-            fluorophore = "AF",
-            marker = "Autofluorescence",
+            filename = basename(c(primary, extra_1, extra_2)),
+            fluorophore = c("AF", "AF_2", "AF_file3"),
+            marker = rep("Autofluorescence", 3),
+            control.type = rep("cells", 3),
             stringsAsFactors = FALSE
         ),
-        fcs_files = primary,
+        fcs_files = c(primary, extra_1, extra_2),
         fcs_files_all = c(primary, extra_1, extra_2),
         detector_names = detector_names,
         af_n_bands = 3L,
         af_bands_per_file = 5L,
         af_max_cells = 500L,
-        af_auto_max_bands = 100L,
-        config = list(include_multi_af = TRUE, af_dir = af_dir)
+        af_auto_max_bands = 100L
     )
 
     expect_equal(captured$n_bands, 3L)
@@ -1202,15 +1201,22 @@ test_that("multiple AF files are pooled into one AF bank size request", {
     expect_equal(out$af_bank_info$requested_bands, 3L)
     expect_true(is.na(out$af_bank_info$af_bands_per_file))
     expect_equal(out$af_bank_info$mode, "pooled_af_sources")
+    expect_equal(out$af_bank_info$sources$source_type, rep("mapped_unstained", 3))
 })
 
-test_that("extra AF files are banked centrally, not processed as one averaged SCC row", {
-    af_file <- file.path(tempdir(), "af", "mixed_af.fcs")
-    config <- list(include_multi_af = TRUE, af_dir = dirname(af_file), exclude_af = FALSE)
+test_that("mapped AF SCC files are banked centrally, not processed as averaged SCC rows", {
+    af_file <- file.path(tempdir(), "mixed_af.fcs")
+    config <- list(exclude_af = FALSE)
 
     processed <- spectreasy:::.process_reference_file(
         fcs_file = af_file,
-        control_df = NULL,
+        control_df = data.frame(
+            filename = basename(af_file),
+            fluorophore = "AF",
+            marker = "Autofluorescence",
+            control.type = "cells",
+            stringsAsFactors = FALSE
+        ),
         sample_patterns = spectreasy::get_fluorophore_patterns(),
         metadata = list(detector_names = c("B1-A")),
         config = config
@@ -1391,6 +1397,10 @@ test_that("plot_spectra annotates regular peak labels with abbreviations", {
     )
 
     p <- spectreasy::plot_spectra(M, output_file = NULL)
+    y_scale <- p$scales$get_scales("y")
+    expect_equal(y_scale$breaks, seq(0, 1, by = 0.2))
+    expect_equal(y_scale$labels, sprintf("%.1f", seq(0, 1, by = 0.2)))
+
     text_layers <- vapply(p$layers, function(layer) inherits(layer$geom, "GeomText"), logical(1))
     expect_true(any(text_layers))
     label_data <- p$layers[[which(text_layers)[1]]]$data

@@ -6,8 +6,6 @@
 \usage{
 create_control_file(
   input_folder = "scc",
-  af_folder = "af",
-  include_af_folder = TRUE,
   cytometer = "auto",
   default_control_type = "cells",
   unknown_fluor_policy = c("empty", "by_channel", "filename"),
@@ -17,10 +15,6 @@ create_control_file(
 }
 \arguments{
 \item{input_folder}{Directory containing single-stained control FCS files.}
-
-\item{af_folder}{Optional AF folder.}
-
-\item{include_af_folder}{Logical. Include AF folder files in the control file.}
 
 \item{cytometer}{Cytometer name used as a channel-mapping hint. The default,
 `"auto"`, infers the cytometer from FCS detector names when possible.}
@@ -68,7 +62,6 @@ flowCore::write.FCS(make_example_ff(c(80, 820, 60)), file.path(scc_dir, "PE_cell
 
 control_df <- create_control_file(
   input_folder = scc_dir,
-  include_af_folder = FALSE,
   cytometer = "auto",
   output_file = file.path(td, "fcs_mapping.csv")
 )

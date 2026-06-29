@@ -24,7 +24,6 @@ unmix_controls(
   af_n_bands_sensitivity = 1.5,
   af_refine = FALSE,
   af_refine_problem_quantile = 0.99,
-  include_multi_af = FALSE,
   rwls_max_iter = 1L,
   multithreading = FALSE,
   n_threads = "auto",
@@ -100,8 +99,6 @@ refinement while building the reference matrix.}
 \item{af_refine_problem_quantile}{Quantile used to choose high-error
 unstained cells for AF refinement.}
 
-\item{include_multi_af}{Logical; whether to include additional AF files from `af_dir`. Default is FALSE.}
-
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
 iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
@@ -139,7 +136,9 @@ the same GMM/EM intensity-vs-FSC selector after broad FSC/SSC cleanup.}
 with scatter-matched unstained/AF events before deriving spectra and
 spectral variants. Bead SCCs use a scatter-gated unstained bead control as
 their negative spectrum when one is available; otherwise they use the
-positive/negative populations estimated from the stained bead file.}
+positive/negative populations estimated from the stained bead file. If
+`use_af_cosine_scc_selection = TRUE`, this cleanup is required and is
+automatically enabled with a warning.}
 
 \item{scc_background_method}{Background method for cell SCC cleaning.
 `"scatter_knn"` matches stained cells to unstained cells by FSC/SSC.}

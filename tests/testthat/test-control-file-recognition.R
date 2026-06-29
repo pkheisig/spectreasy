@@ -38,7 +38,6 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
     out_csv <- tempfile(fileext = ".csv")
     df <- spectreasy::create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         output_file = out_csv
     )
 
@@ -116,6 +115,33 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
     }
 })
 
+testthat::test_that("create_control_file maps multiple unstained SCC files as AF sources", {
+    scc_dir <- tempfile("spectreasy_multi_af_scc_")
+    dir.create(scc_dir, recursive = TRUE, showWarnings = FALSE)
+    files <- c(
+        "Unstained lymphocytes (Cells).fcs",
+        "Unstained myeloid (Cells).fcs",
+        "Unstained tumor (Cells).fcs",
+        "FITC CD4 (Beads).fcs"
+    )
+    testthat::expect_true(all(file.create(file.path(scc_dir, files))))
+
+    df <- spectreasy::create_control_file(
+        input_folder = scc_dir,
+        output_file = tempfile(fileext = ".csv")
+    )
+
+    by_file <- split(df, df$filename)
+    testthat::expect_equal(by_file[["Unstained lymphocytes (Cells).fcs"]]$fluorophore[[1]], "AF")
+    testthat::expect_equal(by_file[["Unstained myeloid (Cells).fcs"]]$fluorophore[[1]], "AF_2")
+    testthat::expect_equal(by_file[["Unstained tumor (Cells).fcs"]]$fluorophore[[1]], "AF_3")
+    testthat::expect_true(all(vapply(
+        by_file[files[1:3]],
+        function(x) identical(x$marker[[1]], "Autofluorescence") && identical(x$control.type[[1]], "cells"),
+        logical(1)
+    )))
+})
+
 testthat::test_that("detector fallback matches whole detector codes", {
     testthat::skip_if_not_installed("spectreasy")
 
@@ -140,7 +166,6 @@ testthat::test_that("create_control_file warns when peak detection cannot read a
     testthat::expect_warning(
         df <- spectreasy::create_control_file(
             input_folder = scc_dir,
-            include_af_folder = FALSE,
             output_file = out_csv
         ),
         regexp = "Could not read FCS file while auto-detecting peak channel"
@@ -206,7 +231,6 @@ testthat::test_that("custom fluorophore overrides accept common filename forms",
     out_csv <- tempfile(fileext = ".csv")
     df <- spectreasy::create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         unknown_fluor_policy = "empty",
         output_file = out_csv,
         custom_fluorophores = c("odd-control-name" = "BUV737")

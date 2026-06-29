@@ -189,8 +189,6 @@
                                             clean_scc_with_unstained = TRUE,
                                             scc_background_method = "scatter_knn",
                                             scc_background_k = 3L,
-                                            include_multi_af = FALSE,
-                                            af_dir = "af",
                                             exclude_af = FALSE,
                                             seed = NULL,
                                             warn = TRUE) {

@@ -6,8 +6,6 @@ if (FALSE) {
 
     control_file <- create_control_file(
         input_folder = "scc",
-        af_folder = "af",
-        include_af_folder = TRUE,
         cytometer = "auto",
         default_control_type = "cells",
         unknown_fluor_policy = c("empty", "by_channel", "filename"),
@@ -18,9 +16,7 @@ if (FALSE) {
     control_check <- validate_control_file_mapping(
         control_df = control_file,
         scc_dir = "scc",
-        include_multi_af = FALSE,
         exclude_af = FALSE,
-        af_dir = "af",
         require_all_scc_mapped = TRUE,
         require_channels = TRUE,
         stop_on_error = FALSE
@@ -54,7 +50,6 @@ if (FALSE) {
         af_n_bands_sensitivity = 1.5,
         af_refine = FALSE,
         af_refine_problem_quantile = 0.99,
-        include_multi_af = FALSE,
         rwls_max_iter = 1L,
         multithreading = FALSE,
         n_threads = "auto",
@@ -78,8 +73,6 @@ if (FALSE) {
         qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
         save_qc_pngs = FALSE,
         use_scatter_gating = TRUE,
-        include_multi_af = FALSE,
-        af_dir = "af",
         af_bands_per_file = NULL,
         unmix_scatter_max_points = 1000,
         unmix_scatter_axis_limit = NULL,
@@ -125,7 +118,6 @@ if (FALSE) {
         af_refine = FALSE,
         af_refine_problem_quantile = 0.99,
         exclude_af = FALSE,
-        include_multi_af = FALSE,
         output_dir = file.path(
             "spectreasy_outputs",
             "unmix_samples",
@@ -232,9 +224,7 @@ if (FALSE) {
         output_folder = "gating_and_spectrum_plots",
         save_qc_plots = FALSE,
         control_df = NULL,
-        include_multi_af = FALSE,
         exclude_af = FALSE,
-        af_dir = "af",
         af_n_bands = 100,
         af_bands_per_file = NULL,
         af_max_cells = 50000,
@@ -355,7 +345,6 @@ if (FALSE) {
         flow_frame = flow_frame,
         control_file = "fcs_mapping.csv",
         control_dir = "scc",
-        af_dir = "af",
         method = "WLS",
         cytometer = "auto"
     )

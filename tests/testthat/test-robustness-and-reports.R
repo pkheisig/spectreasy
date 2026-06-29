@@ -422,7 +422,7 @@ test_that("unmix_samples errors instead of dynamically rebuilding a missing matr
     )
 })
 
-test_that("unmix_controls supports af_n_bands and include_multi_af", {
+test_that("unmix_controls supports af_n_bands", {
     skip_slow_tests("multi-AF unmix_controls integration")
 
     scc_dir <- tempfile("scc_dir_controls_")
@@ -478,8 +478,7 @@ test_that("unmix_controls supports af_n_bands and include_multi_af", {
         control_file = control_file,
         auto_create_control = FALSE,
         output_dir = output_dir,
-        af_n_bands = 2,
-        include_multi_af = FALSE
+        af_n_bands = 2
     )
     
     expect_true(all(c("FITC", "PE", "AF", "AF_2") %in% rownames(res$M)))

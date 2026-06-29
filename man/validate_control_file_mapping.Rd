@@ -7,9 +7,7 @@
 validate_control_file_mapping(
   control_df,
   scc_dir = "scc",
-  include_multi_af = FALSE,
   exclude_af = FALSE,
-  af_dir = "af",
   require_all_scc_mapped = TRUE,
   require_channels = TRUE,
   stop_on_error = FALSE
@@ -20,12 +18,8 @@ validate_control_file_mapping(
 
 \item{scc_dir}{SCC directory containing FCS files.}
 
-\item{include_multi_af}{Logical. Whether AF files from `af_dir` are expected.}
-
 \item{exclude_af}{Logical. If `TRUE`, AF/unstained controls are optional and
 ignored during mapping completeness checks.}
-
-\item{af_dir}{Optional AF directory with additional FCS files.}
 
 \item{require_all_scc_mapped}{Logical. If TRUE, every effective SCC file must
 have a row in `control_df`.}

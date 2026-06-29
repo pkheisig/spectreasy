@@ -720,7 +720,8 @@
 #' Generate a Full Sample PDF Report
 #'
 #' Creates a multi-page report summarizing unmixing quality, including spectra,
-#' detector residuals, spread matrix, NPS, and per-sample NxN marker scatter pages.
+#' RMS residuals per detector, matrix diagnostics, NPS, per-sample NxN marker
+#' scatter pages, and the overall detector reconstruction error per sample.
 #'
 #' `qc_samples()` expects a combined data frame or the raw list returned
 #' by [unmix_samples()]. In the usual workflow, pass the unmixed results object
@@ -753,8 +754,8 @@
 #' @param max_events_per_sample Maximum events per sample used for report-wide
 #'   plots and diagnostics. Defaults to 1000 to keep large FCS reports
 #'   responsive. Set `NULL` to use all events.
-#' @param overview_files_per_page Maximum files shown on each RMS residual and
-#'   NPS overview page.
+#' @param overview_files_per_page Maximum files shown on each overall detector
+#'   reconstruction error and NPS overview page.
 #' @param matrix_markers_per_page Marker cutoff for similarity and spread
 #'   matrix pages. Up to this many markers are shown on one page; larger panels
 #'   are split into two balanced pages up to twice this cutoff, and three
@@ -909,29 +910,24 @@ qc_samples <- function(results,
     )
     grid::grid.text(summary_txt, x = 0.5, y = 0.6, just = "center", gp = grid::gpar(fontsize = 15))
 
-    if (!is.null(res_list)) {
-        message("  - Adding overall RMS residuals page...")
-        rms_pages <- .build_qc_report_rms_pages(
-            res_list,
-            M = M,
-            max_files_per_page = overview_files_per_page
-        )
-        for (i in seq_along(rms_pages)) {
-            p <- rms_pages[[i]]
-            .save_qc_report_png(p, retained_qc_plot_dir, sprintf("rms_residuals_%02d.png", i))
-            .draw_qc_report_plot_page(
-                p,
-                height_ratio = 0.72,
-                width_ratio = 0.72
-            )
-        }
-    }
-
     message("  - Adding spectra overlay...")
     if (nrow(M_no_af) > 0) {
         spectra_plot <- plot_spectra(M_no_af, pd = pd, output_file = NULL)
         .save_qc_report_png(spectra_plot, retained_qc_plot_dir, "spectra_overlay.png")
         .draw_qc_report_spectra_page(spectra_plot)
+    }
+
+    if (!is.null(res_list)) {
+        message("  - Adding RMS residual per detector page...")
+        detector_rms_plot <- plot_detector_rms_residuals(res_list, M = M, pd = pd, output_file = NULL)
+        if (!is.null(detector_rms_plot)) {
+            .save_qc_report_png(detector_rms_plot, retained_qc_plot_dir, "rms_residual_per_detector.png")
+            .draw_qc_report_plot_page(
+                detector_rms_plot,
+                height_ratio = 0.74,
+                width_ratio = 0.90
+            )
+        }
     }
 
     if (nrow(M_no_af) > 1) {
@@ -1007,6 +1003,24 @@ qc_samples <- function(results,
         p <- scatter_pages[[i]]
         .save_qc_report_png(p, retained_qc_plot_dir, sprintf("sample_nxn_scatter_%02d.png", i))
         .draw_qc_report_plot_page(p, square = TRUE)
+    }
+
+    if (!is.null(res_list)) {
+        message("  - Adding overall detector reconstruction error per sample...")
+        rms_pages <- .build_qc_report_rms_pages(
+            res_list,
+            M = M,
+            max_files_per_page = overview_files_per_page
+        )
+        for (i in seq_along(rms_pages)) {
+            p <- rms_pages[[i]]
+            .save_qc_report_png(p, retained_qc_plot_dir, sprintf("overall_detector_reconstruction_error_%02d.png", i))
+            .draw_qc_report_plot_page(
+                p,
+                height_ratio = 0.72,
+                width_ratio = 0.72
+            )
+        }
     }
 
     message("Report saved to: ", output_file)

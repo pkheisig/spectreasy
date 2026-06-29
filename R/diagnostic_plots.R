@@ -333,7 +333,127 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
     return(p)
 }
 
-#' Plot RMS Residual Distribution Across Samples
+.residual_detector_laser_group <- function(detectors) {
+    key <- sub("-A$", "", as.character(detectors), ignore.case = TRUE)
+    dplyr::case_when(
+        grepl("^UV", key, ignore.case = TRUE) ~ "UV",
+        grepl("^YG", key, ignore.case = TRUE) ~ "YG",
+        grepl("^V", key, ignore.case = TRUE) ~ "Violet",
+        grepl("^B", key, ignore.case = TRUE) ~ "Blue",
+        grepl("^R", key, ignore.case = TRUE) ~ "Red",
+        TRUE ~ "Other"
+    )
+}
+
+.collect_report_residual_matrix <- function(results, detector_names = NULL) {
+    if (!is.list(results) || length(results) == 0) {
+        return(NULL)
+    }
+
+    mats <- lapply(results, function(res_obj) {
+        if (!is.list(res_obj) || is.null(res_obj$residuals)) return(NULL)
+        R <- as.matrix(res_obj$residuals)
+        if (nrow(R) == 0 || ncol(R) == 0) return(NULL)
+        R
+    })
+    mats <- mats[!vapply(mats, is.null, logical(1))]
+    if (length(mats) == 0) {
+        return(NULL)
+    }
+
+    if (is.null(detector_names)) {
+        detector_names <- unique(unlist(lapply(mats, colnames), use.names = FALSE))
+    }
+    detector_names <- detector_names[nzchar(detector_names)]
+    if (length(detector_names) == 0) {
+        return(NULL)
+    }
+
+    mats <- lapply(mats, function(R) {
+        common <- intersect(detector_names, colnames(R))
+        if (length(common) == 0) return(NULL)
+        out <- matrix(NA_real_, nrow = nrow(R), ncol = length(detector_names), dimnames = list(NULL, detector_names))
+        out[, common] <- R[, common, drop = FALSE]
+        out
+    })
+    mats <- mats[!vapply(mats, is.null, logical(1))]
+    if (length(mats) == 0) {
+        return(NULL)
+    }
+
+    do.call(rbind, mats)
+}
+
+plot_detector_rms_residuals <- function(results, M = NULL, pd = NULL, output_file = NULL, width = 250, height = 120) {
+    detector_names <- if (!is.null(M)) colnames(.as_reference_matrix(M, "M")) else NULL
+    residuals <- .collect_report_residual_matrix(results, detector_names = detector_names)
+    if (is.null(residuals) || nrow(residuals) == 0) {
+        warning("No residuals available to plot detector RMS residuals.")
+        return(NULL)
+    }
+
+    detector_names <- colnames(residuals)
+    label_info <- .resolve_detector_residual_labels(detector_names, pd = pd)
+    levels_sorted <- label_info$levels_sorted
+    levels_sorted <- levels_sorted[levels_sorted %in% detector_names]
+    if (length(levels_sorted) == 0) {
+        levels_sorted <- detector_names
+    }
+
+    rms <- sqrt(colMeans(residuals[, levels_sorted, drop = FALSE]^2, na.rm = TRUE))
+    labels <- sub("-A$", "", levels_sorted, ignore.case = TRUE)
+    laser <- .residual_detector_laser_group(levels_sorted)
+    plot_df <- data.frame(
+        Detector = levels_sorted,
+        DetectorIndex = seq_along(levels_sorted),
+        Label = labels,
+        Laser = factor(laser, levels = c("UV", "Violet", "Blue", "YG", "Red", "Other")),
+        RMS = as.numeric(rms),
+        stringsAsFactors = FALSE
+    )
+    plot_df <- plot_df[is.finite(plot_df$RMS), , drop = FALSE]
+    if (nrow(plot_df) == 0) {
+        warning("No finite detector RMS residuals available.")
+        return(NULL)
+    }
+
+    separators <- which(plot_df$Laser[-1] != plot_df$Laser[-nrow(plot_df)]) + 0.5
+    p <- ggplot2::ggplot(plot_df, ggplot2::aes(DetectorIndex, RMS, fill = Laser)) +
+        ggplot2::geom_col(width = 0.82, color = "grey35", linewidth = 0.15) +
+        ggplot2::geom_vline(xintercept = separators, color = "grey45", linewidth = 0.25) +
+        ggplot2::scale_x_continuous(
+            breaks = plot_df$DetectorIndex,
+            labels = plot_df$Label,
+            expand = ggplot2::expansion(mult = c(0.005, 0.005))
+        ) +
+        ggplot2::scale_y_continuous(labels = scales::label_number(big.mark = ",")) +
+        ggplot2::scale_fill_manual(
+            values = c(UV = "#6A3D9A", Violet = "#7B2CBF", Blue = "#1F78B4", YG = "#66A61E", Red = "#E31A1C", Other = "grey55"),
+            drop = FALSE
+        ) +
+        ggplot2::labs(
+            title = "RMS residual per detector",
+            subtitle = "RMS_d = sqrt(mean_i R[i,d]^2), pooled across report events. Detectors are sorted by laser/channel order.",
+            x = "Detector",
+            y = "RMS residual (raw detector units)",
+            fill = "Laser"
+        ) +
+        ggplot2::theme_minimal(base_size = 13.75) +
+        ggplot2::theme(
+            legend.position = "bottom",
+            axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6.2),
+            panel.grid.major.x = ggplot2::element_blank(),
+            panel.grid.minor.x = ggplot2::element_blank(),
+            plot.subtitle = ggplot2::element_text(size = 12.5, lineheight = 1.1)
+        )
+
+    if (!is.null(output_file)) {
+        ggplot2::ggsave(output_file, p, width = width, height = height, units = "mm", dpi = 300)
+    }
+    p
+}
+
+#' Plot Overall Detector Reconstruction Error Across Samples
 #'
 #' @param results List of unmixed results from unmix_samples()
 #' @param M Optional reference matrix to reconstruct raw intensities and compute relative error
@@ -394,7 +514,7 @@ plot_sample_rms_residuals <- function(results, M = NULL, output_file = NULL, wid
             breaks = c(0, 100, 500, 1000, 5000, 10000, 20000)
         ) +
         ggplot2::labs(
-            title = "Overall Unmixing Error (RMS Residuals)",
+            title = "Overall detector reconstruction error per sample",
             subtitle = "Y-axis: RMS of residuals per cell (pseudo-log scale).\nX-axis: Median RMS & Error % (relative to peak signal).\nGood: <1.0%, Moderate: 1.0-3.0%.",
             x = "Sample", y = "RMS Residual"
         ) +
