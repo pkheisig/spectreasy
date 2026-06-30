@@ -80,7 +80,13 @@
     fluor_file <- .control_file_extdata_file("fluorophore_dictionary.csv")
     channel_file <- .control_file_extdata_file("fluorophore_channel_dictionary.csv")
     marker_file <- .control_file_extdata_file("marker_dictionary.csv")
-    out <- list(name_map = character(), channel_map = character(), marker_map = character(), marker_names = character())
+    out <- list(
+        name_map = character(),
+        channel_map = character(),
+        fluor_peak_channel_map = character(),
+        marker_map = character(),
+        marker_names = character()
+    )
     cytometer_id <- .resolve_cytometer_id(cytometer_name, allow_auto = TRUE, unknown_as_auto = TRUE)
 
     if (nzchar(fluor_file)) {
@@ -127,6 +133,14 @@
                 ch_vals <- .control_file_canonicalize_channel(raw_channels)
                 ch_vals <- unique(c(ch_vals, gsub("-A$", "", ch_vals), paste0(gsub("-A$", "", ch_vals), "-A")))
                 ch_vals <- ch_vals[nzchar(ch_vals)]
+                fluor_key <- .control_file_normalize_token(canonical)
+                peak_channel <- ch_vals[grepl("-A$", ch_vals)][1]
+                if (is.na(peak_channel) || !nzchar(peak_channel)) {
+                    peak_channel <- ch_vals[1]
+                }
+                if (nzchar(fluor_key) && !fluor_key %in% names(out$fluor_peak_channel_map)) {
+                    out$fluor_peak_channel_map[fluor_key] <- peak_channel
+                }
                 for (ch in ch_vals) {
                     if (!ch %in% names(out$channel_map)) {
                         out$channel_map[ch] <- canonical
@@ -185,6 +199,7 @@
         sample_patterns = patterns_list,
         fluor_name_map = shipped_ref$name_map,
         fluor_channel_map = shipped_ref$channel_map,
+        fluor_peak_channel_map = shipped_ref$fluor_peak_channel_map,
         marker_name_map = shipped_ref$marker_map,
         marker_names = shipped_ref$marker_names,
         preferred_fluors = preferred_fluors
@@ -508,6 +523,19 @@
     }
 }
 
+.control_file_expected_channel_for_fluor <- function(fluorophore, fluor_peak_channel_map = character()) {
+    fluorophore <- trimws(as.character(fluorophore)[1])
+    if (!nzchar(fluorophore) || length(fluor_peak_channel_map) == 0) {
+        return("")
+    }
+    key <- .control_file_normalize_token(fluorophore)
+    hit <- fluor_peak_channel_map[key]
+    if (is.na(hit) || !nzchar(hit)) {
+        return("")
+    }
+    as.character(hit)
+}
+
 .infer_fluor_from_detector <- function(channel_name,
                                        detector_desc = "",
                                        channel_alias_map = character(),
@@ -740,12 +768,18 @@
             )
         }
 
-        if (nzchar(summary$peak_channel)) {
+        current_fluor <- trimws(as.character(df$fluorophore[i]))
+        current_marker <- trimws(as.character(df$marker[i]))
+        expected_channel <- .control_file_expected_channel_for_fluor(
+            current_fluor,
+            fluor_peak_channel_map = ref$fluor_peak_channel_map
+        )
+        if (nzchar(expected_channel)) {
+            df$channel[i] <- expected_channel
+        } else if (nzchar(summary$peak_channel)) {
             df$channel[i] <- summary$peak_channel
         }
 
-        current_fluor <- trimws(as.character(df$fluorophore[i]))
-        current_marker <- trimws(as.character(df$marker[i]))
         af_like <- .control_file_is_af_like(
             current_fluor = current_fluor,
             current_marker = current_marker,

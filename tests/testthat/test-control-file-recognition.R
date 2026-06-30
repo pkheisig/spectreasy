@@ -189,7 +189,7 @@ testthat::test_that("create_control_file warns when peak detection cannot read a
     )
 
     testthat::expect_equal(df$fluorophore[[1]], "BV510")
-    testthat::expect_equal(df$channel[[1]], "")
+    testthat::expect_equal(df$channel[[1]], "V7-A")
 })
 
 testthat::test_that("supported cytometer metadata is normalized", {
@@ -254,4 +254,42 @@ testthat::test_that("custom fluorophore overrides accept common filename forms",
     )
 
     testthat::expect_equal(df$fluorophore[[1]], "BUV737")
+})
+
+testthat::test_that("create_control_file keeps dictionary peak channel for known fluorophores", {
+    testthat::skip_if_not_installed("spectreasy")
+
+    scc_dir <- tempfile("spectreasy_scc_")
+    dir.create(scc_dir, recursive = TRUE, showWarnings = FALSE)
+
+    n <- 300
+    exprs <- cbind(
+        "V3-A" = c(stats::rnorm(n - 10, 200, 20), stats::rnorm(10, 80000, 500)),
+        "V15-A" = stats::rnorm(n, 6000, 300),
+        "FSC-A" = stats::rnorm(n, 90000, 7000),
+        "SSC-A" = stats::rnorm(n, 45000, 5000),
+        Time = seq_len(n)
+    )
+    flowCore::write.FCS(
+        flowCore::flowFrame(exprs),
+        file.path(scc_dir, "CD274 BV786 (Beads).fcs")
+    )
+    flowCore::write.FCS(
+        flowCore::flowFrame(exprs),
+        file.path(scc_dir, "Mystery Dye (Beads).fcs")
+    )
+
+    df <- spectreasy::create_control_file(
+        input_folder = scc_dir,
+        cytometer = "aurora",
+        unknown_fluor_policy = "empty",
+        custom_fluorophores = c("Mystery Dye (Beads)" = "Mystery Dye"),
+        output_file = tempfile(fileext = ".csv")
+    )
+    by_file <- split(df, df$filename)
+
+    testthat::expect_equal(by_file[["CD274 BV786 (Beads).fcs"]]$fluorophore[[1]], "BV786")
+    testthat::expect_equal(by_file[["CD274 BV786 (Beads).fcs"]]$channel[[1]], "V15-A")
+    testthat::expect_equal(by_file[["Mystery Dye (Beads).fcs"]]$fluorophore[[1]], "Mystery Dye")
+    testthat::expect_equal(by_file[["Mystery Dye (Beads).fcs"]]$channel[[1]], "V3-A")
 })

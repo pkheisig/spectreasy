@@ -13,7 +13,7 @@ spectreasy_example_data(
 )
 }
 \arguments{
-\item{asset}{Optional URL to a zip archive containing `sample/` and `scc/`
+\item{asset}{Optional URL to a zip archive containing `samples/` and `scc/`
 folders. Defaults to the `spectreasy` GitHub release asset matching the
 installed package version. A local zip file path can also be supplied for
 testing or offline reuse.}
@@ -22,14 +22,14 @@ testing or offline reuse.}
 Defaults to a package-specific user cache directory.}
 
 \item{dest_dir}{Optional destination directory for a project-local copy of the
-extracted `sample/` and `scc/` folders. For example,
-`spectreasy_example_data(dest_dir = getwd())` will place `sample/` and
+extracted `samples/` and `scc/` folders. For example,
+`spectreasy_example_data(dest_dir = getwd())` will place `samples/` and
 `scc/` in the current working directory. If `NULL` (default), the cached
 extracted paths are returned directly.}
 
 \item{force}{Logical; if `TRUE`, redownload and re-extract the archive even if
 a cached copy is already available. When `dest_dir` is supplied, `force = TRUE`
-also refreshes the copied project-local `sample/` and `scc/` folders.}
+also refreshes the copied project-local `samples/` and `scc/` folders.}
 
 \item{quiet}{Logical; if `TRUE`, suppress progress messages where possible.}
 }
@@ -40,7 +40,7 @@ A named list with elements `root_dir`, `zip_file`, `sample_dir`,
 \description{
 Downloads the example-data zip archive from the matching GitHub release,
 unzips it automatically, and returns the local paths to the extracted
-`sample/` and `scc/` folders.
+`samples/` and `scc/` folders.
 }
 \details{
 The downloaded archive is cached under [tools::R_user_dir()] so it only needs

@@ -1149,9 +1149,15 @@
             method
         }
         ssm_mat <- calculate_ssm(M_no_af, method = ssm_method)
+        spread_score <- calculate_directional_spread_score(ssm_mat)
         .write_scc_report_matrix_metric(
             ssm_mat,
             file.path(qc_metrics_dir, "spectral_spread_matrix.csv"),
+            row_id = "spilling_marker"
+        )
+        .write_scc_report_matrix_metric(
+            spread_score,
+            file.path(qc_metrics_dir, "directional_spread_score.csv"),
             row_id = "spilling_marker"
         )
         .draw_report_ggplot_page(plot_ssm(ssm_mat, output_file = NULL))

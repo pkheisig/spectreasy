@@ -3094,36 +3094,39 @@
         seed = 1L
     )
 
-    contamination_idx <- .reference_contamination_indices(
-        gated_data = gated_data,
-        detector_names = detector_names,
-        peak_vals = peak_vals,
-        vals_log = vals_log,
-        positive_idx = positive_idx,
-        spectral_gate_info = spectral_gate_info
-    )
-    contamination_events <- if (length(contamination_idx) > 0L) {
-        gated_data[contamination_idx, detector_names, drop = FALSE]
-    } else {
-        NULL
-    }
-    contamination_centers <- .reference_spectral_selection_centers(
-        events = contamination_events,
-        detector_names = detector_names,
-        n_centers = 8L,
-        seed = 2L
-    )
-
-    if ((is.null(contamination_centers) || nrow(contamination_centers) == 0L) &&
-        !is.null(spectral_gate_info) && !is.null(spectral_gate_info$af_basis)) {
+    show_af_basis <- identical(attr(vals_log, "gate_type"), "af_cosine") &&
+        !is.null(spectral_gate_info) &&
+        !is.null(spectral_gate_info$af_basis)
+    if (show_af_basis) {
+        contamination_idx <- integer()
         contamination_centers <- .normalize_spectral_variant_shapes(
             as.matrix(spectral_gate_info$af_basis[, detector_names, drop = FALSE])
+        )
+    } else {
+        contamination_idx <- .reference_contamination_indices(
+            gated_data = gated_data,
+            detector_names = detector_names,
+            peak_vals = peak_vals,
+            vals_log = vals_log,
+            positive_idx = positive_idx,
+            spectral_gate_info = spectral_gate_info
+        )
+        contamination_events <- if (length(contamination_idx) > 0L) {
+            gated_data[contamination_idx, detector_names, drop = FALSE]
+        } else {
+            NULL
+        }
+        contamination_centers <- .reference_spectral_selection_centers(
+            events = contamination_events,
+            detector_names = detector_names,
+            n_centers = 8L,
+            seed = 2L
         )
     }
 
     selected_label <- "Selected SCC bands"
     contamination_label <- if (identical(attr(vals_log, "gate_type"), "af_cosine")) {
-        "AF-like contamination bands"
+        "Unstained AF basis bands"
     } else {
         "Background/negative bands"
     }
@@ -3162,9 +3165,13 @@
             paste0(
                 nrow(final_gated_data),
                 " selected event(s); ",
-                length(contamination_idx),
+                if (show_af_basis) {
+                    nrow(contamination_centers)
+                } else {
+                    length(contamination_idx)
+                },
                 if (identical(attr(vals_log, "gate_type"), "af_cosine")) {
-                    " AF-like/background event(s) summarized"
+                    " unstained AF basis band(s) summarized"
                 } else {
                     " background/negative event(s) summarized"
                 }
@@ -3873,12 +3880,12 @@
 #' @param use_scatter_gating Logical; if `TRUE` (default), keep broad FSC/SSC
 #'   cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
 #'   `FALSE`, use the legacy one-dimensional histogram gate.
-#' @param use_af_cosine_scc_selection Logical; if `TRUE`, use the experimental
+#' @param use_af_cosine_scc_selection Logical; if `TRUE` (default), use the
 #'   adaptive AF projection/cosine selector for cell SCCs when AF controls are
-#'   available. This opt-in mode scores events by low AF similarity, residual
+#'   available. This mode scores events by low AF similarity, residual
 #'   target-channel brightness, and target-channel dominance, then keeps the
-#'   high-score component. The default, `FALSE`, keeps bead and cell SCCs on
-#'   the same GMM/EM intensity-vs-FSC selector after broad FSC/SSC cleanup.
+#'   high-score component. Bead SCCs continue to use the GMM/EM
+#'   intensity-vs-FSC selector after broad FSC/SSC cleanup.
 #' @param clean_scc_with_unstained Logical; if `TRUE`, cell SCC spectra are
 #'   cleaned with scatter-matched unstained/AF events before spectrum
 #'   derivation. Bead controls use a scatter-gated unstained bead control as
@@ -3951,7 +3958,7 @@ build_reference_matrix <- function(
   default_sample_type = "beads",
   cytometer = "auto",
   use_scatter_gating = TRUE,
-  use_af_cosine_scc_selection = FALSE,
+  use_af_cosine_scc_selection = TRUE,
   clean_scc_with_unstained = TRUE,
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 3L,

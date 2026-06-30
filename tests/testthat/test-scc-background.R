@@ -77,6 +77,7 @@ test_that("cell SCC spectra can use scatter-matched unstained background", {
         input_folder = wf$scc_dir,
         control_df = wf$control_df,
         clean_scc_with_unstained = FALSE,
+        use_af_cosine_scc_selection = FALSE,
         save_qc_plots = FALSE,
         seed = 44,
         subsample_n = 500
@@ -85,6 +86,7 @@ test_that("cell SCC spectra can use scatter-matched unstained background", {
         input_folder = wf$scc_dir,
         control_df = wf$control_df,
         clean_scc_with_unstained = TRUE,
+        use_af_cosine_scc_selection = FALSE,
         scc_background_k = 3,
         save_qc_plots = FALSE,
         seed = 44,
@@ -105,7 +107,7 @@ test_that("cell SCC spectra can use scatter-matched unstained background", {
     expect_lt(abs(stats::median(positive_shapes[, "YG1-A"]) - 0.10), 0.06)
 })
 
-test_that("AF cosine SCC selection is opt-in for cell controls", {
+test_that("AF cosine SCC selection is default for cell controls and can be disabled", {
     set.seed(47)
     wf <- make_matched_af_scc()
 
@@ -117,20 +119,62 @@ test_that("AF cosine SCC selection is opt-in for cell controls", {
         seed = 47,
         subsample_n = 500
     )
-    opt_in <- spectreasy::build_reference_matrix(
+    disabled <- spectreasy::build_reference_matrix(
         input_folder = wf$scc_dir,
         control_df = wf$control_df,
         clean_scc_with_unstained = TRUE,
-        use_af_cosine_scc_selection = TRUE,
+        use_af_cosine_scc_selection = FALSE,
         save_qc_plots = FALSE,
         seed = 47,
         subsample_n = 500
     )
 
     default_summary <- attr(default, "qc_summary")
-    opt_in_summary <- attr(opt_in, "qc_summary")
-    expect_equal(default_summary$intensity_gate_type[default_summary$fluorophore == "FITC"], "scatter")
-    expect_equal(opt_in_summary$intensity_gate_type[opt_in_summary$fluorophore == "FITC"], "af_cosine")
+    disabled_summary <- attr(disabled, "qc_summary")
+    expect_equal(default_summary$intensity_gate_type[default_summary$fluorophore == "FITC"], "af_cosine")
+    expect_equal(disabled_summary$intensity_gate_type[disabled_summary$fluorophore == "FITC"], "scatter")
+})
+
+test_that("AF cosine SCC selector prefers low-AF dye-shaped events", {
+    detector_names <- c("A-A", "B-A", "C-A")
+    af_like <- cbind(
+        "A-A" = rep(120, 45),
+        "B-A" = rep(900, 45),
+        "C-A" = rep(850, 45)
+    )
+    dye_like <- cbind(
+        "A-A" = rep(800, 15),
+        "B-A" = rep(30, 15),
+        "C-A" = rep(25, 15)
+    )
+    saturated_outliers <- cbind(
+        "A-A" = rep(2000, 5),
+        "B-A" = rep(20, 5),
+        "C-A" = rep(20, 5)
+    )
+    gated_data <- as.data.frame(rbind(af_like, dye_like, saturated_outliers), check.names = FALSE)
+    fallback <- list(
+        vals_log = structure(log10(gated_data[["A-A"]]), gate_type = "scatter"),
+        gate_min = min(gated_data[["A-A"]]),
+        gate_max = max(gated_data[["A-A"]])
+    )
+
+    gate <- spectreasy:::.compute_reference_af_cosine_gate(
+        gated_data = gated_data,
+        detector_names = detector_names,
+        peak_channel = "A-A",
+        peak_vals = gated_data[["A-A"]],
+        sample_type = "cells",
+        fallback_gate = fallback,
+        af_data_raw = c("A-A" = 0, "B-A" = 1, "C-A" = 1),
+        histogram_pct_cells = 0.20,
+        min_events = 5L
+    )
+
+    expect_false(is.null(gate))
+    selected <- which(gate$positive_idx)
+    expect_true(length(selected) >= 5L)
+    expect_true(all(selected > nrow(af_like) & selected <= nrow(af_like) + nrow(dye_like)))
 })
 
 test_that("bead SCCs keep intensity selection even when AF controls exist", {

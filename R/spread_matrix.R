@@ -60,7 +60,35 @@ calculate_ssm <- function(M, method = "OLS") {
     return(SSM)
 }
 
-#' Plot Spectral Spread Matrix
+#' Calculate Directional Spread Risk Score
+#'
+#' Converts the unbounded analytical spread matrix into a bounded directional
+#' score for visualization. Values are normalized to the strongest finite
+#' off-diagonal spread pair in the panel, so `1` means the worst directional
+#' pair in that matrix.
+#'
+#' @param SSM Matrix returned by calculate_ssm
+#' @return Matrix of directional spread risk scores in `[0, 1]`.
+#' @examples
+#' ssm <- matrix(c(0, 1, 4, 0), nrow = 2, byrow = TRUE)
+#' calculate_directional_spread_score(ssm)
+#' @export
+calculate_directional_spread_score <- function(SSM) {
+    SSM <- as.matrix(SSM)
+    score <- pmax(SSM, 0)
+    diag(score) <- 0
+    finite_vals <- score[is.finite(score)]
+    max_val <- max(finite_vals, na.rm = TRUE)
+    if (is.finite(max_val) && max_val > 0) {
+        score <- score / max_val
+    } else {
+        score[] <- 0
+    }
+    score[!is.finite(score)] <- NA_real_
+    score
+}
+
+#' Plot Directional Unmixing Spread Score
 #' @param SSM Matrix returned by calculate_ssm
 #' @param output_file Optional path to save the plot. Set `NULL` to return the plot without writing a file.
 #' @param width Width of plot in mm
@@ -75,42 +103,44 @@ calculate_ssm <- function(M, method = "OLS") {
 #' print(p)
 #' @export
 plot_ssm <- function(SSM, output_file = NULL, width = 200, height = 180) {
+    score <- calculate_directional_spread_score(SSM)
     is_square_same_markers <- nrow(SSM) == ncol(SSM) &&
         identical(rownames(SSM), colnames(SSM))
     if (is_square_same_markers) {
         marker_order <- rownames(SSM)
-        SSM <- SSM[marker_order, marker_order, drop = FALSE]
+        score <- score[marker_order, marker_order, drop = FALSE]
     }
-    long <- as.data.frame(SSM, check.names = FALSE)
-    long$Spilling_Marker <- rownames(SSM)
-    long <- tidyr::pivot_longer(long, cols = -Spilling_Marker, names_to = "Receiving_Marker", values_to = "Spread")
+    long <- as.data.frame(score, check.names = FALSE)
+    long$Spilling_Marker <- rownames(score)
+    long <- tidyr::pivot_longer(long, cols = -Spilling_Marker, names_to = "Receiving_Marker", values_to = "Score")
     if (is_square_same_markers) {
         long$Spilling_Marker <- factor(long$Spilling_Marker, levels = rev(marker_order))
         long$Receiving_Marker <- factor(long$Receiving_Marker, levels = marker_order)
     }
 
-    fmt_spread <- function(x) {
+    fmt_score <- function(x) {
         if (!is.finite(x)) return("")
-        ax <- abs(x)
-        if (ax >= 10) return(formatC(x, format = "f", digits = 0))
         formatC(x, format = "f", digits = 2)
     }
 
-    n_markers <- max(nrow(SSM), ncol(SSM))
+    n_markers <- max(nrow(score), ncol(score))
     text_size <- max(2.4, min(4.8, 36 / max(1, n_markers)))
-    max_val <- max(SSM, na.rm = TRUE)
-
-    p <- ggplot2::ggplot(long, ggplot2::aes(Receiving_Marker, Spilling_Marker, fill = Spread)) +
+    p <- ggplot2::ggplot(long, ggplot2::aes(Receiving_Marker, Spilling_Marker, fill = Score)) +
         ggplot2::geom_tile() +
-        ggplot2::scale_fill_viridis_c(option = "magma", name = "Spread Factor") +
+        ggplot2::scale_fill_gradientn(
+            colors = c("#FFFFFF", "#FEE5D9", "#FCAE91", "#FB6A4A", "#CB181D"),
+            values = c(0, 0.5, 0.75, 0.9, 1.0),
+            limits = c(0, 1),
+            name = "Spread Risk"
+        ) +
         ggplot2::geom_text(
-            ggplot2::aes(label = vapply(Spread, fmt_spread, character(1)), color = Spread > (max_val * 0.4)),
+            ggplot2::aes(label = vapply(Score, fmt_score, character(1)), color = Score > 0.8),
             size = text_size,
             show.legend = FALSE
         ) +
-        ggplot2::scale_color_manual(values = c("TRUE" = "black", "FALSE" = "white")) +
-        ggplot2::labs(title = "Spectral Spread Matrix",
-                      subtitle = "Rows = noise source, columns = noise destination.",
+        ggplot2::scale_color_manual(values = c("TRUE" = "white", "FALSE" = "black")) +
+        ggplot2::labs(title = "Directional Unmixing Spread Score",
+                      subtitle = "Rows = noise source, columns = noise destination. Score is normalized to the worst off-diagonal pair in this panel.",
                       x = "Receiving Marker (Noise Destination)", y = "Spilling Marker (Noise Source)") +
         ggplot2::theme_minimal(base_size = 13.75) +
         ggplot2::theme(

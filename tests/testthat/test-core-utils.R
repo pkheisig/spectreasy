@@ -10,7 +10,7 @@ test_that("gating_options returns named list", {
         "histogram_direction_cells"
     ) %in% names(opts)))
     expect_true(opts$use_scatter_gating)
-    expect_false(opts$use_af_cosine_scc_selection)
+    expect_true(opts$use_af_cosine_scc_selection)
     expect_equal(opts$histogram_pct_beads, 0.9)
     expect_equal(opts$histogram_pct_cells, 0.3)
 })

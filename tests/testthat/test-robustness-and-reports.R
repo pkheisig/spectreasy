@@ -300,6 +300,12 @@ test_that("matrix QC plots use matching x and y marker order", {
     ssm_tiles <- ssm_build$data[[1]]
     ssm_diag <- ssm_tiles[ssm_tiles$x + ssm_tiles$y == 4, , drop = FALSE]
     expect_equal(nrow(ssm_diag), 3L)
+
+    raw_spread <- matrix(c(0, 1, 4, 0), nrow = 2, byrow = TRUE)
+    score <- spectreasy::calculate_directional_spread_score(raw_spread)
+    expect_equal(score[1, 2], 0.25)
+    expect_equal(score[2, 1], 1)
+    expect_true(all(score >= 0 & score <= 1, na.rm = TRUE))
 })
 
 test_that("qc_samples matrix pages split markers into balanced groups", {

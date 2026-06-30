@@ -1078,9 +1078,15 @@ qc_samples <- function(results,
             method
         }
         ssm <- calculate_ssm(M_no_af, method = ssm_method)
+        spread_score <- calculate_directional_spread_score(ssm)
         .write_qc_report_matrix_metric(
             ssm,
             file.path(qc_metrics_dir, "spectral_spread_matrix.csv"),
+            row_id = "spilling_marker"
+        )
+        .write_qc_report_matrix_metric(
+            spread_score,
+            file.path(qc_metrics_dir, "directional_spread_score.csv"),
             row_id = "spilling_marker"
         )
         ssm_pages <- .build_qc_report_matrix_pages(
