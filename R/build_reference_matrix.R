@@ -17,16 +17,16 @@
         if (!("fluorophore" %in% colnames(control_df))) control_df$fluorophore <- ""
         if (!("channel" %in% colnames(control_df))) control_df$channel <- ""
         if (!("control.type" %in% colnames(control_df))) control_df$control.type <- ""
-        if (!("is.viability.dead" %in% colnames(control_df))) control_df$is.viability.dead <- ""
+        if (!("is.dead" %in% colnames(control_df))) control_df$is.dead <- ""
 
         control_df$filename <- trimws(as.character(control_df$filename))
         control_df$fluorophore <- trimws(as.character(control_df$fluorophore))
         control_df$channel <- trimws(as.character(control_df$channel))
         control_df$control.type <- tolower(trimws(as.character(control_df$control.type)))
-        control_df$is.viability.dead <- toupper(trimws(as.character(control_df$is.viability.dead)))
-        control_df$is.viability.dead[is.na(control_df$is.viability.dead)] <- ""
-        control_df$is.viability.dead[control_df$is.viability.dead %in% c("T", "TRUE", "1", "YES", "Y")] <- "TRUE"
-        control_df$is.viability.dead[control_df$is.viability.dead != "TRUE"] <- ""
+        control_df$is.dead <- toupper(trimws(as.character(control_df$is.dead)))
+        control_df$is.dead[is.na(control_df$is.dead)] <- ""
+        control_df$is.dead[control_df$is.dead %in% c("T", "TRUE", "1", "YES", "Y")] <- "TRUE"
+        control_df$is.dead[control_df$is.dead != "TRUE"] <- ""
     }
 
     control_df
@@ -945,8 +945,8 @@
             }
             control_type[is.na(control_type)] <- ""
             af_rows <- af_rows[control_type != "beads", , drop = FALSE]
-            if ("is.viability.dead" %in% colnames(af_rows)) {
-                af_rows <- af_rows[!.is_viability_dead_control_row(af_rows$is.viability.dead), , drop = FALSE]
+            if ("is.dead" %in% colnames(af_rows)) {
+                af_rows <- af_rows[!.is_dead_control_row(af_rows$is.dead), , drop = FALSE]
             }
             for (fn in unique(as.character(af_rows$filename))) {
                 key_ext <- tolower(basename(fn))
@@ -966,19 +966,13 @@
         dead_filenames <- character()
         if (!is.null(control_df) && is.data.frame(control_df) &&
             "filename" %in% colnames(control_df) &&
-            "is.viability.dead" %in% colnames(control_df)) {
-            dead_filenames <- tolower(basename(as.character(control_df$filename[.is_viability_dead_control_row(control_df$is.viability.dead)])))
+            "is.dead" %in% colnames(control_df)) {
+            dead_filenames <- tolower(basename(as.character(control_df$filename[.is_dead_control_row(control_df$is.dead)])))
         }
-        dead_by_name <- vapply(
-            fcs_files,
-            function(path) identical(.infer_is_viability_dead_from_filename(path), "TRUE"),
-            logical(1)
-        )
         af_idx_tmp <- which(
             .is_af_filename(fcs_files) &
                 !grepl("beads?", basename(fcs_files), ignore.case = TRUE) &
-                !(tolower(basename(fcs_files)) %in% dead_filenames) &
-                !dead_by_name
+                !(tolower(basename(fcs_files)) %in% dead_filenames)
         )
         af_paths <- normalizePath(fcs_files[af_idx_tmp], mustWork = FALSE)
         af_source_types <- rep("filename_unstained", length(af_paths))
@@ -993,7 +987,8 @@
 }
 
 .resolve_reference_viability_dead_paths <- function(control_df, fcs_files, exclude_af = FALSE) {
-    if (isTRUE(exclude_af)) {
+    if (isTRUE(exclude_af) || is.null(control_df) || !is.data.frame(control_df) ||
+        !("filename" %in% colnames(control_df)) || !("is.dead" %in% colnames(control_df))) {
         return(data.frame(path = character(), source_type = character(), stringsAsFactors = FALSE))
     }
 
@@ -1007,30 +1002,17 @@
     ))
 
     paths <- character()
-    if (!is.null(control_df) && is.data.frame(control_df) &&
-        "filename" %in% colnames(control_df) &&
-        "is.viability.dead" %in% colnames(control_df)) {
-        dead_rows <- control_df[.is_viability_dead_control_row(control_df$is.viability.dead), , drop = FALSE]
-        for (fn in unique(as.character(dead_rows$filename))) {
-            key_ext <- tolower(basename(fn))
-            key_stem <- tools::file_path_sans_ext(key_ext)
-            matched_path <- fcs_lookup[[key_ext]]
-            if (is.null(matched_path)) {
-                matched_path <- fcs_lookup[[key_stem]]
-            }
-            if (!is.null(matched_path) && nzchar(matched_path)) {
-                paths <- c(paths, matched_path)
-            }
+    dead_rows <- control_df[.is_dead_control_row(control_df$is.dead), , drop = FALSE]
+    for (fn in unique(as.character(dead_rows$filename))) {
+        key_ext <- tolower(basename(fn))
+        key_stem <- tools::file_path_sans_ext(key_ext)
+        matched_path <- fcs_lookup[[key_ext]]
+        if (is.null(matched_path)) {
+            matched_path <- fcs_lookup[[key_stem]]
         }
-    }
-
-    dead_by_name <- vapply(
-        fcs_files,
-        function(path) identical(.infer_is_viability_dead_from_filename(path), "TRUE"),
-        logical(1)
-    )
-    if (any(dead_by_name)) {
-        paths <- c(paths, normalizePath(fcs_files[dead_by_name], mustWork = FALSE))
+        if (!is.null(matched_path) && nzchar(matched_path)) {
+            paths <- c(paths, matched_path)
+        }
     }
 
     paths <- unique(paths)
@@ -3546,14 +3528,14 @@
     } else {
         ""
     }
-    is_viability_dead <- nrow(row_info) > 0 &&
-        "is.viability.dead" %in% colnames(row_info) &&
-        isTRUE(.is_viability_dead_control_row(row_info$is.viability.dead[1]))
+    is_dead <- nrow(row_info) > 0 &&
+        "is.dead" %in% colnames(row_info) &&
+        isTRUE(.is_dead_control_row(row_info$is.dead[1]))
 
     if (isTRUE(config$exclude_af) && .is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext)) {
         return(NULL)
     }
-    if (is_viability_dead || .is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext)) {
+    if (is_dead || .is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext)) {
         return(NULL)
     }
 

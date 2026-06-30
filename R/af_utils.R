@@ -32,11 +32,11 @@
     fluor_flag | marker_flag | file_flag
 }
 
-.is_viability_dead_control_row <- function(is_viability_dead = NULL) {
-    if (is.null(is_viability_dead) || length(is_viability_dead) == 0) {
+.is_dead_control_row <- function(is_dead = NULL) {
+    if (is.null(is_dead) || length(is_dead) == 0) {
         return(logical(0))
     }
-    vals <- toupper(trimws(as.character(is_viability_dead)))
+    vals <- toupper(trimws(as.character(is_dead)))
     vals[is.na(vals)] <- ""
     vals %in% c("TRUE", "T", "1", "YES", "Y")
 }

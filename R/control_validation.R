@@ -77,12 +77,12 @@
         df$control.type <- ""
     }
     df$control.type <- tolower(.control_validation_as_chr(df$control.type))
-    if (!("is.viability.dead" %in% colnames(df))) {
-        df$is.viability.dead <- ""
+    if (!("is.dead" %in% colnames(df))) {
+        df$is.dead <- ""
     }
-    df$is.viability.dead <- toupper(.control_validation_as_chr(df$is.viability.dead))
-    df$is.viability.dead[!(df$is.viability.dead %in% c("", "TRUE", "T", "1", "YES", "Y"))] <- ""
-    df$is.viability.dead[df$is.viability.dead %in% c("T", "1", "YES", "Y")] <- "TRUE"
+    df$is.dead <- toupper(.control_validation_as_chr(df$is.dead))
+    df$is.dead[!(df$is.dead %in% c("", "TRUE", "T", "1", "YES", "Y"))] <- ""
+    df$is.dead[df$is.dead %in% c("T", "1", "YES", "Y")] <- "TRUE"
     df
 }
 
@@ -114,8 +114,8 @@
         marker = if ("marker" %in% colnames(df)) df$marker else NULL,
         filename = df$filename
     )
-    if ("is.viability.dead" %in% colnames(df)) {
-        is_af <- is_af | .is_viability_dead_control_row(df$is.viability.dead)
+    if ("is.dead" %in% colnames(df)) {
+        is_af <- is_af | .is_dead_control_row(df$is.dead)
     }
     if (isTRUE(require_channels)) {
         missing_channel_rows <- which(!is_af & (df$channel == "" | is.na(df$channel)))

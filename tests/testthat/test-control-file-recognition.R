@@ -102,20 +102,20 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
     testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$fluorophore[[1]], "AF")
     testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$marker[[1]], "Autofluorescence")
     testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$control.type[[1]], "cells")
-    testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$is.viability.dead[[1]], "")
+    testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$is.dead[[1]], "")
 
     testthat::expect_equal(by_file[["Unstained Dead (Cells).fcs"]]$fluorophore[[1]], "AF_Dead")
     testthat::expect_equal(by_file[["Unstained Dead (Cells).fcs"]]$marker[[1]], "Viability dead background")
     testthat::expect_equal(by_file[["Unstained Dead (Cells).fcs"]]$control.type[[1]], "cells")
     testthat::expect_equal(by_file[["Unstained Dead (Cells).fcs"]]$is.viability[[1]], "")
-    testthat::expect_equal(by_file[["Unstained Dead (Cells).fcs"]]$is.viability.dead[[1]], "TRUE")
+    testthat::expect_equal(by_file[["Unstained Dead (Cells).fcs"]]$is.dead[[1]], "TRUE")
 
     testthat::expect_equal(by_file[["Dead Control (Cells).fcs"]]$fluorophore[[1]], "AF_Dead")
     testthat::expect_equal(by_file[["Dead Control (Cells).fcs"]]$marker[[1]], "Viability dead background")
-    testthat::expect_equal(by_file[["Dead Control (Cells).fcs"]]$is.viability.dead[[1]], "TRUE")
+    testthat::expect_equal(by_file[["Dead Control (Cells).fcs"]]$is.dead[[1]], "TRUE")
 
     testthat::expect_equal(by_file[["Live Dead Control (Cells).fcs"]]$is.viability[[1]], "TRUE")
-    testthat::expect_equal(by_file[["Live Dead Control (Cells).fcs"]]$is.viability.dead[[1]], "")
+    testthat::expect_equal(by_file[["Live Dead Control (Cells).fcs"]]$is.dead[[1]], "")
 
     bead_negative_files <- c(
         "Unstained (Beads).fcs",

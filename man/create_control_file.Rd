@@ -36,7 +36,7 @@ or `"cells"`). Unstained/negative bead files are denoted as `AF_Bead`
 with `control.type = "beads"` so they can be used as bead-background
 negatives without being mixed into the cellular AF bank. Files whose names
 indicate unstained dead cells or dead-cell controls are marked with
-`is.viability.dead = TRUE` for viability-specific background matching.
+`is.dead = TRUE` for viability-specific background matching.
 }
 \description{
 Generates a spectreasy-compatible control CSV.

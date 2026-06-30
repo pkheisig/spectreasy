@@ -1179,7 +1179,7 @@ test_that("viability dead background rows are separate from ordinary AF sources"
         fluorophore = c("AF", "AF_Dead"),
         marker = c("Autofluorescence", "Viability dead background"),
         control.type = c("cells", "cells"),
-        is.viability.dead = c("", "TRUE"),
+        is.dead = c("", "TRUE"),
         stringsAsFactors = FALSE
     )
 
@@ -1189,20 +1189,6 @@ test_that("viability dead background rows are separate from ordinary AF sources"
     expect_equal(basename(af_paths$path), "Unstained (Cells).fcs")
     expect_equal(basename(dead_paths$path), "Unstained Dead (Cells).fcs")
     expect_equal(dead_paths$source_type, "viability_dead_background")
-
-    fallback_paths <- file.path(tempdir(), c(
-        "Unstained (Cells).fcs",
-        "Unstained Dead (Cells).fcs",
-        "Live Dead Control (Cells).fcs"
-    ))
-    file.create(fallback_paths)
-    on.exit(unlink(fallback_paths, force = TRUE), add = TRUE)
-
-    af_by_name <- spectreasy:::.resolve_reference_af_paths(NULL, fallback_paths)
-    dead_by_name <- spectreasy:::.resolve_reference_viability_dead_paths(NULL, fallback_paths)
-
-    expect_equal(basename(af_by_name$path), "Unstained (Cells).fcs")
-    expect_equal(basename(dead_by_name$path), "Unstained Dead (Cells).fcs")
 })
 
 test_that("mapped AF SCC files are banked centrally, not processed as averaged SCC rows", {
@@ -1235,7 +1221,7 @@ test_that("viability dead background rows are not processed as SCC spectra", {
             fluorophore = "",
             marker = "",
             control.type = "cells",
-            is.viability.dead = "TRUE",
+            is.dead = "TRUE",
             stringsAsFactors = FALSE
         ),
         sample_patterns = spectreasy::get_fluorophore_patterns(),
