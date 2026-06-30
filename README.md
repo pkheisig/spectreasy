@@ -1,15 +1,13 @@
 # spectreasy: Full Spectrum Flow Cytometry Quality Control
 
-`spectreasy` is an R package for reviewing single-color controls, building spectral reference matrices, and unmixing experimental samples.
+`spectreasy` is an R package for reviewing single-color controls, building spectral reference matrices, unmixing experimental samples, and more.
 
 ## Key Features
 
-- **Broad Scatter QC**: Remove debris, saturated events, acquisition junk, and extreme FSC/SSC outliers before spectral work
+- **Broad Scatter QC**: Remove debris, saturated events, acquisition junk, and extreme FSC/SSC outliers before analysis
 - **Reference Background Handling**: Use unstained cell controls for AF extraction and unstained bead controls as bead backgrounds when present
-- **Pre-Unmix SCC Review**: Generate a PDF with per-control event selection, histogram, and spectrum diagnostics before unmixing
-- **SCC-Variance WLS Unmixing**: Weighted unmixing using detector noise measured from the single-color controls
-- **AutoSpectral by Default**: Per-cell AF matching and fluorophore spectral-variant optimization happen automatically during the control/sample workflow
-- **SCC Diagnostics & Visualization**: Spectra, gating plots, and SCC unmixing scatter outputs for control-stage QC
+- **Advanced Unmixing Algorithms**: Per-cell AF matching and fluorophore spectral-variant optimization inspired by AutoSpectral (https://github.com/DrCytometer/AutoSpectral)
+- **SCC Diagnostics & Visualization**: Generate PDF reports to inspect SCC spectra, gating plots, and various QC metrics
 - **Browser Tools**: Interactive spectral panel builder and manual matrix adjustment module
 - **Bioconductor-Native In-Memory Workflows**: `unmix_samples()` accepts `flowSet` and `SingleCellExperiment`, and can return either container
 
@@ -17,37 +15,32 @@
 
 ## Installation
 
-For the released Bioconductor version, install with:
-
-```r
-BiocManager::install("spectreasy")
-```
-
-If you need the development version from GitHub, install with:
+Install with:
 
 ```r
 remotes::install_github("pkheisig/spectreasy")
-```
 
-`remotes` is used here rather than `devtools` because only GitHub installation is needed.
+# alternatively
+devtools::install_github("pkheisig/spectreasy")
+```
 
 ---
 
 # Example workflow
 
-This walkthrough demonstrates the primary `spectreasy` workflow on the release-hosted example dataset. The example project contains:
+This walkthrough demonstrates the primary `spectreasy` workflow on the example dataset. The example project contains:
 
 - single-color controls in `scc/`
-- one experimental sample in `sample/sample.fcs`
+- one experimental sample in `samples/sample.fcs`
 
-The user-facing workflow is:
+Summary of the workflow:
 
-1. download the example data into a project directory
+1. download the example data into a project directory (or use your own -> by default, SCCs go into /scc and samples into /samples)
 2. run `unmix_controls()`
 3. review and supplement the generated `fcs_mapping.csv`
-4. confirm the control file in the console so `unmix_controls()` can finish
+4. confirm the mapping file by typing `y` in the console so `unmix_controls()` can finish
 5. run `unmix_samples()`
-6. review the QC reports that are generated during unmixing by default
+6. review the QC reports that are generated during unmixing
 
 ## 1. Download the example data
 
@@ -75,6 +68,7 @@ For the remainder of this walkthrough, the commands are shown as they would be r
 ## 2. Start the control-stage workflow
 
 Run `unmix_controls()` first. If `fcs_mapping.csv` is missing, `auto_create_control = TRUE` creates it automatically and then pauses for review.
+Default parameter values for unmix_controls() are included for clarity. You don't have to type those out. 
 
 ```r
 setwd(project_dir)
@@ -82,7 +76,6 @@ setwd(project_dir)
 ctrl <- unmix_controls(
   scc_dir = "scc",
   auto_create_control = TRUE,
-  cytometer = "Aurora",
   auto_unknown_fluor_policy = "by_channel",
   unmix_scatter_panel_size_mm = 30,
   save_qc_plots = TRUE
@@ -165,20 +158,29 @@ The same `unmix_controls()` call then continues and writes the control-stage out
 
 Key outputs from this step include:
 
-- `fcs_mapping.csv`
+Most important outputs to review
+- `spectreasy_outputs/unmix_controls/unmixed_fcs/*.fcs` -> your unmixed SCC and unstained control files
+- `fcs_mapping.csv` -> SCC and unstained control file mapping
+- `spectreasy_outputs/unmix_controls/qc_controls_report.pdf` -> PDF report with SCC overview and QC plots (see details below)
+
+These are mainly QC metrics used for making plots for qc_controls_report.pdf. No need to check separately by default might come in handy when troubleshooting unmixing issues. 
 - `spectreasy_outputs/unmix_controls/scc_detector_noise.csv`
 - `spectreasy_outputs/unmix_controls/scc_reference_matrix.csv`
 - `spectreasy_outputs/unmix_controls/scc_spectral_variants.rds`
 - `spectreasy_outputs/unmix_controls/scc_variances.csv`
-- `spectreasy_outputs/unmix_controls/qc_controls_report.pdf`
-- `spectreasy_outputs/unmix_controls/scc_spectra.png`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
+
+These are already part of qc_controls_report.pdf and only saved separately when save_qc_plots = TRUE. 
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
-- `spectreasy_outputs/unmix_controls/fsc_ssc/*.png`
+- `spectreasy_outputs/unmix_controls/scc_spectra.png`
+- `spectreasy_outputs/unmix_controls/fsc_ssc/*.png` 
 - `spectreasy_outputs/unmix_controls/intensity_scatter/*.png`
 - `spectreasy_outputs/unmix_controls/spectral_selection/*.png` when the experimental AF-cosine selector is enabled, or as an extra diagnostic PNG
 - `spectreasy_outputs/unmix_controls/spectrum/*.png`
-- `spectreasy_outputs/unmix_controls/unmixed_fcs/*.fcs`
+
+  
+
+
 
 The control-stage run also writes visual checks for each single-color control. For one color, the three plots below show the broad FSC/SSC cleanup, the default GMM/EM scatter gate, and the detector spectrum used to build the reference matrix:
 
