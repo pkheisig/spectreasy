@@ -24,7 +24,8 @@ qc_samples(
   sample_nxn_axis_limit = NULL,
   nxn_all_samples = FALSE,
   qc_plot_dir = NULL,
-  save_qc_pngs = FALSE
+  save_qc_pngs = FALSE,
+  qc_metrics_dir = NULL
 )
 }
 \arguments{
@@ -87,10 +88,13 @@ If `FALSE` (default), only include NxN pages for the first sample in `results`.}
 
 \item{save_qc_pngs}{Logical; if `TRUE`, save report plot pages as PNG files
 alongside the PDF report.}
+
+\item{qc_metrics_dir}{Optional directory where plot-ready sample QC metric
+CSVs are written alongside the PDF report.}
 }
 \value{
-Invisibly returns a list with `output_file` and `qc_plot_dir`; writes
-  report artifacts to disk.
+Invisibly returns a list with `output_file`, `qc_plot_dir`, and
+  `qc_metrics_dir`; writes report artifacts to disk.
 }
 \description{
 Creates a multi-page report summarizing unmixing quality, including spectra,

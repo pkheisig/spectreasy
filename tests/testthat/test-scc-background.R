@@ -318,22 +318,35 @@ test_that("post-unmixing control QC pages render into PDF reports", {
         sample = c("FITC (Beads)", "PE (Beads)"),
         fluorophore = c("FITC", "PE"),
         type = c("beads", "beads"),
+        peak_channel = c("B1-A", "YG1-A"),
         stringsAsFactors = FALSE
     )
     output_pdf <- tempfile(fileext = ".pdf")
+    qc_metrics_dir <- tempfile("scc_qc_metrics_")
 
     grDevices::pdf(output_pdf, width = 11, height = 8.5)
     on.exit(if (grDevices::dev.cur() > 1) grDevices::dev.off(), add = TRUE)
     spectreasy:::.draw_scc_post_unmix_qc_pages(
         unmixed_list = unmixed_list,
         qc_summary = qc_summary,
-        markers = markers
+        markers = markers,
+        qc_metrics_dir = qc_metrics_dir
     )
     grDevices::dev.off()
 
+    pair_file <- file.path(qc_metrics_dir, "post_unmix_control_qc_pairs.csv")
+    overview_file <- file.path(qc_metrics_dir, "post_unmix_control_qc_overview.csv")
+    expect_true(file.exists(pair_file))
+    expect_true(file.exists(overview_file))
+    pair_df <- utils::read.csv(pair_file, check.names = FALSE)
+    overview_df <- utils::read.csv(overview_file, check.names = FALSE)
+    expect_true(all(c("target", "marker", "nps", "bias_norm", "fpr", "slope") %in% colnames(pair_df)))
+    expect_true(all(c("target", "worst_nps", "worst_bias_mad", "reason") %in% colnames(overview_df)))
+
     pdf_text <- paste(pdftools::pdf_text(output_pdf), collapse = "\n")
     plain_text <- gsub("[^[:alnum:] ]+", " ", pdf_text)
-    expect_match(plain_text, "Post unmixing control QC")
+    expect_false(grepl("Post unmixing control QC", plain_text))
+    expect_match(plain_text, "Off target negative spread by marker")
     expect_match(plain_text, "Pairwise false positive rate")
 })
 

@@ -64,6 +64,18 @@ test_that("matrix utility helpers cover key coercion and lookup branches", {
     expect_equal(draws1, draws2)
 })
 
+test_that("safe output directory helper suffixes existing QC folders", {
+    parent <- tempfile("spectreasy_qc_suffix_")
+    dir.create(parent, recursive = TRUE, showWarnings = FALSE)
+    base_dir <- file.path(parent, "qc_controls")
+
+    expect_equal(spectreasy:::.next_safe_output_dir(base_dir), base_dir)
+    dir.create(base_dir, recursive = TRUE)
+    expect_equal(spectreasy:::.next_safe_output_dir(base_dir), paste0(base_dir, "_2"))
+    dir.create(paste0(base_dir, "_2"), recursive = TRUE)
+    expect_equal(spectreasy:::.next_safe_output_dir(base_dir), paste0(base_dir, "_3"))
+})
+
 test_that("diagnostic plot helpers handle save and no-residual branches", {
     M <- matrix(c(
         1, 0.2,

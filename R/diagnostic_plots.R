@@ -282,42 +282,63 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
     sim_tri <- similarity_matrix
     is_square_same_markers <- nrow(sim_tri) == ncol(sim_tri) &&
         identical(rownames(sim_tri), colnames(sim_tri))
+    marker_order <- if (is_square_same_markers) rownames(sim_tri) else colnames(sim_tri)
     if (is_square_same_markers) {
+        sim_tri <- sim_tri[marker_order, marker_order, drop = FALSE]
         sim_tri[upper.tri(sim_tri, diag = FALSE)] <- NA
     }
     
-    long <- as.data.frame(sim_tri)
+    long <- as.data.frame(sim_tri, check.names = FALSE)
     long$Marker1 <- rownames(sim_tri)
     long <- tidyr::pivot_longer(long, cols = -Marker1, names_to = "Marker2", values_to = "Similarity")
     long <- long[!is.na(long$Similarity), ]
     
-    row_markers <- rownames(sim_tri)
-    col_markers <- colnames(sim_tri)
-    long$Marker1 <- factor(long$Marker1, levels = row_markers)
+    row_markers <- if (is_square_same_markers) marker_order else rownames(sim_tri)
+    col_markers <- if (is_square_same_markers) marker_order else colnames(sim_tri)
+    long$Marker1 <- factor(long$Marker1, levels = rev(row_markers))
     long$Marker2 <- factor(long$Marker2, levels = col_markers)
+    long$is_diagonal <- as.character(long$Marker1) == as.character(long$Marker2)
+    diag_long <- long[long$is_diagonal, , drop = FALSE]
+    offdiag_long <- long[!long$is_diagonal, , drop = FALSE]
+    offdiag_long$SimilarityFill <- pmin(offdiag_long$Similarity, 0.99)
     
     n_markers <- max(length(row_markers), length(col_markers))
     text_size <- max(2.4, min(4.8, 36 / max(1, n_markers)))
     
-    p <- ggplot2::ggplot(long, ggplot2::aes(Marker2, Marker1, fill = Similarity)) +
-        ggplot2::geom_tile(color = "white", linewidth = 0.1) +
+    p <- ggplot2::ggplot() +
+        ggplot2::geom_tile(
+            data = offdiag_long,
+            ggplot2::aes(Marker2, Marker1, fill = SimilarityFill),
+            color = "white",
+            linewidth = 0.1
+        ) +
+        ggplot2::geom_tile(
+            data = diag_long,
+            ggplot2::aes(Marker2, Marker1),
+            fill = "#E6E8EB",
+            color = "white",
+            linewidth = 0.1
+        ) +
         ggplot2::scale_fill_gradientn(
-            colors = c("#ECEFF1", "#CFD8DC", "#FFCC80", "#FF8A65", "#E53935"),
-            values = c(0, 0.6, 0.75, 0.85, 1.0),
-            limits = c(0, 1),
+            colors = c("#FFFFFF", "#FEE5D9", "#FCAE91", "#FB6A4A", "#CB181D"),
+            values = c(0, 0.5, 0.75, 0.9, 1.0),
+            limits = c(0, 0.99),
             name = "Similarity"
         ) +
         ggplot2::geom_text(
+            data = offdiag_long,
             ggplot2::aes(
+                Marker2,
+                Marker1,
                 label = sprintf("%.2f", Similarity)
             ),
             size = text_size,
-            color = ifelse(long$Similarity > 0.8, "white", "black"),
+            color = ifelse(offdiag_long$Similarity > 0.8, "white", "black"),
             show.legend = FALSE
         ) +
         ggplot2::labs(
             title = "Fluorophore Spectral Similarity",
-            subtitle = "Cosine similarity of reference signatures (0 = orthogonal, 1 = identical).\nHigh values (>0.85) cause unmixing instability.",
+            subtitle = "Off-diagonal cosine similarity of reference signatures (0 = orthogonal, 1 = identical).\nDiagonal self-similarity is blanked so problematic pairs stand out.",
             x = NULL, y = NULL
         ) +
         ggplot2::theme_minimal(base_size = 13.75) +

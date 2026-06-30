@@ -285,6 +285,23 @@ test_that("qc_samples overview batches while moderate matrix pages stay complete
     expect_equal(length(ssm_chunk_pages), 2)
 })
 
+test_that("matrix QC plots use matching x and y marker order", {
+    M <- diag(3)
+    rownames(M) <- c("A marker", "B-marker", "C marker")
+    colnames(M) <- rownames(M)
+
+    sim_plot <- spectreasy:::plot_similarity_matrix(M, output_file = NULL)
+    sim_build <- ggplot2::ggplot_build(sim_plot)
+    diag_tiles <- sim_build$data[[2]]
+    expect_equal(diag_tiles$x + diag_tiles$y, rep(4, 3))
+
+    ssm_plot <- spectreasy::plot_ssm(M, output_file = NULL)
+    ssm_build <- ggplot2::ggplot_build(ssm_plot)
+    ssm_tiles <- ssm_build$data[[1]]
+    ssm_diag <- ssm_tiles[ssm_tiles$x + ssm_tiles$y == 4, , drop = FALSE]
+    expect_equal(nrow(ssm_diag), 3L)
+})
+
 test_that("qc_samples matrix pages split markers into balanced groups", {
     batches_20 <- spectreasy:::.split_qc_report_matrix_marker_batches(paste0("M", seq_len(20)))
     batches_30 <- spectreasy:::.split_qc_report_matrix_marker_batches(paste0("M", seq_len(30)))

@@ -436,8 +436,12 @@ test_that("unmix_samples writes by default and suffixes existing outputs", {
     expect_setequal(names(call_result$value), c("sample_a", "sample_b"))
     expect_true(file.exists(file.path(output_dir, "sample_a_unmixed.fcs")))
     expect_true(file.exists(file.path(output_dir, "sample_b_unmixed.fcs")))
-    expect_equal(attr(call_result$value, "qc_report_file"), file.path(output_dir, "qc_samples_report.pdf"))
-    expect_true(file.exists(file.path(output_dir, "qc_samples_report.pdf")))
+    expect_equal(attr(call_result$value, "qc_samples_dir"), file.path(output_dir, "qc_samples"))
+    expect_equal(attr(call_result$value, "qc_metrics_dir"), file.path(output_dir, "qc_samples"))
+    expect_equal(attr(call_result$value, "qc_report_file"), file.path(output_dir, "qc_samples", "qc_samples_report.pdf"))
+    expect_true(file.exists(file.path(output_dir, "qc_samples", "qc_samples_report.pdf")))
+    expect_true(file.exists(file.path(output_dir, "qc_samples", "sample_qc_summary.csv")))
+    expect_true(file.exists(file.path(output_dir, "qc_samples", "negative_population_spread.csv")))
 
     suffixed_result <- spectreasy::unmix_samples(
         sample_dir = sample_dir,
@@ -448,8 +452,10 @@ test_that("unmix_samples writes by default and suffixes existing outputs", {
     expect_s3_class(suffixed_result, "spectreasy_unmixed_results")
     expect_true(file.exists(file.path(output_dir, "sample_a_unmixed_2.fcs")))
     expect_true(file.exists(file.path(output_dir, "sample_b_unmixed_2.fcs")))
-    expect_equal(attr(suffixed_result, "qc_report_file"), file.path(output_dir, "qc_samples_report_2.pdf"))
-    expect_true(file.exists(file.path(output_dir, "qc_samples_report_2.pdf")))
+    expect_equal(attr(suffixed_result, "qc_samples_dir"), file.path(output_dir, "qc_samples_2"))
+    expect_equal(attr(suffixed_result, "qc_report_file"), file.path(output_dir, "qc_samples_2", "qc_samples_report.pdf"))
+    expect_true(file.exists(file.path(output_dir, "qc_samples_2", "qc_samples_report.pdf")))
+    expect_true(file.exists(file.path(output_dir, "qc_samples_2", "sample_qc_summary.csv")))
 
     if (run_slow_tests()) {
         qc_png_dir <- tempfile("spectreasy_sample_qc_pngs_")

@@ -115,11 +115,13 @@ available count.}
 \item{save_qc_plots}{Logical; whether to write per-control FSC/SSC,
 intensity-gate, and spectrum PNGs under `output_dir`.}
 
-\item{save_report}{Logical; if `TRUE`, write the SCC QC PDF report from the
-matrix and unmixed controls produced by this call, without rerunning SCC
-unmixing.}
+\item{save_report}{Logical; if `TRUE`, write the SCC QC PDF report and
+control-derived QC metric CSVs from the matrix and unmixed controls
+produced by this call, without rerunning SCC unmixing.}
 
-\item{output_file}{Optional output path for the SCC QC PDF report.}
+\item{output_file}{Optional output path for the SCC QC PDF report. When this
+is `NULL`, each `unmix_controls()` report run is written to a fresh
+`qc_controls`, `qc_controls_2`, ... folder under `output_dir`.}
 
 \item{use_scatter_gating}{Logical; if `TRUE` (default), keep broad FSC/SSC
 cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If

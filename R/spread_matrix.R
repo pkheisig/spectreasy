@@ -75,9 +75,19 @@ calculate_ssm <- function(M, method = "OLS") {
 #' print(p)
 #' @export
 plot_ssm <- function(SSM, output_file = NULL, width = 200, height = 180) {
-    long <- as.data.frame(SSM)
+    is_square_same_markers <- nrow(SSM) == ncol(SSM) &&
+        identical(rownames(SSM), colnames(SSM))
+    if (is_square_same_markers) {
+        marker_order <- rownames(SSM)
+        SSM <- SSM[marker_order, marker_order, drop = FALSE]
+    }
+    long <- as.data.frame(SSM, check.names = FALSE)
     long$Spilling_Marker <- rownames(SSM)
     long <- tidyr::pivot_longer(long, cols = -Spilling_Marker, names_to = "Receiving_Marker", values_to = "Spread")
+    if (is_square_same_markers) {
+        long$Spilling_Marker <- factor(long$Spilling_Marker, levels = rev(marker_order))
+        long$Receiving_Marker <- factor(long$Receiving_Marker, levels = marker_order)
+    }
 
     fmt_spread <- function(x) {
         if (!is.finite(x)) return("")

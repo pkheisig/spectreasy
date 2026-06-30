@@ -209,6 +209,7 @@
 .unmix_output_paths <- function(output_dir) {
     list(
         unmixed_dir = file.path(output_dir, "unmixed_fcs"),
+        qc_controls_dir = file.path(output_dir, "qc_controls"),
         spectra_file = file.path(output_dir, "scc_spectra.png"),
         af_spectra_file = file.path(output_dir, "scc_af_spectra.png"),
         reference_matrix_csv = file.path(output_dir, "scc_reference_matrix.csv"),
@@ -217,7 +218,7 @@
         spectral_variant_library_rds = file.path(output_dir, "scc_spectral_variants.rds"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
         variances_csv = file.path(output_dir, "scc_variances.csv"),
-        qc_report_pdf = file.path(output_dir, "qc_controls_report.pdf")
+        qc_report_pdf = file.path(output_dir, "qc_controls", "qc_controls_report.pdf")
     )
 }
 
@@ -383,10 +384,12 @@
 #'   available count.
 #' @param save_qc_plots Logical; whether to write per-control FSC/SSC,
 #'   intensity-gate, and spectrum PNGs under `output_dir`.
-#' @param save_report Logical; if `TRUE`, write the SCC QC PDF report from the
-#'   matrix and unmixed controls produced by this call, without rerunning SCC
-#'   unmixing.
-#' @param output_file Optional output path for the SCC QC PDF report.
+#' @param save_report Logical; if `TRUE`, write the SCC QC PDF report and
+#'   control-derived QC metric CSVs from the matrix and unmixed controls
+#'   produced by this call, without rerunning SCC unmixing.
+#' @param output_file Optional output path for the SCC QC PDF report. When this
+#'   is `NULL`, each `unmix_controls()` report run is written to a fresh
+#'   `qc_controls`, `qc_controls_2`, ... folder under `output_dir`.
 #' @param use_scatter_gating Logical; if `TRUE` (default), keep broad FSC/SSC
 #'   cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
 #'   `FALSE`, use the legacy one-dimensional histogram gate.
@@ -522,6 +525,15 @@ unmix_controls <- function(
     }
 
     output_paths <- .unmix_output_paths(output_dir)
+    qc_controls_dir <- NULL
+    if (isTRUE(save_report)) {
+        if (is.null(output_file)) {
+            qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
+            output_file <- file.path(qc_controls_dir, "qc_controls_report.pdf")
+        } else {
+            qc_controls_dir <- dirname(output_file)
+        }
+    }
     report_plot_output_dir <- output_dir
     cleanup_report_plot_dir <- NULL
     build_report_plots <- isTRUE(save_qc_plots) || isTRUE(save_report)
@@ -658,9 +670,6 @@ unmix_controls <- function(
         seed = seed
     )
 
-    if (is.null(output_file)) {
-        output_file <- output_paths$qc_report_pdf
-    }
     qc_report <- NULL
     if (isTRUE(save_report)) {
         qc_report <- .write_scc_qc_report(
@@ -675,6 +684,7 @@ unmix_controls <- function(
             method = unmix_method,
             use_scatter_gating = use_scatter_gating,
             seed = seed,
+            qc_metrics_dir = qc_controls_dir,
             retained_qc_plot_dir = if (isTRUE(save_qc_plots)) output_dir else NULL
         )
     }
@@ -696,6 +706,8 @@ unmix_controls <- function(
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
         variances_file = output_paths$variances_csv,
         qc_report_file = if (isTRUE(save_report)) output_file else NULL,
+        qc_controls_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
+        qc_metrics_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
         qc_report = qc_report,
         qc_summary = attr(M, "qc_summary"),
         af_bank_info = attr(M, "af_bank_info"),

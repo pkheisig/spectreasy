@@ -169,11 +169,13 @@ unstained cell control is available. Default is `FALSE`.}
 Defaults to `TRUE`. Existing FCS files are not overwritten; a numeric suffix
 is added when needed.}
 
-\item{save_report}{Logical; if `TRUE`, write a sample QC PDF report from the
-in-memory unmixing results without rerunning unmixing. Defaults to `TRUE`.
-Existing report files are not overwritten; a numeric suffix is added when needed.}
+\item{save_report}{Logical; if `TRUE`, write a sample QC PDF report and
+sample QC metric CSVs from the in-memory unmixing results without rerunning
+unmixing. Defaults to `TRUE`.}
 
-\item{output_file}{Optional output path for the sample QC PDF report.}
+\item{output_file}{Optional output path for the sample QC PDF report. When
+this is `NULL`, each `unmix_samples()` report run is written to a fresh
+`qc_samples`, `qc_samples_2`, ... folder beside the unmixed FCS output.}
 
 \item{save_qc_plots}{Logical; if `TRUE`, save QC report plots as PNG files
 in `qc_plot_dir` while creating the PDF report.}

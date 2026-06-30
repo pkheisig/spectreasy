@@ -142,6 +142,19 @@
     file.path(report_dir, "qc_samples_report.pdf")
 }
 
+.default_unmix_samples_report_dir <- function(output_dir) {
+    output_dir <- as.character(output_dir)[1]
+    if (is.na(output_dir) || !nzchar(output_dir)) {
+        output_dir <- file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs")
+    }
+    report_parent <- if (identical(basename(normalizePath(output_dir, mustWork = FALSE)), "unmixed_fcs")) {
+        dirname(output_dir)
+    } else {
+        output_dir
+    }
+    file.path(report_parent, "qc_samples")
+}
+
 .read_unmixing_matrix_csv <- function(path) {
     if (!file.exists(path)) stop("unmixing_matrix_file not found: ", path)
     df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
@@ -487,6 +500,23 @@
     repeat {
         candidate <- file.path(dir_path, paste0(stem, "_", i, ext_suffix))
         if (!file.exists(candidate)) {
+            return(candidate)
+        }
+        i <- i + 1L
+    }
+}
+
+.next_safe_output_dir <- function(path) {
+    if (!dir.exists(path) && !file.exists(path)) {
+        return(path)
+    }
+
+    parent <- dirname(path)
+    stem <- basename(path)
+    i <- 2L
+    repeat {
+        candidate <- file.path(parent, paste0(stem, "_", i))
+        if (!dir.exists(candidate) && !file.exists(candidate)) {
             return(candidate)
         }
         i <- i + 1L
@@ -879,10 +909,12 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 #'   Defaults to `TRUE`. Existing FCS files are not overwritten; a numeric suffix
 #'   is added when needed.
-#' @param save_report Logical; if `TRUE`, write a sample QC PDF report from the
-#'   in-memory unmixing results without rerunning unmixing. Defaults to `TRUE`.
-#'   Existing report files are not overwritten; a numeric suffix is added when needed.
-#' @param output_file Optional output path for the sample QC PDF report.
+#' @param save_report Logical; if `TRUE`, write a sample QC PDF report and
+#'   sample QC metric CSVs from the in-memory unmixing results without rerunning
+#'   unmixing. Defaults to `TRUE`.
+#' @param output_file Optional output path for the sample QC PDF report. When
+#'   this is `NULL`, each `unmix_samples()` report run is written to a fresh
+#'   `qc_samples`, `qc_samples_2`, ... folder beside the unmixed FCS output.
 #' @param save_qc_plots Logical; if `TRUE`, save QC report plots as PNG files
 #'   in `qc_plot_dir` while creating the PDF report.
 #' @param qc_plot_dir Directory for sample QC report PNG files when
@@ -1085,22 +1117,30 @@ unmix_samples <- function(sample_dir = "samples",
     attr(results, "blind_af_info") <- attr(M, "blind_af_info")
     attr(results, "spectral_variant_library") <- spectral_variant_library
     attr(results, "qc_report_file") <- NULL
+    attr(results, "qc_samples_dir") <- NULL
+    attr(results, "qc_metrics_dir") <- NULL
     attr(results, "qc_plot_dir") <- NULL
 
     if (isTRUE(save_report)) {
+        qc_samples_dir <- NULL
         if (is.null(output_file)) {
-            output_file <- .default_unmix_samples_report_file(output_dir)
+            qc_samples_dir <- .next_safe_output_dir(.default_unmix_samples_report_dir(output_dir))
+            output_file <- file.path(qc_samples_dir, "qc_samples_report.pdf")
+        } else {
+            qc_samples_dir <- dirname(output_file)
         }
-        output_file <- .next_safe_output_path(output_file)
         report_res <- qc_samples(
             results = results,
             M = M,
             output_file = output_file,
             method = method_label,
+            qc_metrics_dir = qc_samples_dir,
             qc_plot_dir = qc_plot_dir,
             save_qc_pngs = save_qc_plots
         )
         attr(results, "qc_report_file") <- report_res$output_file
+        attr(results, "qc_samples_dir") <- qc_samples_dir
+        attr(results, "qc_metrics_dir") <- qc_samples_dir
         attr(results, "qc_plot_dir") <- report_res$qc_plot_dir
     }
 

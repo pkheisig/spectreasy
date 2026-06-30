@@ -261,32 +261,10 @@
     }
 
     af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
-    grid::grid.newpage()
-    grid::grid.text("AF Bank QC", x = 0.05, y = 0.95, just = c("left", "top"), gp = grid::gpar(fontsize = 16, fontface = "bold"))
-    grid::grid.text(
-        paste0(
-            "AF sources pooled: ", af_bank_info$source_count, "\n",
-            "Pooled scatter-gated AF events: ", af_bank_info$pooled_events, "\n",
-            "Bands requested: ", af_bank_info$requested_bands, "\n",
-            "Bands derived: ", af_bank_info$derived_bands, "\n",
-            "Mode: ", af_bank_info$mode
-        ),
-        x = 0.05,
-        y = 0.88,
-        just = c("left", "top"),
-        gp = grid::gpar(fontsize = 11, lineheight = 1.25)
-    )
-    grid::grid.text(
-        paste(.format_af_bank_summary_lines(af_bank_info), collapse = "\n"),
-        x = 0.05,
-        y = 0.68,
-        just = c("left", "top"),
-        gp = grid::gpar(fontsize = 8.5, fontfamily = "mono", lineheight = 1.15)
-    )
-
     if (any(af_rows)) {
         af_plot <- plot_spectra(M[af_rows, , drop = FALSE], pd = pd, output_file = NULL) +
-            ggplot2::labs(title = "Autofluorescence Band Spectra Overlay")
+            ggplot2::labs(title = "Autofluorescence Band Spectra Overlay") +
+            ggplot2::theme(legend.position = "none")
         .draw_report_ggplot_page(af_plot, height_ratio = 0.72)
     }
 
@@ -453,6 +431,37 @@
     max(x, na.rm = TRUE)
 }
 
+.scc_report_metric_reason <- function(control_pairs, neg_ref_label) {
+    if (identical(neg_ref_label, "zero_fallback")) {
+        return(list(severity = "FAIL", reason = "No matched negative reference"))
+    }
+    nps <- .scc_report_max_finite(control_pairs$nps, default = 0)
+    fpr <- .scc_report_max_finite(control_pairs$fpr, default = 0)
+    bias_z <- .scc_report_max_finite(control_pairs$bias_z, default = 0)
+    slope <- .scc_report_max_finite(abs(control_pairs$slope), default = 0)
+    values <- c(NPS = nps / 3, FPR = fpr / 0.01, Bias = bias_z / 3, Slope = slope / 0.05)
+    metric <- names(values)[which.max(values)]
+    severity <- if (nps > 10 || fpr > 0.05 || bias_z > 10 || slope > 0.10) {
+        "FAIL"
+    } else if (nps > 3 || fpr > 0.01 || bias_z > 3 || slope > 0.05) {
+        "WARN"
+    } else {
+        "OK"
+    }
+    reason <- switch(
+        metric,
+        NPS = sprintf("Worst NPS %.2f", nps),
+        FPR = sprintf("Worst FPR %.2f%%", 100 * fpr),
+        Bias = sprintf("Worst |bias|/MAD %.2f", bias_z),
+        Slope = sprintf("Worst |slope| %.3f", slope),
+        "Within limits"
+    )
+    if (identical(severity, "OK")) {
+        reason <- "Within limits"
+    }
+    list(severity = severity, reason = reason)
+}
+
 .scc_report_floor <- function(x, floor = 1) {
     if (!is.finite(x) || x < floor) {
         return(floor)
@@ -549,6 +558,7 @@
                 source_mad = src_mad,
                 negative_mad = neg_mad,
                 bias = bias,
+                bias_norm = bias / neg_scale,
                 bias_z = abs(bias) / neg_scale,
                 fpr_threshold = threshold,
                 fpr = mean(src > threshold, na.rm = TRUE),
@@ -564,14 +574,7 @@
         worst_bias <- .scc_report_max_finite(abs(control_pairs$bias))
         worst_slope <- .scc_report_max_finite(abs(control_pairs$slope), default = 0)
         worst_bias_z <- .scc_report_max_finite(control_pairs$bias_z)
-        flag <- if (identical(neg_ref$label, "zero_fallback")) {
-            "CHECK"
-        } else if (is.finite(worst_nps) && is.finite(worst_fpr) &&
-            (worst_nps > 3 || worst_fpr > 0.01 || worst_bias_z > 3 || worst_slope > 0.05)) {
-            "WARN"
-        } else {
-            "OK"
-        }
+        flag_info <- .scc_report_metric_reason(control_pairs, neg_ref$label)
         overview_rows[[length(overview_rows) + 1L]] <- data.frame(
             control = source_name,
             type = source_type,
@@ -581,8 +584,10 @@
             worst_fpr = worst_fpr,
             worst_abs_bias = worst_bias,
             worst_abs_slope = worst_slope,
+            worst_bias_mad = worst_bias_z,
             negative_reference = neg_ref$label,
-            flag = flag,
+            flag = flag_info$severity,
+            reason = flag_info$reason,
             stringsAsFactors = FALSE
         )
     }
@@ -596,141 +601,358 @@
     )
 }
 
-.format_scc_post_unmix_overview_lines <- function(overview) {
-    if (is.null(overview) || nrow(overview) == 0) {
-        return("No post-unmixing control QC metrics available.")
-    }
-    headers <- c("Control", "Type", "Target", "Events", "Worst NPS", "Worst FPR", "Worst |bias|", "Worst |slope|", "Flag")
-    widths <- c(24, 6, 12, 8, 10, 10, 13, 14, 6)
-    trim_to <- function(x, w) {
-        x <- as.character(x)
-        x[is.na(x)] <- ""
-        vapply(x, function(s) {
-            if (nchar(s, type = "width") > w) paste0(substr(s, 1, max(1, w - 3)), "...") else s
-        }, character(1))
-    }
-    fmt <- function(x, digits = 2) {
-        x <- as.numeric(x)
-        ifelse(is.finite(x), format(round(x, digits), nsmall = digits, trim = TRUE), "")
-    }
-    vals <- list(
-        trim_to(overview$control, widths[1]),
-        trim_to(overview$type, widths[2]),
-        trim_to(overview$target, widths[3]),
-        trim_to(overview$n_events, widths[4]),
-        trim_to(fmt(overview$worst_nps, 2), widths[5]),
-        trim_to(sprintf("%.2f%%", 100 * overview$worst_fpr), widths[6]),
-        trim_to(fmt(overview$worst_abs_bias, 1), widths[7]),
-        trim_to(fmt(overview$worst_abs_slope, 3), widths[8]),
-        trim_to(overview$flag, widths[9])
+.draw_scc_post_unmix_overview_page <- function(metrics) {
+    overview <- metrics$overview
+    overview <- overview[order(match(overview$flag, c("FAIL", "WARN", "OK")), -overview$worst_fpr, -overview$worst_nps), , drop = FALSE]
+    overview$control_label <- vapply(as.character(overview$control), function(x) {
+        if (nchar(x, type = "width") > 28) paste0(substr(x, 1, 25), "...") else x
+    }, character(1))
+    table_df <- data.frame(
+        row = rep(seq_len(nrow(overview)), 9),
+        column = rep(seq_len(9), each = nrow(overview)),
+        label = c(
+            overview$control_label,
+            overview$type,
+            overview$target,
+            as.character(overview$n_events),
+            sprintf("%.2f", overview$worst_nps),
+            sprintf("%.2f%%", 100 * overview$worst_fpr),
+            sprintf("%.2f", overview$worst_bias_mad),
+            sprintf("%.3f", overview$worst_abs_slope),
+            overview$reason
+        ),
+        stringsAsFactors = FALSE
     )
-    make_line <- function(parts) {
-        paste(vapply(seq_along(parts), function(i) sprintf(paste0("%-", widths[i], "s"), parts[[i]]), character(1)), collapse = " ")
+    headers <- data.frame(
+        row = 0,
+        column = seq_len(10),
+        label = c("Control", "Type", "Target", "Events", "NPS", "FPR", "abs bias/MAD", "abs slope", "Reason", "Status"),
+        stringsAsFactors = FALSE
+    )
+    severity_df <- data.frame(
+        row = seq_len(nrow(overview)),
+        column = 10,
+        label = overview$flag,
+        stringsAsFactors = FALSE
+    )
+    severity_cols <- c(OK = "#2E7D32", WARN = "#F9A825", FAIL = "#C62828")
+    table_df$fill <- ifelse(table_df$row %% 2 == 0, "#F7F9FC", "white")
+    headers$fill <- "#263238"
+    p <- ggplot2::ggplot() +
+        ggplot2::geom_tile(
+            data = table_df,
+            ggplot2::aes(column, -row, fill = fill),
+            color = "#E0E0E0",
+            linewidth = 0.25
+        ) +
+        ggplot2::geom_tile(
+            data = headers,
+            ggplot2::aes(column, -row),
+            fill = "#263238",
+            color = "white",
+            linewidth = 0.25
+        ) +
+        ggplot2::geom_tile(
+            data = severity_df,
+            ggplot2::aes(column, -row, fill = label),
+            color = "white",
+            linewidth = 0.25,
+            width = 0.82,
+            height = 0.62
+        ) +
+        ggplot2::geom_text(data = headers, ggplot2::aes(column, -row, label = label), color = "white", fontface = "bold", size = 2.7) +
+        ggplot2::geom_text(data = table_df, ggplot2::aes(column, -row, label = label), color = "#1F2933", size = 2.45) +
+        ggplot2::geom_text(data = severity_df, ggplot2::aes(column, -row, label = label), color = "white", fontface = "bold", size = 2.5) +
+        ggplot2::scale_x_continuous(
+            breaks = seq_len(10),
+            labels = c("", "", "", "", "", "", "", "", "", ""),
+            expand = ggplot2::expansion(mult = c(0.01, 0.01))
+        ) +
+        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.03, 0.03))) +
+        ggplot2::scale_fill_manual(values = c(severity_cols, "white" = "white", "#F7F9FC" = "#F7F9FC"), guide = "none") +
+        ggplot2::coord_cartesian(clip = "off") +
+        ggplot2::labs(
+            title = "Post-unmixing control QC",
+            subtitle = .scc_report_wrap_subtitle("Marker-space control diagnostics from already-unmixed SCC controls. Rows are sorted by severity and worst off-target behavior."),
+            x = NULL,
+            y = NULL
+        ) +
+        ggplot2::theme_void(base_size = 12) +
+        ggplot2::theme(
+            plot.title = ggplot2::element_text(face = "bold", size = 16),
+            plot.subtitle = ggplot2::element_text(size = 9.5, lineheight = 1.05),
+            plot.margin = ggplot2::margin(10, 10, 10, 10)
+        )
+    .draw_report_ggplot_page(p, height_ratio = 0.88)
+    invisible(NULL)
+}
+
+.scc_report_clip <- function(x, cap) {
+    if (is.null(cap) || !is.finite(cap) || cap <= 0) {
+        return(x)
     }
-    c(
-        make_line(as.list(headers)),
-        paste(vapply(widths, function(w) paste(rep("-", w), collapse = ""), character(1)), collapse = " "),
-        vapply(seq_len(nrow(overview)), function(i) make_line(lapply(vals, `[[`, i)), character(1))
+    pmin(pmax(x, -cap), cap)
+}
+
+.scc_report_label_values <- function(x, digits, threshold = 0) {
+    out <- ifelse(is.finite(x) & abs(x) >= threshold, sprintf(paste0("%.", digits, "f"), x), "")
+    out[is.na(out)] <- ""
+    out[grepl("^-?0(?:\\.0+)?$", out)] <- ""
+    out
+}
+
+.scc_report_scale_cap <- function(x, requested_cap = NULL, diverging = FALSE) {
+    x <- x[is.finite(x)]
+    if (length(x) == 0) return(1)
+    cap <- if (!is.null(requested_cap) && is.finite(requested_cap) && requested_cap > 0) requested_cap else max(abs(x), na.rm = TRUE)
+    if (!is.finite(cap) || cap <= 0) cap <- 1
+    if (isTRUE(diverging)) cap else max(cap, 1e-9)
+}
+
+.write_scc_report_csv <- function(x, path, row_id = NULL) {
+    if (length(path) == 0 || is.null(path) || is.na(path[1]) || !nzchar(trimws(as.character(path[1])))) {
+        return(invisible(NULL))
+    }
+    out_dir <- dirname(path)
+    if (!is.na(out_dir) && nzchar(out_dir) && out_dir != ".") {
+        dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+    }
+    x <- as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE)
+    if (!is.null(row_id)) {
+        row_values <- rownames(x)
+        if (is.null(row_values)) {
+            row_values <- seq_len(nrow(x))
+        }
+        x[[row_id]] <- row_values
+        x <- x[, c(row_id, setdiff(colnames(x), row_id)), drop = FALSE]
+    }
+    utils::write.csv(x, path, row.names = FALSE, quote = TRUE)
+    invisible(path)
+}
+
+.write_scc_report_matrix_metric <- function(mat, path, row_id = "marker") {
+    if (length(path) == 0 || is.null(path) || is.null(mat) || length(mat) == 0) {
+        return(invisible(NULL))
+    }
+    .write_scc_report_csv(as.data.frame(mat, check.names = FALSE), path, row_id = row_id)
+}
+
+.write_scc_control_qc_summary <- function(qc_summary, qc_metrics_dir) {
+    if (is.null(qc_metrics_dir) || length(qc_metrics_dir) == 0 ||
+        is.na(qc_metrics_dir[1]) || !nzchar(trimws(as.character(qc_metrics_dir)[1])) ||
+        is.null(qc_summary) || nrow(qc_summary) == 0) {
+        return(invisible(NULL))
+    }
+    .write_scc_report_csv(qc_summary, file.path(qc_metrics_dir, "control_qc_summary.csv"))
+}
+
+.write_scc_post_unmix_metrics <- function(metrics, qc_metrics_dir) {
+    if (is.null(qc_metrics_dir) || length(qc_metrics_dir) == 0 ||
+        is.na(qc_metrics_dir[1]) || !nzchar(trimws(as.character(qc_metrics_dir)[1])) ||
+        is.null(metrics)) {
+        return(invisible(NULL))
+    }
+    if (!is.null(metrics$pairs) && nrow(metrics$pairs) > 0) {
+        .write_scc_report_csv(
+            metrics$pairs,
+            file.path(qc_metrics_dir, "post_unmix_control_qc_pairs.csv")
+        )
+    }
+    if (!is.null(metrics$overview) && nrow(metrics$overview) > 0) {
+        .write_scc_report_csv(
+            metrics$overview,
+            file.path(qc_metrics_dir, "post_unmix_control_qc_overview.csv")
+        )
+    }
+    invisible(NULL)
+}
+
+.scc_report_diag_marker_df <- function(marker_levels) {
+    data.frame(
+        target = marker_levels,
+        marker = marker_levels,
+        source = factor(marker_levels, levels = rev(marker_levels)),
+        marker_f = factor(marker_levels, levels = marker_levels),
+        stringsAsFactors = FALSE
     )
 }
 
-.draw_scc_post_unmix_overview_page <- function(metrics) {
-    overview <- metrics$overview
-    overview <- overview[order(match(overview$flag, c("CHECK", "WARN", "OK")), -overview$worst_fpr, -overview$worst_nps), , drop = FALSE]
-    grid::grid.newpage()
-    grid::grid.text("Post-unmixing control QC", x = 0.05, y = 0.95, just = c("left", "top"), gp = grid::gpar(fontsize = 16, fontface = "bold"))
-    grid::grid.text(
-        "Marker-space control diagnostics from already-unmixed SCC controls. Cell SCCs are compared to unstained cells; bead SCCs to bead-negative controls or low-target bead events.",
-        x = 0.05,
-        y = 0.90,
-        just = c("left", "top"),
-        gp = grid::gpar(fontsize = 10, lineheight = 1.15)
-    )
-    grid::grid.text(
-        paste(.format_scc_post_unmix_overview_lines(overview), collapse = "\n"),
-        x = 0.05,
-        y = 0.82,
-        just = c("left", "top"),
-        gp = grid::gpar(fontsize = 8.2, fontfamily = "mono", lineheight = 1.14)
-    )
+.scc_report_detector_order <- function(detectors) {
+    detector_key <- toupper(gsub("\\s+", "", gsub("-A$", "", as.character(detectors))))
+    laser_group <- vapply(detector_key, function(k) {
+        if (grepl("^UV", k)) return(1L)
+        if (grepl("^V", k)) return(2L)
+        if (grepl("^B", k)) return(3L)
+        if (grepl("^YG", k) || grepl("^Y", k) || grepl("^G", k)) return(4L)
+        if (grepl("^R", k)) return(5L)
+        99L
+    }, integer(1))
+    det_num <- suppressWarnings(as.integer(sub("^[A-Z]+([0-9]+).*$", "\\1", detector_key)))
+    det_num[is.na(det_num)] <- 999L
+    order(laser_group, det_num, detector_key, na.last = TRUE)
+}
+
+.scc_report_marker_levels <- function(markers, qc_summary = NULL) {
+    markers <- unique(as.character(markers))
+    markers <- markers[nzchar(markers) & !is.na(markers)]
+    if (length(markers) == 0) {
+        return(character())
+    }
+    if (!is.null(qc_summary) && all(c("fluorophore", "peak_channel") %in% colnames(qc_summary))) {
+        q <- as.data.frame(qc_summary, stringsAsFactors = FALSE)
+        q <- q[
+            q$fluorophore %in% markers &
+                !is.na(q$peak_channel) &
+                nzchar(trimws(as.character(q$peak_channel))),
+            ,
+            drop = FALSE
+        ]
+        if (nrow(q) > 0) {
+            detector_order <- .scc_report_detector_order(q$peak_channel)
+            q$.detector_rank <- seq_along(detector_order)
+            q$.detector_rank[detector_order] <- seq_along(detector_order)
+            q <- q[order(q$.detector_rank, tolower(q$fluorophore)), , drop = FALSE]
+            levels <- unique(as.character(q$fluorophore))
+            return(c(levels, sort(setdiff(markers, levels))))
+        }
+    }
+    sort(markers)
+}
+
+.scc_report_wrap_subtitle <- function(x, width = 72) {
+    paste(strwrap(x, width = width), collapse = "\n")
 }
 
 .plot_scc_pair_heatmap <- function(pair_df,
                                    value_col,
                                    title,
                                    fill_label,
+                                   subtitle,
+                                   marker_levels,
                                    diverging = FALSE,
-                                   percent = FALSE) {
-    df <- pair_df
-    df$value <- df[[value_col]]
+                                   percent = FALSE,
+                                   label_digits = 2,
+                                   color_cap = NULL,
+                                   label_threshold = 0) {
+    marker_levels <- unique(as.character(marker_levels))
+    marker_levels <- marker_levels[marker_levels %in% unique(c(pair_df$target, pair_df$marker))]
+    if (length(marker_levels) == 0) {
+        return(NULL)
+    }
+
+    df <- pair_df[, c("target", "marker", value_col), drop = FALSE]
+    names(df)[names(df) == value_col] <- "value"
     df <- df[is.finite(df$value), , drop = FALSE]
     if (nrow(df) == 0) return(NULL)
-    df$source <- factor(df$target, levels = unique(df$target))
-    df$marker <- factor(df$marker, levels = unique(df$marker))
+    grid_df <- expand.grid(
+        target = marker_levels,
+        marker = marker_levels,
+        stringsAsFactors = FALSE
+    )
+    df <- merge(grid_df, df, by = c("target", "marker"), all.x = TRUE, sort = FALSE)
+    df$source <- factor(df$target, levels = rev(marker_levels))
+    df$marker <- factor(df$marker, levels = marker_levels)
     if (isTRUE(percent)) {
         df$value <- 100 * df$value
     }
-    p <- ggplot2::ggplot(df, ggplot2::aes(marker, source, fill = value)) +
+    label_df <- df[is.finite(df$value), , drop = FALSE]
+    label_df$label <- .scc_report_label_values(label_df$value, digits = label_digits, threshold = label_threshold)
+    label_df <- label_df[nzchar(label_df$label), , drop = FALSE]
+    df$plot_value <- .scc_report_clip(df$value, color_cap)
+    n_markers <- length(marker_levels)
+    text_size <- max(1.7, min(3.6, 36 / max(1, n_markers)))
+    diag_df <- .scc_report_diag_marker_df(marker_levels)
+    p <- ggplot2::ggplot(df, ggplot2::aes(marker, source, fill = plot_value)) +
         ggplot2::geom_tile(color = "white", linewidth = 0.25) +
-        ggplot2::labs(title = title, x = "Off-target unmixed marker", y = "Source SCC fluorophore", fill = fill_label) +
+        ggplot2::geom_tile(
+            data = diag_df,
+            ggplot2::aes(marker_f, source),
+            inherit.aes = FALSE,
+            fill = "#E6E8EB",
+            color = "white",
+            linewidth = 0.25
+        ) +
+        ggplot2::labs(
+            title = title,
+            subtitle = .scc_report_wrap_subtitle(subtitle),
+            x = "Off-target unmixed marker channel",
+            y = "Source SCC fluorophore",
+            fill = fill_label
+        ) +
         ggplot2::theme_minimal(base_size = 12.5) +
         ggplot2::theme(
             axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
             axis.text.y = ggplot2::element_text(size = 8),
+            plot.subtitle = ggplot2::element_text(size = 9.5, lineheight = 1.05),
             panel.grid = ggplot2::element_blank()
         )
     if (isTRUE(diverging)) {
-        lim <- max(abs(df$value), na.rm = TRUE)
+        lim <- .scc_report_scale_cap(df$value, requested_cap = color_cap, diverging = TRUE)
         if (!is.finite(lim) || lim <= 0) {
             lim <- 1
         }
-        p + ggplot2::scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B", midpoint = 0, limits = c(-lim, lim))
+        label_df$text_color <- ifelse(abs(.scc_report_clip(label_df$value, lim)) > 0.62 * lim, "white", "black")
+        p +
+            ggplot2::geom_text(
+                data = label_df,
+                ggplot2::aes(marker, source, label = label, color = text_color),
+                inherit.aes = FALSE,
+                size = text_size,
+                show.legend = FALSE
+            ) +
+            ggplot2::scale_color_identity() +
+            ggplot2::scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B", midpoint = 0, limits = c(-lim, lim), na.value = "grey92")
     } else {
-        p + ggplot2::scale_fill_gradient(low = "white", high = "#B2182B", na.value = "grey90")
+        max_val <- .scc_report_scale_cap(df$value, requested_cap = color_cap, diverging = FALSE)
+        if (!is.finite(max_val) || max_val <= 0) {
+            max_val <- 1
+        }
+        label_df$text_color <- ifelse(.scc_report_clip(label_df$value, max_val) > 0.62 * max_val, "white", "black")
+        p +
+            ggplot2::geom_text(
+                data = label_df,
+                ggplot2::aes(marker, source, label = label, color = text_color),
+                inherit.aes = FALSE,
+                size = text_size,
+                show.legend = FALSE
+            ) +
+            ggplot2::scale_color_identity() +
+            ggplot2::scale_fill_gradient(low = "white", high = "#B2182B", na.value = "grey92")
     }
 }
 
-.plot_scc_nps_marker_summary <- function(pair_df) {
+.plot_scc_nps_marker_summary <- function(pair_df, marker_levels) {
     df <- pair_df |>
         dplyr::group_by(marker) |>
         dplyr::summarise(NPS = max(nps, na.rm = TRUE), .groups = "drop")
     if (nrow(df) == 0) return(NULL)
-    df <- df[order(df$NPS, decreasing = TRUE), , drop = FALSE]
-    df$marker <- factor(df$marker, levels = df$marker)
+    marker_levels <- unique(as.character(marker_levels))
+    marker_levels <- marker_levels[marker_levels %in% df$marker]
+    df <- df[match(marker_levels, df$marker), , drop = FALSE]
+    df <- df[!is.na(df$marker), , drop = FALSE]
+    df$marker <- factor(df$marker, levels = marker_levels)
+    df$label <- sprintf("%.2f", df$NPS)
+    y_max <- max(df$NPS, na.rm = TRUE)
+    if (!is.finite(y_max) || y_max <= 0) y_max <- 1
     ggplot2::ggplot(df, ggplot2::aes(marker, NPS)) +
         ggplot2::geom_col(fill = "#C44E52", width = 0.7) +
+        ggplot2::geom_text(ggplot2::aes(label = label), vjust = -0.25, size = 3) +
+        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.14))) +
+        ggplot2::coord_cartesian(ylim = c(0, y_max * 1.14), clip = "off") +
         ggplot2::labs(
             title = "Off-target negative spread by marker",
-            subtitle = "Bars show the worst source-SCC NPS for each off-target marker.",
-            x = "Off-target unmixed marker",
-            y = "Worst NPS"
+            subtitle = .scc_report_wrap_subtitle("X-axis entries are off-target unmixed marker channels. Each bar is the worst NPS seen in that channel across all source SCC controls."),
+            x = "Off-target unmixed marker channel",
+            y = "Worst NPS (unitless MAD ratio)"
         ) +
         ggplot2::theme_minimal(base_size = 13) +
-        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7))
+        ggplot2::theme(
+            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+            plot.subtitle = ggplot2::element_text(size = 9.5, lineheight = 1.05)
+        )
 }
 
-.plot_scc_top_fpr_pairs <- function(pair_df, top_n = 15L) {
-    df <- pair_df[is.finite(pair_df$fpr), , drop = FALSE]
-    if (nrow(df) == 0) return(NULL)
-    df <- df[order(df$fpr, df$nps, decreasing = TRUE), , drop = FALSE]
-    df <- df[seq_len(min(as.integer(top_n), nrow(df))), , drop = FALSE]
-    df$pair <- paste0(df$target, " -> ", df$marker)
-    df$pair <- factor(df$pair, levels = rev(df$pair))
-    ggplot2::ggplot(df, ggplot2::aes(pair, 100 * fpr, fill = nps)) +
-        ggplot2::geom_col(width = 0.72) +
-        ggplot2::coord_flip() +
-        ggplot2::scale_fill_gradient(low = "#FEE8C8", high = "#B2182B", na.value = "grey80") +
-        ggplot2::labs(
-            title = "Top false-positive off-target pairs",
-            subtitle = "FPR uses the 99.5th percentile of the matched negative reference as threshold.",
-            x = "Source SCC -> off-target marker",
-            y = "False-positive rate (%)",
-            fill = "NPS"
-        ) +
-        ggplot2::theme_minimal(base_size = 12.5)
-}
-
-.draw_scc_post_unmix_qc_pages <- function(unmixed_list, qc_summary, markers) {
+.draw_scc_post_unmix_qc_pages <- function(unmixed_list, qc_summary, markers, qc_metrics_dir = NULL) {
     metrics <- .compute_scc_post_unmix_qc(
         unmixed_list = unmixed_list,
         qc_summary = qc_summary,
@@ -739,14 +961,54 @@
     if (is.null(metrics)) {
         return(invisible(NULL))
     }
-    .draw_scc_post_unmix_overview_page(metrics)
+    .write_scc_post_unmix_metrics(metrics, qc_metrics_dir)
+    marker_levels <- .scc_report_marker_levels(markers, qc_summary = qc_summary)
     plot_pages <- list(
-        .plot_scc_nps_marker_summary(metrics$pairs),
-        .plot_scc_pair_heatmap(metrics$pairs, "nps", "Pairwise off-target negative spread", "NPS"),
-        .plot_scc_pair_heatmap(metrics$pairs, "fpr", "Pairwise false-positive rate", "FPR (%)", percent = TRUE),
-        .plot_scc_top_fpr_pairs(metrics$pairs),
-        .plot_scc_pair_heatmap(metrics$pairs, "bias", "Pairwise off-target bias", "Bias", diverging = TRUE),
-        .plot_scc_pair_heatmap(metrics$pairs, "slope", "Pairwise target-driven off-target slope", "Slope", diverging = TRUE)
+        .plot_scc_nps_marker_summary(metrics$pairs, marker_levels = marker_levels),
+        .plot_scc_pair_heatmap(
+            metrics$pairs,
+            "nps",
+            "Pairwise off-target negative spread",
+            "NPS",
+            subtitle = "Rows are source SCCs; columns are off-target unmixed marker channels. Color is capped at NPS = 10 so one extreme pair does not flatten the rest.",
+            marker_levels = marker_levels,
+            label_digits = 2,
+            color_cap = 10
+        ),
+        .plot_scc_pair_heatmap(
+            metrics$pairs,
+            "fpr",
+            "Pairwise false-positive rate",
+            "FPR (%)",
+            subtitle = "Percent of events in each source SCC whose off-target value exceeds the 99.5th percentile of the matched negative reference.",
+            marker_levels = marker_levels,
+            percent = TRUE,
+            label_digits = 2
+        ),
+        .plot_scc_pair_heatmap(
+            metrics$pairs,
+            "bias_norm",
+            "Pairwise normalized off-target bias",
+            "Bias / MADneg",
+            subtitle = "Signed median off-target offset divided by negative-reference MAD. Color is symmetrically clipped at +/-10.",
+            marker_levels = marker_levels,
+            diverging = TRUE,
+            label_digits = 2,
+            color_cap = 10,
+            label_threshold = 0.2
+        ),
+        .plot_scc_pair_heatmap(
+            metrics$pairs,
+            "slope",
+            "Pairwise target-driven off-target slope",
+            "Slope",
+            subtitle = "Covariance slope of off-target signal against the true target signal. Larger absolute values indicate target-dependent spillover artifacts.",
+            marker_levels = marker_levels,
+            diverging = TRUE,
+            label_digits = 3,
+            color_cap = 0.05,
+            label_threshold = 0.005
+        )
     )
     for (p in plot_pages) {
         if (!is.null(p)) {
@@ -788,6 +1050,7 @@
                                  unmix_scatter_max_points = 1000,
                                  unmix_scatter_axis_limit = NULL,
                                  seed = NULL,
+                                 qc_metrics_dir = NULL,
                                  retained_qc_plot_dir = NULL) {
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the SCC PDF report.", call. = FALSE)
@@ -830,6 +1093,7 @@
     }
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
+    .write_scc_control_qc_summary(qc_summary, qc_metrics_dir)
 
     scc_dir_line <- paste(strwrap(paste0("SCC directory: ", normalizePath(scc_dir, mustWork = FALSE)), width = 85), collapse = "\n")
 
@@ -849,42 +1113,48 @@
         gp = grid::gpar(fontsize = 11, lineheight = 1.3)
     )
 
-    if (nrow(qc_summary) > 0) {
-        rows_per_page <- 24
-        page_starts <- seq(1, nrow(qc_summary), by = rows_per_page)
-        for (start_idx in page_starts) {
-            end_idx <- min(start_idx + rows_per_page - 1, nrow(qc_summary))
-            block <- qc_summary[start_idx:end_idx, , drop = FALSE]
-            grid::grid.newpage()
-            grid::grid.text("SCC Summary", x = 0.05, y = 0.95, just = c("left", "top"), gp = grid::gpar(fontsize = 16, fontface = "bold"))
-            grid::grid.text(
-                paste(.format_scc_summary_lines(block), collapse = "\n"),
-                x = 0.05,
-                y = 0.9,
-                just = c("left", "top"),
-                gp = grid::gpar(fontsize = 9, fontfamily = "mono", lineheight = 1.15)
-            )
-        }
-    }
-
     .draw_af_bank_qc_pages(M_built, attr(M_built, "af_bank_info"), pd = pd)
 
     keep_non_af <- !grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
     M_no_af <- M_report[keep_non_af, , drop = FALSE]
+    M_af_report <- M_report[!keep_non_af, , drop = FALSE]
 
     if (nrow(M_no_af) > 0) {
+        .write_scc_report_matrix_metric(
+            M_no_af,
+            file.path(qc_metrics_dir, "reference_spectra.csv"),
+            row_id = "fluorophore"
+        )
         .draw_report_ggplot_page(plot_spectra(M_no_af, pd = pd, output_file = NULL), height_ratio = 0.6)
+    }
+    if (nrow(M_af_report) > 0) {
+        .write_scc_report_matrix_metric(
+            M_af_report,
+            file.path(qc_metrics_dir, "af_bank_spectra.csv"),
+            row_id = "af_band"
+        )
     }
 
     if (nrow(M_no_af) > 1) {
         sim_mat <- calculate_similarity_matrix(M_no_af)
+        .write_scc_report_matrix_metric(
+            sim_mat,
+            file.path(qc_metrics_dir, "fluorophore_spectral_similarity.csv"),
+            row_id = "fluorophore"
+        )
         .draw_report_ggplot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
         ssm_method <- if (method %in% c("NNLS", "RWLS", "AutoSpectral")) {
             if (identical(method, "RWLS")) "WLS" else "OLS"
         } else {
             method
         }
-        .draw_report_ggplot_page(plot_ssm(calculate_ssm(M_no_af, method = ssm_method), output_file = NULL))
+        ssm_mat <- calculate_ssm(M_no_af, method = ssm_method)
+        .write_scc_report_matrix_metric(
+            ssm_mat,
+            file.path(qc_metrics_dir, "spectral_spread_matrix.csv"),
+            row_id = "spilling_marker"
+        )
+        .draw_report_ggplot_page(plot_ssm(ssm_mat, output_file = NULL))
 
         if (is.null(unmixed_list)) {
             unmixed_list <- unmix_samples(
@@ -924,7 +1194,8 @@
         .draw_scc_post_unmix_qc_pages(
             unmixed_list = unmixed_list,
             qc_summary = qc_summary,
-            markers = rownames(M_no_af)
+            markers = rownames(M_no_af),
+            qc_metrics_dir = qc_metrics_dir
         )
     }
 
@@ -935,7 +1206,7 @@
     }
 
     message("SCC report saved to: ", output_file)
-    invisible(list(M = M_built, qc_summary = qc_summary, qc_plot_dir = retained_qc_plot_dir, af_bank_info = attr(M_built, "af_bank_info"), method = method))
+    invisible(list(M = M_built, qc_summary = qc_summary, qc_plot_dir = retained_qc_plot_dir, qc_metrics_dir = qc_metrics_dir, af_bank_info = attr(M_built, "af_bank_info"), method = method))
 }
 
 #' Generate SCC QC Report
