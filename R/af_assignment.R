@@ -1,12 +1,3 @@
-.normalize_af_assignment <- function(af_assignment,
-                                     choices = c("projection", "residual_alignment", "legacy", "legacy_residual")) {
-    af_assignment <- as.character(af_assignment[1])
-    if (!nzchar(af_assignment) || is.na(af_assignment)) {
-        af_assignment <- "projection"
-    }
-    match.arg(af_assignment, choices = choices)
-}
-
 .reference_ols_unmixing_matrix <- function(spectra, ridge = 1e-8) {
     spectra <- as.matrix(spectra)
     cross <- spectra %*% t(spectra)
@@ -139,51 +130,15 @@
     if (isTRUE(return_details)) details else details$assignments
 }
 
-.assign_af_by_residual_alignment <- function(Y,
-                                             marker_M,
-                                             af_M,
-                                             return_details = FALSE,
-                                             eps = 1e-10) {
-    Y <- as.matrix(Y)
-    marker_M <- as.matrix(marker_M)
-    af_M <- as.matrix(af_M)
-    projection <- .project_af_into_fluor_space(marker_M, af_M, eps = eps)
-    f0 <- Y %*% t(projection$unmixing_matrix)
-    residual <- Y - (f0 %*% marker_M)
-    score_matrix <- residual %*% t(af_M)
-    colnames(score_matrix) <- rownames(af_M)
-    assignments <- max.col(score_matrix, ties.method = "first")
-    k_matrix <- .estimate_af_abundance_from_residual_component(
-        Y = Y,
-        r_library = projection$r_library,
-        denominator = projection$denominator
-    )
-
-    details <- .selected_af_details(
-        assignments = assignments,
-        k_matrix = k_matrix,
-        v_library = projection$v_library,
-        score_matrix = score_matrix,
-        r_library = projection$r_library,
-        return_details = return_details
-    )
-    if (isTRUE(return_details)) details else details$assignments
-}
-
 .assign_af_candidates <- function(Y,
                                   marker_M,
                                   af_M,
-                                  af_assignment = c("projection", "residual_alignment"),
                                   return_details = FALSE,
                                   eps = 1e-10) {
-    af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment"))
     if (nrow(af_M) <= 1L) {
         if (!isTRUE(return_details)) {
             return(rep(1L, nrow(Y)))
         }
     }
-    if (identical(af_assignment, "projection")) {
-        return(.assign_af_by_projection(Y, marker_M, af_M, return_details = return_details, eps = eps))
-    }
-    .assign_af_by_residual_alignment(Y, marker_M, af_M, return_details = return_details, eps = eps)
+    .assign_af_by_projection(Y, marker_M, af_M, return_details = return_details, eps = eps)
 }

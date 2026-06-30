@@ -231,13 +231,11 @@
 .reference_assign_af_fluorophores <- function(events,
                                              spectra,
                                              af_spectra,
-                                             af_assignment = "projection",
                                              return_details = FALSE) {
     .assign_af_candidates(
         Y = events,
         marker_M = spectra,
         af_M = af_spectra,
-        af_assignment = af_assignment,
         return_details = return_details
     )
 }
@@ -275,7 +273,6 @@
                                          spectra,
                                          af_spectra,
                                          problem_quantile = 0.99,
-                                         af_assignment = "projection",
                                          remove_contaminants = TRUE,
                                          contaminant_threshold = 0.99) {
     events <- as.matrix(events)
@@ -296,8 +293,7 @@
     af_assignments <- .reference_assign_af_fluorophores(
         events = events,
         spectra = spectra,
-        af_spectra = af_spectra,
-        af_assignment = af_assignment
+        af_spectra = af_spectra
     )
     fit <- .reference_unmix_selected_af(
         events = events,
@@ -772,7 +768,6 @@
                                            contaminant_threshold = 0.99,
                                            af_deduplicate = FALSE,
                                            af_deduplication_threshold = 0.99,
-                                           af_assignment = "projection",
                                            refine = FALSE,
                                            refine_problem_quantile = 0.99) {
     if (is.null(af_events)) {
@@ -787,8 +782,6 @@
     if (nrow(af_events) == 0) {
         return(list(raw_median = NULL, signatures = NULL))
     }
-    af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment"))
-
     if (nrow(af_events) > max_cells) {
         af_events <- af_events[sample.int(nrow(af_events), max_cells), , drop = FALSE]
     }
@@ -879,7 +872,6 @@
             spectra = fluor_spectra,
             af_spectra = centers,
             problem_quantile = refine_problem_quantile,
-            af_assignment = af_assignment,
             remove_contaminants = remove_contaminants,
             contaminant_threshold = contaminant_threshold
         )
@@ -1054,7 +1046,6 @@
                                            af_deduplicate = FALSE,
                                            af_deduplication_threshold = 0.99,
                                            af_contaminant_threshold = 0.99,
-                                           af_assignment = "projection",
                                            af_refine = FALSE,
                                            af_refine_problem_quantile = 0.99,
                                            exclude_af = FALSE,
@@ -1114,7 +1105,6 @@
                 contaminant_threshold = af_contaminant_threshold,
                 af_deduplicate = af_deduplicate,
                 af_deduplication_threshold = af_deduplication_threshold,
-                af_assignment = af_assignment,
                 refine = af_refine,
                 refine_problem_quantile = af_refine_problem_quantile
             )
@@ -1135,7 +1125,6 @@
             af_deduplicate = isTRUE(af_deduplicate),
             af_deduplication_threshold = if (isTRUE(af_deduplicate)) af_deduplication_threshold else NA_real_,
             af_contaminant_threshold = af_contaminant_threshold,
-            af_assignment = af_assignment,
             af_refine = isTRUE(af_refine),
             af_refine_problem_quantile = if (isTRUE(af_refine)) af_refine_problem_quantile else NA_real_,
             auto_selection = af_profiles$selection,
@@ -3876,11 +3865,6 @@
 #' @param af_contaminant_threshold Cosine similarity threshold used to remove
 #'   AF candidates that are too similar to known fluorophore spectra. Default is
 #'   0.99.
-#' @param af_assignment AF candidate assignment used during AF refinement.
-#'   `"projection"` (default) chooses the AF band whose expected fluorophore
-#'   spillover best brings apparent fluorophore signal toward zero.
-#'   `"residual_alignment"` keeps the older detector-residual alignment score
-#'   as an explicit alternative.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
@@ -3962,7 +3946,6 @@ build_reference_matrix <- function(
   af_deduplicate = FALSE,
   af_deduplication_threshold = 0.99,
   af_contaminant_threshold = 0.99,
-  af_assignment = "projection",
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
@@ -4013,7 +3996,6 @@ build_reference_matrix <- function(
         af_contaminant_threshold <= 0 || af_contaminant_threshold > 1) {
         stop("af_contaminant_threshold must be a number > 0 and <= 1.")
     }
-    af_assignment <- .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment"))
     scc_background_args <- .validate_scc_background_args(
         clean_scc_with_unstained = clean_scc_with_unstained,
         scc_background_method = scc_background_method,
@@ -4067,7 +4049,6 @@ build_reference_matrix <- function(
         af_deduplicate = af_deduplicate,
         af_deduplication_threshold = af_deduplication_threshold,
         af_contaminant_threshold = af_contaminant_threshold,
-        af_assignment = af_assignment,
         af_refine = af_refine,
         af_refine_problem_quantile = af_refine_problem_quantile
     )
@@ -4090,7 +4071,6 @@ build_reference_matrix <- function(
         af_deduplicate = af_deduplicate,
         af_deduplication_threshold = af_deduplication_threshold,
         af_contaminant_threshold = af_contaminant_threshold,
-        af_assignment = af_assignment,
         af_refine = FALSE,
         af_refine_problem_quantile = af_refine_problem_quantile,
         exclude_af = exclude_af,
@@ -4162,7 +4142,6 @@ build_reference_matrix <- function(
         af_deduplicate = af_deduplicate,
         af_deduplication_threshold = af_deduplication_threshold,
         af_contaminant_threshold = af_contaminant_threshold,
-        af_assignment = af_assignment,
         af_refine = af_refine,
         af_refine_problem_quantile = af_refine_problem_quantile,
         exclude_af = exclude_af,

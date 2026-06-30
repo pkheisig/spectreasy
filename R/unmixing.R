@@ -362,21 +362,14 @@
 }
 
 .normalize_unmix_samples_options <- function(method,
-                                             af_assignment,
                                              rwls_max_iter,
                                              multithreading,
                                              n_threads) {
     method_label <- .normalize_unmix_method(method)
-    af_assignment <- if (identical(method_label, "AutoSpectral")) {
-        "projection"
-    } else {
-        .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
-    }
 
     list(
         method_label = method_label,
         solver_method = .solver_method_for_unmix(method_label),
-        af_assignment = af_assignment,
         rwls_max_iter = .normalize_rwls_max_iter(rwls_max_iter),
         n_threads = .normalize_unmix_threads(multithreading = multithreading, n_threads = n_threads)
     )
@@ -586,7 +579,6 @@
                               rwls_max_iter,
                               multithreading,
                               n_threads,
-                              af_assignment,
                               spectral_variant_library,
                               spectral_variant_top_k,
                               spectral_variant_min_abundance,
@@ -607,7 +599,6 @@
         rwls_max_iter = rwls_max_iter,
         multithreading = multithreading,
         n_threads = n_threads,
-        af_assignment = af_assignment,
         spectral_variant_library = spectral_variant_library,
         spectral_variant_top_k = spectral_variant_top_k,
         spectral_variant_min_abundance = spectral_variant_min_abundance,
@@ -886,9 +877,6 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param af_contaminant_threshold Cosine similarity threshold used to remove
 #'   AF candidates that are too similar to known fluorophore spectra. Legacy
 #'   compatibility argument.
-#' @param af_assignment How to choose one AF row per event when a reference
-#'   matrix contains multiple AF rows. `"projection"` is the default.
-#'   `"residual_alignment"` and `"legacy"` are available for comparison.
 #' @param spectral_variant_library Optional in-memory spectral-variant library,
 #'   usually returned by [unmix_controls()].
 #' @param spectral_variant_library_file Optional `.rds` path to a saved
@@ -994,7 +982,6 @@ unmix_samples <- function(sample_dir = "samples",
                           af_deduplicate = FALSE,
                           af_deduplication_threshold = 0.99,
                           af_contaminant_threshold = 0.99,
-                          af_assignment = "projection",
                           spectral_variant_library = NULL,
                           spectral_variant_library_file = NULL,
                           spectral_variant_top_k = 3L,
@@ -1028,14 +1015,12 @@ unmix_samples <- function(sample_dir = "samples",
 
     run_options <- .normalize_unmix_samples_options(
         method = method,
-        af_assignment = af_assignment,
         rwls_max_iter = rwls_max_iter,
         multithreading = multithreading,
         n_threads = n_threads
     )
     method_label <- run_options$method_label
     solver_method <- run_options$solver_method
-    af_assignment <- run_options$af_assignment
     rwls_max_iter <- run_options$rwls_max_iter
     n_threads <- run_options$n_threads
     estimate_af <- isTRUE(estimate_af)
@@ -1076,7 +1061,6 @@ unmix_samples <- function(sample_dir = "samples",
             max_training_events = 20000L,
             max_evaluation_events = 5000L,
             seed = seed,
-            af_assignment = if (identical(af_assignment, "legacy")) "legacy_residual" else af_assignment,
             verbose = verbose
         )
     }
@@ -1098,7 +1082,6 @@ unmix_samples <- function(sample_dir = "samples",
             rwls_max_iter = rwls_max_iter,
             multithreading = multithreading,
             n_threads = n_threads,
-            af_assignment = af_assignment,
             spectral_variant_library = spectral_variant_library,
             spectral_variant_top_k = spectral_variant_top_k,
             spectral_variant_min_abundance = spectral_variant_min_abundance,

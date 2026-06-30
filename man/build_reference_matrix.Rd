@@ -22,7 +22,6 @@ build_reference_matrix(
   af_deduplicate = FALSE,
   af_deduplication_threshold = 0.99,
   af_contaminant_threshold = 0.99,
-  af_assignment = "projection",
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
@@ -100,12 +99,6 @@ after SOM extraction/refinement using cosine similarity. Default is
 \item{af_contaminant_threshold}{Cosine similarity threshold used to remove
 AF candidates that are too similar to known fluorophore spectra. Default is
 0.99.}
-
-\item{af_assignment}{AF candidate assignment used during AF refinement.
-`"projection"` (default) chooses the AF band whose expected fluorophore
-spillover best brings apparent fluorophore signal toward zero.
-`"residual_alignment"` keeps the older detector-residual alignment score
-as an explicit alternative.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

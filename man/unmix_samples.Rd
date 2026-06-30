@@ -29,7 +29,6 @@ unmix_samples(
   af_deduplicate = FALSE,
   af_deduplication_threshold = 0.99,
   af_contaminant_threshold = 0.99,
-  af_assignment = "projection",
   spectral_variant_library = NULL,
   spectral_variant_library_file = NULL,
   spectral_variant_top_k = 3L,
@@ -136,10 +135,6 @@ when building a reference matrix. Legacy compatibility argument.}
 \item{af_contaminant_threshold}{Cosine similarity threshold used to remove
 AF candidates that are too similar to known fluorophore spectra. Legacy
 compatibility argument.}
-
-\item{af_assignment}{How to choose one AF row per event when a reference
-matrix contains multiple AF rows. `"projection"` is the default.
-`"residual_alignment"` and `"legacy"` are available for comparison.}
 
 \item{spectral_variant_library}{Optional in-memory spectral-variant library,
 usually returned by [unmix_controls()].}

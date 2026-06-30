@@ -16,7 +16,6 @@ calc_residuals(
   rwls_max_iter = 1L,
   multithreading = FALSE,
   n_threads = "auto",
-  af_assignment = "projection",
   spectral_variant_library = NULL,
   spectral_variant_top_k = 3L,
   spectral_variant_min_abundance = 1,
@@ -59,13 +58,6 @@ single-threaded.}
 `multithreading = TRUE`. `"auto"` uses `RcppParallel::defaultNumThreads()`.
 Integers larger than the available thread count are clipped to the
 available count.}
-
-\item{af_assignment}{How to choose one AF row per event when `M` contains
-multiple AF rows. `"projection"` (default) projects each AF candidate into
-fluorophore space and picks the candidate that brings apparent fluorophore
-abundance closest to zero. `"residual_alignment"` uses detector residual
-alignment as an explicit alternative. `"legacy"` uses the previous C++
-residual/covariance selector.}
 
 \item{spectral_variant_library}{Optional per-fluorophore spectral-variant
 library learned from single-colour controls. `AutoSpectral` uses this

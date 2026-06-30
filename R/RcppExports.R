@@ -17,7 +17,3 @@ spectreasy_assign_af_projection_cpp <- function(Y, F, AF, tol = 1e-10) {
     .Call(`_spectreasy_spectreasy_assign_af_projection_cpp`, Y, F, AF, tol)
 }
 
-spectreasy_unmix_best_af_cpp <- function(Y, M, fluor_idx, af_idx, method, noise_floor, signal_scale, max_weight_ratio = 1600.0, tol = 1e-10, max_outer = 500L, max_inner = 500L, rwls_max_iter = 1L, n_threads = 1L) {
-    .Call(`_spectreasy_spectreasy_unmix_best_af_cpp`, Y, M, fluor_idx, af_idx, method, noise_floor, signal_scale, max_weight_ratio, tol, max_outer, max_inner, rwls_max_iter, n_threads)
-}
-

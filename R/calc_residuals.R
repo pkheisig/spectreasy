@@ -98,8 +98,7 @@
                                       af_match,
                                       method,
                                       wls_noise,
-                                      rwls_max_iter,
-                                      af_assignment = "projection") {
+                                      rwls_max_iter) {
     fluor_idx <- which(!af_match)
     af_idx <- which(af_match)
     marker_M <- M[fluor_idx, , drop = FALSE]
@@ -120,8 +119,7 @@
     assignments <- .assign_af_candidates(
         Y = Y,
         marker_M = marker_M,
-        af_M = af_M,
-        af_assignment = af_assignment
+        af_M = af_M
     )
 
     A <- matrix(0, nrow = nrow(Y), ncol = nrow(M), dimnames = list(NULL, rownames(M)))
@@ -179,12 +177,6 @@
 #'   `multithreading = TRUE`. `"auto"` uses `RcppParallel::defaultNumThreads()`.
 #'   Integers larger than the available thread count are clipped to the
 #'   available count.
-#' @param af_assignment How to choose one AF row per event when `M` contains
-#'   multiple AF rows. `"projection"` (default) projects each AF candidate into
-#'   fluorophore space and picks the candidate that brings apparent fluorophore
-#'   abundance closest to zero. `"residual_alignment"` uses detector residual
-#'   alignment as an explicit alternative. `"legacy"` uses the previous C++
-#'   residual/covariance selector.
 #' @param spectral_variant_library Optional per-fluorophore spectral-variant
 #'   library learned from single-colour controls. `AutoSpectral` uses this
 #'   automatically when available; regular `OLS`, `WLS`, `NNLS`, and `RWLS`
@@ -238,7 +230,6 @@ calc_residuals <- function(flow_frame,
                            rwls_max_iter = 1L,
                            multithreading = FALSE,
                            n_threads = "auto",
-                           af_assignment = "projection",
                            spectral_variant_library = NULL,
                            spectral_variant_top_k = 3L,
                            spectral_variant_min_abundance = 1,
@@ -249,11 +240,6 @@ calc_residuals <- function(flow_frame,
     n_threads <- .normalize_unmix_threads(multithreading = multithreading, n_threads = n_threads)
     method <- .normalize_unmix_method(method)
     solver_method <- .solver_method_for_unmix(method)
-    af_assignment <- if (identical(method, "AutoSpectral")) {
-        "projection"
-    } else {
-        .normalize_af_assignment(af_assignment, choices = c("projection", "residual_alignment", "legacy"))
-    }
     use_spectral_variants <- identical(method, "AutoSpectral") &&
         .spectral_variant_library_has_variants(spectral_variant_library)
     full_data <- flowCore::exprs(flow_frame)
@@ -283,32 +269,14 @@ calc_residuals <- function(flow_frame,
     use_eventwise_af_solver <- sum(af_match) > 1 && sum(!af_match) > 0
 
     if (use_eventwise_af_solver) {
-        if (identical(af_assignment, "legacy")) {
-            fluor_idx <- which(!af_match) - 1
-            af_idx <- which(af_match) - 1
-            A <- spectreasy_unmix_best_af_cpp(
-                Y = Y,
-                M = M,
-                fluor_idx = fluor_idx,
-                af_idx = af_idx,
-                method = solver_method,
-                noise_floor = wls_noise$noise_floor,
-                signal_scale = wls_noise$signal_scale,
-                max_weight_ratio = wls_noise$max_weight_ratio,
-                rwls_max_iter = rwls_max_iter,
-                n_threads = n_threads
-            )
-        } else {
-            A <- .unmix_selected_af_groups(
-                Y = Y,
-                M = M,
-                af_match = af_match,
-                method = solver_method,
-                wls_noise = wls_noise,
-                rwls_max_iter = rwls_max_iter,
-                af_assignment = af_assignment
-            )
-        }
+        A <- .unmix_selected_af_groups(
+            Y = Y,
+            M = M,
+            af_match = af_match,
+            method = solver_method,
+            wls_noise = wls_noise,
+            rwls_max_iter = rwls_max_iter
+        )
     } else {
         A <- .unmix_with_fixed_reference(
             Y = Y,

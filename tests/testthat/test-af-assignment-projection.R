@@ -17,10 +17,8 @@ test_that("projection AF assignment recovers structured AF candidates", {
     colnames(Y) <- colnames(marker_M)
 
     projection <- spectreasy:::.assign_af_by_projection(Y, marker_M, af_M, return_details = TRUE)
-    residual <- spectreasy:::.assign_af_by_residual_alignment(Y, marker_M, af_M, return_details = TRUE)
 
     expect_gt(mean(projection$assignments == true_af), 0.85)
-    expect_gte(mean(projection$assignments == true_af), mean(residual$assignments == true_af))
     expect_equal(dim(projection$score_matrix), c(n, 2))
     expect_equal(colnames(projection$projected_af_fluor), rownames(marker_M))
 })
@@ -89,31 +87,8 @@ test_that("projection multi-AF unmixing does not steal real fluorophore signal",
     colnames(Y) <- colnames(M)
     ff <- flowCore::flowFrame(Y)
 
-    projection <- spectreasy::calc_residuals(ff, M, method = "OLS", af_assignment = "projection")
-    residual <- spectreasy::calc_residuals(ff, M, method = "OLS", af_assignment = "residual_alignment")
+    projection <- spectreasy::calc_residuals(ff, M, method = "OLS")
 
     projection_error <- mean(abs(as.matrix(projection[, c("F1", "F2")]) - true_fluor))
-    residual_error <- mean(abs(as.matrix(residual[, c("F1", "F2")]) - true_fluor))
-    expect_lt(projection_error, residual_error)
-})
-
-test_that("residual alignment AF assignment remains available", {
-    marker_M <- rbind(
-        F1 = c(1, 0, 0),
-        F2 = c(0, 0, 1)
-    )
-    af_M <- rbind(
-        AF = c(0, 1, 0),
-        AF_2 = c(0, 0.1, 0.9)
-    )
-    colnames(marker_M) <- colnames(af_M) <- c("D1", "D2", "D3")
-    Y <- matrix(c(0, 10, 0), nrow = 1)
-    colnames(Y) <- colnames(marker_M)
-
-    details <- spectreasy:::.assign_af_by_residual_alignment(Y, marker_M, af_M, return_details = TRUE)
-    expect_equal(details$assignments, 1L)
-    expect_equal(
-        unname(details$score_matrix[1, ]),
-        as.numeric((Y - (Y %*% t(spectreasy:::.reference_ols_unmixing_matrix(marker_M))) %*% marker_M) %*% t(af_M))
-    )
+    expect_lt(projection_error, 1)
 })

@@ -1,9 +1,5 @@
 #!/usr/bin/env Rscript
 
-suppressPackageStartupMessages({
-    library(flowCore)
-})
-
 if (!requireNamespace("spectreasy", quietly = TRUE)) {
     stop("Install or load spectreasy before running this benchmark.", call. = FALSE)
 }
@@ -57,15 +53,6 @@ score_method <- function(sim, method) {
     Y <- sim$Y
     if (identical(method, "projection")) {
         assignments <- spectreasy:::.assign_af_by_projection(Y, marker_M, af_M)
-    } else if (identical(method, "residual_alignment")) {
-        assignments <- spectreasy:::.assign_af_by_residual_alignment(Y, marker_M, af_M)
-    } else if (identical(method, "legacy_residual")) {
-        res <- spectreasy::calc_residuals(flowCore::flowFrame(Y), M, method = "OLS", af_assignment = "legacy", return_residuals = TRUE)
-        assigned_names <- apply(as.matrix(res$data[, rownames(af_M), drop = FALSE]) != 0, 1, function(x) {
-            hit <- which(x)
-            if (length(hit)) hit[[1]] else 1L
-        })
-        assignments <- as.integer(assigned_names)
     } else if (identical(method, "random_baseline")) {
         assignments <- sample.int(nrow(af_M), nrow(Y), replace = TRUE)
     } else {
@@ -95,6 +82,6 @@ score_method <- function(sim, method) {
 }
 
 sim <- simulate_events()
-methods <- c("projection", "residual_alignment", "legacy_residual", "random_baseline")
+methods <- c("projection", "random_baseline")
 results <- do.call(rbind, lapply(methods, score_method, sim = sim))
 print(results, row.names = FALSE)

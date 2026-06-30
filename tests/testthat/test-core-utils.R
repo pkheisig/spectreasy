@@ -486,12 +486,7 @@ test_that("unmix_samples can estimate missing AF from stained samples", {
     expect_true(blind_info$model_id %in% c("residual_wls_q90_k10", "residual_wls_low_marker_q90_k10"))
     expect_equal(blind_info$candidate_quantile, 0.90)
     expect_equal(blind_info$requested_bands, 10)
-    expect_true(blind_info$selected_by %in% c(
-        "heldout_projection_wls",
-        "heldout_residual_alignment_wls",
-        "heldout_event_wise_wls"
-    ))
-    expect_true(blind_info$af_assignment %in% c("projection", "residual_alignment", "legacy_residual"))
+    expect_equal(blind_info$selected_by, "heldout_projection_wls")
     expect_s3_class(blind_info$heldout_scores, "data.frame")
     expect_setequal(
         blind_info$heldout_scores$model_id,
