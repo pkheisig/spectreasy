@@ -481,7 +481,6 @@ test_that("unmix_controls supports af_n_bands", {
         marker = c("CD4", "CD8", "Autofluorescence"),
         channel = c("B1-A", "YG1-A", "B1-A"),
         control.type = c("beads", "beads", "cells"),
-        universal.negative = c("", "", ""),
         is.viability = c("", "", ""),
         stringsAsFactors = FALSE
     )

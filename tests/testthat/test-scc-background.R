@@ -40,7 +40,6 @@ make_matched_af_scc <- function() {
         marker = c("Autofluorescence", "CD4"),
         channel = c("B1-A", "B1-A"),
         control.type = c("cells", "cells"),
-        universal.negative = c("", ""),
         is.viability = c("", ""),
         stringsAsFactors = FALSE
     )
@@ -173,7 +172,6 @@ test_that("bead SCCs keep intensity selection even when AF controls exist", {
         marker = c("Autofluorescence", "Autofluorescence", "FITC"),
         channel = c("B1-A", "B1-A", "B1-A"),
         control.type = c("beads", "cells", "beads"),
-        universal.negative = c("", "", ""),
         is.viability = c("", "", ""),
         stringsAsFactors = FALSE
     )

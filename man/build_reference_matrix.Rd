@@ -54,7 +54,7 @@ optional spectral-selection, and spectrum plots. When `FALSE` (default),
 the function returns the matrix without writing QC files.}
 
 \item{control_df}{Optional control mapping as a data.frame or CSV path.
-Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.}
+Expected columns: `filename`, `fluorophore`, and `channel`.}
 
 \item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls entirely,
 even when they are present in `control_df` or the SCC folder.}

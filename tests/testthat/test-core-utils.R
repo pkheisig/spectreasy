@@ -752,7 +752,7 @@ test_that(".compute_reference_spectrum computes and attaches variance attribute"
     
     peak_vals <- gated_data[, 1]
     vals_log <- log10(pmax(peak_vals, 1))
-    row_info <- data.frame(universal.negative = "FALSE", stringsAsFactors = FALSE)
+    row_info <- data.frame()
     
     res <- spectreasy:::.compute_reference_spectrum(
         final_gated_data = final_gated_data,
@@ -771,36 +771,6 @@ test_that(".compute_reference_spectrum computes and attaches variance attribute"
     expect_type(var_attr, "double")
     expect_equal(length(var_attr), 2)
     expect_true(all(var_attr >= 0))
-})
-
-test_that(".compute_reference_spectrum honors named universal negative files", {
-    detector_names <- c("B1-A", "YG1-A")
-    final_gated_data <- matrix(
-        rep(c(100, 60), each = 20),
-        ncol = 2,
-        dimnames = list(NULL, detector_names)
-    )
-    gated_data <- matrix(
-        rep(c(10, 10), each = 40),
-        ncol = 2,
-        dimnames = list(NULL, detector_names)
-    )
-    peak_vals <- gated_data[, 1]
-    vals_log <- log10(pmax(peak_vals, 1))
-    row_info <- data.frame(universal.negative = "unstained_cells.fcs", stringsAsFactors = FALSE)
-    universal_negatives <- list(unstained_cells = c("B1-A" = 30, "YG1-A" = 10))
-
-    res <- spectreasy:::.compute_reference_spectrum(
-        final_gated_data = final_gated_data,
-        gated_data = gated_data,
-        peak_vals = peak_vals,
-        vals_log = vals_log,
-        detector_names = detector_names,
-        row_info = row_info,
-        universal_negatives = universal_negatives
-    )
-
-    expect_equal(as.numeric(res), c(1, 50 / 70), tolerance = 1e-6)
 })
 
 test_that("cell population selection applies SSC/FSC ratio only when requested", {
@@ -1467,7 +1437,7 @@ test_that("reference spectrum uses histogram negative gate attributes", {
         peak_vals = peak_vals,
         vals_log = vals_log,
         detector_names = detector_names,
-        row_info = data.frame(universal.negative = "FALSE", stringsAsFactors = FALSE)
+        row_info = data.frame()
     )
 
     expect_equal(as.numeric(res), c(1, 180 / 9000), tolerance = 1e-6)
@@ -1497,9 +1467,9 @@ test_that("bead reference spectrum prefers automatic unstained bead negative", {
         peak_vals = peak_vals,
         vals_log = vals_log,
         detector_names = detector_names,
-        row_info = data.frame(universal.negative = "", stringsAsFactors = FALSE),
+        row_info = data.frame(),
         sample_type = "beads",
-        universal_negatives = list(".__unstained_bead__" = c("B1-A" = 100, "YG1-A" = 300))
+        bead_negative = c("B1-A" = 100, "YG1-A" = 300)
     )
 
     expect_equal(as.numeric(res), c(1, 100 / 900), tolerance = 1e-6)

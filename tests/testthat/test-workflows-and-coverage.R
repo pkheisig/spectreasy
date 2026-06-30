@@ -34,7 +34,6 @@ make_synthetic_workflow <- function(include_af = FALSE) {
         marker = c("CD1", "CD2"),
         channel = c("B1-A", "YG1-A"),
         control.type = c("beads", "beads"),
-        universal.negative = c("", ""),
         is.viability = c("", ""),
         stringsAsFactors = FALSE
     )
@@ -50,7 +49,6 @@ make_synthetic_workflow <- function(include_af = FALSE) {
                 marker = "Autofluorescence",
                 channel = "B1-A",
                 control.type = "cells",
-                universal.negative = "",
                 is.viability = "",
                 stringsAsFactors = FALSE
             )
@@ -100,7 +98,6 @@ test_that("validate_control_file_mapping reports unreadable SCC files", {
         marker = "",
         channel = "",
         control.type = "cells",
-        universal.negative = "",
         is.viability = "",
         stringsAsFactors = FALSE
     )
@@ -153,7 +150,6 @@ test_that("build_reference_matrix pools duplicate mapped unstained SCC files", {
             marker = "Autofluorescence",
             channel = "B1-A",
             control.type = "cells",
-            universal.negative = "",
             is.viability = "",
             stringsAsFactors = FALSE
         )
@@ -192,7 +188,6 @@ test_that("build_reference_matrix fails when a mapped SCC cannot produce a spect
             marker = "CD3",
             channel = "B1-A",
             control.type = "beads",
-            universal.negative = "",
             is.viability = "",
             stringsAsFactors = FALSE
         )
@@ -226,7 +221,6 @@ test_that("build_reference_matrix fails early on SCC detector mismatches", {
             marker = "CD3",
             channel = "B1-A",
             control.type = "beads",
-            universal.negative = "",
             is.viability = "",
             stringsAsFactors = FALSE
         )

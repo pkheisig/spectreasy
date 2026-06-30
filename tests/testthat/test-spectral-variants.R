@@ -35,7 +35,6 @@ make_variant_control_set <- function() {
         marker = c("CD4", "CD8"),
         channel = c("B1-A", "R1-A"),
         control.type = c("beads", "beads"),
-        universal.negative = c("", ""),
         is.viability = c("", ""),
         stringsAsFactors = FALSE
     )

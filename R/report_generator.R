@@ -1049,26 +1049,6 @@ qc_samples <- function(results,
         .draw_qc_report_spectra_page(spectra_plot)
     }
 
-    if (!is.null(res_list)) {
-        message("  - Adding RMS residual per detector page...")
-        detector_rms <- .compute_qc_report_detector_rms(res_list, M = M, pd = pd)
-        if (!is.null(detector_rms) && !is.null(qc_metrics_dir)) {
-            .write_qc_report_csv(
-                detector_rms,
-                file.path(qc_metrics_dir, "rms_residual_per_detector.csv")
-            )
-        }
-        detector_rms_plot <- plot_detector_rms_residuals(res_list, M = M, pd = pd, output_file = NULL)
-        if (!is.null(detector_rms_plot)) {
-            .save_qc_report_png(detector_rms_plot, retained_qc_plot_dir, "rms_residual_per_detector.png")
-            .draw_qc_report_plot_page(
-                detector_rms_plot,
-                height_ratio = 0.74,
-                width_ratio = 0.90
-            )
-        }
-    }
-
     if (nrow(M_no_af) > 1) {
         message("  - Adding Fluorophore Similarity Matrix...")
         sim_mat <- calculate_similarity_matrix(M_no_af)
@@ -1159,6 +1139,24 @@ qc_samples <- function(results,
     }
 
     if (!is.null(res_list)) {
+        message("  - Adding RMS residual per detector page...")
+        detector_rms <- .compute_qc_report_detector_rms(res_list, M = M, pd = pd)
+        if (!is.null(detector_rms) && !is.null(qc_metrics_dir)) {
+            .write_qc_report_csv(
+                detector_rms,
+                file.path(qc_metrics_dir, "rms_residual_per_detector.csv")
+            )
+        }
+        detector_rms_plot <- plot_detector_rms_residuals(res_list, M = M, pd = pd, output_file = NULL)
+        if (!is.null(detector_rms_plot)) {
+            .save_qc_report_png(detector_rms_plot, retained_qc_plot_dir, "rms_residual_per_detector.png")
+            .draw_qc_report_plot_page(
+                detector_rms_plot,
+                height_ratio = 0.74,
+                width_ratio = 0.90
+            )
+        }
+
         message("  - Adding overall detector reconstruction error per sample...")
         sample_rms <- .compute_qc_report_sample_rms(res_list, M = M)
         if (!is.null(sample_rms) && !is.null(qc_metrics_dir)) {

@@ -2,26 +2,26 @@
 #'
 #' Downloads the example-data zip archive from the matching GitHub release,
 #' unzips it automatically, and returns the local paths to the extracted
-#' `sample/` and `scc/` folders.
+#' `samples/` and `scc/` folders.
 #'
 #' The downloaded archive is cached under [tools::R_user_dir()] so it only needs
 #' to be fetched once unless `force = TRUE`. If `dest_dir` is supplied, the cached
 #' files are copied there after download/extraction.
 #'
-#' @param asset Optional URL to a zip archive containing `sample/` and `scc/`
+#' @param asset Optional URL to a zip archive containing `samples/` and `scc/`
 #'   folders. Defaults to the `spectreasy` GitHub release asset matching the
 #'   installed package version. A local zip file path can also be supplied for
 #'   testing or offline reuse.
 #' @param cache_dir Directory used for the downloaded zip and extracted files.
 #'   Defaults to a package-specific user cache directory.
 #' @param dest_dir Optional destination directory for a project-local copy of the
-#'   extracted `sample/` and `scc/` folders. For example,
-#'   `spectreasy_example_data(dest_dir = getwd())` will place `sample/` and
+#'   extracted `samples/` and `scc/` folders. For example,
+#'   `spectreasy_example_data(dest_dir = getwd())` will place `samples/` and
 #'   `scc/` in the current working directory. If `NULL` (default), the cached
 #'   extracted paths are returned directly.
 #' @param force Logical; if `TRUE`, redownload and re-extract the archive even if
 #'   a cached copy is already available. When `dest_dir` is supplied, `force = TRUE`
-#'   also refreshes the copied project-local `sample/` and `scc/` folders.
+#'   also refreshes the copied project-local `samples/` and `scc/` folders.
 #' @param quiet Logical; if `TRUE`, suppress progress messages where possible.
 #'
 #' @return A named list with elements `root_dir`, `zip_file`, `sample_dir`,
@@ -74,7 +74,7 @@ spectreasy_example_data <- function(
         unlink(zip_file, force = TRUE)
     }
 
-    sample_dir <- .spectreasy_find_example_subdir(extract_root, "sample")
+    sample_dir <- .spectreasy_find_example_subdir(extract_root, "samples")
     scc_dir <- .spectreasy_find_example_subdir(extract_root, "scc")
 
     needs_extract <- is.null(sample_dir) || is.null(scc_dir)
@@ -87,11 +87,11 @@ spectreasy_example_data <- function(
         dir.create(extract_root, recursive = TRUE, showWarnings = FALSE)
         utils::unzip(zip_file, exdir = extract_root)
 
-        sample_dir <- .spectreasy_find_example_subdir(extract_root, "sample")
+        sample_dir <- .spectreasy_find_example_subdir(extract_root, "samples")
         scc_dir <- .spectreasy_find_example_subdir(extract_root, "scc")
         if (is.null(sample_dir) || is.null(scc_dir)) {
             stop(
-                "Example data archive did not contain the expected 'sample/' and 'scc/' folders: ",
+                "Example data archive did not contain the expected 'samples/' and 'scc/' folders: ",
                 asset,
                 call. = FALSE
             )
@@ -188,7 +188,7 @@ spectreasy_example_data <- function(
 .spectreasy_copy_example_dirs <- function(sample_dir, scc_dir, dest_dir, force = FALSE) {
     dir.create(dest_dir, recursive = TRUE, showWarnings = FALSE)
 
-    sample_dest <- file.path(dest_dir, "sample")
+    sample_dest <- file.path(dest_dir, "samples")
     scc_dest <- file.path(dest_dir, "scc")
 
     if (isTRUE(force) && dir.exists(sample_dest)) {
@@ -201,7 +201,7 @@ spectreasy_example_data <- function(
     if (!dir.exists(sample_dest)) {
         ok <- file.copy(sample_dir, dest_dir, recursive = TRUE)
         if (!ok) {
-            stop("Could not copy example sample/ folder into dest_dir: ", dest_dir, call. = FALSE)
+            stop("Could not copy example samples/ folder into dest_dir: ", dest_dir, call. = FALSE)
         }
     }
     if (!dir.exists(scc_dest)) {

@@ -77,10 +77,6 @@
         df$control.type <- ""
     }
     df$control.type <- tolower(.control_validation_as_chr(df$control.type))
-    if (!("universal.negative" %in% colnames(df))) {
-        df$universal.negative <- ""
-    }
-    df$universal.negative <- .control_validation_as_chr(df$universal.negative)
     df
 }
 
@@ -150,23 +146,6 @@
     list(errors = errors, warnings = warnings, active_rows = active_rows)
 }
 
-.validate_control_file_universal_negative <- function(df, active_rows, known_files) {
-    errors <- character()
-    uv_vals <- df$universal.negative[active_rows]
-    keyword_vals <- c("", "TRUE", "FALSE", "AF")
-    known_keys <- unique(c(
-        known_files,
-        tools::file_path_sans_ext(basename(known_files))
-    ))
-    uv_keys <- tools::file_path_sans_ext(basename(uv_vals))
-    uv_upper <- toupper(uv_vals)
-    unresolved_uv <- uv_vals[!(uv_upper %in% keyword_vals) & !(uv_vals %in% known_keys) & !(uv_keys %in% known_keys)]
-    if (length(unresolved_uv) > 0) {
-        errors <- c(errors, paste0("universal.negative points to unknown files for active controls: ", paste(unique(unresolved_uv), collapse = ", ")))
-    }
-    errors
-}
-
 .validate_control_file_channels_exist <- function(df, active_rows, scc_files, scc_dir) {
     errors <- character()
     files_to_check <- unique(df$filename[active_rows])
@@ -220,7 +199,7 @@
 #'
 #' Performs strict preflight checks on the control mapping used for SCC workflows.
 #' This catches common setup issues early (missing files, wrong channel names,
-#' malformed universal negatives, incomplete mappings).
+#' incomplete mappings).
 #'
 #' @param control_df Control mapping data.frame.
 #' @param scc_dir SCC directory containing FCS files.
@@ -291,7 +270,6 @@ validate_control_file_mapping <- function(
         )
         errors <- c(errors, coverage$errors)
         warnings <- c(warnings, coverage$warnings)
-        errors <- c(errors, .validate_control_file_universal_negative(df, active_rows = coverage$active_rows, known_files = known$known_files))
         errors <- c(
             errors,
             .validate_control_file_channels_exist(

@@ -17,13 +17,11 @@
         if (!("fluorophore" %in% colnames(control_df))) control_df$fluorophore <- ""
         if (!("channel" %in% colnames(control_df))) control_df$channel <- ""
         if (!("control.type" %in% colnames(control_df))) control_df$control.type <- ""
-        if (!("universal.negative" %in% colnames(control_df))) control_df$universal.negative <- ""
 
         control_df$filename <- trimws(as.character(control_df$filename))
         control_df$fluorophore <- trimws(as.character(control_df$fluorophore))
         control_df$channel <- trimws(as.character(control_df$channel))
         control_df$control.type <- tolower(trimws(as.character(control_df$control.type)))
-        control_df$universal.negative <- trimws(as.character(control_df$universal.negative))
     }
 
     control_df
@@ -2652,7 +2650,7 @@
                                         row_info,
                                         sample_type = "beads",
                                         af_data_raw = NULL,
-                                        universal_negatives = NULL,
+                                        bead_negative = NULL,
                                         scc_background = NULL,
                                         scc_background_method = "none",
                                         scc_background_k = 3L) {
@@ -2711,27 +2709,8 @@
             ]
         }
         neg_spectrum_raw <- apply(neg_events, 2, median, na.rm = TRUE)
-        uv_val <- if (nrow(row_info) > 0 && "universal.negative" %in% colnames(row_info)) {
-            trimws(as.character(row_info$universal.negative[1]))
-        } else {
-            ""
-        }
-        uv_upper <- toupper(uv_val)
-        uv_key <- tools::file_path_sans_ext(basename(uv_val))
-        use_af_negative <- uv_upper %in% c("TRUE", "AF")
-        use_named_negative <- nzchar(uv_key) &&
-            !uv_upper %in% c("FALSE", "TRUE", "AF") &&
-            !is.null(universal_negatives) &&
-            uv_key %in% names(universal_negatives)
-        use_auto_bead_negative <- identical(sample_type, "beads") &&
-            !is.null(universal_negatives) &&
-            ".__unstained_bead__" %in% names(universal_negatives)
-        final_neg <- if (use_af_negative && !is.null(af_data_raw)) {
-            af_data_raw
-        } else if (use_named_negative) {
-            universal_negatives[[uv_key]]
-        } else if (use_auto_bead_negative) {
-            universal_negatives[[".__unstained_bead__"]]
+        final_neg <- if (identical(sample_type, "beads") && !is.null(bead_negative)) {
+            bead_negative
         } else {
             neg_spectrum_raw
         }
@@ -2797,80 +2776,6 @@
         grepl("(^|[^[:alnum:]])(?:us|neg|bg)(?:[^[:alnum:]]|$)", stem, ignore.case = TRUE, perl = TRUE)
 
     has_bead && has_negative
-}
-
-# Identifies and loads the universal/marker-specific negative control profiles.
-# If specified in the control mapping, reads the designated negative control files and computes
-# their median spectral profiles to be subtracted from target samples.
-# Returns a list of numeric vectors mapping fluorophore names to their negative control profiles.
-.collect_reference_universal_negatives <- function(control_df,
-                                                   fcs_files,
-                                                   detector_names,
-                                                   sample_patterns,
-                                                   config) {
-    out <- list()
-    if (is.null(control_df) || !is.data.frame(control_df) || !("universal.negative" %in% colnames(control_df))) {
-        return(out)
-    }
-
-    uv_vals <- trimws(as.character(control_df$universal.negative))
-    uv_vals[is.na(uv_vals)] <- ""
-    uv_vals <- unique(uv_vals[nzchar(uv_vals) & !toupper(uv_vals) %in% c("FALSE", "TRUE", "AF")])
-    if (length(uv_vals) == 0) {
-        return(out)
-    }
-
-    file_keys <- .reference_negative_key(fcs_files)
-    names(fcs_files) <- file_keys
-
-    for (uv in uv_vals) {
-        key <- .reference_negative_key(uv)
-        if (!nzchar(key) || !key %in% names(fcs_files)) {
-            next
-        }
-
-        fcs_file <- unname(fcs_files[[key]])
-        sn_ext <- basename(fcs_file)
-        sn <- tools::file_path_sans_ext(sn_ext)
-        row_info <- .get_control_rows_for_reference(control_df, c(sn_ext, sn))
-        sample_info <- .resolve_reference_sample_type(
-            filename = sn,
-            row_info = row_info,
-            patterns = sample_patterns,
-            default = config$default_sample_type
-        )
-
-        ff <- tryCatch(
-            flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
-            error = function(e) NULL
-        )
-        if (is.null(ff)) {
-            warning("Could not read universal.negative file: ", fcs_file)
-            next
-        }
-
-        pd <- flowCore::pData(flowCore::parameters(ff))
-        raw_data <- flowCore::exprs(ff)
-        scatter_info <- .compute_reference_scatter_gate(
-            raw_data = raw_data,
-            pd = pd,
-            sample_type = sample_info$type,
-            outlier_percentile = config$outlier_percentile,
-            debris_percentile = config$debris_percentile,
-            subsample_n = config$subsample_n,
-            max_clusters = config$max_clusters,
-            min_cluster_proportion = config$min_cluster_proportion,
-            gate_contour_beads = config$gate_contour_beads,
-            gate_contour_cells = config$gate_contour_cells,
-            bead_gate_scale = config$bead_gate_scale
-        )
-
-        neg_data <- if (!is.null(scatter_info)) scatter_info$gated_data else raw_data
-        out[[key]] <- apply(neg_data[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
-        message("Using universal negative file for SCC subtraction: ", basename(fcs_file))
-    }
-
-    out
 }
 
 .collect_reference_unstained_bead_negative <- function(control_df,
@@ -3512,7 +3417,7 @@
                                     metadata,
                                     config,
                                     af_data_raw = NULL,
-                                    universal_negatives = NULL,
+                                    bead_negative = NULL,
                                     scc_background = NULL) {
     sn_ext <- basename(fcs_file)
     sn <- tools::file_path_sans_ext(sn_ext)
@@ -3670,7 +3575,7 @@
         row_info = row_info,
         sample_type = sample_info$type,
         af_data_raw = af_data_raw,
-        universal_negatives = universal_negatives,
+        bead_negative = bead_negative,
         scc_background = scc_background,
         scc_background_method = if (isTRUE(config$clean_scc_with_unstained)) config$scc_background_method else "none",
         scc_background_k = config$scc_background_k
@@ -3833,7 +3738,7 @@
 #'   optional spectral-selection, and spectrum plots. When `FALSE` (default),
 #'   the function returns the matrix without writing QC files.
 #' @param control_df Optional control mapping as a data.frame or CSV path.
-#'   Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.
+#'   Expected columns: `filename`, `fluorophore`, and `channel`.
 #' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls entirely,
 #'   even when they are present in `control_df` or the SCC folder.
 #' @param af_n_bands Number of SOM nodes used to extract AF basis signatures
@@ -4078,13 +3983,6 @@ build_reference_matrix <- function(
         extract_signatures = FALSE
     )
 
-    universal_negatives <- .collect_reference_universal_negatives(
-        control_df = control_df,
-        fcs_files = file_info$fcs_files_all,
-        detector_names = metadata$detector_names,
-        sample_patterns = sample_patterns,
-        config = config
-    )
     bead_negative <- .collect_reference_unstained_bead_negative(
         control_df = control_df,
         fcs_files = file_info$fcs_files_all,
@@ -4092,10 +3990,6 @@ build_reference_matrix <- function(
         sample_patterns = sample_patterns,
         config = config
     )
-    if (!is.null(bead_negative)) {
-        universal_negatives[[".__unstained_bead__"]] <- bead_negative
-    }
-
     results_list <- list()
     qc_summary_list <- list()
     for (fcs_file in file_info$fcs_files_all) {
@@ -4106,7 +4000,7 @@ build_reference_matrix <- function(
             metadata = metadata,
             config = config,
             af_data_raw = af_profiles_raw$af_data_raw,
-            universal_negatives = universal_negatives,
+            bead_negative = bead_negative,
             scc_background = if (isTRUE(clean_scc_with_unstained)) af_profiles_raw$scc_background else NULL
         )
         if (is.null(processed)) {

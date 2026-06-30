@@ -24,6 +24,7 @@ if (FALSE) {
 
     gate_settings <- gating_options(
         use_scatter_gating = TRUE,
+        use_af_cosine_scc_selection = FALSE,
         histogram_pct_beads = 0.98,
         histogram_direction_beads = "right",
         histogram_pct_cells = 0.35,
@@ -39,10 +40,10 @@ if (FALSE) {
         auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
         output_dir = "spectreasy_outputs/unmix_controls",
         exclude_af = FALSE,
-        unmix_method = "WLS",
+        unmix_method = "AutoSpectral",
         unmix_scatter_panel_size_mm = 30,
         seed = NULL,
-        af_n_bands = 100,
+        af_n_bands = "auto",
         af_bands_per_file = NULL,
         af_auto_max_bands = 100,
         af_min_cluster_events = 20,
@@ -54,11 +55,23 @@ if (FALSE) {
         multithreading = FALSE,
         n_threads = "auto",
         save_qc_plots = FALSE,
-        use_scatter_gating = TRUE
+        save_report = TRUE,
+        output_file = NULL,
+        use_scatter_gating = TRUE,
+        use_af_cosine_scc_selection = FALSE,
+        clean_scc_with_unstained = TRUE,
+        scc_background_method = c("scatter_knn", "none"),
+        scc_background_k = 3,
+        spectral_variant_som_nodes = 16,
+        spectral_variant_top_k = 3,
+        spectral_variant_cosine_threshold = 0.98,
+        spectral_variant_max_variants = 8,
+        spectral_variant_min_events = 50
         # Additional build_reference_matrix() arguments can be passed here.
     )
 
     qc_controls_report <- qc_controls(
+        results = NULL,
         M = NULL,
         unmixing_matrix_file = file.path(
             "spectreasy_outputs",
@@ -67,9 +80,10 @@ if (FALSE) {
         ),
         scc_dir = "scc",
         output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
+        unmix_controls_dir = NULL,
         control_file = "fcs_mapping.csv",
         cytometer = "auto",
-        method = "WLS",
+        method = "AutoSpectral",
         qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
         save_qc_pngs = FALSE,
         use_scatter_gating = TRUE,
@@ -102,14 +116,14 @@ if (FALSE) {
             "scc_variances.csv"
         ),
         detector_noise_file = NULL,
-        method = "WLS",
+        method = "AutoSpectral",
         rwls_max_iter = 1L,
         multithreading = FALSE,
         n_threads = "auto",
         cytometer = "auto",
         scc_dir = NULL,
         control_file = NULL,
-        af_n_bands = 100,
+        af_n_bands = "auto",
         af_bands_per_file = NULL,
         af_auto_max_bands = 100,
         af_min_cluster_events = 20,
@@ -117,13 +131,25 @@ if (FALSE) {
         af_n_bands_sensitivity = 1.5,
         af_refine = FALSE,
         af_refine_problem_quantile = 0.99,
+        af_deduplicate = FALSE,
+        af_deduplication_threshold = 0.99,
+        af_contaminant_threshold = 0.99,
+        spectral_variant_library = NULL,
+        spectral_variant_library_file = NULL,
+        spectral_variant_top_k = 3,
+        spectral_variant_min_abundance = 1,
         exclude_af = FALSE,
+        estimate_af = FALSE,
         output_dir = file.path(
             "spectreasy_outputs",
             "unmix_samples",
             "unmixed_fcs"
         ),
         write_fcs = TRUE,
+        save_report = TRUE,
+        output_file = NULL,
+        save_qc_plots = FALSE,
+        qc_plot_dir = NULL,
         subsample_n = NULL,
         seed = NULL,
         return_type = c("list", "flowSet", "SingleCellExperiment"),
@@ -145,13 +171,16 @@ if (FALSE) {
         pd = NULL,
         max_events_per_sample = 1000,
         overview_files_per_page = 15,
-        matrix_markers_per_page = 15,
+        matrix_markers_per_page = 20,
         sample_nxn_rows_per_page = 10,
-        sample_nxn_max_points = 1000,
+        sample_nxn_max_points = max_events_per_sample,
         sample_nxn_transform = c("none", "asinh"),
         sample_nxn_asinh_cofactor = 150,
         sample_nxn_axis_limit = NULL,
-        nxn_all_samples = FALSE
+        nxn_all_samples = FALSE,
+        qc_plot_dir = NULL,
+        save_qc_pngs = FALSE,
+        qc_metrics_dir = NULL
     )
 
     # -------------------------------------------------------------------------
@@ -173,11 +202,6 @@ if (FALSE) {
         af_n_bands = "auto",
         af_max_cells = 50000,
         af_auto_max_bands = 100,
-        af_min_cluster_events = 20,
-        af_min_cluster_proportion = 0.005,
-        af_n_bands_sensitivity = 1.5,
-        af_refine = FALSE,
-        af_refine_problem_quantile = 0.99,
         seed = NULL,
         show_plot = TRUE,
         verbose = TRUE
@@ -225,17 +249,26 @@ if (FALSE) {
         save_qc_plots = FALSE,
         control_df = NULL,
         exclude_af = FALSE,
-        af_n_bands = 100,
+        af_n_bands = "auto",
         af_bands_per_file = NULL,
         af_max_cells = 50000,
         af_auto_max_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
         af_n_bands_sensitivity = 1.5,
+        af_refine = FALSE,
+        af_refine_problem_quantile = 0.99,
+        af_deduplicate = FALSE,
+        af_deduplication_threshold = 0.99,
+        af_contaminant_threshold = 0.99,
         seed = NULL,
         default_sample_type = "beads",
         cytometer = "auto",
         use_scatter_gating = TRUE,
+        use_af_cosine_scc_selection = FALSE,
+        clean_scc_with_unstained = TRUE,
+        scc_background_method = c("scatter_knn", "none"),
+        scc_background_k = 3,
         histogram_pct_beads = 0.98,
         histogram_direction_beads = "right",
         histogram_pct_cells = 0.35,
@@ -246,7 +279,7 @@ if (FALSE) {
         max_clusters = 10,
         min_cluster_proportion = 0.03,
         gate_contour_beads = 0.95,
-        gate_contour_cells = 0.9,
+        gate_contour_cells = 0.8,
         subsample_n = 5000
     )
 
@@ -254,14 +287,19 @@ if (FALSE) {
         flow_frame = flow_frame,
         M = M,
         file_name = NULL,
-        method = "WLS",
+        method = "AutoSpectral",
         return_residuals = FALSE,
         background_noise = 125,
         wls_signal_scale = 1,
         wls_max_weight_ratio = 1600,
         rwls_max_iter = 1L,
         multithreading = FALSE,
-        n_threads = "auto"
+        n_threads = "auto",
+        spectral_variant_library = NULL,
+        spectral_variant_top_k = 3,
+        spectral_variant_min_abundance = 1,
+        spectral_variant_positive_fraction = 0.02,
+        spectral_variant_min_improvement = 0.01
     )
 
     W <- derive_unmixing_matrix(
@@ -286,7 +324,10 @@ if (FALSE) {
         height = 100,
         unit = "mm",
         dpi = 600,
-        theme_custom = NULL
+        theme_custom = NULL,
+        annotate_peaks = "auto",
+        peak_label_max = 40,
+        peak_label_size = 2.6
     )
 
     unmixing_matrix_plot <- plot_unmixing_matrix(
@@ -345,7 +386,7 @@ if (FALSE) {
         flow_frame = flow_frame,
         control_file = "fcs_mapping.csv",
         control_dir = "scc",
-        method = "WLS",
+        method = "AutoSpectral",
         cytometer = "auto"
     )
 
@@ -363,6 +404,10 @@ if (FALSE) {
 
     sorted_detectors <- get_sorted_detectors(
         pd = parameter_data
+    )
+
+    cytometers <- supported_cytometers(
+        include_auto = FALSE
     )
 
     example_data <- spectreasy_example_data(

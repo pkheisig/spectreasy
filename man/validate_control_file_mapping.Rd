@@ -34,7 +34,7 @@ A list with `ok`, `errors`, and `warnings`.
 \description{
 Performs strict preflight checks on the control mapping used for SCC workflows.
 This catches common setup issues early (missing files, wrong channel names,
-malformed universal negatives, incomplete mappings).
+incomplete mappings).
 }
 \examples{
 make_example_ff <- function(main, n = 250) {

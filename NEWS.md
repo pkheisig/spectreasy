@@ -18,7 +18,6 @@
 - Multi-AF event-wise WLS/RWLS can now run through `RcppParallel` when `multithreading = TRUE`. `n_threads = "auto"` uses `RcppParallel::defaultNumThreads()`, while oversized integer requests are clipped to the available thread count.
 - `unmix_samples(verbose = TRUE)` now shows an interactive console progress bar across samples when available.
 - `control.type` in the control mapping now controls bead/cell FSC/SSC gating, with filename guessing used only when the column is empty.
-- `universal.negative` can now point to a specific negative FCS file for SCC subtraction.
 - Removed the unused `background_noise` argument from spectral spread matrix calculation.
 - Added AF basis-band extraction via `af_n_bands`/`af_max_cells` in `build_reference_matrix()`.
 - Added FlowSOM-based multi-AF bank extraction via `af_n_bands`/`af_auto_max_bands`; the default auto bank uses up to 100 SOM nodes plus a prepended mean AF row.

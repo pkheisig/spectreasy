@@ -5,7 +5,6 @@
         marker = character(),
         channel = character(),
         control.type = character(),
-        universal.negative = character(),
         is.viability = character(),
         stringsAsFactors = FALSE
     )
@@ -577,7 +576,6 @@
         marker = marker,
         channel = "",
         control.type = control_type,
-        universal.negative = "",
         is.viability = if (is_bead_negative) "" else viability_flag,
         stringsAsFactors = FALSE
     )
@@ -807,8 +805,6 @@
     af_files <- unique(c(filename_af_candidates, auto_af_files, mapped_af_files))
     af_files <- af_files[af_files %in% scc_files & !(af_files %in% bead_negative_files)]
 
-    df$universal.negative <- ""
-
     df$control.type <- tolower(trimws(as.character(df$control.type)))
     df$control.type[is.na(df$control.type)] <- ""
     invalid_type <- !(df$control.type %in% c("", "beads", "cells"))
@@ -847,7 +843,6 @@
         "marker",
         "channel",
         "control.type",
-        "universal.negative",
         "is.viability"
     )
     keep <- intersect(preferred_order, colnames(df))
@@ -868,8 +863,7 @@
 #' @param custom_fluorophores Optional named vector to map filenames to fluorophore names.
 #' @return A data frame containing the control file information.
 #'
-#' The generated file intentionally leaves `universal.negative` empty by default.
-#' It auto-detects `control.type` from filename tokens (for example `"beads"`
+#' The generated file auto-detects `control.type` from filename tokens (for example `"beads"`
 #' or `"cells"`). Unstained/negative bead files are denoted as `AF_Bead`
 #' with `control.type = "beads"` so they can be used as bead-background
 #' negatives without being mixed into the cellular AF bank.
