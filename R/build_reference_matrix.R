@@ -3182,7 +3182,6 @@
 
     p <- ggplot2::ggplot(long, ggplot2::aes(DetectorIndex, Signal, group = Band, color = Group)) +
         ggplot2::geom_line(alpha = 0.78, linewidth = 0.75) +
-        ggplot2::geom_point(alpha = 0.85, size = 0.9) +
         ggplot2::scale_color_manual(
             values = stats::setNames(
                 c("#2166AC", "#B2182B"),
