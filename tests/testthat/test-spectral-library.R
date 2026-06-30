@@ -38,6 +38,24 @@ testthat::test_that("spectral panel data returns spectra, similarity, and comple
     testthat::expect_gte(panel$complexity_index, 1)
 })
 
+testthat::test_that("Aurora panel configurations subset detectors and filter unusable dyes", {
+    configs <- spectreasy:::.spectral_panel_configurations("aurora")
+    testthat::expect_equal(configs$id, c("5l_uv_v_b_yg_r", "4l_uv_v_b_r", "4l_v_b_yg_r", "3l_v_b_r"))
+
+    payload <- spectreasy:::.spectral_panel_payload(
+        cytometer = "aurora",
+        configuration = "3l_v_b_r",
+        fluorophores = c("FITC", "PE", "BUV395")
+    )
+
+    testthat::expect_equal(payload$configuration, "3l_v_b_r")
+    testthat::expect_setequal(unique(payload$detectors$laser), c("Violet", "Blue", "Red"))
+    testthat::expect_false("BUV395" %in% payload$fluorophores$fluorophore)
+    testthat::expect_equal(payload$selected, c("FITC", "PE"))
+    testthat::expect_true(all(c("FITC", "PE") %in% payload$spectra$fluorophore))
+    testthat::expect_false("BUV395" %in% payload$spectra$fluorophore)
+})
+
 testthat::test_that("panel payload serializes selected spectra for GUI", {
     payload <- spectreasy:::.spectral_panel_payload(
         cytometer = "id7000",

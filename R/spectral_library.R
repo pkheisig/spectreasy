@@ -46,6 +46,93 @@
     )
 }
 
+.spectral_panel_configurations <- function(cytometer = "aurora") {
+    id <- .resolve_spectral_panel_cytometer(cytometer)
+    if (identical(id, "aurora")) {
+        return(data.frame(
+            id = c("5l_uv_v_b_yg_r", "4l_uv_v_b_r", "4l_v_b_yg_r", "3l_v_b_r"),
+            label = c(
+                "Aurora 5L: UV/V/B/YG/R",
+                "Aurora 4L: UV/V/B/R",
+                "Aurora 4L: V/B/YG/R",
+                "Aurora 3L: V/B/R"
+            ),
+            description = c(
+                "16UV-16V-14B-10YG-8R",
+                "16UV-16V-14B-8R",
+                "16V-14B-10YG-8R",
+                "16V-14B-8R"
+            ),
+            stringsAsFactors = FALSE
+        ))
+    }
+
+    libs <- .spectral_panel_libraries()
+    label <- libs$label[match(id, libs$id)]
+    if (is.na(label) || !nzchar(label)) label <- id
+    data.frame(
+        id = "full",
+        label = paste0(label, " full detector set"),
+        description = "All packaged detectors",
+        stringsAsFactors = FALSE
+    )
+}
+
+.resolve_spectral_panel_configuration <- function(cytometer = "aurora", configuration = NULL) {
+    id <- .resolve_spectral_panel_cytometer(cytometer)
+    configs <- .spectral_panel_configurations(id)
+    default <- configs$id[1]
+    if (missing(configuration) || is.null(configuration) || length(configuration) == 0) {
+        return(default)
+    }
+
+    key <- .normalize_cytometer_token(configuration[1])
+    aliases <- c(
+        full = "full",
+        aurora5l = "5l_uv_v_b_yg_r",
+        aurora5laser = "5l_uv_v_b_yg_r",
+        `5l` = "5l_uv_v_b_yg_r",
+        `5laser` = "5l_uv_v_b_yg_r",
+        `5luv_v_b_yg_r` = "5l_uv_v_b_yg_r",
+        `5luv_v_b_ygr` = "5l_uv_v_b_yg_r",
+        aurora4luv = "4l_uv_v_b_r",
+        aurora4luvvbr = "4l_uv_v_b_r",
+        `4luv` = "4l_uv_v_b_r",
+        `4luv_v_b_r` = "4l_uv_v_b_r",
+        aurora4lyg = "4l_v_b_yg_r",
+        aurora4lvbygr = "4l_v_b_yg_r",
+        `4lyg` = "4l_v_b_yg_r",
+        `4lv_b_yg_r` = "4l_v_b_yg_r",
+        aurora3l = "3l_v_b_r",
+        aurora3laser = "3l_v_b_r",
+        `3l` = "3l_v_b_r",
+        `3laser` = "3l_v_b_r",
+        `3lv_b_r` = "3l_v_b_r"
+    )
+    if (key %in% names(aliases)) {
+        hit <- unname(aliases[[key]])
+        if (hit %in% configs$id) return(hit)
+    }
+    if (key %in% .normalize_cytometer_token(configs$id)) {
+        return(configs$id[match(key, .normalize_cytometer_token(configs$id))])
+    }
+
+    default
+}
+
+.spectral_panel_configuration_lasers <- function(cytometer = "aurora", configuration = NULL) {
+    id <- .resolve_spectral_panel_cytometer(cytometer)
+    config <- .resolve_spectral_panel_configuration(id, configuration)
+    if (!identical(id, "aurora")) return(NULL)
+    switch(config,
+        `5l_uv_v_b_yg_r` = c("UV", "Violet", "Blue", "YellowGreen", "Red"),
+        `4l_uv_v_b_r` = c("UV", "Violet", "Blue", "Red"),
+        `4l_v_b_yg_r` = c("Violet", "Blue", "YellowGreen", "Red"),
+        `3l_v_b_r` = c("Violet", "Blue", "Red"),
+        NULL
+    )
+}
+
 .spectral_library_path <- function(cytometer) {
     id <- .resolve_spectral_panel_cytometer(cytometer)
     file_map <- .spectral_library_file_map()
@@ -166,7 +253,8 @@
 .load_spectral_library <- function(cytometer = "aurora",
                                    fluorophores = NULL,
                                    detectors = NULL,
-                                   strict = FALSE) {
+                                   strict = FALSE,
+                                   renormalize = TRUE) {
     id <- .resolve_spectral_panel_cytometer(cytometer)
     M <- .read_spectral_library_matrix(id)
 
@@ -184,7 +272,7 @@
     }
 
     attr(M, "cytometer") <- id
-    .normalize_spectral_rows(M)
+    if (isTRUE(renormalize)) .normalize_spectral_rows(M) else M
 }
 
 .spectral_cosine <- function(a, b) {
@@ -327,7 +415,7 @@
 
 .spectral_detector_metadata <- function(cytometer, detectors) {
     id <- .resolve_spectral_panel_cytometer(cytometer)
-    cache_key <- paste0("det_", id)
+    cache_key <- paste0("det_", id, "_", paste(.normalize_detector_token(detectors), collapse = "_"))
     if (exists(cache_key, envir = .spectreasy_cache)) {
         return(get(cache_key, envir = .spectreasy_cache))
     }
@@ -359,6 +447,61 @@
     out
 }
 
+.spectral_panel_configuration_detectors <- function(cytometer = "aurora",
+                                                    configuration = NULL,
+                                                    detectors = NULL) {
+    id <- .resolve_spectral_panel_cytometer(cytometer)
+    if (is.null(detectors)) {
+        detectors <- colnames(.load_spectral_library(id, renormalize = FALSE))
+    }
+    lasers <- .spectral_panel_configuration_lasers(id, configuration)
+    if (is.null(lasers)) return(detectors)
+    detector_info <- .spectral_detector_metadata(id, detectors)
+    detector_info$detector[detector_info$laser %in% lasers]
+}
+
+.spectral_panel_configuration_spectra <- function(cytometer = "aurora",
+                                                  configuration = NULL,
+                                                  fluorophores = NULL,
+                                                  strict = FALSE,
+                                                  min_retained_signal = 0.02) {
+    id <- .resolve_spectral_panel_cytometer(cytometer)
+    full <- .load_spectral_library(
+        cytometer = id,
+        fluorophores = fluorophores,
+        strict = strict,
+        renormalize = FALSE
+    )
+    config_detectors <- .spectral_panel_configuration_detectors(
+        cytometer = id,
+        configuration = configuration,
+        detectors = colnames(full)
+    )
+    config_detectors <- intersect(config_detectors, colnames(full))
+    if (length(config_detectors) == 0) {
+        stop("Selected spectral panel configuration has no matching detectors.", call. = FALSE)
+    }
+
+    retained_signal <- apply(abs(full[, config_detectors, drop = FALSE]), 1, max, na.rm = TRUE)
+    retained_signal[!is.finite(retained_signal)] <- 0
+    keep <- retained_signal >= min_retained_signal
+    unavailable <- rownames(full)[!keep]
+    if (length(unavailable) > 0 && isTRUE(strict) && !is.null(fluorophores)) {
+        stop(
+            "Fluorophore(s) have too little signal in this detector configuration: ",
+            paste(unavailable, collapse = ", "),
+            call. = FALSE
+        )
+    }
+
+    out <- full[keep, config_detectors, drop = FALSE]
+    out <- .normalize_spectral_rows(out)
+    attr(out, "cytometer") <- id
+    attr(out, "configuration") <- .resolve_spectral_panel_configuration(id, configuration)
+    attr(out, "retained_signal") <- retained_signal[keep]
+    out
+}
+
 .calculate_panel_complexity <- function(spectra) {
     spectra <- .as_reference_matrix(spectra, "spectra")
     if (nrow(spectra) < 2) return(1)
@@ -377,9 +520,11 @@
 
 .build_spectral_panel_data <- function(fluorophores,
                                        cytometer = "aurora",
+                                       configuration = NULL,
                                        strict = TRUE) {
-    spectra <- .load_spectral_library(
+    spectra <- .spectral_panel_configuration_spectra(
         cytometer = cytometer,
+        configuration = configuration,
         fluorophores = fluorophores,
         strict = strict
     )
@@ -574,6 +719,7 @@
 }
 
 .write_spectral_panel_overview_pdf <- function(cytometer = "aurora",
+                                               configuration = NULL,
                                                fluorophores,
                                                markers = NULL,
                                                output_file) {
@@ -581,9 +727,17 @@
         stop("output_file is required.", call. = FALSE)
     }
 
+    requested_fluorophores <- unique(trimws(as.character(fluorophores)))
+    requested_fluorophores <- requested_fluorophores[nzchar(requested_fluorophores)]
+    requested_markers <- if (is.null(markers)) rep("", length(requested_fluorophores)) else trimws(as.character(markers))
+    length(requested_markers) <- length(requested_fluorophores)
+    requested_markers[is.na(requested_markers)] <- ""
+    marker_map <- stats::setNames(requested_markers, requested_fluorophores)
+
     panel <- .build_spectral_panel_data(
-        fluorophores = fluorophores,
+        fluorophores = requested_fluorophores,
         cytometer = cytometer,
+        configuration = configuration,
         strict = FALSE
     )
     spectra <- panel$spectra
@@ -591,14 +745,17 @@
         stop("Select at least one fluorophore before exporting a panel overview.", call. = FALSE)
     }
 
-    markers <- if (is.null(markers)) rep("", nrow(spectra)) else trimws(as.character(markers))
-    length(markers) <- nrow(spectra)
+    markers <- unname(marker_map[rownames(spectra)])
     markers[is.na(markers)] <- ""
 
     id <- .resolve_spectral_panel_cytometer(cytometer)
+    config <- .resolve_spectral_panel_configuration(id, configuration)
     libs <- .spectral_panel_libraries()
     cyt_label <- libs$label[match(id, libs$id)]
     if (is.na(cyt_label) || !nzchar(cyt_label)) cyt_label <- id
+    configs <- .spectral_panel_configurations(id)
+    config_label <- configs$label[match(config, configs$id)]
+    if (is.na(config_label) || !nzchar(config_label)) config_label <- config
 
     signature_pages <- .plot_spectral_panel_bands(spectra, cytometer = id, markers = markers)
     sim <- panel$similarity_matrix
@@ -616,7 +773,7 @@
         gp = grid::gpar(fontsize = 18, fontface = "bold")
     )
     grid::grid.text(
-        paste0(cyt_label, " | ", nrow(spectra), " fluorophore(s)"),
+        paste0(cyt_label, " | ", config_label, " | ", nrow(spectra), " fluorophore(s)"),
         x = 0.04,
         y = 0.915,
         just = c("left", "top"),
@@ -647,14 +804,31 @@
     invisible(output_file)
 }
 
-.spectral_panel_payload <- function(cytometer = "aurora", fluorophores = character()) {
+.spectral_panel_payload <- function(cytometer = "aurora",
+                                    fluorophores = character(),
+                                    configuration = NULL) {
     id <- .resolve_spectral_panel_cytometer(cytometer)
-    library <- .load_spectral_library(id)
+    config <- .resolve_spectral_panel_configuration(id, configuration)
+    full_library <- .load_spectral_library(id, renormalize = FALSE)
+    config_detectors <- .spectral_panel_configuration_detectors(
+        cytometer = id,
+        configuration = config,
+        detectors = colnames(full_library)
+    )
+    retained_signal <- apply(abs(full_library[, config_detectors, drop = FALSE]), 1, max, na.rm = TRUE)
+    retained_signal[!is.finite(retained_signal)] <- 0
+    available <- retained_signal >= 0.02
+    library <- .normalize_spectral_rows(full_library[available, config_detectors, drop = FALSE])
     detector_info <- .spectral_detector_metadata(id, colnames(library))
     fluorophores <- unique(trimws(as.character(fluorophores)))
     fluorophores <- fluorophores[nzchar(fluorophores)]
 
-    selected <- .load_spectral_library(id, fluorophores = fluorophores, strict = FALSE)
+    selected <- .spectral_panel_configuration_spectra(
+        cytometer = id,
+        configuration = config,
+        fluorophores = fluorophores,
+        strict = FALSE
+    )
     selected_names <- rownames(selected)
     if (is.null(selected_names)) selected_names <- character()
     sim <- if (length(selected_names) > 0) calculate_similarity_matrix(selected) else matrix(numeric(0), nrow = 0, ncol = 0)
@@ -668,6 +842,7 @@
     fluor_table <- data.frame(
         fluorophore = rownames(library),
         peak_detector = apply(library, 1, function(x) colnames(library)[which.max(x)]),
+        retained_signal = as.numeric(retained_signal[rownames(library)]),
         stringsAsFactors = FALSE
     )
     fluor_table$peak_laser <- detector_info$laser[match(fluor_table$peak_detector, detector_info$detector)]
@@ -676,7 +851,9 @@
 
     list(
         cytometer = id,
+        configuration = config,
         libraries = .spectral_panel_libraries(),
+        configurations = .spectral_panel_configurations(id),
         detectors = detector_info,
         fluorophores = fluor_table,
         selected = selected_names,

@@ -151,16 +151,19 @@ function() {
 #* Spectral panel builder metadata and current selection
 #* @get /spectral_panel
 #* @param cytometer
-function(cytometer = "") {
+#* @param configuration
+function(cytometer = "", configuration = "") {
     selected_cytometer <- if (is.null(cytometer) || !nzchar(trimws(as.character(cytometer)[1]))) {
         getOption("spectreasy.panel_cytometer", "aurora")
     } else {
         cytometer
     }
+    selected_configuration <- if (is.null(configuration) || !nzchar(trimws(as.character(configuration)[1]))) NULL else configuration
     tryCatch(
         spectreasy:::.spectral_panel_payload(
             cytometer = selected_cytometer,
-            fluorophores = character()
+            fluorophores = character(),
+            configuration = selected_configuration
         ),
         error = function(e) list(error = conditionMessage(e))
     )
@@ -177,11 +180,13 @@ function(res) {
 function(req) {
     body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
     cytometer <- if (!is.null(body$cytometer)) body$cytometer else getOption("spectreasy.panel_cytometer", "aurora")
+    configuration <- if (!is.null(body$configuration)) body$configuration else NULL
     fluorophores <- if (!is.null(body$fluorophores)) body$fluorophores else character()
     tryCatch(
         spectreasy:::.spectral_panel_payload(
             cytometer = cytometer,
-            fluorophores = fluorophores
+            fluorophores = fluorophores,
+            configuration = configuration
         ),
         error = function(e) list(error = conditionMessage(e))
     )
@@ -198,6 +203,7 @@ function(res) {
 function(req) {
     body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
     cytometer <- if (!is.null(body$cytometer)) body$cytometer else getOption("spectreasy.panel_cytometer", "aurora")
+    configuration <- if (!is.null(body$configuration)) body$configuration else NULL
     fluorophores <- if (!is.null(body$fluorophores)) body$fluorophores else character()
     markers <- if (!is.null(body$markers)) body$markers else character()
 
@@ -206,13 +212,14 @@ function(req) {
         on.exit(unlink(output_file), add = TRUE)
         spectreasy:::.write_spectral_panel_overview_pdf(
             cytometer = cytometer,
+            configuration = configuration,
             fluorophores = fluorophores,
             markers = markers,
             output_file = output_file
         )
         payload <- readBin(output_file, what = "raw", n = file.info(output_file)$size)
         list(
-            filename = paste0("spectreasy_", cytometer, "_panel_overview.pdf"),
+            filename = paste0("spectreasy_", cytometer, "_", ifelse(is.null(configuration), "panel", configuration), "_overview.pdf"),
             content_type = "application/pdf",
             content_base64 = jsonlite::base64_enc(payload)
         )

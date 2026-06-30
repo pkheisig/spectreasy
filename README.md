@@ -383,6 +383,8 @@ plot_nps(calculate_nps(sample_results), output_file = NULL)
 
 `build_spectral_panel()` opens a browser-based panel builder backed by packaged theoretical spectra. It currently supports Cytek Aurora, BD FACSDiscover, Sony ID7000, and Thermo Fisher Attune Xenith cytometers. You can use it to view fluorophore spectra, detector overlap, similarity, and panel complexity. Note: This tool estimates fluorophore overlap and panel complexity, but may be less accurate than proprietary panel builders that use hardware-specific parameters.
 
+For Cytek Aurora, the builder can switch between common 5-, 4-, and 3-laser configurations. These are derived from the packaged 5-laser Aurora spectra by keeping only the detectors present on the selected instrument and filtering out fluorophores with too little retained signal.
+
 ```r
 build_spectral_panel()
 ```

@@ -202,7 +202,23 @@
   transition: all 0.2s;
 }
 
-.instrument-select:focus {
+.configuration-select {
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.instrument-select:focus,
+.configuration-select:focus {
   border-color: #3b82f6;
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
 }

@@ -18,6 +18,12 @@ type LibraryInfo = {
     label: string;
 };
 
+type ConfigurationInfo = {
+    id: string;
+    label: string;
+    description: string;
+};
+
 type DetectorInfo = {
     detector: string;
     label: string;
@@ -40,7 +46,9 @@ type NumericRow = {
 
 type PanelPayload = {
     cytometer: string;
+    configuration: string;
     libraries: LibraryInfo[];
+    configurations: ConfigurationInfo[];
     detectors: DetectorInfo[];
     fluorophores: FluorInfo[];
     selected: string[];
@@ -498,6 +506,7 @@ const mapDetectorToEmission = (detectorName: string): number => {
 const PanelBuilder = () => {
     const [payload, setPayload] = useState<PanelPayload | null>(null);
     const [cytometer, setCytometer] = useState(() => getCytometerName(localStorage.getItem('spectreasy_cytometer') || 'aurora'));
+    const [configuration, setConfiguration] = useState(() => getCytometerName(localStorage.getItem('spectreasy_configuration') || '5l_uv_v_b_yg_r'));
     const [slots, setSlots] = useState<string[]>(() => {
         try {
             const stored = localStorage.getItem('spectreasy_slots');
@@ -531,6 +540,10 @@ const PanelBuilder = () => {
     useEffect(() => {
         localStorage.setItem('spectreasy_cytometer', getCytometerName(cytometer));
     }, [cytometer]);
+
+    useEffect(() => {
+        localStorage.setItem('spectreasy_configuration', getCytometerName(configuration));
+    }, [configuration]);
 
     useEffect(() => {
         localStorage.setItem('spectreasy_theme', theme);
@@ -626,16 +639,23 @@ const PanelBuilder = () => {
         }))
         .filter(row => row.fluor), [markers, slots]);
 
-    const fetchPanel = async (nextCytometer: string, nextSelected: string[]) => {
+    const selectedConfigurationLabel = useMemo(() => {
+        const hit = payload?.configurations.find(config => config.id === configuration);
+        return hit?.label || '';
+    }, [configuration, payload]);
+
+    const fetchPanel = async (nextCytometer: string, nextConfiguration: string, nextSelected: string[]) => {
         setError('');
         const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, {
             cytometer: nextCytometer,
+            configuration: nextConfiguration,
             fluorophores: nextSelected,
         });
         if (res.data?.error) throw new Error(String(res.data.error));
         const nextPayload = res.data as PanelPayload;
         setPayload(nextPayload);
         setCytometer(getCytometerName(nextPayload.cytometer));
+        setConfiguration(getCytometerName(nextPayload.configuration));
         return nextPayload;
     };
 
@@ -644,12 +664,14 @@ const PanelBuilder = () => {
             try {
                 const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, {
                     cytometer,
+                    configuration,
                     fluorophores: slots.filter(Boolean),
                 });
                 if (res.data?.error) throw new Error(String(res.data.error));
                 const initial = res.data as PanelPayload;
                 setPayload(initial);
                 setCytometer(getCytometerName(initial.cytometer));
+                setConfiguration(getCytometerName(initial.configuration));
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Could not load spectral libraries.');
             } finally {
@@ -680,7 +702,7 @@ const PanelBuilder = () => {
         setSlots(nextSlots);
         setQueries(prev => ({ ...prev, [index]: '' }));
         setActiveSlot(null);
-        await fetchPanel(cytometer, nextSlots.filter(Boolean)).catch(err => {
+        await fetchPanel(cytometer, configuration, nextSlots.filter(Boolean)).catch(err => {
             setError(err instanceof Error ? err.message : 'Could not update panel.');
         });
     };
@@ -700,7 +722,7 @@ const PanelBuilder = () => {
         setLoading(true);
         try {
             const activeSelected = slots.filter(Boolean);
-            const nextPayload = await fetchPanel(nextCytometer, activeSelected);
+            const nextPayload = await fetchPanel(nextCytometer, configuration, activeSelected);
             const availableSet = new Set(nextPayload.fluorophores.map(f => f.fluorophore));
             const nextSlots = slots.map(fluor => (availableSet.has(fluor) ? fluor : ''));
             const nextMarkers: Record<number, string> = {};
@@ -721,6 +743,32 @@ const PanelBuilder = () => {
         }
     };
 
+    const applyPayloadAvailability = (nextPayload: PanelPayload) => {
+        const availableSet = new Set(nextPayload.fluorophores.map(f => f.fluorophore));
+        const nextSlots = slotsRef.current.map(fluor => (availableSet.has(fluor) ? fluor : ''));
+        const nextMarkers: Record<number, string> = {};
+        Object.entries(markers).forEach(([key, val]) => {
+            const idx = parseInt(key, 10);
+            if (nextSlots[idx]) nextMarkers[idx] = val;
+        });
+        slotsRef.current = nextSlots;
+        setSlots(nextSlots);
+        setMarkers(nextMarkers);
+        setPayload(nextPayload);
+    };
+
+    const changeConfiguration = async (nextConfiguration: string) => {
+        setLoading(true);
+        try {
+            const nextPayload = await fetchPanel(cytometer, nextConfiguration, slotsRef.current.filter(Boolean));
+            applyPayloadAvailability(nextPayload);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not switch Aurora configuration.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const clearSelection = async () => {
         setError('');
         const emptySlotsArray = Array(emptySlots).fill('');
@@ -731,7 +779,7 @@ const PanelBuilder = () => {
         setActiveSlot(null);
         setLoading(true);
         try {
-            await fetchPanel(cytometer, []);
+            await fetchPanel(cytometer, configuration, []);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Could not clear selection.');
         } finally {
@@ -780,7 +828,7 @@ const PanelBuilder = () => {
             ...selectedRows.map(row => [row.marker, row.fluor].map(csvEscape).join(',')),
         ];
         downloadBlob(
-            `spectreasy_${cytometer}_panel.csv`,
+            `spectreasy_${cytometer}_${configuration}_panel.csv`,
             new Blob([`${lines.join('\n')}\n`], { type: 'text/csv;charset=utf-8' })
         );
     };
@@ -795,12 +843,13 @@ const PanelBuilder = () => {
         try {
             const res = await axios.post(`${API_BASE}/export_spectral_panel_overview`, {
                 cytometer,
+                configuration,
                 fluorophores: selectedRows.map(row => row.fluor),
                 markers: selectedRows.map(row => row.marker),
             });
             if (res.data?.error) throw new Error(String(res.data.error));
             const out = res.data as PanelExportResponse;
-            downloadBlob(out.filename || `spectreasy_${cytometer}_panel_overview.pdf`, base64ToBlob(out.content_base64, out.content_type || 'application/pdf'));
+            downloadBlob(out.filename || `spectreasy_${cytometer}_${configuration}_panel_overview.pdf`, base64ToBlob(out.content_base64, out.content_type || 'application/pdf'));
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Could not export panel overview.');
         } finally {
@@ -826,7 +875,7 @@ const PanelBuilder = () => {
             setMarkers(nextMarkers);
             setQueries({});
             setActiveSlot(null);
-            await fetchPanel(cytometer, imported.map(row => row.fluor));
+            await fetchPanel(cytometer, configuration, imported.map(row => row.fluor));
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Could not import panel CSV.');
         } finally {
@@ -860,7 +909,7 @@ const PanelBuilder = () => {
             <header className="panel-topbar">
                 <div>
                     <h1>Spectral Panel Builder</h1>
-                    <p>{selected.length} fluorophores selected</p>
+                    <p>{selected.length} fluorophores selected{selectedConfigurationLabel ? ` / ${selectedConfigurationLabel}` : ''}</p>
                 </div>
                 <div className="panel-actions">
                     <button 
@@ -915,6 +964,20 @@ const PanelBuilder = () => {
                                 <option key={lib.id} value={lib.id}>{lib.label}</option>
                             ))}
                         </select>
+                        {payload.configurations.length > 1 && (
+                            <select
+                                className="configuration-select"
+                                value={configuration}
+                                onChange={event => void changeConfiguration(event.target.value)}
+                                aria-label="Aurora laser configuration"
+                            >
+                                {payload.configurations.map(config => (
+                                    <option key={config.id} value={config.id}>
+                                        {config.label}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
                     </div>
                     <div className="selector-list">
                         {slots.map((fluor, index) => {
