@@ -381,13 +381,11 @@ plot_nps(calculate_nps(sample_results), output_file = NULL)
 
 ### Spectral panel builder
 
-`build_spectral_panel()` opens a browser-based panel builder backed by packaged theoretical spectra. It currently supports Cytek Aurora, BD FACSDiscover, Sony ID7000, and Thermo Fisher Attune Xenith libraries.
+`build_spectral_panel()` opens a browser-based panel builder backed by packaged theoretical spectra. It currently supports Cytek Aurora, BD FACSDiscover, Sony ID7000, and Thermo Fisher Attune Xenith cytometers. You can use it to view fluorophore spectra, detector overlap, similarity, and panel complexity. Note: This tool estimates fluorophore overlap and panel complexity, but may be less accurate than proprietary panel builders that use hardware-specific parameters.
 
 ```r
 build_spectral_panel()
 ```
-
-Use it before an experiment when you want a quick browser view of candidate fluorophore spectra, detector overlap, similarity, and panel complexity.
 
 <p align="center">
   <img src="man/figures/spectral_panel_builder.png" width="100%" />
@@ -395,13 +393,21 @@ Use it before an experiment when you want a quick browser view of candidate fluo
 
 ### Matrix adjustment module
 
-`adjust_matrix()` opens the browser-based matrix adjustment module. By default, it looks for matrix files in `spectreasy_outputs/unmix_controls` under the current working directory, serves bundled browser assets, and runs locally through the R session.
+`adjust_matrix()` opens the browser-based matrix adjustment module. By default, it looks for matrix files in `spectreasy_outputs/unmix_controls` under the current working directory, serves bundled browser assets, and runs locally through the R session. You can use it after `unmix_controls()` when you need to inspect or manually adjust an unmixing matrix in the browser to improve subsequent sample unxmixing.
 
 ```r
 adjust_matrix()
-```
 
-Use it after the automated control-stage workflow when you need to inspect or manually adjust an unmixing matrix in the browser.
+# for unmixing samples make sure to call the explicit filename of the adjusted matrix -> scc_reference_matrix_adjusted.csv
+unmix_samples(
+  sample_dir = "samples",
+  unmixing_matrix_file = file.path(
+    "spectreasy_outputs",
+    "unmix_controls",
+    "scc_reference_matrix_adjusted.csv"
+  )
+)
+```
 
 <p align="center">
   <img src="man/figures/matrix_adjustment.png" width="100%" />
