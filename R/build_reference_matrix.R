@@ -17,11 +17,16 @@
         if (!("fluorophore" %in% colnames(control_df))) control_df$fluorophore <- ""
         if (!("channel" %in% colnames(control_df))) control_df$channel <- ""
         if (!("control.type" %in% colnames(control_df))) control_df$control.type <- ""
+        if (!("is.viability.dead" %in% colnames(control_df))) control_df$is.viability.dead <- ""
 
         control_df$filename <- trimws(as.character(control_df$filename))
         control_df$fluorophore <- trimws(as.character(control_df$fluorophore))
         control_df$channel <- trimws(as.character(control_df$channel))
         control_df$control.type <- tolower(trimws(as.character(control_df$control.type)))
+        control_df$is.viability.dead <- toupper(trimws(as.character(control_df$is.viability.dead)))
+        control_df$is.viability.dead[is.na(control_df$is.viability.dead)] <- ""
+        control_df$is.viability.dead[control_df$is.viability.dead %in% c("T", "TRUE", "1", "YES", "Y")] <- "TRUE"
+        control_df$is.viability.dead[control_df$is.viability.dead != "TRUE"] <- ""
     }
 
     control_df
@@ -940,6 +945,9 @@
             }
             control_type[is.na(control_type)] <- ""
             af_rows <- af_rows[control_type != "beads", , drop = FALSE]
+            if ("is.viability.dead" %in% colnames(af_rows)) {
+                af_rows <- af_rows[!.is_viability_dead_control_row(af_rows$is.viability.dead), , drop = FALSE]
+            }
             for (fn in unique(as.character(af_rows$filename))) {
                 key_ext <- tolower(basename(fn))
                 key_stem <- tools::file_path_sans_ext(key_ext)
@@ -955,7 +963,23 @@
         }
     }
     if (length(af_paths) == 0) {
-        af_idx_tmp <- which(.is_af_filename(fcs_files) & !grepl("beads?", basename(fcs_files), ignore.case = TRUE))
+        dead_filenames <- character()
+        if (!is.null(control_df) && is.data.frame(control_df) &&
+            "filename" %in% colnames(control_df) &&
+            "is.viability.dead" %in% colnames(control_df)) {
+            dead_filenames <- tolower(basename(as.character(control_df$filename[.is_viability_dead_control_row(control_df$is.viability.dead)])))
+        }
+        dead_by_name <- vapply(
+            fcs_files,
+            function(path) identical(.infer_is_viability_dead_from_filename(path), "TRUE"),
+            logical(1)
+        )
+        af_idx_tmp <- which(
+            .is_af_filename(fcs_files) &
+                !grepl("beads?", basename(fcs_files), ignore.case = TRUE) &
+                !(tolower(basename(fcs_files)) %in% dead_filenames) &
+                !dead_by_name
+        )
         af_paths <- normalizePath(fcs_files[af_idx_tmp], mustWork = FALSE)
         af_source_types <- rep("filename_unstained", length(af_paths))
     }
@@ -964,6 +988,55 @@
     data.frame(
         path = af_paths[keep_unique],
         source_type = af_source_types[keep_unique],
+        stringsAsFactors = FALSE
+    )
+}
+
+.resolve_reference_viability_dead_paths <- function(control_df, fcs_files, exclude_af = FALSE) {
+    if (isTRUE(exclude_af)) {
+        return(data.frame(path = character(), source_type = character(), stringsAsFactors = FALSE))
+    }
+
+    fcs_lookup <- setNames(
+        normalizePath(fcs_files, mustWork = FALSE),
+        tools::file_path_sans_ext(tolower(basename(fcs_files)))
+    )
+    fcs_lookup <- c(fcs_lookup, setNames(
+        normalizePath(fcs_files, mustWork = FALSE),
+        tolower(basename(fcs_files))
+    ))
+
+    paths <- character()
+    if (!is.null(control_df) && is.data.frame(control_df) &&
+        "filename" %in% colnames(control_df) &&
+        "is.viability.dead" %in% colnames(control_df)) {
+        dead_rows <- control_df[.is_viability_dead_control_row(control_df$is.viability.dead), , drop = FALSE]
+        for (fn in unique(as.character(dead_rows$filename))) {
+            key_ext <- tolower(basename(fn))
+            key_stem <- tools::file_path_sans_ext(key_ext)
+            matched_path <- fcs_lookup[[key_ext]]
+            if (is.null(matched_path)) {
+                matched_path <- fcs_lookup[[key_stem]]
+            }
+            if (!is.null(matched_path) && nzchar(matched_path)) {
+                paths <- c(paths, matched_path)
+            }
+        }
+    }
+
+    dead_by_name <- vapply(
+        fcs_files,
+        function(path) identical(.infer_is_viability_dead_from_filename(path), "TRUE"),
+        logical(1)
+    )
+    if (any(dead_by_name)) {
+        paths <- c(paths, normalizePath(fcs_files[dead_by_name], mustWork = FALSE))
+    }
+
+    paths <- unique(paths)
+    data.frame(
+        path = paths,
+        source_type = rep("viability_dead_background", length(paths)),
         stringsAsFactors = FALSE
     )
 }
@@ -1055,97 +1128,121 @@
     af_signatures_norm <- NULL
     af_bank_info <- NULL
     scc_background <- NULL
+    viability_dead_background <- NULL
 
     if (isTRUE(exclude_af)) {
         return(list(
             af_data_raw = af_data_raw,
             af_signatures_norm = af_signatures_norm,
             af_bank_info = af_bank_info,
-            scc_background = scc_background
+            scc_background = scc_background,
+            viability_dead_background = viability_dead_background
         ))
     }
 
     af_sources_resolved <- .resolve_reference_af_paths(control_df = control_df, fcs_files = fcs_files_all, exclude_af = exclude_af)
     af_paths <- af_sources_resolved$path
     af_source_types <- af_sources_resolved$source_type
+    viability_dead_sources_resolved <- .resolve_reference_viability_dead_paths(
+        control_df = control_df,
+        fcs_files = fcs_files_all,
+        exclude_af = exclude_af
+    )
+    viability_dead_paths <- viability_dead_sources_resolved$path
 
     if (length(af_paths) > 0) {
         af_gated_list <- lapply(af_paths, .extract_reference_af_gated_events, detector_names = detector_names, config = config)
         keep_gated <- vapply(af_gated_list, function(x) !is.null(x) && !is.null(x$events) && nrow(x$events) > 0, logical(1))
         af_gated_list <- af_gated_list[keep_gated]
         af_source_types <- af_source_types[keep_gated]
-        if (length(af_gated_list) == 0) {
-            return(list(
-                af_data_raw = af_data_raw,
-                af_signatures_norm = af_signatures_norm,
-                af_bank_info = af_bank_info,
-                scc_background = scc_background
-            ))
-        }
-
-        af_events <- do.call(rbind, lapply(af_gated_list, `[[`, "events"))
-        scc_background <- .scc_background_from_gated_af_list(
-            af_gated_list = af_gated_list,
-            detector_names = detector_names
-        )
-        n_af_sources <- length(af_gated_list)
-        requested_bands <- af_n_bands
-        af_data_raw <- apply(af_events, 2, stats::median, na.rm = TRUE)
-        af_profiles <- list(raw_median = af_data_raw, signatures = NULL, selection = NULL)
-        if (isTRUE(extract_signatures)) {
-            af_profiles <- .extract_reference_af_profiles(
-                detector_names = detector_names,
-                n_bands = requested_bands,
-                max_cells = af_max_cells,
-                af_events = af_events,
-                auto_max_bands = af_auto_max_bands,
-                fluor_spectra = fluor_spectra,
-                contaminant_threshold = af_contaminant_threshold,
-                af_deduplicate = af_deduplicate,
-                af_deduplication_threshold = af_deduplication_threshold,
-                refine = af_refine,
-                refine_problem_quantile = af_refine_problem_quantile
+        if (length(af_gated_list) > 0) {
+            af_events <- do.call(rbind, lapply(af_gated_list, `[[`, "events"))
+            scc_background <- .scc_background_from_gated_af_list(
+                af_gated_list = af_gated_list,
+                detector_names = detector_names
             )
-            af_data_raw <- af_profiles$raw_median
-            af_signatures_norm <- af_profiles$signatures
-        }
-        af_sources <- data.table::rbindlist(lapply(af_gated_list, `[[`, "source"))
-        af_sources$source_type <- af_source_types
-        data.table::setcolorder(af_sources, c("file", "source_type", "n_total", "n_scatter_gated", "scatter_gate_pct", "fsc_channel", "ssc_channel", "path"))
-        af_bank_info <- list(
-            source_count = n_af_sources,
-            sources = af_sources,
-            pooled_events = nrow(af_events),
-            requested_bands = requested_bands,
-            af_bands_per_file = NA_integer_,
-            derived_bands = if (!is.null(af_signatures_norm)) nrow(af_signatures_norm) else 0L,
-            af_auto_max_bands = if (identical(requested_bands, "auto")) af_auto_max_bands else NA_integer_,
-            af_deduplicate = isTRUE(af_deduplicate),
-            af_deduplication_threshold = if (isTRUE(af_deduplicate)) af_deduplication_threshold else NA_real_,
-            af_contaminant_threshold = af_contaminant_threshold,
-            af_refine = isTRUE(af_refine),
-            af_refine_problem_quantile = if (isTRUE(af_refine)) af_refine_problem_quantile else NA_real_,
-            auto_selection = af_profiles$selection,
-            mode = if (n_af_sources > 1) "pooled_af_sources" else "single_af"
-        )
-        if (!is.null(af_signatures_norm)) {
-            msg <- if (n_af_sources == 1) {
-                "primary unstained control"
-            } else {
-                paste0(n_af_sources, " pooled AF control files")
-            }
-            auto_msg <- if (!is.null(af_profiles$selection)) {
-                paste0(" (auto-selected from ", af_profiles$selection$method, ")")
-            } else {
-                ""
-            }
-            message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from ", msg, auto_msg, ".")
-            if (!is.null(af_profiles$selection) && isTRUE(af_profiles$selection$hit_max_bands)) {
-                message(
-                    "  Auto AF selection reached af_auto_max_bands = ",
-                    af_profiles$selection$max_bands,
-                    "; consider increasing it if QC improves with more AF bands."
+            n_af_sources <- length(af_gated_list)
+            requested_bands <- af_n_bands
+            af_data_raw <- apply(af_events, 2, stats::median, na.rm = TRUE)
+            af_profiles <- list(raw_median = af_data_raw, signatures = NULL, selection = NULL)
+            if (isTRUE(extract_signatures)) {
+                af_profiles <- .extract_reference_af_profiles(
+                    detector_names = detector_names,
+                    n_bands = requested_bands,
+                    max_cells = af_max_cells,
+                    af_events = af_events,
+                    auto_max_bands = af_auto_max_bands,
+                    fluor_spectra = fluor_spectra,
+                    contaminant_threshold = af_contaminant_threshold,
+                    af_deduplicate = af_deduplicate,
+                    af_deduplication_threshold = af_deduplication_threshold,
+                    refine = af_refine,
+                    refine_problem_quantile = af_refine_problem_quantile
                 )
+                af_data_raw <- af_profiles$raw_median
+                af_signatures_norm <- af_profiles$signatures
+            }
+            af_sources <- data.table::rbindlist(lapply(af_gated_list, `[[`, "source"))
+            af_sources$source_type <- af_source_types
+            data.table::setcolorder(af_sources, c("file", "source_type", "n_total", "n_scatter_gated", "scatter_gate_pct", "fsc_channel", "ssc_channel", "path"))
+            af_bank_info <- list(
+                source_count = n_af_sources,
+                sources = af_sources,
+                pooled_events = nrow(af_events),
+                requested_bands = requested_bands,
+                af_bands_per_file = NA_integer_,
+                derived_bands = if (!is.null(af_signatures_norm)) nrow(af_signatures_norm) else 0L,
+                af_auto_max_bands = if (identical(requested_bands, "auto")) af_auto_max_bands else NA_integer_,
+                af_deduplicate = isTRUE(af_deduplicate),
+                af_deduplication_threshold = if (isTRUE(af_deduplicate)) af_deduplication_threshold else NA_real_,
+                af_contaminant_threshold = af_contaminant_threshold,
+                af_refine = isTRUE(af_refine),
+                af_refine_problem_quantile = if (isTRUE(af_refine)) af_refine_problem_quantile else NA_real_,
+                auto_selection = af_profiles$selection,
+                mode = if (n_af_sources > 1) "pooled_af_sources" else "single_af"
+            )
+            if (!is.null(af_signatures_norm)) {
+                msg <- if (n_af_sources == 1) {
+                    "primary unstained control"
+                } else {
+                    paste0(n_af_sources, " pooled AF control files")
+                }
+                auto_msg <- if (!is.null(af_profiles$selection)) {
+                    paste0(" (auto-selected from ", af_profiles$selection$method, ")")
+                } else {
+                    ""
+                }
+                message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from ", msg, auto_msg, ".")
+                if (!is.null(af_profiles$selection) && isTRUE(af_profiles$selection$hit_max_bands)) {
+                    message(
+                        "  Auto AF selection reached af_auto_max_bands = ",
+                        af_profiles$selection$max_bands,
+                        "; consider increasing it if QC improves with more AF bands."
+                    )
+                }
+            }
+        }
+    }
+
+    if (length(viability_dead_paths) > 0) {
+        dead_gated_list <- lapply(viability_dead_paths, .extract_reference_af_gated_events, detector_names = detector_names, config = config)
+        keep_dead <- vapply(dead_gated_list, function(x) !is.null(x) && !is.null(x$events) && nrow(x$events) > 0, logical(1))
+        dead_gated_list <- dead_gated_list[keep_dead]
+        if (length(dead_gated_list) > 0) {
+            viability_dead_background <- .scc_background_from_gated_af_list(
+                af_gated_list = dead_gated_list,
+                detector_names = detector_names
+            )
+            if (!is.null(viability_dead_background)) {
+                viability_dead_sources <- data.table::rbindlist(lapply(dead_gated_list, `[[`, "source"))
+                viability_dead_sources$source_type <- "viability_dead_background"
+                viability_dead_background$sources <- viability_dead_sources
+                if (is.null(af_bank_info)) {
+                    af_bank_info <- list()
+                }
+                af_bank_info$viability_dead_source_count <- nrow(viability_dead_sources)
+                af_bank_info$viability_dead_sources <- viability_dead_sources
+                message("Using ", length(dead_gated_list), " unstained dead control file(s) for viability SCC background matching.")
             }
         }
     }
@@ -1154,7 +1251,8 @@
         af_data_raw = af_data_raw,
         af_signatures_norm = af_signatures_norm,
         af_bank_info = af_bank_info,
-        scc_background = scc_background
+        scc_background = scc_background,
+        viability_dead_background = viability_dead_background
     )
 }
 
@@ -2652,17 +2750,28 @@
                                         af_data_raw = NULL,
                                         bead_negative = NULL,
                                         scc_background = NULL,
+                                        viability_dead_background = NULL,
                                         scc_background_method = "none",
                                         scc_background_k = 3L) {
+    is_viability <- nrow(row_info) > 0 &&
+        "is.viability" %in% colnames(row_info) &&
+        toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
+    selected_background <- if (identical(sample_type, "cells") &&
+        isTRUE(is_viability) &&
+        !is.null(viability_dead_background)) {
+        viability_dead_background
+    } else {
+        scc_background
+    }
     use_matched_background <- identical(scc_background_method, "scatter_knn") &&
         identical(sample_type, "cells") &&
-        !is.null(scc_background)
+        !is.null(selected_background)
 
     clean_pos <- if (use_matched_background) {
         .scc_background_clean_events(
             events = final_gated_data,
             detector_names = detector_names,
-            background = scc_background,
+            background = selected_background,
             k = scc_background_k
         )
     } else {
@@ -3418,7 +3527,8 @@
                                     config,
                                     af_data_raw = NULL,
                                     bead_negative = NULL,
-                                    scc_background = NULL) {
+                                    scc_background = NULL,
+                                    viability_dead_background = NULL) {
     sn_ext <- basename(fcs_file)
     sn <- tools::file_path_sans_ext(sn_ext)
 
@@ -3436,11 +3546,14 @@
     } else {
         ""
     }
+    is_viability_dead <- nrow(row_info) > 0 &&
+        "is.viability.dead" %in% colnames(row_info) &&
+        isTRUE(.is_viability_dead_control_row(row_info$is.viability.dead[1]))
 
     if (isTRUE(config$exclude_af) && .is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext)) {
         return(NULL)
     }
-    if (.is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext)) {
+    if (is_viability_dead || .is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext)) {
         return(NULL)
     }
 
@@ -3577,6 +3690,7 @@
         af_data_raw = af_data_raw,
         bead_negative = bead_negative,
         scc_background = scc_background,
+        viability_dead_background = viability_dead_background,
         scc_background_method = if (isTRUE(config$clean_scc_with_unstained)) config$scc_background_method else "none",
         scc_background_k = config$scc_background_k
     )
@@ -4001,7 +4115,8 @@ build_reference_matrix <- function(
             config = config,
             af_data_raw = af_profiles_raw$af_data_raw,
             bead_negative = bead_negative,
-            scc_background = if (isTRUE(clean_scc_with_unstained)) af_profiles_raw$scc_background else NULL
+            scc_background = if (isTRUE(clean_scc_with_unstained)) af_profiles_raw$scc_background else NULL,
+            viability_dead_background = if (isTRUE(clean_scc_with_unstained)) af_profiles_raw$viability_dead_background else NULL
         )
         if (is.null(processed)) {
             next

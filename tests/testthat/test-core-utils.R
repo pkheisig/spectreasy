@@ -1169,6 +1169,42 @@ test_that("multiple AF files are pooled into one AF bank size request", {
     expect_equal(out$af_bank_info$sources$source_type, rep("mapped_unstained", 3))
 })
 
+test_that("viability dead background rows are separate from ordinary AF sources", {
+    paths <- file.path(tempdir(), c("Unstained (Cells).fcs", "Unstained Dead (Cells).fcs"))
+    file.create(paths)
+    on.exit(unlink(paths, force = TRUE), add = TRUE)
+
+    control_df <- data.frame(
+        filename = basename(paths),
+        fluorophore = c("AF", "AF_Dead"),
+        marker = c("Autofluorescence", "Viability dead background"),
+        control.type = c("cells", "cells"),
+        is.viability.dead = c("", "TRUE"),
+        stringsAsFactors = FALSE
+    )
+
+    af_paths <- spectreasy:::.resolve_reference_af_paths(control_df, paths)
+    dead_paths <- spectreasy:::.resolve_reference_viability_dead_paths(control_df, paths)
+
+    expect_equal(basename(af_paths$path), "Unstained (Cells).fcs")
+    expect_equal(basename(dead_paths$path), "Unstained Dead (Cells).fcs")
+    expect_equal(dead_paths$source_type, "viability_dead_background")
+
+    fallback_paths <- file.path(tempdir(), c(
+        "Unstained (Cells).fcs",
+        "Unstained Dead (Cells).fcs",
+        "Live Dead Control (Cells).fcs"
+    ))
+    file.create(fallback_paths)
+    on.exit(unlink(fallback_paths, force = TRUE), add = TRUE)
+
+    af_by_name <- spectreasy:::.resolve_reference_af_paths(NULL, fallback_paths)
+    dead_by_name <- spectreasy:::.resolve_reference_viability_dead_paths(NULL, fallback_paths)
+
+    expect_equal(basename(af_by_name$path), "Unstained (Cells).fcs")
+    expect_equal(basename(dead_by_name$path), "Unstained Dead (Cells).fcs")
+})
+
 test_that("mapped AF SCC files are banked centrally, not processed as averaged SCC rows", {
     af_file <- file.path(tempdir(), "mixed_af.fcs")
     config <- list(exclude_af = FALSE)
@@ -1185,6 +1221,26 @@ test_that("mapped AF SCC files are banked centrally, not processed as averaged S
         sample_patterns = spectreasy::get_fluorophore_patterns(),
         metadata = list(detector_names = c("B1-A")),
         config = config
+    )
+
+    expect_null(processed)
+})
+
+test_that("viability dead background rows are not processed as SCC spectra", {
+    dead_file <- file.path(tempdir(), "dead_control.fcs")
+    processed <- spectreasy:::.process_reference_file(
+        fcs_file = dead_file,
+        control_df = data.frame(
+            filename = basename(dead_file),
+            fluorophore = "",
+            marker = "",
+            control.type = "cells",
+            is.viability.dead = "TRUE",
+            stringsAsFactors = FALSE
+        ),
+        sample_patterns = spectreasy::get_fluorophore_patterns(),
+        metadata = list(detector_names = c("B1-A")),
+        config = list(exclude_af = FALSE)
     )
 
     expect_null(processed)
@@ -1473,6 +1529,44 @@ test_that("bead reference spectrum prefers automatic unstained bead negative", {
     )
 
     expect_equal(as.numeric(res), c(1, 100 / 900), tolerance = 1e-6)
+})
+
+test_that("viability SCC spectra prefer the unstained dead background", {
+    detector_names <- c("B1-A", "YG1-A")
+    final_gated_data <- cbind(
+        "B1-A" = rep(100, 20),
+        "YG1-A" = rep(50, 20),
+        "FSC-A" = rep(1000, 20),
+        "SSC-A" = rep(500, 20)
+    )
+    gated_data <- final_gated_data
+    peak_vals <- gated_data[, "B1-A"]
+    vals_log <- log10(pmax(peak_vals, 1))
+    row_info <- data.frame(is.viability = "TRUE", stringsAsFactors = FALSE)
+    normal_background <- list(
+        detector_names = detector_names,
+        scatter_names = c("FSC-A", "SSC-A"),
+        scatter = matrix(c(1000, 500), nrow = 1, dimnames = list(NULL, c("FSC-A", "SSC-A"))),
+        spectra = matrix(c(10, 10), nrow = 1, dimnames = list(NULL, detector_names))
+    )
+    dead_background <- normal_background
+    dead_background$spectra <- matrix(c(30, 10), nrow = 1, dimnames = list(NULL, detector_names))
+
+    res <- spectreasy:::.compute_reference_spectrum(
+        final_gated_data = final_gated_data,
+        gated_data = gated_data,
+        peak_vals = peak_vals,
+        vals_log = vals_log,
+        detector_names = detector_names,
+        row_info = row_info,
+        sample_type = "cells",
+        scc_background = normal_background,
+        viability_dead_background = dead_background,
+        scc_background_method = "scatter_knn",
+        scc_background_k = 1L
+    )
+
+    expect_equal(as.numeric(res), c(1, 40 / 70), tolerance = 1e-6)
 })
 
 test_that("control.type from control file overrides filename fallback", {

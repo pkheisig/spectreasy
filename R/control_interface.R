@@ -6,6 +6,7 @@
         channel = character(),
         control.type = character(),
         is.viability = character(),
+        is.viability.dead = character(),
         stringsAsFactors = FALSE
     )
 }
@@ -350,6 +351,27 @@
     ""
 }
 
+.infer_is_viability_dead_from_filename <- function(fn) {
+    stem <- tools::file_path_sans_ext(basename(fn))
+    stem_norm <- .control_file_normalize_token(stem)
+    tok <- .control_file_split_filename_tokens(stem)
+
+    has_live <- any(tok %in% c("live", "viable")) ||
+        grepl("live", stem_norm, fixed = TRUE)
+    if (has_live) {
+        return("")
+    }
+
+    has_dead <- any(tok %in% c("dead", "deadcells")) ||
+        grepl("dead", stem_norm, fixed = TRUE)
+    has_unstained <- any(tok %in% c("unstained", "unstain", "us", "ut", "usut", "usut1")) ||
+        grepl("unstained|unstain", stem, ignore.case = TRUE)
+    has_control <- any(tok %in% c("control", "ctrl", "ctl")) ||
+        grepl("control|ctrl|ctl", stem_norm)
+
+    if (has_dead && (has_unstained || has_control)) "TRUE" else ""
+}
+
 .infer_fluor_from_filename <- function(fn, ref, custom_fluorophores = NULL) {
     stem <- tools::file_path_sans_ext(basename(fn))
     stem_norm <- .control_file_normalize_token(stem)
@@ -556,8 +578,11 @@
 .control_file_row_from_scc <- function(fn, ref, custom_fluorophores = NULL) {
     fluor <- .infer_fluor_from_filename(fn, ref = ref, custom_fluorophores = custom_fluorophores)
     is_bead_negative <- .control_file_is_bead_negative_filename(fn)
+    is_viability_dead <- .infer_is_viability_dead_from_filename(fn)
     if (is_bead_negative) {
         fluor <- "AF_Bead"
+    } else if (identical(is_viability_dead, "TRUE")) {
+        fluor <- "AF_Dead"
     } else if (.control_file_is_cell_af_filename(fn)) {
         fluor <- "AF_Internal"
     }
@@ -577,6 +602,7 @@
         channel = "",
         control.type = control_type,
         is.viability = if (is_bead_negative) "" else viability_flag,
+        is.viability.dead = if (is_bead_negative) "" else is_viability_dead,
         stringsAsFactors = FALSE
     )
 }
@@ -788,6 +814,14 @@
                 marker_guess = df$marker[i]
             )
         }
+
+        if (!("is.viability.dead" %in% colnames(df))) {
+            df$is.viability.dead <- ""
+        }
+        current_viability_dead <- toupper(trimws(as.character(df$is.viability.dead[i])))
+        if (is.na(current_viability_dead) || current_viability_dead == "") {
+            df$is.viability.dead[i] <- .infer_is_viability_dead_from_filename(fn)
+        }
     }
 
     list(df = df, auto_af_files = auto_af_files)
@@ -814,6 +848,13 @@
     df$is.viability[is.na(df$is.viability)] <- ""
     df$is.viability[df$is.viability %in% c("T", "TRUE", "1", "YES", "Y")] <- "TRUE"
     df$is.viability[!(df$is.viability %in% c("", "TRUE"))] <- ""
+    if (!("is.viability.dead" %in% colnames(df))) {
+        df$is.viability.dead <- ""
+    }
+    df$is.viability.dead <- toupper(trimws(as.character(df$is.viability.dead)))
+    df$is.viability.dead[is.na(df$is.viability.dead)] <- ""
+    df$is.viability.dead[df$is.viability.dead %in% c("T", "TRUE", "1", "YES", "Y")] <- "TRUE"
+    df$is.viability.dead[!(df$is.viability.dead %in% c("", "TRUE"))] <- ""
     viability_missing_marker <- df$is.viability == "TRUE" & !nzchar(trimws(as.character(df$marker)))
     df$marker[viability_missing_marker] <- "Live"
 
@@ -829,9 +870,17 @@
     is_af_row <- grepl("^AF($|_)", as.character(df$fluorophore), ignore.case = TRUE) & !bead_negative_row
     df$control.type[is_af_row] <- "cells"
 
+    viability_dead_row <- df$is.viability.dead == "TRUE" & !bead_negative_row
+    if (any(viability_dead_row)) {
+        df$fluorophore[viability_dead_row] <- "AF_Dead"
+        df$marker[viability_dead_row] <- "Viability dead background"
+        df$control.type[viability_dead_row] <- "cells"
+        df$is.viability[viability_dead_row] <- ""
+    }
+
     for (i in seq_along(af_files)) {
         af_tag <- if (i == 1) "AF" else paste0("AF_", i)
-        row_idx <- df$filename == af_files[i]
+        row_idx <- df$filename == af_files[i] & !viability_dead_row
         df$fluorophore[row_idx] <- af_tag
         df$marker[row_idx] <- "Autofluorescence"
         df$control.type[row_idx] <- "cells"
@@ -843,7 +892,8 @@
         "marker",
         "channel",
         "control.type",
-        "is.viability"
+        "is.viability",
+        "is.viability.dead"
     )
     keep <- intersect(preferred_order, colnames(df))
     df[, c(keep, setdiff(colnames(df), keep)), drop = FALSE]
@@ -866,7 +916,9 @@
 #' The generated file auto-detects `control.type` from filename tokens (for example `"beads"`
 #' or `"cells"`). Unstained/negative bead files are denoted as `AF_Bead`
 #' with `control.type = "beads"` so they can be used as bead-background
-#' negatives without being mixed into the cellular AF bank.
+#' negatives without being mixed into the cellular AF bank. Files whose names
+#' indicate unstained dead cells or dead-cell controls are marked with
+#' `is.viability.dead = TRUE` for viability-specific background matching.
 #' @export
 #' @examples
 #' make_example_ff <- function(main, n = 250) {
