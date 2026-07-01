@@ -40,7 +40,9 @@ A data frame containing the control file information.
 The generated file contains only columns that usually need review:
 `filename`, `fluorophore`, `marker`, `channel`, `control.type`, and
 `is.viability`. It auto-detects `control.type` from filename tokens
-(for example `"beads"` or `"cells"`), and forces AF rows to `cells`.
+(for example `"beads"` or `"cells"`). Unstained/negative bead files are
+denoted as `AF_beads` with `control.type = "beads"` so they can be used
+as bead-background negatives.
 }
 \description{
 Generates a spectreasy-compatible control CSV.

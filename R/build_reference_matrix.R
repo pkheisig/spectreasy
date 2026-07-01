@@ -806,10 +806,19 @@
         } else {
             data.frame()
         }
+        if (nrow(af_rows) > 0) {
+            control_type <- if ("control.type" %in% colnames(af_rows)) {
+                tolower(trimws(as.character(af_rows$control.type)))
+            } else {
+                rep("", nrow(af_rows))
+            }
+            bead_negative <- vapply(af_rows$filename, .reference_is_bead_negative_file, logical(1))
+            af_rows <- af_rows[control_type != "beads" & !bead_negative, , drop = FALSE]
+        }
         if (nrow(af_rows) > 0) af_fn <- tools::file_path_sans_ext(basename(af_rows$filename[1]))
     }
     if (is.null(af_fn)) {
-        af_idx_tmp <- which(.is_af_filename(fcs_files))
+        af_idx_tmp <- which(.is_af_filename(fcs_files) & !vapply(fcs_files, .reference_is_bead_negative_file, logical(1)))
         if (length(af_idx_tmp) > 0) af_fn <- tools::file_path_sans_ext(basename(fcs_files[af_idx_tmp[1]]))
     }
 
@@ -2028,8 +2037,10 @@
                                         vals_log,
                                         detector_names,
                                         row_info,
+                                        sample_type = "beads",
                                         af_data_raw = NULL,
-                                        universal_negatives = NULL) {
+                                        universal_negatives = NULL,
+                                        bead_negative = NULL) {
     pos_spectrum_raw <- apply(final_gated_data[, detector_names, drop = FALSE], 2, median, na.rm = TRUE)
     neg_log_min <- attr(vals_log, "neg_log_min")
     neg_log_max <- attr(vals_log, "neg_log_max")
@@ -2071,6 +2082,8 @@
         af_data_raw
     } else if (use_named_negative) {
         universal_negatives[[uv_key]]
+    } else if (identical(sample_type, "beads") && !is.null(bead_negative)) {
+        bead_negative
     } else {
         neg_spectrum_raw
     }
@@ -2097,6 +2110,110 @@
 # Returns the cleaned character string/vector.
 .reference_negative_key <- function(x) {
     tools::file_path_sans_ext(basename(trimws(as.character(x))))
+}
+
+.reference_is_bead_negative_file <- function(x) {
+    stem <- tools::file_path_sans_ext(basename(trimws(as.character(x))))
+    stem_lower <- tolower(stem)
+    stem_norm <- gsub("[^[:alnum:]]+", "", stem_lower)
+    tokens <- unlist(strsplit(stem_lower, "[^[:alnum:]]+"))
+    tokens <- tokens[nzchar(tokens)]
+
+    has_bead <- any(tokens %in% c("bead", "beads", "compbead", "compbeads")) ||
+        grepl("compbeads?", stem_norm) ||
+        grepl("beads?", stem_norm)
+    has_negative <- any(tokens %in% c(
+        "unstained", "unstain", "us", "ut", "usut", "usut1", "neg",
+        "negative", "background", "bg", "blank", "minus"
+    )) ||
+        grepl("us[_ -]?ut", stem, ignore.case = TRUE) ||
+        grepl("unstained|negative|background|blank", stem, ignore.case = TRUE) ||
+        grepl("(^|[^[:alnum:]])(?:us|neg|bg)(?:[^[:alnum:]]|$)", stem, ignore.case = TRUE, perl = TRUE)
+
+    has_bead && has_negative
+}
+
+.collect_reference_unstained_bead_negative <- function(control_df,
+                                                       fcs_files,
+                                                       detector_names,
+                                                       config) {
+    if (length(fcs_files) == 0) {
+        return(NULL)
+    }
+
+    file_keys <- .reference_negative_key(fcs_files)
+    names(fcs_files) <- file_keys
+    bead_keys <- character()
+
+    if (!is.null(control_df) && is.data.frame(control_df) && nrow(control_df) > 0 && "filename" %in% colnames(control_df)) {
+        is_af <- .is_af_control_row(
+            fluorophore = if ("fluorophore" %in% colnames(control_df)) control_df$fluorophore else NULL,
+            marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
+            filename = control_df$filename
+        )
+        control_type <- if ("control.type" %in% colnames(control_df)) {
+            tolower(trimws(as.character(control_df$control.type)))
+        } else {
+            rep("", nrow(control_df))
+        }
+        file_is_bead <- grepl("beads?", basename(as.character(control_df$filename)), ignore.case = TRUE)
+        file_is_bead_negative <- vapply(control_df$filename, .reference_is_bead_negative_file, logical(1))
+        idx <- which((is_af & (control_type == "beads" | file_is_bead)) | file_is_bead_negative)
+        if (length(idx) > 0) {
+            bead_keys <- .reference_negative_key(control_df$filename[idx])
+        }
+    }
+
+    if (length(bead_keys) == 0) {
+        bead_keys <- file_keys[vapply(fcs_files, .reference_is_bead_negative_file, logical(1))]
+    }
+    bead_keys <- unique(bead_keys[nzchar(bead_keys) & bead_keys %in% names(fcs_files)])
+    if (length(bead_keys) == 0) {
+        return(NULL)
+    }
+
+    bead_events <- list()
+    for (key in bead_keys) {
+        fcs_file <- unname(fcs_files[[key]])
+
+        ff <- tryCatch(
+            flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
+            error = function(e) NULL
+        )
+        if (is.null(ff)) {
+            warning("Could not read unstained bead negative file: ", fcs_file)
+            next
+        }
+
+        pd <- flowCore::pData(flowCore::parameters(ff))
+        raw_data <- flowCore::exprs(ff)
+        scatter_info <- .compute_reference_scatter_gate(
+            raw_data = raw_data,
+            pd = pd,
+            sample_type = "beads",
+            outlier_percentile = config$outlier_percentile,
+            debris_percentile = config$debris_percentile,
+            subsample_n = config$subsample_n,
+            max_clusters = config$max_clusters,
+            min_cluster_proportion = config$min_cluster_proportion,
+            gate_contour_beads = config$gate_contour_beads,
+            gate_contour_cells = config$gate_contour_cells,
+            bead_gate_scale = config$bead_gate_scale
+        )
+
+        neg_data <- if (!is.null(scatter_info)) scatter_info$gated_data else raw_data
+        if (nrow(neg_data) > 0) {
+            bead_events[[length(bead_events) + 1L]] <- neg_data[, detector_names, drop = FALSE]
+            message("Using unstained bead control for bead SCC subtraction: ", basename(fcs_file))
+        }
+    }
+
+    if (length(bead_events) == 0) {
+        return(NULL)
+    }
+
+    bead_mat <- do.call(rbind, bead_events)
+    apply(bead_mat[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
 }
 
 # Identifies and loads the universal/marker-specific negative control profiles.
@@ -2378,7 +2495,7 @@
 # Reads the file, performs scatter gating, identifies the peak channel, runs histogram gating
 # to separate positive and negative events, calculates the normalized spectrum, and saves QC plots.
 # Returns a list containing the processed spectrum, QC summary row, and sample name metadata.
-.process_reference_file <- function(fcs_file, control_df, sample_patterns, metadata, config, af_data_raw = NULL, universal_negatives = NULL) {
+.process_reference_file <- function(fcs_file, control_df, sample_patterns, metadata, config, af_data_raw = NULL, universal_negatives = NULL, bead_negative = NULL) {
     sn_ext <- basename(fcs_file)
     sn <- tools::file_path_sans_ext(sn_ext)
 
@@ -2501,8 +2618,10 @@
         vals_log = hist_info$vals_log,
         detector_names = metadata$detector_names,
         row_info = row_info,
+        sample_type = sample_info$type,
         af_data_raw = af_data_raw,
-        universal_negatives = universal_negatives
+        universal_negatives = universal_negatives,
+        bead_negative = bead_negative
     )
 
     if (isTRUE(config$save_qc_plots)) {
@@ -2833,6 +2952,12 @@ build_reference_matrix <- function(
         sample_patterns = sample_patterns,
         config = config
     )
+    bead_negative <- .collect_reference_unstained_bead_negative(
+        control_df = control_df,
+        fcs_files = file_info$fcs_files_all,
+        detector_names = metadata$detector_names,
+        config = config
+    )
 
     results_list <- list()
     qc_summary_list <- list()
@@ -2844,7 +2969,8 @@ build_reference_matrix <- function(
             metadata = metadata,
             config = config,
             af_data_raw = af_profiles$af_data_raw,
-            universal_negatives = universal_negatives
+            universal_negatives = universal_negatives,
+            bead_negative = bead_negative
         )
         if (is.null(processed)) {
             next

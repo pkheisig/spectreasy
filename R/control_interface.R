@@ -315,6 +315,25 @@
     ""
 }
 
+.control_file_is_bead_negative_filename <- function(fn) {
+    stem <- tools::file_path_sans_ext(basename(fn))
+    stem_norm <- .control_file_normalize_token(stem)
+    tok <- .control_file_split_filename_tokens(stem)
+
+    has_bead <- any(tok %in% c("bead", "beads", "compbead", "compbeads")) ||
+        grepl("compbeads?", stem_norm) ||
+        grepl("beads?", stem_norm)
+    has_negative <- any(tok %in% c(
+        "unstained", "unstain", "us", "ut", "usut", "usut1", "neg",
+        "negative", "background", "bg", "blank", "minus"
+    )) ||
+        grepl("us[_ -]?ut", stem, ignore.case = TRUE) ||
+        grepl("unstained|negative|background|blank", stem, ignore.case = TRUE) ||
+        grepl("(^|[^[:alnum:]])(?:us|neg|bg)(?:[^[:alnum:]]|$)", stem, ignore.case = TRUE, perl = TRUE)
+
+    has_bead && has_negative
+}
+
 .infer_is_viability_from_filename <- function(fn, fluor_guess = "", marker_guess = "") {
     stem <- tools::file_path_sans_ext(basename(fn))
     stem_norm <- .control_file_normalize_token(stem)
@@ -558,13 +577,21 @@
 
 .control_file_row_from_scc <- function(fn, ref, custom_fluorophores = NULL) {
     fluor <- .infer_fluor_from_filename(fn, ref = ref, custom_fluorophores = custom_fluorophores)
-    if (grepl("Unstained|US_UT", fn, ignore.case = TRUE)) fluor <- "AF_Internal"
+    is_bead_negative <- .control_file_is_bead_negative_filename(fn)
+    if (is_bead_negative) {
+        fluor <- "AF_beads"
+    } else if (grepl("Unstained|US_UT", fn, ignore.case = TRUE)) {
+        fluor <- "AF_Internal"
+    }
     marker <- .infer_marker_from_filename(
         fn,
         fluor_guess = fluor,
         marker_name_map = ref$marker_name_map,
         marker_names = ref$marker_names
     )
+    if (is_bead_negative) {
+        marker <- "Bead background"
+    }
     control_type <- .infer_control_type_from_filename(fn, fluor_guess = fluor, marker_guess = marker)
     viability_flag <- .infer_is_viability_from_filename(fn, fluor_guess = fluor, marker_guess = marker)
 
@@ -828,7 +855,10 @@
 }
 
 .finalize_control_file_df <- function(df, scc_files, af_files, auto_af_files = character()) {
+    bead_negative_files <- scc_files[vapply(scc_files, .control_file_is_bead_negative_filename, logical(1))]
     primary_af_candidates <- scc_files[grep("Unstained|US_UT", scc_files, ignore.case = TRUE)]
+    primary_af_candidates <- setdiff(primary_af_candidates, bead_negative_files)
+    auto_af_files <- auto_af_files[!vapply(auto_af_files, .control_file_is_bead_negative_filename, logical(1))]
     auto_af_primary <- if (length(auto_af_files) > 0) auto_af_files[1] else ""
     primary_af_file <- if (length(af_files) > 0) {
         af_files[1]
@@ -852,7 +882,16 @@
     viability_missing_marker <- df$is.viability == "TRUE" & !nzchar(trimws(as.character(df$marker)))
     df$marker[viability_missing_marker] <- "Live"
 
-    is_af_row <- grepl("^AF($|_)", as.character(df$fluorophore), ignore.case = TRUE)
+    bead_negative_row <- df$filename %in% bead_negative_files |
+        (tolower(df$control.type) == "beads" & grepl("^AF_beads?$", as.character(df$fluorophore), ignore.case = TRUE))
+    if (any(bead_negative_row)) {
+        df$fluorophore[bead_negative_row] <- "AF_beads"
+        df$marker[bead_negative_row] <- "Bead background"
+        df$control.type[bead_negative_row] <- "beads"
+        df$is.viability[bead_negative_row] <- ""
+    }
+
+    is_af_row <- grepl("^AF($|_)", as.character(df$fluorophore), ignore.case = TRUE) & !bead_negative_row
     df$control.type[is_af_row] <- "cells"
 
     if (primary_af_file != "") {
@@ -892,7 +931,9 @@
 #' The generated file contains only columns that usually need review:
 #' `filename`, `fluorophore`, `marker`, `channel`, `control.type`, and
 #' `is.viability`. It auto-detects `control.type` from filename tokens
-#' (for example `"beads"` or `"cells"`), and forces AF rows to `cells`.
+#' (for example `"beads"` or `"cells"`). Unstained/negative bead files are
+#' denoted as `AF_beads` with `control.type = "beads"` so they can be used
+#' as bead-background negatives.
 #' @export
 #' @examples
 #' make_example_ff <- function(main, n = 250) {

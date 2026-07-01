@@ -763,6 +763,37 @@ test_that(".compute_reference_spectrum honors named universal negative files", {
     expect_equal(as.numeric(res), c(1, 50 / 70), tolerance = 1e-6)
 })
 
+test_that(".compute_reference_spectrum uses unstained bead negative for bead SCCs", {
+    detector_names <- c("B1-A", "YG1-A")
+    final_gated_data <- matrix(
+        rep(c(100, 60), each = 20),
+        ncol = 2,
+        dimnames = list(NULL, detector_names)
+    )
+    gated_data <- matrix(
+        rep(c(10, 10), each = 40),
+        ncol = 2,
+        dimnames = list(NULL, detector_names)
+    )
+    peak_vals <- gated_data[, 1]
+    vals_log <- log10(pmax(peak_vals, 1))
+    row_info <- data.frame(universal.negative = "", stringsAsFactors = FALSE)
+    bead_negative <- c("B1-A" = 30, "YG1-A" = 20)
+
+    res <- spectreasy:::.compute_reference_spectrum(
+        final_gated_data = final_gated_data,
+        gated_data = gated_data,
+        peak_vals = peak_vals,
+        vals_log = vals_log,
+        detector_names = detector_names,
+        row_info = row_info,
+        sample_type = "beads",
+        bead_negative = bead_negative
+    )
+
+    expect_equal(as.numeric(res), c(1, 40 / 70), tolerance = 1e-6)
+})
+
 test_that("cell population selection applies SSC/FSC ratio only when requested", {
     gmm_result <- list(
         main_populations = 1:3,

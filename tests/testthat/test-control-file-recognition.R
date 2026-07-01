@@ -24,7 +24,14 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
         "PECF594 (beads).fcs",
         "pe cy7 (bEaDs).fcs",
         "PE-Fire 700 (BEADS).fcs",
-        "PE (Beads).fcs"
+        "PE (Beads).fcs",
+        "Unstained Beads (Beads).fcs",
+        "Unstained (Beads).fcs",
+        "US Beads.fcs",
+        "Negative Beads.fcs",
+        "Bead background.fcs",
+        "BG CompBeads.fcs",
+        "Unstained (Cells).fcs"
     )
     created <- file.create(file.path(scc_dir, files))
     testthat::expect_true(all(created))
@@ -93,6 +100,25 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
     testthat::expect_equal(by_file[["PE (Beads).fcs"]]$fluorophore[[1]], "PE")
     testthat::expect_equal(by_file[["PE (Beads).fcs"]]$control.type[[1]], "beads")
     testthat::expect_equal(by_file[["PE (Beads).fcs"]]$is.viability[[1]], "")
+
+    bead_negative_files <- c(
+        "Unstained Beads (Beads).fcs",
+        "Unstained (Beads).fcs",
+        "US Beads.fcs",
+        "Negative Beads.fcs",
+        "Bead background.fcs",
+        "BG CompBeads.fcs"
+    )
+    for (fn in bead_negative_files) {
+        testthat::expect_equal(by_file[[fn]]$fluorophore[[1]], "AF_beads", info = fn)
+        testthat::expect_equal(by_file[[fn]]$marker[[1]], "Bead background", info = fn)
+        testthat::expect_equal(by_file[[fn]]$control.type[[1]], "beads", info = fn)
+        testthat::expect_equal(by_file[[fn]]$is.viability[[1]], "", info = fn)
+    }
+
+    testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$fluorophore[[1]], "AF")
+    testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$marker[[1]], "Autofluorescence")
+    testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$control.type[[1]], "cells")
 })
 
 testthat::test_that("detector fallback matches whole detector codes", {
