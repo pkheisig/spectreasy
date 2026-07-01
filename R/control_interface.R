@@ -5,8 +5,6 @@
         marker = character(),
         channel = character(),
         control.type = character(),
-        universal.negative = character(),
-        large.gate = character(),
         is.viability = character(),
         stringsAsFactors = FALSE
     )
@@ -152,9 +150,11 @@
                 marker <- trimws(as.character(marker_df$marker[i]))
                 if (!nzchar(marker)) next
                 out$marker_names <- c(out$marker_names, marker)
-                marker_key <- .control_file_normalize_token(marker)
-                if (nzchar(marker_key)) {
-                    k <- marker_key
+                aliases_raw <- if ("aliases" %in% colnames(marker_df)) marker_df$aliases[i] else ""
+                aliases <- unique(c(marker, .control_file_split_semicolon(aliases_raw)))
+                alias_keys <- .control_file_normalize_token(aliases)
+                alias_keys <- alias_keys[nzchar(alias_keys)]
+                for (k in alias_keys) {
                     if (!k %in% names(out$marker_map)) out$marker_map[k] <- marker
                 }
             }
@@ -271,6 +271,9 @@
 }
 
 .detect_control_file_marker <- function(stem, marker_names = character(), marker_name_map = character()) {
+    marker_guess <- .detect_control_file_alias(stem, marker_name_map, min_substring_n = 3)
+    if (nzchar(marker_guess)) return(marker_guess)
+
     marker_names <- unique(trimws(as.character(marker_names)))
     marker_names <- marker_names[nzchar(marker_names)]
     if (length(marker_names) > 0) {
@@ -281,7 +284,7 @@
             }
         }
     }
-    .detect_control_file_alias(stem, marker_name_map, min_substring_n = 3)
+    ""
 }
 
 .infer_control_type_from_filename <- function(fn, fluor_guess = "", marker_guess = "") {
@@ -543,8 +546,6 @@
         marker = marker,
         channel = "",
         control.type = control_type,
-        universal.negative = "",
-        large.gate = "",
         is.viability = viability_flag,
         stringsAsFactors = FALSE
     )
@@ -572,8 +573,6 @@
             marker = "Autofluorescence",
             channel = "",
             control.type = "cells",
-            universal.negative = "",
-            large.gate = "TRUE",
             is.viability = "",
             stringsAsFactors = FALSE
         )
@@ -599,9 +598,10 @@
     top_channels <- character()
     top_ratio <- NA_real_
     entropy_hi <- NA_real_
+    read_error <- ""
 
     tryCatch({
-        ff <- flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE)
+        ff <- suppressWarnings(flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE))
         pd <- flowCore::pData(flowCore::parameters(ff))
         channel_alias_map <- .merge_control_file_alias_map(channel_alias_map, .build_channel_alias_map_from_pd(pd))
         fl_pd <- get_sorted_detectors(pd)
@@ -644,7 +644,9 @@
                 }
             }
         }
-    }, error = function(e) NULL)
+    }, error = function(e) {
+        read_error <<- conditionMessage(e)
+    })
 
     list(
         pd = pd,
@@ -652,8 +654,14 @@
         top_channels = top_channels,
         top_ratio = top_ratio,
         entropy_hi = entropy_hi,
+        read_error = read_error,
         channel_alias_map = channel_alias_map
     )
+}
+
+.control_file_should_warn_read_error <- function(path) {
+    size <- suppressWarnings(file.info(path)$size)
+    is.finite(size) && !is.na(size) && size > 0
 }
 
 .control_file_is_af_like <- function(current_fluor,
@@ -696,6 +704,16 @@
         summary <- .summarize_control_file_fcs(path, channel_alias_map = channel_alias_map)
         channel_alias_map <- summary$channel_alias_map
 
+        if (nzchar(summary$read_error) && .control_file_should_warn_read_error(path)) {
+            warning(
+                "Could not read FCS file while auto-detecting peak channel: ",
+                path,
+                "\n",
+                summary$read_error,
+                call. = FALSE
+            )
+        }
+
         if (nzchar(summary$peak_channel)) {
             df$channel[i] <- summary$peak_channel
         }
@@ -716,7 +734,6 @@
             df$fluorophore[i] <- new_tag
             df$marker[i] <- "Autofluorescence"
             df$control.type[i] <- "cells"
-            df$large.gate[i] <- "TRUE"
             auto_af_files <- c(auto_af_files, fn)
         }
 
@@ -789,8 +806,6 @@
         ""
     }
 
-    df$universal.negative <- ""
-
     df$control.type <- tolower(trimws(as.character(df$control.type)))
     df$control.type[is.na(df$control.type)] <- ""
     invalid_type <- !(df$control.type %in% c("", "beads", "cells"))
@@ -800,6 +815,8 @@
     df$is.viability[is.na(df$is.viability)] <- ""
     df$is.viability[df$is.viability %in% c("T", "TRUE", "1", "YES", "Y")] <- "TRUE"
     df$is.viability[!(df$is.viability %in% c("", "TRUE"))] <- ""
+    viability_missing_marker <- df$is.viability == "TRUE" & !nzchar(trimws(as.character(df$marker)))
+    df$marker[viability_missing_marker] <- "Live"
 
     is_af_row <- grepl("^AF($|_)", as.character(df$fluorophore), ignore.case = TRUE)
     df$control.type[is_af_row] <- "cells"
@@ -816,8 +833,6 @@
         "marker",
         "channel",
         "control.type",
-        "universal.negative",
-        "large.gate",
         "is.viability"
     )
     keep <- intersect(preferred_order, colnames(df))
@@ -840,9 +855,10 @@
 #' @param custom_fluorophores Optional named vector to map filenames to fluorophore names.
 #' @return A data frame containing the control file information.
 #'
-#' The generated file intentionally leaves `universal.negative` empty by default.
-#' It auto-detects `control.type` from filename tokens (for example `"beads"`
-#' or `"cells"`), and forces AF rows to `cells`.
+#' The generated file contains only columns that usually need review:
+#' `filename`, `fluorophore`, `marker`, `channel`, `control.type`, and
+#' `is.viability`. It auto-detects `control.type` from filename tokens
+#' (for example `"beads"` or `"cells"`), and forces AF rows to `cells`.
 #' @export
 #' @examples
 #' make_example_ff <- function(main, n = 250) {

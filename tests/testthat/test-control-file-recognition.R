@@ -38,6 +38,10 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
 
     by_file <- split(df, df$filename)
 
+    testthat::expect_named(df, c("filename", "fluorophore", "marker", "channel", "control.type", "is.viability"))
+    testthat::expect_false("universal.negative" %in% colnames(df))
+    testthat::expect_false("large.gate" %in% colnames(df))
+
     testthat::expect_equal(by_file[["LIVE DEAD NIR (Cells).fcs"]]$fluorophore[[1]], "LIVE/DEAD NIR")
     testthat::expect_equal(by_file[["LIVE DEAD NIR (Cells).fcs"]]$control.type[[1]], "cells")
     testthat::expect_equal(by_file[["LIVE DEAD NIR (Cells).fcs"]]$is.viability[[1]], "TRUE")
@@ -59,7 +63,7 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
     testthat::expect_equal(by_file[["APC-H7 CD279 (Beads).fcs"]]$marker[[1]], "CD279")
 
     testthat::expect_equal(by_file[["APC PD-1 (Beads).fcs"]]$marker[[1]], "PD-1")
-    testthat::expect_equal(by_file[["PE PD1 (Beads).fcs"]]$marker[[1]], "PD1")
+    testthat::expect_equal(by_file[["PE PD1 (Beads).fcs"]]$marker[[1]], "PD-1")
     testthat::expect_equal(by_file[["FITC CD39 (Beads).fcs"]]$marker[[1]], "CD39")
     testthat::expect_equal(by_file[["FITC ENTPD1 (Beads).fcs"]]$marker[[1]], "ENTPD1")
     testthat::expect_equal(by_file[["BV510 CD1a (Beads).fcs"]]$marker[[1]], "CD1a")
@@ -104,6 +108,25 @@ testthat::test_that("detector fallback matches whole detector codes", {
     testthat::expect_equal(infer("UV11-A", fluor_channel_map = character()), "BUV661")
     testthat::expect_equal(infer("UV17-A", fluor_channel_map = character()), "BUV395")
     testthat::expect_equal(infer("R10-A", fluor_channel_map = character()), "APC")
+})
+
+testthat::test_that("create_control_file warns when peak detection cannot read an FCS", {
+    scc_dir <- tempfile("spectreasy_bad_scc_")
+    dir.create(scc_dir, recursive = TRUE, showWarnings = FALSE)
+    writeBin(as.raw(rep(0, 128)), file.path(scc_dir, "BV510 (Cells).fcs"))
+
+    out_csv <- tempfile(fileext = ".csv")
+    testthat::expect_warning(
+        df <- spectreasy::create_control_file(
+            input_folder = scc_dir,
+            include_af_folder = FALSE,
+            output_file = out_csv
+        ),
+        regexp = "Could not read FCS file while auto-detecting peak channel"
+    )
+
+    testthat::expect_equal(df$fluorophore[[1]], "BV510")
+    testthat::expect_equal(df$channel[[1]], "")
 })
 
 testthat::test_that("supported cytometer metadata is normalized", {

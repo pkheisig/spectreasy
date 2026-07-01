@@ -37,9 +37,10 @@ create_control_file(
 \value{
 A data frame containing the control file information.
 
-The generated file intentionally leaves `universal.negative` empty by default.
-It auto-detects `control.type` from filename tokens (for example `"beads"`
-or `"cells"`), and forces AF rows to `cells`.
+The generated file contains only columns that usually need review:
+`filename`, `fluorophore`, `marker`, `channel`, `control.type`, and
+`is.viability`. It auto-detects `control.type` from filename tokens
+(for example `"beads"` or `"cells"`), and forces AF rows to `cells`.
 }
 \description{
 Generates a spectreasy-compatible control CSV.

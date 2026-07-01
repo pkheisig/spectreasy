@@ -7,8 +7,7 @@
             "Please review it before unmixing.",
             "Check at least these columns:",
             " - fluorophore / marker / channel mappings",
-            " - control.type: auto-detected from filename tokens ('beads'/'cells'); fix unknown rows as needed",
-            " - universal.negative: leave empty unless you explicitly use it"
+            " - control.type: auto-detected from filename tokens ('beads'/'cells'); fix unknown rows as needed"
         ),
         collapse = "\n"
     )

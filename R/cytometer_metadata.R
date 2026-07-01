@@ -140,7 +140,7 @@ supported_cytometers <- function(include_auto = FALSE) {
     if (length(files) == 0) return(id)
     for (path in files) {
         inferred <- tryCatch({
-            ff <- flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE)
+            ff <- suppressWarnings(flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE))
             pd <- flowCore::pData(flowCore::parameters(ff))
             .infer_cytometer_from_pd(pd)
         }, error = function(e) "auto")

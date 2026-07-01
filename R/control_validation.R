@@ -8,6 +8,7 @@
 
 .control_validation_normalize_channel <- function(x) {
     out <- toupper(gsub("\\s+", "", trimws(as.character(x))))
+    out <- gsub("([A-Z]+)-([0-9])", "\\1\\2", out, perl = TRUE)
     out[is.na(out)] <- ""
     out
 }
@@ -174,13 +175,13 @@
 
 .validate_control_file_channels_exist <- function(df, active_rows, scc_files, af_files, scc_dir, af_dir) {
     errors <- character()
-    files_to_check <- unique(df$filename[active_rows & df$channel != "" & !is.na(df$channel)])
+    files_to_check <- unique(df$filename[active_rows])
 
     for (fn in files_to_check) {
         path <- if (fn %in% scc_files) file.path(scc_dir, fn) else file.path(af_dir, fn)
         if (!file.exists(path)) next
         ff <- tryCatch(
-            flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE),
+            suppressWarnings(flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE)),
             error = function(e) NULL
         )
         if (is.null(ff)) {
@@ -190,7 +191,9 @@
         pd <- flowCore::pData(flowCore::parameters(ff))
         det_names <- .control_validation_as_chr(pd$name)
         alias_map <- .build_channel_alias_map_from_pd(pd)
-        ch_vals <- unique(df$channel[df$filename == fn])
+        ch_vals <- unique(df$channel[active_rows & df$filename == fn])
+        ch_vals <- ch_vals[nzchar(ch_vals) & !is.na(ch_vals)]
+        if (length(ch_vals) == 0) next
         missing_channels <- ch_vals[!vapply(
             ch_vals,
             .control_validation_channel_in_detectors,
