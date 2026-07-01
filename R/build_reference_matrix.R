@@ -1285,30 +1285,7 @@
     if (nrow(row_info) > 0 && !is.na(row_info$channel[1]) && row_info$channel[1] != "") {
         resolved_channel <- .resolve_reference_control_channel(row_info$channel[1], detector_names, channel_alias_map = channel_alias_map)
         if (nzchar(resolved_channel)) {
-            inferred_val <- as.numeric(q999_by_channel[inferred_peak_channel])
-            resolved_val <- as.numeric(q999_by_channel[resolved_channel])
-            ranked <- names(sort(q999_by_channel, decreasing = TRUE))
-            resolved_rank <- match(resolved_channel, ranked)
-            use_inferred <- is.finite(inferred_val) &&
-                is.finite(resolved_val) &&
-                inferred_val > 0 &&
-                !is.na(resolved_rank) &&
-                resolved_rank > 8 &&
-                (resolved_val / inferred_val) < 0.25
-
-            if (use_inferred) {
-                warning(
-                    "Control channel '", row_info$channel[1], "' for ", sn_ext,
-                    " appears inconsistent with signal profile (rank ",
-                    resolved_rank, ", 99.9% ratio ",
-                    round(resolved_val / inferred_val, 3),
-                    "). Falling back to inferred channel ",
-                    inferred_peak_channel, "."
-                )
-                peak_channel <- inferred_peak_channel
-            } else {
-                peak_channel <- resolved_channel
-            }
+            peak_channel <- resolved_channel
         } else {
             warning("Control channel '", row_info$channel[1], "' for ", sn_ext, " not found in file. Falling back to inferred channel ", inferred_peak_channel, ".")
         }
