@@ -1070,7 +1070,7 @@ qc_samples <- function(results,
         }
     }
 
-    message("  - Adding Spread Matrix...")
+    message("  - Writing Spread Matrix metrics...")
     if (nrow(M_no_af) > 1) {
         ssm_method <- if (method %in% c("NNLS", "RWLS", "AutoSpectral")) {
             if (identical(method, "RWLS")) "WLS" else "OLS"
@@ -1089,17 +1089,6 @@ qc_samples <- function(results,
             file.path(qc_metrics_dir, "directional_spread_score.csv"),
             row_id = "spilling_marker"
         )
-        ssm_pages <- .build_qc_report_matrix_pages(
-            ssm,
-            plot_fun = plot_ssm,
-            max_markers_per_page = matrix_markers_per_page,
-            item_label = "Markers"
-        )
-        for (i in seq_along(ssm_pages)) {
-            p <- ssm_pages[[i]]
-            .save_qc_report_png(p, retained_qc_plot_dir, sprintf("spread_matrix_%02d.png", i))
-            .draw_qc_report_plot_page(p)
-        }
     }
 
     if (identical(method, "NNLS")) {

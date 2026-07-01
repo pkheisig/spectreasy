@@ -2,7 +2,7 @@
 % Please edit documentation in R/spread_matrix.R
 \name{plot_ssm}
 \alias{plot_ssm}
-\title{Plot Directional Unmixing Spread Score}
+\title{Plot Spectral Spread Matrix}
 \usage{
 plot_ssm(SSM, output_file = NULL, width = 200, height = 180)
 }
@@ -19,7 +19,7 @@ plot_ssm(SSM, output_file = NULL, width = 200, height = 180)
 A `ggplot` object.
 }
 \description{
-Plot Directional Unmixing Spread Score
+Plot Spectral Spread Matrix
 }
 \examples{
 M <- matrix(c(1, 0.2, 0.1, 1), nrow = 2, byrow = TRUE)

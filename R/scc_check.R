@@ -1160,7 +1160,6 @@
             file.path(qc_metrics_dir, "directional_spread_score.csv"),
             row_id = "spilling_marker"
         )
-        .draw_report_ggplot_page(plot_ssm(ssm_mat, output_file = NULL))
 
         if (is.null(unmixed_list)) {
             unmixed_list <- unmix_samples(

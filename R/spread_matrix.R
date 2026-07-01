@@ -60,15 +60,15 @@ calculate_ssm <- function(M, method = "OLS") {
     return(SSM)
 }
 
-#' Calculate Directional Spread Risk Score
+#' Calculate Directional Spread Values
 #'
-#' Converts the unbounded analytical spread matrix into a bounded directional
-#' score for visualization. Values are normalized to the strongest finite
-#' off-diagonal spread pair in the panel, so `1` means the worst directional
-#' pair in that matrix.
+#' Returns the directional spread values on the raw analytical spread matrix
+#' scale. This helper keeps the directional source/destination orientation but
+#' avoids panel-relative normalization, so values can be interpreted on the
+#' same scale across panels and runs.
 #'
 #' @param SSM Matrix returned by calculate_ssm
-#' @return Matrix of directional spread risk scores in `[0, 1]`.
+#' @return Matrix of raw directional spread values.
 #' @examples
 #' ssm <- matrix(c(0, 1, 4, 0), nrow = 2, byrow = TRUE)
 #' calculate_directional_spread_score(ssm)
@@ -77,18 +77,11 @@ calculate_directional_spread_score <- function(SSM) {
     SSM <- as.matrix(SSM)
     score <- pmax(SSM, 0)
     diag(score) <- 0
-    finite_vals <- score[is.finite(score)]
-    max_val <- max(finite_vals, na.rm = TRUE)
-    if (is.finite(max_val) && max_val > 0) {
-        score <- score / max_val
-    } else {
-        score[] <- 0
-    }
     score[!is.finite(score)] <- NA_real_
     score
 }
 
-#' Plot Directional Unmixing Spread Score
+#' Plot Spectral Spread Matrix
 #' @param SSM Matrix returned by calculate_ssm
 #' @param output_file Optional path to save the plot. Set `NULL` to return the plot without writing a file.
 #' @param width Width of plot in mm
@@ -129,18 +122,15 @@ plot_ssm <- function(SSM, output_file = NULL, width = 200, height = 180) {
         ggplot2::geom_tile() +
         ggplot2::scale_fill_gradientn(
             colors = c("#FFFFFF", "#FEE5D9", "#FCAE91", "#FB6A4A", "#CB181D"),
-            values = c(0, 0.5, 0.75, 0.9, 1.0),
-            limits = c(0, 1),
-            name = "Spread Risk"
+            name = "Spread"
         ) +
         ggplot2::geom_text(
-            ggplot2::aes(label = vapply(Score, fmt_score, character(1)), color = Score > 0.8),
+            ggplot2::aes(label = vapply(Score, fmt_score, character(1))),
             size = text_size,
             show.legend = FALSE
         ) +
-        ggplot2::scale_color_manual(values = c("TRUE" = "white", "FALSE" = "black")) +
-        ggplot2::labs(title = "Directional Unmixing Spread Score",
-                      subtitle = "Rows = noise source, columns = noise destination. Score is normalized to the worst off-diagonal pair in this panel.",
+        ggplot2::labs(title = "Spectral Spread Matrix",
+                      subtitle = "Rows = noise source, columns = noise destination. Values are raw analytical spread estimates.",
                       x = "Receiving Marker (Noise Destination)", y = "Spilling Marker (Noise Source)") +
         ggplot2::theme_minimal(base_size = 13.75) +
         ggplot2::theme(

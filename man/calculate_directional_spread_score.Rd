@@ -2,7 +2,7 @@
 % Please edit documentation in R/spread_matrix.R
 \name{calculate_directional_spread_score}
 \alias{calculate_directional_spread_score}
-\title{Calculate Directional Spread Risk Score}
+\title{Calculate Directional Spread Values}
 \usage{
 calculate_directional_spread_score(SSM)
 }
@@ -10,13 +10,13 @@ calculate_directional_spread_score(SSM)
 \item{SSM}{Matrix returned by calculate_ssm}
 }
 \value{
-Matrix of directional spread risk scores in `[0, 1]`.
+Matrix of raw directional spread values.
 }
 \description{
-Converts the unbounded analytical spread matrix into a bounded directional
-score for visualization. Values are normalized to the strongest finite
-off-diagonal spread pair in the panel, so `1` means the worst directional
-pair in that matrix.
+Returns the directional spread values on the raw analytical spread matrix
+scale. This helper keeps the directional source/destination orientation but
+avoids panel-relative normalization, so values can be interpreted on the
+same scale across panels and runs.
 }
 \examples{
 ssm <- matrix(c(0, 1, 4, 0), nrow = 2, byrow = TRUE)
