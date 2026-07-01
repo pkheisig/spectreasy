@@ -1032,6 +1032,148 @@
     default
 }
 
+.reference_autospectral_saturation_value <- function(config) {
+    threshold <- .get_reference_config_value(config, "saturation_value", 260000)
+    threshold <- suppressWarnings(as.numeric(threshold[1]))
+    if (!is.finite(threshold) || is.na(threshold) || threshold <= 0) {
+        threshold <- 260000
+    }
+    threshold
+}
+
+.reference_height_channel_for_area <- function(area_channel, col_names) {
+    if (is.null(area_channel) || !nzchar(area_channel)) {
+        return("")
+    }
+    candidates <- unique(c(
+        sub("-A$", "-H", area_channel, ignore.case = TRUE),
+        sub("\\.A$", ".H", area_channel, ignore.case = TRUE),
+        sub("A$", "H", area_channel, ignore.case = TRUE)
+    ))
+    candidates <- candidates[nzchar(candidates) & candidates != area_channel]
+    hit <- candidates[candidates %in% col_names]
+    if (length(hit) > 0L) hit[[1]] else ""
+}
+
+.clean_reference_events_autospectral <- function(raw_data,
+                                                 detector_names,
+                                                 config = NULL,
+                                                 sample_type = "cells") {
+    if (!all(detector_names %in% colnames(raw_data))) {
+        return(NULL)
+    }
+    scatter <- .resolve_reference_scatter_channels(raw_data)
+    scatter_names <- if (!is.null(scatter)) c(scatter$fsc, scatter$ssc) else character()
+    keep <- rep(TRUE, nrow(raw_data))
+
+    detector_mat <- as.matrix(raw_data[, detector_names, drop = FALSE])
+    detector_complete <- stats::complete.cases(detector_mat)
+    saturation_value <- .reference_autospectral_saturation_value(config)
+    saturated <- rowSums(detector_mat >= saturation_value, na.rm = TRUE) > 0
+    saturated[is.na(saturated)] <- FALSE
+    keep <- keep & detector_complete & !saturated
+
+    scatter_complete <- rep(TRUE, nrow(raw_data))
+    if (length(scatter_names) == 2L && all(scatter_names %in% colnames(raw_data))) {
+        scatter_mat <- as.matrix(raw_data[, scatter_names, drop = FALSE])
+        scatter_complete <- stats::complete.cases(scatter_mat) &
+            scatter_mat[, 1] > 0 &
+            scatter_mat[, 2] > 0
+        keep <- keep & scatter_complete
+    }
+
+    doublet_removed <- rep(FALSE, nrow(raw_data))
+    fsc_h <- if (!is.null(scatter)) .reference_height_channel_for_area(scatter$fsc, colnames(raw_data)) else ""
+    if (nzchar(fsc_h) && fsc_h %in% colnames(raw_data)) {
+        ratio <- raw_data[, scatter$fsc] / raw_data[, fsc_h]
+        ratio_ok_base <- keep & is.finite(ratio) & ratio > 0
+        if (sum(ratio_ok_base, na.rm = TRUE) >= 20L) {
+            cutoff <- stats::quantile(ratio[ratio_ok_base], 0.85, na.rm = TRUE, names = FALSE)
+            ratio_keep <- ratio_ok_base & ratio < cutoff
+            doublet_removed <- doublet_removed | (keep & !ratio_keep)
+            keep <- keep & ratio_keep
+        }
+    }
+    ssc_h <- if (!is.null(scatter)) .reference_height_channel_for_area(scatter$ssc, colnames(raw_data)) else ""
+    if (nzchar(ssc_h) && ssc_h %in% colnames(raw_data)) {
+        ratio <- raw_data[, scatter$ssc] / raw_data[, ssc_h]
+        ratio_ok_base <- keep & is.finite(ratio) & ratio > 0
+        if (sum(ratio_ok_base, na.rm = TRUE) >= 20L) {
+            cutoff <- stats::quantile(ratio[ratio_ok_base], 0.975, na.rm = TRUE, names = FALSE)
+            ratio_keep <- ratio_ok_base & ratio < cutoff
+            doublet_removed <- doublet_removed | (keep & !ratio_keep)
+            keep <- keep & ratio_keep
+        }
+    }
+
+    cols <- unique(c(detector_names, scatter_names))
+    clean_data <- raw_data[keep, cols, drop = FALSE]
+    if (nrow(clean_data) < 10L) {
+        return(NULL)
+    }
+
+    list(
+        clean_data = clean_data,
+        keep = keep,
+        fsc = if (!is.null(scatter)) scatter$fsc else NA_character_,
+        ssc = if (!is.null(scatter)) scatter$ssc else NA_character_,
+        scatter_names = scatter_names,
+        n_total = nrow(raw_data),
+        n_clean = nrow(clean_data),
+        n_saturated = sum(saturated, na.rm = TRUE),
+        n_scatter_removed = sum(!scatter_complete, na.rm = TRUE),
+        n_doublet_removed = sum(doublet_removed, na.rm = TRUE),
+        saturation_value = saturation_value,
+        sample_type = sample_type
+    )
+}
+
+.extract_reference_autospectral_events <- function(fcs_file, detector_names, config, sample_type = "unstained") {
+    ff <- tryCatch(
+        flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
+        error = function(e) NULL
+    )
+    if (is.null(ff)) {
+        warning("Could not read control file: ", fcs_file)
+        return(NULL)
+    }
+    raw_data <- flowCore::exprs(ff)
+    sn <- tools::file_path_sans_ext(basename(fcs_file))
+    if (!.validate_reference_raw_data(raw_data, sn)) {
+        return(NULL)
+    }
+    clean_info <- .clean_reference_events_autospectral(
+        raw_data = raw_data,
+        detector_names = detector_names,
+        config = config,
+        sample_type = sample_type
+    )
+    if (is.null(clean_info)) {
+        return(NULL)
+    }
+    clean_data <- clean_info$clean_data
+    scatter <- if (length(clean_info$scatter_names) == 2L) {
+        clean_data[, clean_info$scatter_names, drop = FALSE]
+    } else {
+        NULL
+    }
+    list(
+        events = clean_data[, detector_names, drop = FALSE],
+        scatter = scatter,
+        scatter_names = clean_info$scatter_names,
+        clean_info = clean_info,
+        source = data.table::data.table(
+            file = basename(fcs_file),
+            path = normalizePath(fcs_file, mustWork = FALSE),
+            n_total = clean_info$n_total,
+            n_scatter_gated = clean_info$n_clean,
+            scatter_gate_pct = round(100 * clean_info$n_clean / max(clean_info$n_total, 1), 1),
+            fsc_channel = clean_info$fsc,
+            ssc_channel = clean_info$ssc
+        )
+    )
+}
+
 # Reads and gates an AF / unstained control FCS file.
 # Applies scatter-gating on FSC-SSC to isolate the main cell/bead population from debris.
 # Returns a list containing the gated event data across all spectral detectors and gating metadata.
@@ -1049,6 +1191,20 @@
     raw_af <- flowCore::exprs(ff_af)
     sn <- tools::file_path_sans_ext(basename(fcs_file))
     if (!.validate_reference_raw_data(raw_af, sn)) {
+        return(NULL)
+    }
+
+    if (isTRUE(.get_reference_config_value(config, "use_af_cosine_scc_selection", FALSE))) {
+        auto_events <- .extract_reference_autospectral_events(
+            fcs_file = fcs_file,
+            detector_names = detector_names,
+            config = config,
+            sample_type = "unstained"
+        )
+        if (!is.null(auto_events)) {
+            return(auto_events)
+        }
+        message("  Skipping AF control ", basename(fcs_file), ": AutoSpectral event cleanup found too few valid events.")
         return(NULL)
     }
 
@@ -1531,30 +1687,7 @@
     if (nrow(row_info) > 0 && !is.na(row_info$channel[1]) && row_info$channel[1] != "") {
         resolved_channel <- .resolve_reference_control_channel(row_info$channel[1], detector_names, channel_alias_map = channel_alias_map)
         if (nzchar(resolved_channel)) {
-            inferred_val <- as.numeric(q999_by_channel[inferred_peak_channel])
-            resolved_val <- as.numeric(q999_by_channel[resolved_channel])
-            ranked <- names(sort(q999_by_channel, decreasing = TRUE))
-            resolved_rank <- match(resolved_channel, ranked)
-            use_inferred <- is.finite(inferred_val) &&
-                is.finite(resolved_val) &&
-                inferred_val > 0 &&
-                !is.na(resolved_rank) &&
-                resolved_rank > 8 &&
-                (resolved_val / inferred_val) < 0.25
-
-            if (use_inferred) {
-                warning(
-                    "Control channel '", row_info$channel[1], "' for ", sn_ext,
-                    " appears inconsistent with signal profile (rank ",
-                    resolved_rank, ", 99.9% ratio ",
-                    round(resolved_val / inferred_val, 3),
-                    "). Falling back to inferred channel ",
-                    inferred_peak_channel, "."
-                )
-                peak_channel <- inferred_peak_channel
-            } else {
-                peak_channel <- resolved_channel
-            }
+            peak_channel <- resolved_channel
         } else {
             warning("Control channel '", row_info$channel[1], "' for ", sn_ext, " not found in file. Falling back to inferred channel ", inferred_peak_channel, ".")
         }
@@ -2514,6 +2647,54 @@
     basis
 }
 
+.reference_external_negative_summary <- function(detector_names,
+                                                 af_data_raw = NULL,
+                                                 scc_background = NULL) {
+    bg <- if (!is.null(scc_background) && !is.null(scc_background$spectra)) {
+        as.matrix(scc_background$spectra[, detector_names, drop = FALSE])
+    } else {
+        NULL
+    }
+    if (!is.null(bg) && nrow(bg) > 0L) {
+        bg <- bg[stats::complete.cases(bg), , drop = FALSE]
+        bg <- pmax(bg, 0)
+        bg <- bg[rowSums(bg, na.rm = TRUE) > 0, , drop = FALSE]
+        if (nrow(bg) > 0L) {
+            return(list(
+                mean = apply(bg, 2, mean, na.rm = TRUE),
+                median = apply(bg, 2, stats::median, na.rm = TRUE),
+                spectra = bg
+            ))
+        }
+    }
+
+    if (!is.null(af_data_raw) && all(detector_names %in% names(af_data_raw))) {
+        af_vec <- pmax(as.numeric(af_data_raw[detector_names]), 0)
+        names(af_vec) <- detector_names
+        if (sum(af_vec^2, na.rm = TRUE) > 0) {
+            return(list(
+                mean = af_vec,
+                median = af_vec,
+                spectra = matrix(af_vec, nrow = 1L, dimnames = list(NULL, detector_names))
+            ))
+        }
+    }
+
+    NULL
+}
+
+.reference_cosine_to_vector <- function(mat, vec) {
+    mat <- pmax(as.matrix(mat), 0)
+    vec <- pmax(as.numeric(vec), 0)
+    denom <- sqrt(rowSums(mat^2, na.rm = TRUE)) * sqrt(sum(vec^2, na.rm = TRUE))
+    out <- rep(NA_real_, nrow(mat))
+    ok <- is.finite(denom) & denom > 0
+    if (any(ok)) {
+        out[ok] <- as.numeric(mat[ok, , drop = FALSE] %*% vec) / denom[ok]
+    }
+    out
+}
+
 .project_reference_events_from_af <- function(event_mat, af_basis) {
     event_mat <- pmax(as.matrix(event_mat), 0)
     af_basis <- pmax(as.matrix(af_basis), 0)
@@ -2611,13 +2792,15 @@
                                               scc_background = NULL,
                                               histogram_pct_beads = 0.98,
                                               histogram_pct_cells = 0.35,
-                                              min_events = 50L) {
-    af_basis <- .reference_af_selection_basis(
+                                              min_events = 50L,
+                                              n_candidates = 1000L,
+                                              n_spectral = 200L) {
+    af_summary <- .reference_external_negative_summary(
         detector_names = detector_names,
         af_data_raw = af_data_raw,
         scc_background = scc_background
     )
-    if (is.null(af_basis)) {
+    if (is.null(af_summary)) {
         return(NULL)
     }
 
@@ -2627,45 +2810,97 @@
         return(NULL)
     }
 
-    projected <- .project_reference_events_from_af(event_mat[complete, , drop = FALSE], af_basis)
-    residual_signal <- rowSums(projected$residual, na.rm = TRUE)
-    raw_signal <- rowSums(pmax(event_mat[complete, , drop = FALSE], 0), na.rm = TRUE)
-    peak_idx <- match(peak_channel, detector_names)
-    residual_peak <- if (!is.na(peak_idx)) {
-        pmax(projected$residual[, peak_idx], 0)
-    } else {
-        residual_signal
+    event_complete <- pmax(event_mat[complete, , drop = FALSE], 0)
+    af_mean <- af_summary$mean[detector_names]
+    af_median <- af_summary$median[detector_names]
+    af_norm <- sqrt(sum(af_mean^2, na.rm = TRUE))
+    if (!is.finite(af_norm) || af_norm <= 0) {
+        return(NULL)
     }
-    target_ratio <- residual_peak / (residual_signal + 1e-9)
+    af_unit <- af_mean / (af_norm + 1e-9)
+    projection <- as.numeric(event_complete %*% af_unit)
+    residual <- event_complete - projection %o% af_unit
+    residual <- pmax(residual, 0)
+    colnames(residual) <- detector_names
+    empirical_peak <- names(which.max(colMeans(residual, na.rm = TRUE)))
+
+    residual_signal <- rowSums(residual, na.rm = TRUE)
+    raw_signal <- rowSums(event_complete, na.rm = TRUE)
+    peak_idx <- match(peak_channel, detector_names)
+    mapped_peak <- !is.na(peak_idx)
+    peak_signal <- if (mapped_peak) {
+        event_complete[, peak_idx]
+    } else {
+        event_complete[, match(empirical_peak, detector_names)]
+    }
     saturation_mask <- .reference_detector_saturation_mask(peak_vals)
     saturation_complete <- saturation_mask[complete]
     valid <- is.finite(residual_signal) &
         is.finite(raw_signal) &
-        is.finite(residual_peak) &
-        is.finite(target_ratio) &
+        is.finite(peak_signal) &
         raw_signal > 0 &
+        peak_signal > 0 &
         !saturation_complete
     if (sum(valid) < min_events) {
         return(NULL)
     }
 
-    max_fraction <- if (sample_type %in% c("unstained", "cells")) {
-        min(max(as.numeric(histogram_pct_cells), 0.05), 0.20)
-    } else {
-        min(max(as.numeric(histogram_pct_beads), 0.05), 0.50)
+    valid_idx <- which(valid)
+    n_candidates <- suppressWarnings(as.integer(n_candidates[1]))
+    if (!is.finite(n_candidates) || is.na(n_candidates) || n_candidates < 1L) {
+        n_candidates <- 1000L
     }
-    score <- 0.50 * .reference_rank01(projected$cosine, decreasing = TRUE) +
-        0.30 * .reference_rank01(residual_peak) +
-        0.20 * .reference_rank01(target_ratio)
-    score[!valid] <- -Inf
-
-    local_selected <- .select_reference_af_score_events(
-        score = score,
-        valid = valid,
-        min_events = min_events,
-        max_fraction = max_fraction,
-        large_n_min_events = 150L
+    n_spectral <- suppressWarnings(as.integer(n_spectral[1]))
+    if (!is.finite(n_spectral) || is.na(n_spectral) || n_spectral < 1L) {
+        n_spectral <- 200L
+    }
+    candidate_n <- min(n_candidates, length(valid_idx))
+    candidate_idx <- valid_idx[order(peak_signal[valid_idx], decreasing = TRUE)[seq_len(candidate_n)]]
+    af_cosine_candidates <- .reference_cosine_to_vector(
+        event_complete[candidate_idx, , drop = FALSE],
+        af_median
     )
+    cosine_ok <- is.finite(af_cosine_candidates)
+    if (sum(cosine_ok) < min_events) {
+        return(NULL)
+    }
+    candidate_idx <- candidate_idx[cosine_ok]
+    af_cosine_candidates <- af_cosine_candidates[cosine_ok]
+    selected_pool <- seq_along(candidate_idx)
+    max_g <- min(3L, max(1L, floor(length(candidate_idx) / 50L)))
+    if (requireNamespace("mclust", quietly = TRUE) && max_g >= 2L) {
+        fit <- tryCatch(
+            mclust::Mclust(af_cosine_candidates, G = seq_len(max_g), verbose = FALSE),
+            error = function(e) NULL
+        )
+        if (!is.null(fit) && !is.null(fit$classification)) {
+            means <- tapply(af_cosine_candidates, fit$classification, mean, na.rm = TRUE)
+            low_component <- as.integer(names(which.min(means)))
+            component_pool <- which(fit$classification == low_component)
+            if (length(component_pool) >= min_events) {
+                selected_pool <- component_pool
+            }
+        }
+    }
+    ord_cos <- order(af_cosine_candidates, decreasing = FALSE)
+    sorted_cos <- af_cosine_candidates[ord_cos]
+    if (length(sorted_cos) > min_events) {
+        gaps <- diff(sorted_cos)
+        finite_gaps <- is.finite(gaps)
+        if (any(finite_gaps)) {
+            gap_idx <- which.max(ifelse(finite_gaps, gaps, -Inf))
+            low_pool <- ord_cos[seq_len(gap_idx)]
+            if (length(low_pool) >= min_events &&
+                length(low_pool) < length(selected_pool) &&
+                is.finite(gaps[gap_idx]) &&
+                gaps[gap_idx] >= 0.05) {
+                selected_pool <- low_pool
+            }
+        }
+    }
+    selected_n <- min(n_spectral, length(selected_pool))
+    selected_pool <- selected_pool[order(af_cosine_candidates[selected_pool], decreasing = FALSE)[seq_len(selected_n)]]
+    local_selected <- candidate_idx[selected_pool]
     if (length(local_selected) < min_events) {
         return(NULL)
     }
@@ -2684,15 +2919,18 @@
     attr(vals_log, "positive_gate_present") <- TRUE
     attr(vals_log, "gate_type") <- "af_cosine"
     attr(vals_log, "gate_method") <- paste0(
-        "Adaptive AF projection/cosine spectral gate: selected ",
+        "AutoSpectral-style external-negative spectral gate: selected ",
         length(selected_idx),
-        " bright, target-dominant, non-AF-like event(s)"
+        " peak-bright, least-AF-like event(s) from ",
+        length(candidate_idx),
+        " candidate event(s)"
     )
-    attr(vals_log, "af_cosine_max_selected") <- max(projected$cosine[local_selected], na.rm = TRUE)
-    attr(vals_log, "af_cosine_median_selected") <- stats::median(projected$cosine[local_selected], na.rm = TRUE)
-    attr(vals_log, "af_score_median_selected") <- stats::median(score[local_selected], na.rm = TRUE)
+    attr(vals_log, "af_cosine_max_selected") <- max(af_cosine_candidates[match(local_selected, candidate_idx)], na.rm = TRUE)
+    attr(vals_log, "af_cosine_median_selected") <- stats::median(af_cosine_candidates[match(local_selected, candidate_idx)], na.rm = TRUE)
     attr(vals_log, "af_score_valid_events") <- sum(valid)
     attr(vals_log, "saturation_excluded") <- sum(saturation_complete, na.rm = TRUE)
+    attr(vals_log, "empirical_peak_channel") <- empirical_peak
+    attr(vals_log, "mapped_peak_channel") <- peak_channel
 
     positive_idx <- rep(FALSE, nrow(gated_data))
     positive_idx[selected_idx] <- TRUE
@@ -2700,10 +2938,11 @@
     residual_signal_full <- rep(NA_real_, nrow(gated_data))
     raw_signal_full <- rep(NA_real_, nrow(gated_data))
     score_full <- rep(NA_real_, nrow(gated_data))
-    af_cosine_full[complete_idx] <- projected$cosine
+    af_cosine_complete <- .reference_cosine_to_vector(event_complete, af_median)
+    af_cosine_full[complete_idx] <- af_cosine_complete
     residual_signal_full[complete_idx] <- residual_signal
     raw_signal_full[complete_idx] <- raw_signal
-    score_full[complete_idx] <- score
+    score_full[complete_idx] <- -af_cosine_complete
     list(
         vals_log = vals_log,
         gate_min = gate_min,
@@ -2713,7 +2952,217 @@
         residual_signal = residual_signal_full,
         raw_signal = raw_signal_full,
         score = score_full,
-        af_basis = af_basis
+        af_basis = af_summary$spectra
+    )
+}
+
+.compute_reference_autospectral_scc <- function(clean_data,
+                                                detector_names,
+                                                peak_channel,
+                                                row_info,
+                                                sample_type,
+                                                scc_background = NULL,
+                                                n_candidates = 1000L,
+                                                n_spectral = 200L,
+                                                min_events = 10L,
+                                                scc_background_k = 2L) {
+    if (!all(c(detector_names, peak_channel) %in% colnames(clean_data))) {
+        return(NULL)
+    }
+    event_mat <- as.matrix(clean_data[, detector_names, drop = FALSE])
+    complete <- stats::complete.cases(event_mat)
+    peak_vals <- clean_data[, peak_channel]
+    valid <- complete & is.finite(peak_vals) & peak_vals > 0 & rowSums(event_mat, na.rm = TRUE) > 0
+    if (sum(valid, na.rm = TRUE) < min_events) {
+        return(NULL)
+    }
+
+    n_candidates <- suppressWarnings(as.integer(n_candidates[1]))
+    if (!is.finite(n_candidates) || is.na(n_candidates) || n_candidates < 1L) {
+        n_candidates <- 1000L
+    }
+    n_spectral <- suppressWarnings(as.integer(n_spectral[1]))
+    if (!is.finite(n_spectral) || is.na(n_spectral) || n_spectral < 1L) {
+        n_spectral <- 200L
+    }
+    scc_background_k <- suppressWarnings(as.integer(scc_background_k[1]))
+    if (!is.finite(scc_background_k) || is.na(scc_background_k) || scc_background_k < 1L) {
+        scc_background_k <- 2L
+    }
+
+    vals_log <- log10(pmax(peak_vals, 1))
+    attr(vals_log, "positive_gate_present") <- TRUE
+    attr(vals_log, "negative_gate_present") <- FALSE
+    attr(vals_log, "mapped_peak_channel") <- peak_channel
+
+    af_summary <- .reference_external_negative_summary(
+        detector_names = detector_names,
+        scc_background = scc_background
+    )
+    valid_idx <- which(valid)
+    candidate_n <- min(n_candidates, length(valid_idx))
+    candidate_idx <- valid_idx[order(peak_vals[valid_idx], decreasing = TRUE)[seq_len(candidate_n)]]
+
+    if (!is.null(af_summary)) {
+        af_mean <- af_summary$mean[detector_names]
+        af_median <- af_summary$median[detector_names]
+        af_norm <- sqrt(sum(af_mean^2, na.rm = TRUE))
+        if (!is.finite(af_norm) || af_norm <= 0) {
+            return(NULL)
+        }
+        event_complete <- pmax(event_mat[complete, , drop = FALSE], 0)
+        af_unit <- af_mean / (af_norm + 1e-9)
+        projection <- as.numeric(event_complete %*% af_unit)
+        residual <- pmax(event_complete - projection %o% af_unit, 0)
+        colnames(residual) <- detector_names
+        empirical_peak <- names(which.max(colMeans(residual, na.rm = TRUE)))
+
+        af_cosine_candidates <- .reference_cosine_to_vector(
+            pmax(event_mat[candidate_idx, , drop = FALSE], 0),
+            af_median
+        )
+        cosine_ok <- is.finite(af_cosine_candidates)
+        if (sum(cosine_ok) < min_events) {
+            return(NULL)
+        }
+        candidate_idx <- candidate_idx[cosine_ok]
+        af_cosine_candidates <- af_cosine_candidates[cosine_ok]
+        selected_n <- min(n_spectral, length(candidate_idx))
+        selected_local <- order(af_cosine_candidates, decreasing = FALSE)[seq_len(selected_n)]
+        selected_idx <- candidate_idx[selected_local]
+        if (length(selected_idx) < min_events) {
+            return(NULL)
+        }
+
+        selected_events <- clean_data[selected_idx, , drop = FALSE]
+        matched_background <- .scc_background_match(
+            events = selected_events,
+            background = scc_background,
+            k = scc_background_k
+        )
+        if (is.null(matched_background)) {
+            matched_background <- matrix(
+                af_median,
+                nrow = nrow(selected_events),
+                ncol = length(detector_names),
+                byrow = TRUE,
+                dimnames = list(NULL, detector_names)
+            )
+            background_method <- "external_median"
+        } else {
+            background_method <- "scatter_knn"
+        }
+        corrected_events <- as.matrix(selected_events[, detector_names, drop = FALSE]) - matched_background
+        colnames(corrected_events) <- detector_names
+        positive_events <- pmax(corrected_events, 0)
+        pos_spectrum_raw <- apply(positive_events, 2, stats::median, na.rm = TRUE)
+        sig_pure <- pmax(pos_spectrum_raw, 0)
+        max_val <- max(sig_pure, na.rm = TRUE)
+        if (!is.finite(max_val) || max_val <= 0) {
+            return(NULL)
+        }
+        spectrum_norm <- sig_pure / max_val
+
+        selected_cos <- af_cosine_candidates[selected_local]
+        attr(vals_log, "gate_type") <- "autospectral_external"
+        attr(vals_log, "gate_method") <- paste0(
+            "AutoSpectral-style external-negative selector: top ",
+            length(candidate_idx),
+            " peak-bright candidate event(s), kept ",
+            length(selected_idx),
+            " least-AF-like event(s)"
+        )
+        attr(vals_log, "af_cosine_max_selected") <- max(selected_cos, na.rm = TRUE)
+        attr(vals_log, "af_cosine_median_selected") <- stats::median(selected_cos, na.rm = TRUE)
+        attr(vals_log, "af_score_valid_events") <- length(valid_idx)
+        attr(vals_log, "empirical_peak_channel") <- empirical_peak
+        attr(vals_log, "scc_background_method") <- background_method
+
+        positive_idx <- rep(FALSE, nrow(clean_data))
+        positive_idx[selected_idx] <- TRUE
+        af_cosine_full <- rep(NA_real_, nrow(clean_data))
+        af_cosine_full[candidate_idx] <- af_cosine_candidates
+        attr(spectrum_norm, "variance") <- apply(positive_events, 2, stats::var, na.rm = TRUE) / (max_val^2)
+        attr(spectrum_norm, "scc_background") <- list(
+            method = background_method,
+            k = if (identical(background_method, "scatter_knn")) scc_background_k else NA_integer_,
+            matched_events = nrow(positive_events)
+        )
+        attr(spectrum_norm, "scc_positive_events") <- positive_events
+
+        return(list(
+            spectrum = spectrum_norm,
+            final_gated_data = selected_events,
+            positive_events = positive_events,
+            positive_idx = positive_idx,
+            vals_log = vals_log,
+            gate_min = min(peak_vals[selected_idx], na.rm = TRUE),
+            gate_max = max(peak_vals[selected_idx], na.rm = TRUE),
+            peak_vals = peak_vals,
+            spectral_gate_info = list(
+                af_basis = af_summary$spectra,
+                af_cosine = af_cosine_full
+            ),
+            extraction_method = "autospectral_external",
+            n_candidates = length(candidate_idx),
+            n_selected = length(selected_idx)
+        ))
+    }
+
+    top_n <- min(100L, length(candidate_idx))
+    selected_idx <- candidate_idx[seq_len(top_n)]
+    bottom_n <- max(10L, floor(0.10 * length(valid_idx)))
+    bottom_n <- min(bottom_n, length(valid_idx) - length(selected_idx))
+    if (bottom_n < min_events || length(selected_idx) < min_events) {
+        return(NULL)
+    }
+    negative_pool <- setdiff(valid_idx[order(peak_vals[valid_idx], decreasing = FALSE)], selected_idx)
+    negative_idx <- head(negative_pool, bottom_n)
+    neg_spectrum <- apply(event_mat[negative_idx, , drop = FALSE], 2, mean, na.rm = TRUE)
+    corrected_events <- sweep(as.matrix(clean_data[selected_idx, detector_names, drop = FALSE]), 2, neg_spectrum, "-")
+    colnames(corrected_events) <- detector_names
+    positive_events <- pmax(corrected_events, 0)
+    sig_pure <- pmax(colMeans(positive_events, na.rm = TRUE), 0)
+    max_val <- max(sig_pure, na.rm = TRUE)
+    if (!is.finite(max_val) || max_val <= 0) {
+        return(NULL)
+    }
+    spectrum_norm <- sig_pure / max_val
+    positive_idx <- rep(FALSE, nrow(clean_data))
+    positive_idx[selected_idx] <- TRUE
+    negative_bool <- rep(FALSE, nrow(clean_data))
+    negative_bool[negative_idx] <- TRUE
+    attr(vals_log, "gate_type") <- "autospectral_internal"
+    attr(vals_log, "gate_method") <- paste0(
+        "AutoSpectral-style internal-negative fallback: top ",
+        length(selected_idx),
+        " peak-bright event(s) minus bottom ",
+        length(negative_idx),
+        " event(s)"
+    )
+    attr(vals_log, "negative_idx") <- negative_bool
+    attr(vals_log, "scc_background_method") <- "internal_negative"
+    attr(spectrum_norm, "variance") <- apply(positive_events, 2, stats::var, na.rm = TRUE) / (max_val^2)
+    attr(spectrum_norm, "scc_background") <- list(
+        method = "internal_negative",
+        k = NA_integer_,
+        matched_events = 0L
+    )
+    attr(spectrum_norm, "scc_positive_events") <- positive_events
+
+    list(
+        spectrum = spectrum_norm,
+        final_gated_data = clean_data[selected_idx, , drop = FALSE],
+        positive_events = positive_events,
+        positive_idx = positive_idx,
+        vals_log = vals_log,
+        gate_min = min(peak_vals[selected_idx], na.rm = TRUE),
+        gate_max = max(peak_vals[selected_idx], na.rm = TRUE),
+        peak_vals = peak_vals,
+        spectral_gate_info = NULL,
+        extraction_method = "autospectral_internal",
+        n_candidates = length(candidate_idx),
+        n_selected = length(selected_idx)
     )
 }
 
@@ -2734,7 +3183,7 @@
                                         scc_background = NULL,
                                         viability_dead_background = NULL,
                                         scc_background_method = "none",
-                                        scc_background_k = 3L) {
+                                        scc_background_k = 2L) {
     is_viability <- nrow(row_info) > 0 &&
         "is.viability" %in% colnames(row_info) &&
         toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
@@ -2912,6 +3361,7 @@
     }
 
     bead_events <- list()
+    bead_gated_list <- list()
     for (key in bead_keys) {
         fcs_file <- unname(fcs_files[[key]])
         sn_ext <- basename(fcs_file)
@@ -2928,23 +3378,52 @@
 
         pd <- flowCore::pData(flowCore::parameters(ff))
         raw_data <- flowCore::exprs(ff)
-        scatter_info <- .compute_reference_scatter_gate(
-            raw_data = raw_data,
-            pd = pd,
-            sample_type = "beads",
-            outlier_percentile = config$outlier_percentile,
-            debris_percentile = config$debris_percentile,
-            subsample_n = config$subsample_n,
-            max_clusters = config$max_clusters,
-            min_cluster_proportion = config$min_cluster_proportion,
-            gate_contour_beads = config$gate_contour_beads,
-            gate_contour_cells = config$gate_contour_cells,
-            bead_gate_scale = config$bead_gate_scale
-        )
-        neg_data <- if (!is.null(scatter_info)) scatter_info$gated_data else raw_data
-        if (nrow(neg_data) > 0) {
+        if (isTRUE(.get_reference_config_value(config, "use_af_cosine_scc_selection", FALSE))) {
+            clean_info <- .clean_reference_events_autospectral(
+                raw_data = raw_data,
+                detector_names = detector_names,
+                config = config,
+                sample_type = "beads"
+            )
+            if (is.null(clean_info)) {
+                next
+            }
+            neg_data <- clean_info$clean_data
             bead_events[[length(bead_events) + 1L]] <- neg_data[, detector_names, drop = FALSE]
+            if (length(clean_info$scatter_names) == 2L) {
+                bead_gated_list[[length(bead_gated_list) + 1L]] <- list(
+                    events = neg_data[, detector_names, drop = FALSE],
+                    scatter = neg_data[, clean_info$scatter_names, drop = FALSE],
+                    scatter_names = clean_info$scatter_names
+                )
+            }
             message("Using unstained bead control for bead SCC subtraction: ", basename(fcs_file))
+        } else {
+            scatter_info <- .compute_reference_scatter_gate(
+                raw_data = raw_data,
+                pd = pd,
+                sample_type = "beads",
+                outlier_percentile = config$outlier_percentile,
+                debris_percentile = config$debris_percentile,
+                subsample_n = config$subsample_n,
+                max_clusters = config$max_clusters,
+                min_cluster_proportion = config$min_cluster_proportion,
+                gate_contour_beads = config$gate_contour_beads,
+                gate_contour_cells = config$gate_contour_cells,
+                bead_gate_scale = config$bead_gate_scale
+            )
+            neg_data <- if (!is.null(scatter_info)) scatter_info$gated_data else raw_data
+            if (nrow(neg_data) > 0) {
+                bead_events[[length(bead_events) + 1L]] <- neg_data[, detector_names, drop = FALSE]
+                if (!is.null(scatter_info)) {
+                    bead_gated_list[[length(bead_gated_list) + 1L]] <- list(
+                        events = neg_data[, detector_names, drop = FALSE],
+                        scatter = neg_data[, c(scatter_info$fsc, scatter_info$ssc), drop = FALSE],
+                        scatter_names = c(scatter_info$fsc, scatter_info$ssc)
+                    )
+                }
+                message("Using unstained bead control for bead SCC subtraction: ", basename(fcs_file))
+            }
         }
     }
     if (!length(bead_events)) {
@@ -2952,7 +3431,15 @@
     }
 
     bead_events <- do.call(rbind, bead_events)
-    apply(bead_events[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
+    bead_negative <- apply(bead_events[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
+    bead_background <- .scc_background_from_gated_af_list(
+        af_gated_list = bead_gated_list,
+        detector_names = detector_names
+    )
+    if (!is.null(bead_background)) {
+        attr(bead_negative, "scc_background") <- bead_background
+    }
+    bead_negative
 }
 
 # Helper to extract the description attribute of a channel for plotting.
@@ -3094,7 +3581,8 @@
         seed = 1L
     )
 
-    show_af_basis <- identical(attr(vals_log, "gate_type"), "af_cosine") &&
+    gate_type <- attr(vals_log, "gate_type")
+    show_af_basis <- gate_type %in% c("af_cosine", "autospectral_external") &&
         !is.null(spectral_gate_info) &&
         !is.null(spectral_gate_info$af_basis)
     if (show_af_basis) {
@@ -3125,8 +3613,8 @@
     }
 
     selected_label <- "Selected SCC bands"
-    contamination_label <- if (identical(attr(vals_log, "gate_type"), "af_cosine")) {
-        "Unstained AF basis bands"
+    contamination_label <- if (gate_type %in% c("af_cosine", "autospectral_external")) {
+        "Unstained negative bands"
     } else {
         "Background/negative bands"
     }
@@ -3170,8 +3658,8 @@
                 } else {
                     length(contamination_idx)
                 },
-                if (identical(attr(vals_log, "gate_type"), "af_cosine")) {
-                    " unstained AF basis band(s) summarized"
+                if (gate_type %in% c("af_cosine", "autospectral_external")) {
+                    " unstained negative band(s) summarized"
                 } else {
                     " background/negative event(s) summarized"
                 }
@@ -3221,6 +3709,135 @@
         dpi = 300
     )
 
+    invisible(NULL)
+}
+
+.save_reference_autospectral_cleanup_plot <- function(sn,
+                                                      raw_data,
+                                                      pd,
+                                                      clean_info,
+                                                      out_path) {
+    if (is.null(clean_info) ||
+        !all(c(clean_info$fsc, clean_info$ssc) %in% colnames(raw_data))) {
+        return(invisible(NULL))
+    }
+    fsc <- clean_info$fsc
+    ssc <- clean_info$ssc
+    fsc_desc <- .get_reference_axis_label(fsc, pd)
+    ssc_desc <- .get_reference_axis_label(ssc, pd)
+    keep <- clean_info$keep
+    keep[is.na(keep)] <- FALSE
+    plot_dt <- data.table::data.table(
+        x = raw_data[, fsc],
+        y = raw_data[, ssc],
+        class = factor(ifelse(keep, "kept", "removed"), levels = c("removed", "kept"))
+    )
+    plot_dt <- plot_dt[is.finite(plot_dt$x) & is.finite(plot_dt$y), , drop = FALSE]
+    if (nrow(plot_dt) == 0L) {
+        return(invisible(NULL))
+    }
+    x_lim <- stats::quantile(plot_dt$x, c(0.001, 0.995), na.rm = TRUE, names = FALSE)
+    y_lim <- stats::quantile(plot_dt$y, c(0.001, 0.995), na.rm = TRUE, names = FALSE)
+    subtitle <- paste0(
+        clean_info$n_clean,
+        " / ",
+        clean_info$n_total,
+        " event(s) kept after saturation/singlet cleanup; ",
+        clean_info$n_saturated,
+        " saturated event(s) removed"
+    )
+    p <- ggplot2::ggplot(plot_dt, ggplot2::aes(x, y, color = class)) +
+        ggplot2::geom_point(size = 0.35, alpha = 0.35) +
+        ggplot2::scale_color_manual(values = c(removed = "grey78", kept = "#2166AC"), drop = FALSE) +
+        ggplot2::labs(
+            title = paste0(sn, " - Event cleanup"),
+            subtitle = subtitle,
+            x = fsc_desc,
+            y = ssc_desc,
+            color = NULL
+        ) +
+        ggplot2::coord_cartesian(xlim = x_lim, ylim = y_lim) +
+        ggplot2::theme_minimal(base_size = 11) +
+        ggplot2::theme(
+            legend.position = "bottom",
+            panel.background = ggplot2::element_rect(fill = "white", color = NA),
+            plot.subtitle = ggplot2::element_text(size = 8.4, lineheight = 1.05)
+        )
+    ggplot2::ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p, width = 5, height = 5, dpi = 300)
+    invisible(NULL)
+}
+
+.save_reference_spectrum_distribution_plot <- function(sn,
+                                                       final_gated_data,
+                                                       detector_names,
+                                                       detector_labels,
+                                                       det_info,
+                                                       out_path) {
+    if (is.null(final_gated_data) || nrow(final_gated_data) == 0L) {
+        return(invisible(NULL))
+    }
+    if (!all(detector_names %in% colnames(final_gated_data))) {
+        return(invisible(NULL))
+    }
+    log_mat <- log10(pmax(final_gated_data[, detector_names, drop = FALSE], 1e-3))
+    min_y <- floor(min(log_mat, na.rm = TRUE))
+    max_y <- ceiling(max(log_mat, na.rm = TRUE))
+    if (!is.finite(min_y) || !is.finite(max_y) || max_y <= min_y) {
+        return(invisible(NULL))
+    }
+    breaks <- seq(min_y, max_y, length.out = 151)
+    bin_mid <- (breaks[-1] + breaks[-length(breaks)]) / 2
+    bin_height <- breaks[2] - breaks[1]
+    counts_mat <- vapply(seq_len(ncol(log_mat)), function(j) {
+        as.numeric(graphics::hist(log_mat[, j], breaks = breaks, plot = FALSE)$counts)
+    }, numeric(length(bin_mid)))
+    rownames(counts_mat) <- as.character(seq_along(bin_mid))
+    colnames(counts_mat) <- as.character(seq_len(ncol(log_mat)))
+    dt_c <- data.table::as.data.table(as.table(counts_mat))
+    data.table::setnames(dt_c, c("bin_idx", "ch_idx", "count"))
+    dt_c$bin_idx <- as.integer(as.character(dt_c$bin_idx))
+    dt_c$ch_idx <- as.integer(as.character(dt_c$ch_idx))
+    dt_c$y_orig <- bin_mid[dt_c$bin_idx]
+    dt_c$fill <- log10(dt_c$count + 1)
+    dt_c <- dt_c[dt_c$count >= 3, ]
+    if (nrow(dt_c) == 0L) {
+        return(invisible(NULL))
+    }
+    y_power <- 1.5
+    dt_c$y <- dt_c$y_orig^y_power
+    vlines <- if (!is.null(det_info) && "laser_nm" %in% names(det_info)) {
+        which(diff(det_info$laser_nm) != 0) + 0.5
+    } else {
+        numeric()
+    }
+    fill_lo <- min(dt_c$fill, na.rm = TRUE)
+    fill_hi <- stats::quantile(dt_c$fill, 0.96, na.rm = TRUE)
+    y_breaks_orig <- 0:ceiling(max_y)
+    y_breaks_trans <- y_breaks_orig^y_power
+    y_labels <- vapply(y_breaks_orig, function(x) paste0("10^", x), character(1))
+
+    p <- ggplot2::ggplot(dt_c, ggplot2::aes(ch_idx, y, fill = fill)) +
+        ggplot2::geom_tile(width = 0.7, height = bin_height * 3) +
+        ggplot2::scale_fill_gradientn(
+            colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"),
+            limits = c(fill_lo, fill_hi),
+            oob = scales::squish,
+            guide = "none"
+        ) +
+        ggplot2::scale_x_continuous(breaks = seq_along(detector_names), labels = detector_labels) +
+        ggplot2::scale_y_continuous(limits = c(0, (max_y + 0.5)^y_power), breaks = y_breaks_trans, labels = y_labels) +
+        ggplot2::coord_cartesian(expand = FALSE) +
+        ggplot2::labs(title = paste0(sn, " - Spectrum"), x = NULL, y = "Intensity") +
+        ggplot2::theme_minimal() +
+        ggplot2::theme(
+            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+            legend.position = "none",
+            panel.background = ggplot2::element_rect(fill = "white", color = NA)
+        )
+    if (length(vlines) > 0L) {
+        p <- p + ggplot2::geom_vline(xintercept = vlines, color = "grey85", linewidth = 0.35)
+    }
+    ggplot2::ggsave(file.path(out_path, "spectrum", paste0(sn, "_spectrum.png")), p, width = 300, height = 120, units = "mm", dpi = 600)
     invisible(NULL)
 }
 
@@ -3508,6 +4125,180 @@
 # Reads the file, performs scatter gating, identifies the peak channel, runs histogram gating
 # to separate positive and negative events, calculates the normalized spectrum, and saves QC plots.
 # Returns a list containing the processed spectrum, QC summary row, and sample name metadata.
+.process_reference_file_autospectral <- function(fcs_file,
+                                                 control_df,
+                                                 sample_patterns,
+                                                 metadata,
+                                                 config,
+                                                 af_data_raw = NULL,
+                                                 bead_negative = NULL,
+                                                 scc_background = NULL,
+                                                 viability_dead_background = NULL) {
+    sn_ext <- basename(fcs_file)
+    sn <- tools::file_path_sans_ext(sn_ext)
+    row_info <- .get_control_rows_for_reference(control_df, c(sn_ext, sn))
+    sample_info <- .resolve_reference_sample_type(
+        filename = sn,
+        row_info = row_info,
+        patterns = sample_patterns,
+        default = config$default_sample_type
+    )
+    fluor_name <- if (nrow(row_info) > 0 && !is.na(row_info$fluorophore[1])) row_info$fluorophore[1] else sample_info$pattern
+    marker_name <- if (nrow(row_info) > 0 && "marker" %in% colnames(row_info) && !is.na(row_info$marker[1])) {
+        trimws(as.character(row_info$marker[1]))
+    } else {
+        ""
+    }
+    is_dead <- nrow(row_info) > 0 &&
+        "is.dead" %in% colnames(row_info) &&
+        isTRUE(.is_dead_control_row(row_info$is.dead[1]))
+    if (isTRUE(config$exclude_af) && .is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext)) {
+        return(NULL)
+    }
+    if (is_dead || .is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext)) {
+        return(NULL)
+    }
+
+    message("Processing SCC: ", fluor_name, " (", sn, ")")
+    ff <- flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE)
+    pd <- flowCore::pData(flowCore::parameters(ff))
+    raw_data <- flowCore::exprs(ff)
+    if (!.validate_reference_raw_data(raw_data, sn)) {
+        return(NULL)
+    }
+    clean_info <- .clean_reference_events_autospectral(
+        raw_data = raw_data,
+        detector_names = metadata$detector_names,
+        config = config,
+        sample_type = sample_info$type
+    )
+    if (is.null(clean_info)) {
+        return(NULL)
+    }
+    clean_data <- clean_info$clean_data
+
+    peak_info <- .select_reference_peak_channel(
+        gated_data = clean_data,
+        detector_names = metadata$detector_names,
+        row_info = row_info,
+        channel_alias_map = metadata$channel_alias_map,
+        sn_ext = sn_ext,
+        sn = sn,
+        af_data_raw = af_data_raw,
+        clean_with_af = FALSE
+    )
+    peak_channel <- peak_info$peak_channel
+    message("  Peak channel: ", peak_channel)
+
+    is_viability <- nrow(row_info) > 0 &&
+        "is.viability" %in% colnames(row_info) &&
+        toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
+    bead_background <- attr(bead_negative, "scc_background", exact = TRUE)
+    selected_background <- if (isTRUE(is_viability) && !is.null(viability_dead_background)) {
+        viability_dead_background
+    } else if (identical(sample_info$type, "beads") && !is.null(bead_background)) {
+        bead_background
+    } else if (identical(sample_info$type, "cells")) {
+        scc_background
+    } else {
+        NULL
+    }
+
+    extraction <- .compute_reference_autospectral_scc(
+        clean_data = clean_data,
+        detector_names = metadata$detector_names,
+        peak_channel = peak_channel,
+        row_info = row_info,
+        sample_type = sample_info$type,
+        scc_background = selected_background,
+        n_candidates = .get_reference_config_value(config, "autospectral_n_candidates", 1000L),
+        n_spectral = .get_reference_config_value(config, "autospectral_n_spectral", 200L),
+        min_events = .get_reference_config_value(config, "autospectral_min_events", 10L),
+        scc_background_k = config$scc_background_k
+    )
+    if (is.null(extraction)) {
+        return(NULL)
+    }
+
+    spectrum_norm <- extraction$spectrum
+    peak_vals <- extraction$peak_vals
+    selected_peak <- peak_vals[extraction$positive_idx]
+    neg_vals <- peak_vals[order(peak_vals, decreasing = FALSE)[seq_len(max(1L, floor(0.10 * length(peak_vals))))]]
+    mfi_pos <- stats::median(selected_peak, na.rm = TRUE)
+    mfi_neg <- stats::median(neg_vals, na.rm = TRUE)
+    sd_neg <- stats::mad(neg_vals, na.rm = TRUE)
+    if (is.na(sd_neg) || sd_neg == 0) sd_neg <- stats::sd(neg_vals, na.rm = TRUE)
+    if (is.na(sd_neg) || sd_neg == 0) sd_neg <- 1e-6
+    stain_index <- (mfi_pos - mfi_neg) / (2 * sd_neg)
+    any_sat <- clean_info$n_saturated > 0L
+
+    if (isTRUE(config$save_qc_plots)) {
+        .save_reference_autospectral_cleanup_plot(
+            sn = sn,
+            raw_data = raw_data,
+            pd = pd,
+            clean_info = clean_info,
+            out_path = config$out_path
+        )
+        positive_plot_events <- as.data.frame(extraction$positive_events)
+        colnames(positive_plot_events) <- metadata$detector_names
+        .save_reference_spectral_selection_plot(
+            sn = sn,
+            gated_data = clean_data,
+            final_gated_data = positive_plot_events,
+            detector_names = metadata$detector_names,
+            detector_labels = metadata$detector_labels,
+            det_info = metadata$det_info,
+            peak_vals = peak_vals,
+            vals_log = extraction$vals_log,
+            positive_idx = extraction$positive_idx,
+            out_path = config$out_path,
+            spectral_gate_info = extraction$spectral_gate_info
+        )
+        .save_reference_spectrum_distribution_plot(
+            sn = sn,
+            final_gated_data = positive_plot_events,
+            detector_names = metadata$detector_names,
+            detector_labels = metadata$detector_labels,
+            det_info = metadata$det_info,
+            out_path = config$out_path
+        )
+    }
+
+    list(
+        sample_name = sn,
+        result = data.table::data.table(
+            sample = sn,
+            fluorophore = fluor_name,
+            type = sample_info$type,
+            n_total = nrow(raw_data),
+            n_final = extraction$n_selected,
+            spectrum = list(spectrum_norm)
+        ),
+        qc_summary = data.table::data.table(
+            sample = sn,
+            fluorophore = fluor_name,
+            marker = marker_name,
+            type = sample_info$type,
+            peak_channel = peak_channel,
+            fsc_channel = clean_info$fsc,
+            ssc_channel = clean_info$ssc,
+            n_total = nrow(raw_data),
+            n_scatter_gated = clean_info$n_clean,
+            n_final = extraction$n_selected,
+            scatter_gate_pct = round(100 * clean_info$n_clean / max(nrow(raw_data), 1), 1),
+            histogram_gate_pct = round(100 * extraction$n_selected / max(clean_info$n_clean, 1), 1),
+            intensity_gate_type = extraction$extraction_method,
+            scc_background_method = {
+                bg_info <- attr(spectrum_norm, "scc_background")
+                if (!is.null(bg_info) && !is.null(bg_info$method)) bg_info$method else "none"
+            },
+            stain_index = round(stain_index, 1),
+            saturated = ifelse(any_sat, "YES", "OK")
+        )
+    )
+}
+
 .process_reference_file <- function(fcs_file,
                                     control_df,
                                     sample_patterns,
@@ -3517,6 +4308,20 @@
                                     bead_negative = NULL,
                                     scc_background = NULL,
                                     viability_dead_background = NULL) {
+    if (isTRUE(config$use_af_cosine_scc_selection)) {
+        return(.process_reference_file_autospectral(
+            fcs_file = fcs_file,
+            control_df = control_df,
+            sample_patterns = sample_patterns,
+            metadata = metadata,
+            config = config,
+            af_data_raw = af_data_raw,
+            bead_negative = bead_negative,
+            scc_background = scc_background,
+            viability_dead_background = viability_dead_background
+        ))
+    }
+
     sn_ext <- basename(fcs_file)
     sn <- tools::file_path_sans_ext(sn_ext)
 
@@ -3608,9 +4413,21 @@
         }
     )
 
+    is_viability <- nrow(row_info) > 0 &&
+        "is.viability" %in% colnames(row_info) &&
+        toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
+    spectral_background <- if (identical(sample_info$type, "cells") &&
+        isTRUE(is_viability) &&
+        !is.null(viability_dead_background)) {
+        viability_dead_background
+    } else {
+        scc_background
+    }
+
     spectral_gate <- if (isTRUE(config$use_scatter_gating) &&
         isTRUE(config$use_af_cosine_scc_selection) &&
-        identical(sample_info$type, "cells")) {
+        identical(sample_info$type, "cells") &&
+        !is.null(spectral_background)) {
         .compute_reference_af_cosine_gate(
             gated_data = scatter_info$gated_data,
             detector_names = metadata$detector_names,
@@ -3619,7 +4436,7 @@
             sample_type = sample_info$type,
             fallback_gate = hist_info,
             af_data_raw = af_data_raw,
-            scc_background = scc_background,
+            scc_background = spectral_background,
             histogram_pct_beads = config$histogram_pct_beads,
             histogram_pct_cells = config$histogram_pct_cells
         )
@@ -3827,10 +4644,12 @@
 
 #' Build a Reference Matrix from Single-Color Controls
 #'
-#' Reads SCC FCS files, performs broad FSC/SSC cleanup, uses the default
-#' GMM/EM intensity-vs-FSC selector for bead and cell controls, then computes
-#' one normalized spectrum per fluorophore. The experimental AF-cosine cell
-#' SCC selector is available only when explicitly enabled.
+#' Reads SCC FCS files, removes saturated/singlet-outlier events, and by
+#' default uses an AutoSpectral-style SCC extractor: mapped peak channel,
+#' peak-bright candidates, least-negative-like cosine selection, scatter-KNN
+#' background subtraction against the matching unstained control, then one
+#' normalized spectrum per fluorophore. If no matching external negative exists,
+#' an internal peak-high minus peak-low fallback is used.
 #'
 #' This is the core matrix-construction step used before unmixing.
 #'
@@ -3876,23 +4695,22 @@
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
-#' @param use_scatter_gating Logical; if `TRUE` (default), keep broad FSC/SSC
-#'   cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
-#'   `FALSE`, use the legacy one-dimensional histogram gate.
+#' @param use_scatter_gating Logical; if `TRUE`, use the legacy FSC/SSC and
+#'   intensity-vs-FSC GMM/EM selector when
+#'   `use_af_cosine_scc_selection = FALSE`. Ignored by the default
+#'   AutoSpectral-style SCC extractor.
 #' @param use_af_cosine_scc_selection Logical; if `TRUE` (default), use the
-#'   adaptive AF projection/cosine selector for cell SCCs when AF controls are
-#'   available. This mode scores events by low AF similarity, residual
-#'   target-channel brightness, and target-channel dominance, then keeps the
-#'   high-score component. Bead SCCs continue to use the GMM/EM
-#'   intensity-vs-FSC selector after broad FSC/SSC cleanup.
-#' @param clean_scc_with_unstained Logical; if `TRUE`, cell SCC spectra are
-#'   cleaned with scatter-matched unstained/AF events before spectrum
-#'   derivation. Bead controls use a scatter-gated unstained bead control as
-#'   their negative spectrum when one is available; otherwise they keep the
-#'   positive/negative populations estimated from the stained bead control.
-#'   If `use_af_cosine_scc_selection = TRUE`, this cleanup is required and is
+#'   AutoSpectral-style SCC extractor for cells and beads: remove saturated
+#'   events, use the mapped peak channel, keep peak-bright candidates that are
+#'   least similar to the matched unstained background, and subtract
+#'   scatter-matched background events. If no matching external negative exists,
+#'   use an internal peak-high minus peak-low fallback. If `FALSE`, use the
+#'   legacy GMM/EM or histogram gates.
+#' @param clean_scc_with_unstained Logical; if `TRUE`, use matching unstained
+#'   events as the external negative for the AutoSpectral-style SCC extractor
+#'   and legacy SCC cleaning. If `use_af_cosine_scc_selection = TRUE`, this is
 #'   automatically enabled with a warning.
-#' @param scc_background_method Background method for cell SCC cleaning.
+#' @param scc_background_method Background method for SCC cleaning.
 #'   `"scatter_knn"` matches each stained event to unstained events by FSC/SSC.
 #'   Use `"none"` to disable matched background subtraction.
 #' @param scc_background_k Number of nearest unstained events averaged for
@@ -3901,9 +4719,7 @@
 #' @param histogram_direction_beads Histogram gate direction for beads: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.
 #' @param histogram_pct_cells Quantile width for the default cell histogram
-#'   gate. When `use_af_cosine_scc_selection = TRUE`, this acts as a
-#'   conservative maximum cap for the experimental adaptive AF-score selector
-#'   rather than a fixed fraction to keep.
+#'   gate. Ignored by the default AutoSpectral-style SCC extractor.
 #' @param histogram_direction_cells Histogram gate direction for cells: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.
 #' @param outlier_percentile Upper-tail FSC/SSC filtering percentile.
@@ -3960,7 +4776,7 @@ build_reference_matrix <- function(
   use_af_cosine_scc_selection = TRUE,
   clean_scc_with_unstained = TRUE,
   scc_background_method = c("scatter_knn", "none"),
-  scc_background_k = 3L,
+  scc_background_k = 2L,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,

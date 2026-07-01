@@ -107,7 +107,7 @@ test_that("cell SCC spectra can use scatter-matched unstained background", {
     expect_lt(abs(stats::median(positive_shapes[, "YG1-A"]) - 0.10), 0.06)
 })
 
-test_that("AF cosine SCC selection is default for cell controls and can be disabled", {
+test_that("AutoSpectral-style SCC selection is default for cell controls and can be disabled", {
     set.seed(47)
     wf <- make_matched_af_scc()
 
@@ -131,7 +131,7 @@ test_that("AF cosine SCC selection is default for cell controls and can be disab
 
     default_summary <- attr(default, "qc_summary")
     disabled_summary <- attr(disabled, "qc_summary")
-    expect_equal(default_summary$intensity_gate_type[default_summary$fluorophore == "FITC"], "af_cosine")
+    expect_equal(default_summary$intensity_gate_type[default_summary$fluorophore == "FITC"], "autospectral_external")
     expect_equal(disabled_summary$intensity_gate_type[disabled_summary$fluorophore == "FITC"], "scatter")
 })
 
@@ -177,7 +177,7 @@ test_that("AF cosine SCC selector prefers low-AF dye-shaped events", {
     expect_true(all(selected > nrow(af_like) & selected <= nrow(af_like) + nrow(dye_like)))
 })
 
-test_that("bead SCCs keep intensity selection even when AF controls exist", {
+test_that("bead SCCs use AutoSpectral-style external-negative selection when unstained beads exist", {
     set.seed(45)
     scc_dir <- tempfile("spectreasy_bead_gate_")
     dir.create(scc_dir, recursive = TRUE, showWarnings = FALSE)
@@ -230,8 +230,8 @@ test_that("bead SCCs keep intensity selection even when AF controls exist", {
     )
 
     qc_summary <- attr(M, "qc_summary")
-    expect_equal(qc_summary$intensity_gate_type[qc_summary$fluorophore == "FITC"], "scatter")
-    expect_equal(qc_summary$scc_background_method[qc_summary$fluorophore == "FITC"], "none")
+    expect_equal(qc_summary$intensity_gate_type[qc_summary$fluorophore == "FITC"], "autospectral_external")
+    expect_equal(qc_summary$scc_background_method[qc_summary$fluorophore == "FITC"], "scatter_knn")
     expect_gt(M["FITC", "B1-A"], 0.95)
     expect_lt(abs(M["FITC", "YG1-A"] - 0.10), 0.04)
     expect_equal(attr(M, "af_bank_info")$sources$file[1], "Unstained (Cells).fcs")
@@ -294,15 +294,15 @@ test_that("SCC report prefers spectral-selection plot only for AF-cosine gates",
     grDevices::dev.off()
     scatter_text <- paste(pdftools::pdf_text(scatter_pdf), collapse = "\n")
     expect_match(scatter_text, "Scatter/Spectral Event Gate", fixed = TRUE)
-    expect_false(grepl("SCC/AF Spectral Selection", scatter_text, fixed = TRUE))
+    expect_false(grepl("SCC/Negative Spectral Selection", scatter_text, fixed = TRUE))
 
-    row$intensity_gate_type <- "af_cosine"
+    row$intensity_gate_type <- "autospectral_external"
     cosine_pdf <- tempfile(fileext = ".pdf")
     grDevices::pdf(cosine_pdf, width = 11, height = 8.5)
     spectreasy:::.draw_scc_report_sample_page(row, report_plot_dir = plot_dir, use_scatter_gating = TRUE)
     grDevices::dev.off()
     cosine_text <- paste(pdftools::pdf_text(cosine_pdf), collapse = "\n")
-    expect_match(cosine_text, "SCC/AF Spectral Selection", fixed = TRUE)
+    expect_match(cosine_text, "SCC/Negative Spectral Selection", fixed = TRUE)
 })
 
 test_that("post-unmixing control QC summarizes off-target metrics", {

@@ -65,8 +65,8 @@ for report assembly and removed afterward.}
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use broad scatter
 cleanup plus the intensity-vs-FSC GMM/EM selector and show the scatter
 gate plot in the report. If `FALSE`, use and show the legacy
-one-dimensional histogram gate. Reports only show the spectral-selection
-plot for controls whose recorded gate type is `af_cosine`.}
+one-dimensional histogram gate. AutoSpectral-style SCC controls show the
+spectral-selection plot instead of an intensity gate.}
 
 \item{af_bands_per_file}{Deprecated compatibility argument. Multiple AF
 sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`

@@ -386,26 +386,25 @@
 #' @param output_file Optional output path for the SCC QC PDF report. When this
 #'   is `NULL`, each `unmix_controls()` report run is written to a fresh
 #'   `qc_controls`, `qc_controls_2`, ... folder under `output_dir`.
-#' @param use_scatter_gating Logical; if `TRUE` (default), keep broad FSC/SSC
-#'   cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
-#'   `FALSE`, use the legacy one-dimensional histogram gate.
+#' @param use_scatter_gating Logical; if `TRUE`, use the legacy FSC/SSC and
+#'   intensity-vs-FSC GMM/EM selector when
+#'   `use_af_cosine_scc_selection = FALSE`. Ignored by the default
+#'   AutoSpectral-style SCC extractor.
 #' @param use_af_cosine_scc_selection Logical; if `TRUE` (default), use the
-#'   adaptive AF projection/cosine selector for cell SCCs when AF controls are
-#'   available. This mode scores events by low AF similarity, residual
-#'   target-channel brightness, and target-channel dominance, then keeps the
-#'   high-score component. Bead SCCs continue to use the GMM/EM
-#'   intensity-vs-FSC selector after broad FSC/SSC cleanup.
-#' @param clean_scc_with_unstained Logical; if `TRUE`, clean cell SCC spectra
-#'   with scatter-matched unstained/AF events before deriving spectra and
-#'   spectral variants. Bead SCCs use a scatter-gated unstained bead control as
-#'   their negative spectrum when one is available; otherwise they use the
-#'   positive/negative populations estimated from the stained bead file. If
-#'   `use_af_cosine_scc_selection = TRUE`, this cleanup is required and is
+#'   AutoSpectral-style SCC extractor for cells and beads: remove saturated
+#'   events, use the mapped peak channel, keep peak-bright candidates that are
+#'   least similar to the matched unstained background, and subtract
+#'   scatter-matched background events. If no matching external negative exists,
+#'   use an internal peak-high minus peak-low fallback. If `FALSE`, use the
+#'   legacy GMM/EM or histogram gates.
+#' @param clean_scc_with_unstained Logical; if `TRUE`, use matching unstained
+#'   events as the external negative for the AutoSpectral-style SCC extractor
+#'   and spectral variants. If `use_af_cosine_scc_selection = TRUE`, this is
 #'   automatically enabled with a warning.
-#' @param scc_background_method Background method for cell SCC cleaning.
-#'   `"scatter_knn"` matches stained cells to unstained cells by FSC/SSC.
-#' @param scc_background_k Number of nearest unstained cells averaged for
-#'   scatter-matched background subtraction.
+#' @param scc_background_method Background method for SCC cleaning.
+#'   `"scatter_knn"` matches stained events to unstained events by FSC/SSC.
+#' @param scc_background_k Number of nearest unstained events averaged for
+#'   scatter-matched background subtraction. Default is 2.
 #' @param spectral_variant_som_nodes Number of SOM nodes used per fluorophore
 #'   when learning spectral variants.
 #' @param spectral_variant_top_k Number of best variant candidates to test per
@@ -462,7 +461,7 @@ unmix_controls <- function(
     use_af_cosine_scc_selection = TRUE,
     clean_scc_with_unstained = TRUE,
     scc_background_method = c("scatter_knn", "none"),
-    scc_background_k = 3L,
+    scc_background_k = 2L,
     spectral_variant_som_nodes = 16L,
     spectral_variant_top_k = 3L,
     spectral_variant_cosine_threshold = 0.98,

@@ -267,9 +267,7 @@ This per-cell AF matching layer follows the AutoSpectral idea of matching AF at 
 
 With `unmix_method = "AutoSpectral"`, `unmix_controls()` learns spectral variants as part of the default method. During the control stage, `spectreasy` looks for reproducible shape differences within each fluorophore control, keeps only variants that remain close to the base spectrum, and saves the result as `scc_spectral_variants.rds`.
 
-For both bead-based and cell-based SCCs, the default event selector keeps a broad FSC/SSC cleanup and then uses a GMM/EM intensity-vs-FSC gate to choose positive and negative events. Bead-based SCCs use an unstained bead control as their negative background when one is available.
-
-An experimental adaptive AF projection/cosine selector is available for cell-based SCCs, but it is off by default while this behavior is being benchmarked more against the auditable GMM/EM gate. When enabled, `spectreasy` projects events against the AF basis, scores events by low AF similarity, residual target-channel brightness, and target-channel dominance, then keeps the high-score spectral component instead of selecting a fixed positive fraction. Turn it on only when you want to test SCC selection by "bright enough and least AF-like" events:
+For both bead-based and cell-based SCCs, the default selector follows the AutoSpectral-style external-negative workflow when a matching unstained control is available. `spectreasy` removes saturated/singlet-outlier events, uses the mapped peak channel, takes peak-bright candidate events, keeps the least-negative-like events by cosine similarity, and then subtracts scatter-matched unstained background before deriving the spectrum. If no matching external negative exists, it uses an internal peak-high minus peak-low fallback:
 
 ```r
 ctrl_cosine <- unmix_controls(

@@ -29,7 +29,7 @@ build_reference_matrix(
   use_af_cosine_scc_selection = TRUE,
   clean_scc_with_unstained = TRUE,
   scc_background_method = c("scatter_knn", "none"),
-  scc_background_k = 3L,
+  scc_background_k = 2L,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
@@ -107,26 +107,25 @@ AF candidates that are too similar to known fluorophore spectra. Default is
 \item{cytometer}{Cytometer name used as a channel-mapping hint. The default,
 `"auto"`, infers the cytometer from FCS detector names when possible.}
 
-\item{use_scatter_gating}{Logical; if `TRUE` (default), keep broad FSC/SSC
-cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
-`FALSE`, use the legacy one-dimensional histogram gate.}
+\item{use_scatter_gating}{Logical; if `TRUE`, use the legacy FSC/SSC and
+intensity-vs-FSC GMM/EM selector when
+`use_af_cosine_scc_selection = FALSE`. Ignored by the default
+AutoSpectral-style SCC extractor.}
 
 \item{use_af_cosine_scc_selection}{Logical; if `TRUE` (default), use the
-adaptive AF projection/cosine selector for cell SCCs when AF controls are
-available. This mode scores events by low AF similarity, residual
-target-channel brightness, and target-channel dominance, then keeps the
-high-score component. Bead SCCs continue to use the GMM/EM
-intensity-vs-FSC selector after broad FSC/SSC cleanup.}
+AutoSpectral-style SCC extractor for cells and beads: remove saturated
+events, use the mapped peak channel, keep peak-bright candidates that are
+least similar to the matched unstained background, and subtract
+scatter-matched background events. If no matching external negative exists,
+use an internal peak-high minus peak-low fallback. If `FALSE`, use the
+legacy GMM/EM or histogram gates.}
 
-\item{clean_scc_with_unstained}{Logical; if `TRUE`, cell SCC spectra are
-cleaned with scatter-matched unstained/AF events before spectrum
-derivation. Bead controls use a scatter-gated unstained bead control as
-their negative spectrum when one is available; otherwise they keep the
-positive/negative populations estimated from the stained bead control.
-If `use_af_cosine_scc_selection = TRUE`, this cleanup is required and is
+\item{clean_scc_with_unstained}{Logical; if `TRUE`, use matching unstained
+events as the external negative for the AutoSpectral-style SCC extractor
+and legacy SCC cleaning. If `use_af_cosine_scc_selection = TRUE`, this is
 automatically enabled with a warning.}
 
-\item{scc_background_method}{Background method for cell SCC cleaning.
+\item{scc_background_method}{Background method for SCC cleaning.
 `"scatter_knn"` matches each stained event to unstained events by FSC/SSC.
 Use `"none"` to disable matched background subtraction.}
 
@@ -139,9 +138,7 @@ Use `"none"` to disable matched background subtraction.}
 `"both"` centers on the median, and `"left"` ends at the median.}
 
 \item{histogram_pct_cells}{Quantile width for the default cell histogram
-gate. When `use_af_cosine_scc_selection = TRUE`, this acts as a
-conservative maximum cap for the experimental adaptive AF-score selector
-rather than a fixed fraction to keep.}
+gate. Ignored by the default AutoSpectral-style SCC extractor.}
 
 \item{histogram_direction_cells}{Histogram gate direction for cells: `"right"` starts at the median,
 `"both"` centers on the median, and `"left"` ends at the median.}
@@ -169,10 +166,12 @@ Numeric matrix with rows = fluorophores and columns = detectors
   in `attr(M, "detector_noise")` for default WLS unmixing.
 }
 \description{
-Reads SCC FCS files, performs broad FSC/SSC cleanup, uses the default
-GMM/EM intensity-vs-FSC selector for bead and cell controls, then computes
-one normalized spectrum per fluorophore. The experimental AF-cosine cell
-SCC selector is available only when explicitly enabled.
+Reads SCC FCS files, removes saturated/singlet-outlier events, and by
+default uses an AutoSpectral-style SCC extractor: mapped peak channel,
+peak-bright candidates, least-negative-like cosine selection, scatter-KNN
+background subtraction against the matching unstained control, then one
+normalized spectrum per fluorophore. If no matching external negative exists,
+an internal peak-high minus peak-low fallback is used.
 }
 \details{
 This is the core matrix-construction step used before unmixing.

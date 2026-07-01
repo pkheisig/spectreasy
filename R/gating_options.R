@@ -2,22 +2,22 @@
 #'
 #' Helper constructor for SCC event-selection settings.
 #'
-#' @param use_scatter_gating Logical; if `TRUE` (default), keep broad FSC/SSC
-#'   cleanup and use the intensity-vs-FSC GMM/EM selector for SCC events. If
-#'   `FALSE`, use the legacy one-dimensional histogram gate.
+#' @param use_scatter_gating Logical; if `TRUE`, use the legacy FSC/SSC and
+#'   intensity-vs-FSC GMM/EM selector when
+#'   `use_af_cosine_scc_selection = FALSE`. Ignored by the default
+#'   AutoSpectral-style SCC extractor.
 #' @param use_af_cosine_scc_selection Logical; if `TRUE` (default), use the
-#'   adaptive AF projection/cosine selector for cell SCCs when AF controls are
-#'   available. This mode scores events by low AF similarity, residual
-#'   target-channel brightness, and target-channel dominance, then keeps the
-#'   high-score component. Bead SCCs continue to use the GMM/EM
-#'   intensity-vs-FSC selector after broad FSC/SSC cleanup.
+#'   AutoSpectral-style SCC extractor for cells and beads: remove saturated
+#'   events, use the mapped peak channel, keep peak-bright candidates that are
+#'   least similar to the matched unstained background, and subtract
+#'   scatter-matched background events. If no matching external negative exists,
+#'   use an internal peak-high minus peak-low fallback. If `FALSE`, use the
+#'   legacy GMM/EM or histogram gates.
 #' @param histogram_pct_beads Quantile width for the bead histogram gate.
 #' @param histogram_direction_beads Gate direction for beads: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.
 #' @param histogram_pct_cells Quantile width for the default cell histogram
-#'   gate. When `use_af_cosine_scc_selection = TRUE`, this acts as a
-#'   conservative maximum cap for the experimental adaptive AF-score selector
-#'   rather than a fixed fraction to keep.
+#'   gate. Ignored by the default AutoSpectral-style SCC extractor.
 #' @param histogram_direction_cells Gate direction for cells: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.
 #' @return Named list with gating settings.

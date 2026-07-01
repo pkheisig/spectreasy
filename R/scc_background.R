@@ -69,7 +69,7 @@
     idx
 }
 
-.scc_background_match <- function(events, background, k = 3L) {
+.scc_background_match <- function(events, background, k = 2L) {
     if (is.null(background) || is.null(background$scatter) || is.null(background$spectra)) {
         return(NULL)
     }
@@ -108,7 +108,7 @@
     matched
 }
 
-.scc_background_clean_events <- function(events, detector_names, background, k = 3L) {
+.scc_background_clean_events <- function(events, detector_names, background, k = 2L) {
     matched <- .scc_background_match(events = events, background = background, k = k)
     if (is.null(matched)) {
         return(NULL)
@@ -189,7 +189,7 @@
 .collect_scc_background_from_controls <- function(scc_dir,
                                                   control_df,
                                                   detector_names,
-                                                  k = 3L,
+                                                  k = 2L,
                                                   exclude_af = FALSE,
                                                   config = NULL) {
     if (isTRUE(exclude_af) || is.null(control_df) || !dir.exists(scc_dir)) {

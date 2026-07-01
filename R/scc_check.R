@@ -148,12 +148,20 @@
     } else {
         paste0(fluor, " (", sample_id, ")")
     }
+    gate_type <- if ("intensity_gate_type" %in% colnames(row)) {
+        trimws(as.character(row$intensity_gate_type[[1]]))
+    } else {
+        ""
+    }
+    is_autospectral_scc <- gate_type %in% c("af_cosine", "autospectral_external", "autospectral_internal")
+    cleanup_label <- if (is_autospectral_scc) "Event cleanup" else "Scatter gate"
+    final_label <- if (is_autospectral_scc) "Selected SCC" else "Final gate"
     subtitle <- paste0(
         "Type: ", row$type[[1]],
         " | Peak channel: ", row$peak_channel[[1]],
         " | Events: ", row$n_total[[1]],
-        " | Scatter gate: ", row$n_scatter_gated[[1]], " (", row$scatter_gate_pct[[1]], "%)",
-        " | Final gate: ", row$n_final[[1]], " (", row$histogram_gate_pct[[1]], "%)"
+        " | ", cleanup_label, ": ", row$n_scatter_gated[[1]], " (", row$scatter_gate_pct[[1]], "%)",
+        " | ", final_label, ": ", row$n_final[[1]], " (", row$histogram_gate_pct[[1]], "%)"
     )
 
     grid::grid.newpage()
@@ -162,21 +170,16 @@
 
     .draw_report_image_panel(
         file.path(report_plot_dir, "fsc_ssc", paste0(sample_id, "_fsc_ssc.png")),
-        "FSC/SSC Auto-Gate",
+        if (is_autospectral_scc) "Saturation/Singlet Cleanup" else "FSC/SSC Auto-Gate",
         x = grid::unit(0.27, "npc"),
         y = grid::unit(0.62, "npc"),
         width = grid::unit(0.46, "npc"),
         height = grid::unit(0.44, "npc")
     )
-    gate_type <- if ("intensity_gate_type" %in% colnames(row)) {
-        trimws(as.character(row$intensity_gate_type[[1]]))
-    } else {
-        ""
-    }
     spectral_selection_path <- file.path(report_plot_dir, "spectral_selection", paste0(sample_id, "_spectral_selection.png"))
-    if (identical(gate_type, "af_cosine") && file.exists(spectral_selection_path)) {
+    if (is_autospectral_scc && file.exists(spectral_selection_path)) {
         gate_path <- spectral_selection_path
-        gate_title <- "SCC/AF Spectral Selection"
+        gate_title <- "SCC/Negative Spectral Selection"
     } else {
         gate_dir <- if (isTRUE(use_scatter_gating)) "intensity_scatter" else "histogram"
         gate_suffix <- if (isTRUE(use_scatter_gating)) "_intensity_scatter.png" else "_histogram.png"
@@ -1248,8 +1251,8 @@
 #' @param use_scatter_gating Logical; if `TRUE` (default), use broad scatter
 #'   cleanup plus the intensity-vs-FSC GMM/EM selector and show the scatter
 #'   gate plot in the report. If `FALSE`, use and show the legacy
-#'   one-dimensional histogram gate. Reports only show the spectral-selection
-#'   plot for controls whose recorded gate type is `af_cosine`.
+#'   one-dimensional histogram gate. AutoSpectral-style SCC controls show the
+#'   spectral-selection plot instead of an intensity gate.
 #' @param af_bands_per_file Deprecated compatibility argument. Multiple AF
 #'   sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
 #'   control the size of the one shared AF bank.
