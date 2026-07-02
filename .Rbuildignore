@@ -38,6 +38,7 @@
 ^scc$
 ^scc_unmixed$
 ^spectreasy_outputs$
+^tests/testthat/spectreasy_outputs$
 ^workflow-checks$
 ^gating_and_spectrum_plots$
 ^spectreasy\.BiocCheck$

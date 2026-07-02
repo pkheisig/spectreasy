@@ -1,5 +1,5 @@
 # Internal helpers for GUI launch.
-.prepare_launch_gui_paths <- function() {
+.prepare_gui_paths <- function() {
     api_path <- system.file("api", "gui_api.R", package = "spectreasy")
     gui_path <- system.file("gui", package = "spectreasy")
 
@@ -26,7 +26,7 @@
 .normalize_gui_dirs <- function(matrix_dir, samples_dir = NULL) {
     matrix_dir <- normalizePath(matrix_dir, mustWork = TRUE)
     if (is.null(samples_dir)) {
-        samples_dir <- .default_launch_gui_samples_dir(matrix_dir = matrix_dir)
+        samples_dir <- .default_adjust_matrix_samples_dir(matrix_dir = matrix_dir)
         if (is.null(samples_dir)) {
             samples_dir <- file.path(matrix_dir, "samples")
         }
@@ -36,7 +36,7 @@
     list(matrix_dir = matrix_dir, samples_dir = samples_dir)
 }
 
-.default_launch_gui_matrix_dir <- function() {
+.default_adjust_matrix_matrix_dir <- function() {
     unmix_controls_dir <- file.path(getwd(), "spectreasy_outputs", "unmix_controls")
     if (dir.exists(unmix_controls_dir)) {
         return(unmix_controls_dir)
@@ -56,7 +56,7 @@
     dirname(matrix_dir)
 }
 
-.default_launch_gui_samples_dir <- function(matrix_dir = NULL) {
+.default_adjust_matrix_samples_dir <- function(matrix_dir = NULL) {
     project_dirs <- unique(c(getwd(), .infer_project_dir_from_matrix_dir(matrix_dir)))
     project_dirs <- project_dirs[nzchar(project_dirs)]
 
@@ -81,14 +81,14 @@
     NULL
 }
 
-.resolve_launch_gui_frontend <- function(gui_path, dist_path, port, dev_mode = FALSE, npm_bin = Sys.which("npm")) {
+.resolve_gui_frontend <- function(gui_path, dist_path, port, dev_mode = FALSE, npm_bin = Sys.which("npm")) {
     frontend_url <- paste0("http://127.0.0.1:", port)
 
     if (isTRUE(dev_mode)) {
         if (!nzchar(npm_bin)) {
             stop(
                 "Developer mode requires npm, but it was not found on PATH. ",
-                "Install Node.js/npm or run launch_gui(dev_mode = FALSE) to use bundled assets.",
+                "Install Node.js/npm or run adjust_matrix(dev_mode = FALSE) to use bundled assets.",
                 call. = FALSE
             )
         }
@@ -97,7 +97,7 @@
         if (!dir.exists(node_modules)) {
             stop(
                 "Developer mode requires GUI dependencies in: ", gui_path, "\n",
-                "Run `npm install` in that directory before calling launch_gui(dev_mode = TRUE).",
+                "Run `npm install` in that directory before calling adjust_matrix(dev_mode = TRUE).",
                 call. = FALSE
             )
         }
@@ -116,7 +116,7 @@
     list(frontend_url = frontend_url, npm_bin = npm_bin, mode = "bundled")
 }
 
-.start_launch_gui_dev_server <- function(gui_path, port, npm_bin) {
+.start_gui_dev_server <- function(gui_path, port, npm_bin) {
     message("Starting frontend (npm run dev)...")
     old_wd <- getwd()
     on.exit(setwd(old_wd), add = TRUE)
@@ -134,7 +134,82 @@
     invisible(NULL)
 }
 
-#' Launch spectreasy Interactive Adjustment GUI
+.prepare_launch_gui_paths <- .prepare_gui_paths
+.default_launch_gui_matrix_dir <- .default_adjust_matrix_matrix_dir
+.default_launch_gui_samples_dir <- .default_adjust_matrix_samples_dir
+.resolve_launch_gui_frontend <- .resolve_gui_frontend
+.start_launch_gui_dev_server <- .start_gui_dev_server
+
+.launch_spectreasy_gui <- function(matrix_dir = NULL,
+                                   samples_dir = NULL,
+                                   port = 8000,
+                                   open_browser = TRUE,
+                                   dev_mode = FALSE,
+                                   mode = "tuner",
+                                   panel_cytometer = NULL) {
+    if (!requireNamespace("plumber", quietly = TRUE)) {
+        stop(
+            "Package 'plumber' is required for the spectreasy GUI. ",
+            "Please install the suggested dependency to use the GUI.",
+            call. = FALSE
+        )
+    }
+
+    paths <- .prepare_gui_paths()
+    if (is.null(matrix_dir)) {
+        matrix_dir <- .default_adjust_matrix_matrix_dir()
+    }
+    dirs <- .normalize_gui_dirs(matrix_dir = matrix_dir, samples_dir = samples_dir)
+
+    options(
+        spectreasy.matrix_dir = dirs$matrix_dir,
+        spectreasy.samples_dir = dirs$samples_dir,
+        spectreasy.gui_mode = mode,
+        spectreasy.panel_cytometer = panel_cytometer
+    )
+
+    frontend <- .resolve_gui_frontend(
+        gui_path = paths$gui_path,
+        dist_path = paths$dist_path,
+        port = port,
+        dev_mode = dev_mode
+    )
+
+    if (identical(frontend$mode, "dev")) {
+        .start_gui_dev_server(
+            gui_path = paths$gui_path,
+            port = port,
+            npm_bin = frontend$npm_bin
+        )
+    } else {
+        message("Using bundled GUI assets from: ", paths$dist_path)
+    }
+
+    message("Starting spectreasy API on port ", port)
+    message("Matrix directory: ", dirs$matrix_dir)
+    message("Samples directory: ", dirs$samples_dir)
+    frontend_url <- paste0(frontend$frontend_url, "?mode=", utils::URLencode(mode, reserved = TRUE))
+
+    message("Frontend: ", frontend_url)
+
+    if (isTRUE(open_browser)) utils::browseURL(frontend_url)
+
+    pr <- plumber::plumb(paths$api_path)
+    pr <- plumber::pr_filter(pr, "nocache", function(req, res) {
+        res$setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        res$setHeader("Pragma", "no-cache")
+        res$setHeader("Expires", "0")
+        plumber::forward()
+    })
+    if (!isTRUE(dev_mode)) {
+        plumber::pr_static(pr, "/", paths$dist_path)
+    }
+    pr$run(port = port, host = "127.0.0.1")
+
+    invisible(NULL)
+}
+
+#' Adjust an Unmixing Matrix Interactively
 #'
 #' Starts the backend Plumber API for the interactive matrix adjustment interface.
 #' By default, the frontend is served from bundled package assets.
@@ -157,59 +232,27 @@
 #' @export
 #' @examples
 #' if (interactive()) {
-#'   launch_gui(open_browser = FALSE)
-#'   launch_gui(matrix_dir = "/path/to/my/matrices", open_browser = FALSE)
-#'   launch_gui(dev_mode = TRUE, open_browser = FALSE)
+#'   adjust_matrix(open_browser = FALSE)
+#'   adjust_matrix(matrix_dir = "/path/to/my/matrices", open_browser = FALSE)
+#'   adjust_matrix(dev_mode = TRUE, open_browser = FALSE)
 #' }
-launch_gui <- function(matrix_dir = NULL, samples_dir = NULL, port = 8000, open_browser = TRUE, dev_mode = FALSE) {
-    if (!requireNamespace("plumber", quietly = TRUE)) {
-        stop(
-            "Package 'plumber' is required for launch_gui(). ",
-            "Please install the suggested dependency to use the GUI.",
-            call. = FALSE
-        )
-    }
-
-    paths <- .prepare_launch_gui_paths()
-    if (is.null(matrix_dir)) {
-        matrix_dir <- .default_launch_gui_matrix_dir()
-    }
-    dirs <- .normalize_gui_dirs(matrix_dir = matrix_dir, samples_dir = samples_dir)
-
-    options(
-        spectreasy.matrix_dir = dirs$matrix_dir,
-        spectreasy.samples_dir = dirs$samples_dir
-    )
-
-    frontend <- .resolve_launch_gui_frontend(
-        gui_path = paths$gui_path,
-        dist_path = paths$dist_path,
+adjust_matrix <- function(matrix_dir = NULL, samples_dir = NULL, port = 8000, open_browser = TRUE, dev_mode = FALSE) {
+    .launch_spectreasy_gui(
+        matrix_dir = matrix_dir,
+        samples_dir = samples_dir,
         port = port,
-        dev_mode = dev_mode
+        open_browser = open_browser,
+        dev_mode = dev_mode,
+        mode = "tuner"
     )
-
-    if (identical(frontend$mode, "dev")) {
-        .start_launch_gui_dev_server(
-            gui_path = paths$gui_path,
-            port = port,
-            npm_bin = frontend$npm_bin
-        )
-    } else {
-        message("Using bundled GUI assets from: ", paths$dist_path)
-    }
-
-    message("Starting spectreasy API on port ", port)
-    message("Matrix directory: ", dirs$matrix_dir)
-    message("Samples directory: ", dirs$samples_dir)
-    message("Frontend: ", frontend$frontend_url)
-
-    if (isTRUE(open_browser)) utils::browseURL(frontend$frontend_url)
-
-    pr <- plumber::plumb(paths$api_path)
-    if (!isTRUE(dev_mode)) {
-        plumber::pr_static(pr, "/", paths$dist_path)
-    }
-    pr$run(port = port, host = "127.0.0.1")
-
     invisible(NULL)
 }
+
+#' Launch spectreasy Interactive Adjustment GUI
+#'
+#' `launch_gui()` is kept as a backward-compatible alias for [adjust_matrix()].
+#'
+#' @inheritParams adjust_matrix
+#' @return Invisibly returns NULL. This function blocks while the API is running.
+#' @export
+launch_gui <- adjust_matrix

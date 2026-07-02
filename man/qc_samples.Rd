@@ -22,7 +22,10 @@ qc_samples(
   sample_nxn_transform = c("none", "asinh"),
   sample_nxn_asinh_cofactor = 150,
   sample_nxn_axis_limit = NULL,
-  nxn_all_samples = FALSE
+  nxn_all_samples = FALSE,
+  qc_plot_dir = NULL,
+  save_qc_pngs = FALSE,
+  qc_metrics_dir = NULL
 )
 }
 \arguments{
@@ -41,8 +44,8 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{output_file}{Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.}
 
-\item{method}{Unmixing method used to create `results` (`"WLS"`, `"RWLS"`,
-`"OLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
+\item{method}{Unmixing method used to create `results` (`"AutoSpectral"`,
+`"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
 because constrained NNLS results are non-negative by construction.}
 
 \item{res_list}{Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.}
@@ -56,8 +59,8 @@ If omitted, `attr(M, "detector_pd")` is used when available.}
 plots and diagnostics. Defaults to 1000 to keep large FCS reports
 responsive. Set `NULL` to use all events.}
 
-\item{overview_files_per_page}{Maximum files shown on each RMS residual and
-NPS overview page.}
+\item{overview_files_per_page}{Maximum files shown on each overall detector
+reconstruction error and NPS overview page.}
 
 \item{matrix_markers_per_page}{Marker cutoff for similarity and spread
 matrix pages. Up to this many markers are shown on one page; larger panels
@@ -79,13 +82,24 @@ The default `NULL` uses local per-panel ranges. Use `1e5` for
 
 \item{nxn_all_samples}{Logical; if `TRUE`, include per-sample NxN pages for all samples.
 If `FALSE` (default), only include NxN pages for the first sample in `results`.}
+
+\item{qc_plot_dir}{Directory where report PNG plots are written when
+`save_qc_pngs = TRUE`.}
+
+\item{save_qc_pngs}{Logical; if `TRUE`, save report plot pages as PNG files
+alongside the PDF report.}
+
+\item{qc_metrics_dir}{Optional directory where plot-ready sample QC metric
+CSVs are written alongside the PDF report.}
 }
 \value{
-Invisibly returns `NULL`; writes report to disk.
+Invisibly returns a list with `output_file`, `qc_plot_dir`, and
+  `qc_metrics_dir`; writes report artifacts to disk.
 }
 \description{
 Creates a multi-page report summarizing unmixing quality, including spectra,
-detector residuals, spread matrix, NPS, and per-sample NxN marker scatter pages.
+RMS residuals per detector, matrix diagnostics, NPS, per-sample NxN marker
+scatter pages, and the overall detector reconstruction error per sample.
 }
 \details{
 `qc_samples()` expects a combined data frame or the raw list returned

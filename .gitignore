@@ -15,6 +15,10 @@ pi-sessions-*.html
 !inst/extdata/fluorophore_dictionary.csv
 !inst/extdata/fluorophore_channel_dictionary.csv
 !inst/extdata/marker_dictionary.csv
+!inst/extdata/aurora_spectra.csv
+!inst/extdata/discover_spectra.csv
+!inst/extdata/id7000_spectra.csv
+!inst/extdata/xenith_spectra.csv
 
 # Output plots and reports
 *.png

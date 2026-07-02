@@ -106,11 +106,11 @@
 }
 
 .reference_af_sensitivity_to_min_improvement <- function(sensitivity) {
-    as.numeric(sensitivity) / 50
+    as.numeric(sensitivity) / 200
 }
 
 .reference_af_max_cosine_similarity <- function() {
-    0.98
+    0.995
 }
 
 .prune_reference_similar_af_centers <- function(centers,
@@ -159,8 +159,8 @@
                                                                max_bands,
                                                                min_cluster_size,
                                                                min_improvement,
-                                                               nstart = 5,
-                                                               iter.max = 100) {
+                                                               nstart = 20,
+                                                               iter.max = 200) {
     scores <- as.matrix(scores)
     n_events <- nrow(scores)
     max_bands <- min(as.integer(max_bands), n_events)
@@ -2790,7 +2790,7 @@
 #'   when `af_n_bands = "auto"`. Lower values allow richer AF models; higher
 #'   values select fewer bands before near-duplicate AF signatures are pruned.
 #'   Values must be between `0.1` and `5`; the default `1.5` corresponds to a
-#'   3\% minimum k-means fit improvement.
+#'   0.75\% minimum k-means fit improvement.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,

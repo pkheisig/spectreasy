@@ -249,33 +249,10 @@
     }
 
     af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
-    grid::grid.newpage()
-    grid::grid.text("AF Bank QC", x = 0.05, y = 0.95, just = c("left", "top"), gp = grid::gpar(fontsize = 16, fontface = "bold"))
-    grid::grid.text(
-        paste0(
-            "AF sources pooled: ", af_bank_info$source_count, "\n",
-            "Pooled scatter-gated AF events: ", af_bank_info$pooled_events, "\n",
-            "Bands requested: ", af_bank_info$requested_bands, "\n",
-            "Bands derived: ", af_bank_info$derived_bands, "\n",
-            "Bands per file: ", af_bank_info$af_bands_per_file, "\n",
-            "Mode: ", af_bank_info$mode
-        ),
-        x = 0.05,
-        y = 0.88,
-        just = c("left", "top"),
-        gp = grid::gpar(fontsize = 11, lineheight = 1.25)
-    )
-    grid::grid.text(
-        paste(.format_af_bank_summary_lines(af_bank_info), collapse = "\n"),
-        x = 0.05,
-        y = 0.68,
-        just = c("left", "top"),
-        gp = grid::gpar(fontsize = 8.5, fontfamily = "mono", lineheight = 1.15)
-    )
-
     if (any(af_rows)) {
         af_plot <- plot_spectra(M[af_rows, , drop = FALSE], pd = pd, output_file = NULL) +
-            ggplot2::labs(title = "Autofluorescence Band Spectra Overlay")
+            ggplot2::labs(title = "Autofluorescence Band Spectra Overlay") +
+            ggplot2::theme(legend.position = "none")
         .draw_report_ggplot_page(af_plot, height_ratio = 0.72)
     }
 
@@ -430,42 +407,6 @@ qc_controls <- function(
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
 
-    scc_dir_line <- paste(strwrap(paste0("SCC directory: ", normalizePath(scc_dir, mustWork = FALSE)), width = 85), collapse = "\n")
-
-    grid::grid.newpage()
-    grid::grid.text("spectreasy: Single-Color Control Review", x = 0.5, y = 0.7, gp = grid::gpar(fontsize = 20, fontface = "bold"))
-    grid::grid.text(
-        paste0(
-            "Generated on: ", Sys.time(), "\n",
-            scc_dir_line, "\n",
-            "Controls processed: ", nrow(qc_summary), "\n",
-            "Unmixing method for scatter matrix: ", method, "\n",
-            "Workflow intent: review SCC quality before unmix_controls()."
-        ),
-        x = 0.5,
-        y = 0.48,
-        just = "center",
-        gp = grid::gpar(fontsize = 11, lineheight = 1.3)
-    )
-
-    if (nrow(qc_summary) > 0) {
-        rows_per_page <- 24
-        page_starts <- seq(1, nrow(qc_summary), by = rows_per_page)
-        for (start_idx in page_starts) {
-            end_idx <- min(start_idx + rows_per_page - 1, nrow(qc_summary))
-            block <- qc_summary[start_idx:end_idx, , drop = FALSE]
-            grid::grid.newpage()
-            grid::grid.text("SCC Summary", x = 0.05, y = 0.95, just = c("left", "top"), gp = grid::gpar(fontsize = 16, fontface = "bold"))
-            grid::grid.text(
-                paste(.format_scc_summary_lines(block), collapse = "\n"),
-                x = 0.05,
-                y = 0.9,
-                just = c("left", "top"),
-                gp = grid::gpar(fontsize = 9, fontfamily = "mono", lineheight = 1.15)
-            )
-        }
-    }
-
     .draw_af_bank_qc_pages(M_built, attr(M_built, "af_bank_info"), pd = pd)
 
     keep_non_af <- !grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
@@ -478,19 +419,13 @@ qc_controls <- function(
     if (nrow(M_no_af) > 1) {
         sim_mat <- calculate_similarity_matrix(M_no_af)
         .draw_report_ggplot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
-        ssm_method <- if (method %in% c("NNLS", "RWLS")) {
-            if (identical(method, "RWLS")) "WLS" else "OLS"
-        } else {
-            method
-        }
-        .draw_report_ggplot_page(plot_ssm(calculate_ssm(M_no_af, method = ssm_method), output_file = NULL))
-
         unmixed_list <- unmix_samples(
             sample_dir = scc_dir,
             M = M_report,
             method = method,
             cytometer = cytometer,
             write_fcs = FALSE,
+            save_report = FALSE,
             verbose = FALSE
         )
         sample_to_marker <- NULL

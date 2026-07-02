@@ -96,6 +96,8 @@ test_that("qc_samples accepts unmix_samples results directly", {
     )
 
     expect_s3_class(unmixed, "spectreasy_unmixed_results")
+    expect_true(file.exists(attr(unmixed, "qc_report_file")))
+    expect_true(dir.exists(attr(unmixed, "qc_samples_dir")))
 
     combined <- as.data.frame(unmixed)
     expect_true("File" %in% colnames(combined))
@@ -155,7 +157,7 @@ test_that("qc_samples has stable pages and no recommendation page", {
     expect_true(file.exists(pdf_out))
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 6)
+    expect_equal(info$pages, 5)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_false(grepl("Conclusions & Recommendations", txt, fixed = TRUE))
@@ -189,7 +191,7 @@ test_that("qc_samples skips negative population spread for NNLS", {
     spectreasy::qc_samples(results = results, M = M, output_file = pdf_out, method = "NNLS")
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 5)
+    expect_equal(info$pages, 4)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_false(grepl("Negative Population Spread", txt, fixed = TRUE))
@@ -225,7 +227,7 @@ test_that("qc_samples can include NxN pages for all samples", {
     )
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 7)
+    expect_equal(info$pages, 6)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))

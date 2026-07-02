@@ -974,6 +974,12 @@ test_that("AF auto is the default for matrix-building APIs", {
     expect_equal(formals(spectreasy::unmix_samples)$af_n_bands, "auto")
 })
 
+test_that("AF auto default sensitivity keeps smaller useful bands", {
+    expect_equal(spectreasy:::.reference_af_sensitivity_to_min_improvement(1.5), 0.0075)
+    expect_equal(spectreasy:::.reference_af_sensitivity_to_min_improvement(1), 0.005)
+    expect_equal(spectreasy:::.reference_af_max_cosine_similarity(), 0.995)
+})
+
 test_that("AF k-means cluster retention uses the larger event or proportion threshold", {
     detector_names <- c("B1-A", "YG1-A", "V1-A")
     af_events <- rbind(

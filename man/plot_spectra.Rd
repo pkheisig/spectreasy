@@ -12,7 +12,10 @@ plot_spectra(
   height = 100,
   unit = "mm",
   dpi = 600,
-  theme_custom = NULL
+  theme_custom = NULL,
+  annotate_peaks = "auto",
+  peak_label_max = 40L,
+  peak_label_size = 2.6
 )
 }
 \arguments{
@@ -31,6 +34,14 @@ plot_spectra(
 \item{dpi}{Output resolution.}
 
 \item{theme_custom}{Optional ggplot theme object (reserved).}
+
+\item{annotate_peaks}{`"auto"` (default), `TRUE`, or `FALSE`. In auto mode,
+compact peak labels are added for regular marker spectra but skipped for
+all-AF-bank overlays.}
+
+\item{peak_label_max}{Maximum number of spectra to label in auto mode.}
+
+\item{peak_label_size}{Text size for peak labels.}
 }
 \value{
 A `ggplot` object.

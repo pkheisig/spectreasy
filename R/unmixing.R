@@ -368,6 +368,34 @@
     }
 }
 
+.next_safe_output_dir <- function(path) {
+    if (!dir.exists(path)) {
+        return(path)
+    }
+
+    i <- 2L
+    repeat {
+        candidate <- paste0(path, "_", i)
+        if (!dir.exists(candidate)) {
+            return(candidate)
+        }
+        i <- i + 1L
+    }
+}
+
+.default_unmix_samples_report_dir <- function(output_dir) {
+    output_dir <- as.character(output_dir)[1]
+    if (is.na(output_dir) || !nzchar(output_dir)) {
+        output_dir <- file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs")
+    }
+    report_parent <- if (identical(basename(normalizePath(output_dir, mustWork = FALSE)), "unmixed_fcs")) {
+        dirname(output_dir)
+    } else {
+        output_dir
+    }
+    file.path(report_parent, "qc_samples")
+}
+
 .as_unmixed_results_data_frame <- function(x, arg_name = "x") {
     if (!is.list(x) || length(x) == 0) {
         stop(arg_name, " must be a non-empty list returned by unmix_samples().")
@@ -606,6 +634,16 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param output_dir Directory to save unmixed FCS files when `write_fcs = TRUE`.
 #' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 #'   Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.
+#' @param save_report Logical; if `TRUE`, write a sample QC PDF report and
+#'   sample QC metric CSVs from the in-memory unmixing results without rerunning
+#'   unmixing. Defaults to `TRUE`.
+#' @param output_file Optional output path for the sample QC PDF report. When
+#'   this is `NULL`, each `unmix_samples()` report run is written to a fresh
+#'   `qc_samples`, `qc_samples_2`, ... folder beside the unmixed FCS output.
+#' @param save_qc_plots Logical; if `TRUE`, save QC report plots as PNG files
+#'   in `qc_plot_dir` while creating the PDF report.
+#' @param qc_plot_dir Directory for sample QC report PNG files when
+#'   `save_qc_plots = TRUE`.
 #' @param subsample_n Optional integer; if provided, subsample the returned in-memory
 #'   results to at most `subsample_n` events per sample. The full unsampled unmixed
 #'   data will still be written to the FCS files.
@@ -680,6 +718,10 @@ unmix_samples <- function(sample_dir = "samples",
                           estimate_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
+                          save_report = TRUE,
+                          output_file = NULL,
+                          save_qc_plots = FALSE,
+                          qc_plot_dir = NULL,
                           subsample_n = NULL,
                           seed = NULL,
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
@@ -857,17 +899,48 @@ unmix_samples <- function(sample_dir = "samples",
         results[[sn]] <- res_obj
     }
 
+    class(results) <- c("spectreasy_unmixed_results", "list")
+    attr(results, "method") <- method_upper
+    attr(results, "reference_matrix") <- M
+    attr(results, "blind_af_info") <- attr(M, "blind_af_info")
+    attr(results, "qc_report_file") <- NULL
+    attr(results, "qc_samples_dir") <- NULL
+    attr(results, "qc_metrics_dir") <- NULL
+    attr(results, "qc_plot_dir") <- NULL
+
+    if (isTRUE(save_report)) {
+        qc_samples_dir <- NULL
+        if (is.null(output_file)) {
+            qc_samples_dir <- .next_safe_output_dir(.default_unmix_samples_report_dir(output_dir))
+            output_file <- file.path(qc_samples_dir, "qc_samples_report.pdf")
+        } else {
+            qc_samples_dir <- dirname(output_file)
+        }
+        message("Automatic sample QC report enabled: ", output_file)
+        report_res <- qc_samples(
+            results = results,
+            M = M,
+            output_file = output_file,
+            method = method_upper,
+            qc_metrics_dir = qc_samples_dir,
+            qc_plot_dir = qc_plot_dir,
+            save_qc_pngs = save_qc_plots
+        )
+        attr(results, "qc_report_file") <- report_res$output_file
+        attr(results, "qc_samples_dir") <- qc_samples_dir
+        attr(results, "qc_metrics_dir") <- qc_samples_dir
+        attr(results, "qc_plot_dir") <- report_res$qc_plot_dir
+        if (!file.exists(report_res$output_file)) {
+            stop("Automatic sample QC report was requested but was not created at: ", report_res$output_file, call. = FALSE)
+        }
+    }
+
     if (identical(return_type, "flowSet")) {
         return(invisible(.unmixed_results_to_flowset(results)))
     }
     if (identical(return_type, "SingleCellExperiment")) {
         return(invisible(.unmixed_results_to_sce(results, sample_entries = sample_entries)))
     }
-
-    class(results) <- c("spectreasy_unmixed_results", "list")
-    attr(results, "method") <- method_upper
-    attr(results, "reference_matrix") <- M
-    attr(results, "blind_af_info") <- attr(M, "blind_af_info")
 
     invisible(results)
 }

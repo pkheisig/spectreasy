@@ -4,11 +4,15 @@ if (getRversion() >= "2.15.1") {
         "Coefficient",
         "Color_Val",
         "Detector",
+        "DetectorIndex",
         "Expression",
         "File",
         "Fluorophore",
         "FSC-A",
         "Intensity",
+        "Label",
+        "LabelY",
+        "Laser",
         "Marker",
         "Marker1",
         "Marker2",
@@ -20,7 +24,9 @@ if (getRversion() >= "2.15.1") {
         "Residual",
         "RMS",
         "Sample",
+        "Score",
         "Similarity",
+        "SimilarityFill",
         "SSC-A",
         "Signature",
         "Spilling_Marker",
@@ -43,3 +49,6 @@ if (getRversion() >= "2.15.1") {
         "y_orig"
     ))
 }
+
+# Package-level cache for static data files such as spectral libraries.
+.spectreasy_cache <- new.env(parent = emptyenv())

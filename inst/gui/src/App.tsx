@@ -115,7 +115,7 @@ const App = () => {
     const [pointColor, setPointColor] = useState('#f97316');
     const [dragSensitivity, setDragSensitivity] = useState(0.1);
 
-    const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+    const [theme, setTheme] = useState<'dark' | 'light'>('light');
     const [pageScroll, setPageScroll] = useState(true);
     const sampleFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -489,14 +489,19 @@ const App = () => {
 
     const g = glassyTheme;
 
-    // Glassmorphism card style
+    useEffect(() => {
+        document.documentElement.style.backgroundColor = g.bgGradient;
+        document.body.style.backgroundColor = g.bgGradient;
+        document.documentElement.style.setProperty('--bg-app', g.bgGradient);
+    }, [g.bgGradient]);
+
     const glassCard = {
         background: g.glassBg,
         backdropFilter: g.glassBlur,
         WebkitBackdropFilter: g.glassBlur,
         border: `1px solid ${g.glassBorder}`,
         borderRadius: '16px',
-        boxShadow: `0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 ${g.glassHighlight}`,
+        boxShadow: 'none',
     };
 
     const glassButton = {
@@ -510,7 +515,8 @@ const App = () => {
     if (loading) return (
         <div style={{
             height: '100vh',
-            width: '100vw',
+            width: '100%',
+            maxWidth: '100%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -529,7 +535,8 @@ const App = () => {
         <div style={{
             minHeight: '100vh',
             height: pageScroll ? 'auto' : '100vh',
-            width: '100vw',
+            width: '100%',
+            maxWidth: '100%',
             display: 'flex',
             flexDirection: 'column',
             background: g.bgGradient,
@@ -561,7 +568,7 @@ const App = () => {
                             width: 44,
                             height: 44,
                             borderRadius: 12,
-                            boxShadow: `0 4px 16px ${g.accentGlow}`,
+                            boxShadow: 'none',
                             objectFit: 'cover'
                         }}
                     />
@@ -595,7 +602,7 @@ const App = () => {
                         display: 'flex',
                         alignItems: 'center',
                         gap: 8,
-                        boxShadow: `0 4px 16px ${g.accentGlow}`
+                        boxShadow: 'none'
                     }}>
                         <Save size={16} /> {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : 'Save'}
                     </button>
@@ -800,7 +807,7 @@ const App = () => {
                                             borderRadius: '50%',
                                             backgroundColor: colors[idx % colors.length],
                                             opacity: selectedMarkers.includes(m.Marker) ? 1 : 0.3,
-                                            boxShadow: selectedMarkers.includes(m.Marker) ? `0 0 8px ${colors[idx % colors.length]}` : 'none'
+                                            boxShadow: 'none'
                                         }} />
                                         <span>{m.Marker}</span>
                                     </div>
@@ -865,7 +872,7 @@ const App = () => {
                                                 backgroundColor: c,
                                                 border: pointColor === c ? '2px solid white' : '2px solid transparent',
                                                 cursor: 'pointer',
-                                                boxShadow: pointColor === c ? `0 0 8px ${c}` : 'none'
+                                                boxShadow: 'none'
                                             }} />
                                         ))}
                                     </div>

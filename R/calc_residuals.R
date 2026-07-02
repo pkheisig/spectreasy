@@ -14,6 +14,28 @@
     n_threads
 }
 
+.normalize_unmix_method <- function(method,
+                                    choices = c("AutoSpectral", "OLS", "NNLS", "WLS", "RWLS")) {
+    method_raw <- toupper(trimws(as.character(method[1])))
+    if (length(method_raw) == 0 || is.na(method_raw) || !nzchar(method_raw)) {
+        method_raw <- "AUTOSPECTRAL"
+    }
+    method_raw <- gsub("[_-]", "", method_raw)
+    lookup <- c(
+        AUTOSPECTRAL = "AutoSpectral",
+        OLS = "OLS",
+        NNLS = "NNLS",
+        WLS = "WLS",
+        RWLS = "RWLS"
+    )
+    out <- unname(lookup[method_raw])
+    allowed_lookup <- unname(lookup[gsub("[_-]", "", toupper(choices))])
+    if (is.na(out) || !(out %in% allowed_lookup)) {
+        stop("method must be one of: ", paste(choices, collapse = ", "), call. = FALSE)
+    }
+    out
+}
+
 #' Calculate unmixing residuals
 #'
 #' @param flow_frame A flowFrame object with raw fluorescence data

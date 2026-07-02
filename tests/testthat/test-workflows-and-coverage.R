@@ -224,6 +224,8 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
 
     expect_true(file.exists(ctrl$reference_matrix_file))
     expect_true(file.exists(ctrl$unmixing_matrix_file))
+    expect_true(file.exists(ctrl$qc_report_file))
+    expect_true(dir.exists(ctrl$qc_controls_dir))
     expect_true(file.exists(ctrl$spectra_file))
     expect_true(file.exists(ctrl$unmixing_scatter_file))
     expect_s3_class(ctrl$unmixing_scatter_plot, "ggplot")
@@ -248,6 +250,8 @@ test_that("unmix_controls handles WLS output and exclude_af branch", {
 
     expect_equal(ctrl$static_unmixing_matrix_method, "WLS")
     expect_true(file.exists(ctrl$detector_noise_file))
+    expect_true(file.exists(ctrl$qc_report_file))
+    expect_true(dir.exists(ctrl$qc_controls_dir))
     expect_false(is.null(attr(ctrl$M, "detector_noise")))
     expect_false(any(grepl("^AF($|_)", rownames(ctrl$M), ignore.case = TRUE)))
     expect_false(any(grepl("Unstained", names(ctrl$unmixed_list), ignore.case = TRUE)))
@@ -272,6 +276,8 @@ test_that("unmix_controls tolerates a missing unstained mapping row", {
     )
 
     expect_true(file.exists(ctrl$reference_matrix_file))
+    expect_true(file.exists(ctrl$qc_report_file))
+    expect_true(dir.exists(ctrl$qc_controls_dir))
     expect_false(any(grepl("^AF($|_)", rownames(ctrl$M), ignore.case = TRUE)))
     expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))
 })

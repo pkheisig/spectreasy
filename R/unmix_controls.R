@@ -212,13 +212,15 @@
 .unmix_output_paths <- function(output_dir) {
     list(
         unmixed_dir = file.path(output_dir, "unmixed_fcs"),
+        qc_controls_dir = file.path(output_dir, "qc_controls"),
         spectra_file = file.path(output_dir, "scc_spectra.png"),
         af_spectra_file = file.path(output_dir, "scc_af_spectra.png"),
         reference_matrix_csv = file.path(output_dir, "scc_reference_matrix.csv"),
         detector_noise_csv = file.path(output_dir, "scc_detector_noise.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
-        variances_csv = file.path(output_dir, "scc_variances.csv")
+        variances_csv = file.path(output_dir, "scc_variances.csv"),
+        qc_report_pdf = file.path(output_dir, "qc_controls", "qc_controls_report.pdf")
     )
 }
 
@@ -373,6 +375,11 @@
 #'   multi-AF WLS/RWLS SCC unmixing. The default, 1, keeps execution single-threaded.
 #' @param save_qc_plots Logical; whether to write per-control FSC/SSC,
 #'   intensity-gate, and spectrum PNGs under `output_dir`.
+#' @param save_report Logical; if `TRUE`, write the SCC QC PDF report
+#'   automatically after controls are unmixed. Defaults to `TRUE`.
+#' @param output_file Optional output path for the SCC QC PDF report. When this
+#'   is `NULL`, each automatic report is written to a fresh `qc_controls`,
+#'   `qc_controls_2`, ... folder under `output_dir`.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
 #'   use the legacy one-dimensional histogram gate.
@@ -414,6 +421,8 @@ unmix_controls <- function(
     rwls_max_iter = 1L,
     unmix_threads = 1L,
     save_qc_plots = FALSE,
+    save_report = TRUE,
+    output_file = NULL,
     use_scatter_gating = TRUE,
     ...
 ) {
@@ -457,6 +466,16 @@ unmix_controls <- function(
     }
 
     output_paths <- .unmix_output_paths(output_dir)
+    qc_controls_dir <- NULL
+    if (isTRUE(save_report)) {
+        if (is.null(output_file)) {
+            qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
+            output_file <- file.path(qc_controls_dir, "qc_controls_report.pdf")
+        } else {
+            qc_controls_dir <- dirname(output_file)
+        }
+        message("Automatic SCC QC report enabled: ", output_file)
+    }
     M <- build_reference_matrix(
         input_folder = scc_dir,
         output_folder = output_dir,
@@ -509,7 +528,8 @@ unmix_controls <- function(
         n_threads = unmix_threads,
         cytometer = cytometer,
         output_dir = output_paths$unmixed_dir,
-        write_fcs = TRUE
+        write_fcs = TRUE,
+        save_report = FALSE
     )
     unmixed_list <- .filter_unmix_excluded_af_outputs(
         unmixed_list = unmixed_list,
@@ -539,6 +559,30 @@ unmix_controls <- function(
         seed = seed
     )
 
+    qc_report <- NULL
+    if (isTRUE(save_report)) {
+        qc_report <- qc_controls(
+            M = M,
+            scc_dir = scc_dir,
+            output_file = output_file,
+            control_file = control_file,
+            cytometer = cytometer,
+            method = unmix_method,
+            qc_plot_dir = qc_controls_dir,
+            save_qc_pngs = save_qc_plots,
+            use_scatter_gating = use_scatter_gating,
+            include_multi_af = include_multi_af,
+            exclude_af = exclude_af,
+            af_bands_per_file = af_bands_per_file,
+            unmix_scatter_max_points = 1000,
+            seed = seed,
+            unmixing_matrix_file = output_paths$reference_matrix_csv
+        )
+        if (!file.exists(output_file)) {
+            stop("Automatic SCC QC report was requested but was not created at: ", output_file, call. = FALSE)
+        }
+    }
+
     invisible(list(
         M = M,
         W = W,
@@ -547,6 +591,10 @@ unmix_controls <- function(
         detector_noise_file = output_paths$detector_noise_csv,
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
         variances_file = output_paths$variances_csv,
+        qc_report_file = if (isTRUE(save_report)) output_file else NULL,
+        qc_controls_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
+        qc_metrics_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
+        qc_report = qc_report,
         spectra_file = if (isTRUE(save_qc_plots)) output_paths$spectra_file else NULL,
         af_spectra_file = if (isTRUE(save_qc_plots) && nrow(M_af) > 0) output_paths$af_spectra_file else NULL,
         unmixing_scatter_file = if (isTRUE(save_qc_plots)) output_paths$unmixing_scatter_png else NULL,

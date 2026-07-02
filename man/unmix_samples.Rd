@@ -28,6 +28,10 @@ unmix_samples(
   estimate_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
+  save_report = TRUE,
+  output_file = NULL,
+  save_qc_plots = FALSE,
+  qc_plot_dir = NULL,
   subsample_n = NULL,
   seed = NULL,
   return_type = c("list", "flowSet", "SingleCellExperiment"),
@@ -110,6 +114,20 @@ unstained cell control is available. Default is `FALSE`.}
 
 \item{write_fcs}{Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
+
+\item{save_report}{Logical; if `TRUE`, write a sample QC PDF report and
+sample QC metric CSVs from the in-memory unmixing results without rerunning
+unmixing. Defaults to `TRUE`.}
+
+\item{output_file}{Optional output path for the sample QC PDF report. When
+this is `NULL`, each `unmix_samples()` report run is written to a fresh
+`qc_samples`, `qc_samples_2`, ... folder beside the unmixed FCS output.}
+
+\item{save_qc_plots}{Logical; if `TRUE`, save QC report plots as PNG files
+in `qc_plot_dir` while creating the PDF report.}
+
+\item{qc_plot_dir}{Directory for sample QC report PNG files when
+`save_qc_plots = TRUE`.}
 
 \item{subsample_n}{Optional integer; if provided, subsample the returned in-memory
 results to at most `subsample_n` events per sample. The full unsampled unmixed

@@ -60,6 +60,27 @@ calculate_ssm <- function(M, method = "OLS") {
     return(SSM)
 }
 
+#' Calculate Directional Spread Values
+#'
+#' Returns the directional spread values on the raw analytical spread matrix
+#' scale. This helper keeps the directional source/destination orientation but
+#' avoids panel-relative normalization, so values can be interpreted on the
+#' same scale across panels and runs.
+#'
+#' @param SSM Matrix returned by calculate_ssm
+#' @return Matrix of raw directional spread values.
+#' @examples
+#' ssm <- matrix(c(0, 1, 4, 0), nrow = 2, byrow = TRUE)
+#' calculate_directional_spread_score(ssm)
+#' @export
+calculate_directional_spread_score <- function(SSM) {
+    SSM <- as.matrix(SSM)
+    score <- pmax(SSM, 0)
+    diag(score) <- 0
+    score[!is.finite(score)] <- NA_real_
+    score
+}
+
 #' Plot Spectral Spread Matrix
 #' @param SSM Matrix returned by calculate_ssm
 #' @param output_file Optional path to save the plot. Set `NULL` to return the plot without writing a file.
@@ -75,32 +96,41 @@ calculate_ssm <- function(M, method = "OLS") {
 #' print(p)
 #' @export
 plot_ssm <- function(SSM, output_file = NULL, width = 200, height = 180) {
-    long <- as.data.frame(SSM)
-    long$Spilling_Marker <- rownames(SSM)
-    long <- tidyr::pivot_longer(long, cols = -Spilling_Marker, names_to = "Receiving_Marker", values_to = "Spread")
+    score <- calculate_directional_spread_score(SSM)
+    is_square_same_markers <- nrow(SSM) == ncol(SSM) &&
+        identical(rownames(SSM), colnames(SSM))
+    if (is_square_same_markers) {
+        marker_order <- rownames(SSM)
+        score <- score[marker_order, marker_order, drop = FALSE]
+    }
+    long <- as.data.frame(score, check.names = FALSE)
+    long$Spilling_Marker <- rownames(score)
+    long <- tidyr::pivot_longer(long, cols = -Spilling_Marker, names_to = "Receiving_Marker", values_to = "Score")
+    if (is_square_same_markers) {
+        long$Spilling_Marker <- factor(long$Spilling_Marker, levels = rev(marker_order))
+        long$Receiving_Marker <- factor(long$Receiving_Marker, levels = marker_order)
+    }
 
-    fmt_spread <- function(x) {
+    fmt_score <- function(x) {
         if (!is.finite(x)) return("")
-        ax <- abs(x)
-        if (ax >= 10) return(formatC(x, format = "f", digits = 0))
         formatC(x, format = "f", digits = 2)
     }
 
-    n_markers <- max(nrow(SSM), ncol(SSM))
+    n_markers <- max(nrow(score), ncol(score))
     text_size <- max(2.4, min(4.8, 36 / max(1, n_markers)))
-    max_val <- max(SSM, na.rm = TRUE)
-
-    p <- ggplot2::ggplot(long, ggplot2::aes(Receiving_Marker, Spilling_Marker, fill = Spread)) +
+    p <- ggplot2::ggplot(long, ggplot2::aes(Receiving_Marker, Spilling_Marker, fill = Score)) +
         ggplot2::geom_tile() +
-        ggplot2::scale_fill_viridis_c(option = "magma", name = "Spread Factor") +
+        ggplot2::scale_fill_gradientn(
+            colors = c("#FFFFFF", "#FEE5D9", "#FCAE91", "#FB6A4A", "#CB181D"),
+            name = "Spread"
+        ) +
         ggplot2::geom_text(
-            ggplot2::aes(label = vapply(Spread, fmt_spread, character(1)), color = Spread > (max_val * 0.4)),
+            ggplot2::aes(label = vapply(Score, fmt_score, character(1))),
             size = text_size,
             show.legend = FALSE
         ) +
-        ggplot2::scale_color_manual(values = c("TRUE" = "black", "FALSE" = "white")) +
         ggplot2::labs(title = "Spectral Spread Matrix",
-                      subtitle = "Rows = noise source, columns = noise destination.",
+                      subtitle = "Rows = noise source, columns = noise destination. Values are raw analytical spread estimates.",
                       x = "Receiving Marker (Noise Destination)", y = "Spilling Marker (Noise Source)") +
         ggplot2::theme_minimal(base_size = 13.75) +
         ggplot2::theme(

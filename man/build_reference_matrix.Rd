@@ -83,7 +83,7 @@ events required to keep a k-means AF cluster. The default `0.005` means
 when `af_n_bands = "auto"`. Lower values allow richer AF models; higher
 values select fewer bands before near-duplicate AF signatures are pruned.
 Values must be between `0.1` and `5`; the default `1.5` corresponds to a
-3\% minimum k-means fit improvement.}
+0.75\% minimum k-means fit improvement.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 
