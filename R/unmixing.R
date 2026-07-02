@@ -245,13 +245,11 @@
                                   scc_dir = NULL,
                                   control_file = NULL,
                                   af_n_bands = "auto",
-                                  af_bands_per_file = 5,
-                                  af_auto_max_bands = 20,
+                                  af_auto_max_bands = 100,
                                   af_min_cluster_events = 20,
                                   af_min_cluster_proportion = 0.005,
                                   af_n_bands_sensitivity = 1.5,
                                   exclude_af = FALSE,
-                                  include_multi_af = FALSE,
                                   cytometer = "auto",
                                   seed = NULL) {
     if (!(toupper(method) %in% c("WLS", "RWLS"))) {
@@ -610,22 +608,18 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   are missing.
 #' @param control_file Path to the control mapping CSV.
 #'   Used when dynamically building the reference matrix.
-#' @param af_n_bands Number of AF bands to extract from the unstained control
-#'   when only one AF source is available. Use `"auto"` to select the count
-#'   from AF event shapes and prune near-duplicate AF signatures.
-#' @param af_bands_per_file Number of AF bands requested per AF file when
-#'   multiple AF sources are pooled.
-#' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
+#' @param af_n_bands Number of k-means AF basis signatures to extract from
+#'   pooled unstained/AF control events, or `"auto"` to keep distinct signatures
+#'   from up to `af_auto_max_bands` k-means centers. Legacy compatibility
+#'   argument; build AF references with [unmix_controls()].
+#' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
 #'   k-means AF cluster.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
 #'   events required to keep a k-means AF cluster.
-#' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
-#'   when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-#'   select fewer bands before near-duplicate AF signatures are pruned. Default
-#'   is `1.5`.
+#' @param af_n_bands_sensitivity Compatibility argument retained for older
+#'   workflows.
 #' @param exclude_af Logical; whether to exclude AF from unmixing.
-#' @param include_multi_af Logical; whether to include multi-AF controls.
 #' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
 #'   stained sample event-wise WLS residuals, select the best candidate model by
 #'   held-out WLS residual score, and append the selected AF rows to the
@@ -708,13 +702,11 @@ unmix_samples <- function(sample_dir = "samples",
                           scc_dir = NULL,
                           control_file = NULL,
                           af_n_bands = "auto",
-                          af_bands_per_file = 5,
-                          af_auto_max_bands = 20,
+                          af_auto_max_bands = 100,
                           af_min_cluster_events = 20,
                           af_min_cluster_proportion = 0.005,
                           af_n_bands_sensitivity = 1.5,
                           exclude_af = FALSE,
-                          include_multi_af = FALSE,
                           estimate_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
@@ -763,13 +755,11 @@ unmix_samples <- function(sample_dir = "samples",
                 input_folder = resolved_scc_dir,
                 control_df = control_file,
                 af_n_bands = af_n_bands,
-                af_bands_per_file = af_bands_per_file,
                 af_auto_max_bands = af_auto_max_bands,
                 af_min_cluster_events = af_min_cluster_events,
                 af_min_cluster_proportion = af_min_cluster_proportion,
                 af_n_bands_sensitivity = af_n_bands_sensitivity,
                 exclude_af = exclude_af,
-                include_multi_af = include_multi_af,
                 cytometer = cytometer
             )
             M <- .load_detector_noise_for_unmixing(
@@ -802,13 +792,11 @@ unmix_samples <- function(sample_dir = "samples",
         scc_dir = scc_dir,
         control_file = control_file,
         af_n_bands = af_n_bands,
-        af_bands_per_file = af_bands_per_file,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
         af_n_bands_sensitivity = af_n_bands_sensitivity,
         exclude_af = exclude_af,
-        include_multi_af = include_multi_af,
         cytometer = cytometer,
         seed = seed
     )

@@ -18,13 +18,11 @@ unmix_samples(
   scc_dir = NULL,
   control_file = NULL,
   af_n_bands = "auto",
-  af_bands_per_file = 5,
-  af_auto_max_bands = 20,
+  af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
   af_n_bands_sensitivity = 1.5,
   exclude_af = FALSE,
-  include_multi_af = FALSE,
   estimate_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
@@ -80,14 +78,12 @@ are missing.}
 \item{control_file}{Path to the control mapping CSV.
 Used when dynamically building the reference matrix.}
 
-\item{af_n_bands}{Number of AF bands to extract from the unstained control
-when only one AF source is available. Use `"auto"` to select the count
-from AF event shapes and prune near-duplicate AF signatures.}
+\item{af_n_bands}{Number of k-means AF basis signatures to extract from
+pooled unstained/AF control events, or `"auto"` to keep distinct signatures
+from up to `af_auto_max_bands` k-means centers. Legacy compatibility
+argument; build AF references with [unmix_controls()].}
 
-\item{af_bands_per_file}{Number of AF bands requested per AF file when
-multiple AF sources are pooled.}
-
-\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.}
+\item{af_auto_max_bands}{Maximum k-means centers that `"auto"` may score.}
 
 \item{af_min_cluster_events}{Minimum number of AF events required to keep a
 k-means AF cluster.}
@@ -95,14 +91,10 @@ k-means AF cluster.}
 \item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
 events required to keep a k-means AF cluster.}
 
-\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
-when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-select fewer bands before near-duplicate AF signatures are pruned. Default
-is `1.5`.}
+\item{af_n_bands_sensitivity}{Compatibility argument retained for older
+workflows.}
 
 \item{exclude_af}{Logical; whether to exclude AF from unmixing.}
-
-\item{include_multi_af}{Logical; whether to include multi-AF controls.}
 
 \item{estimate_af}{Logical; if `TRUE`, estimate AF signatures directly from
 stained sample event-wise WLS residuals, select the best candidate model by

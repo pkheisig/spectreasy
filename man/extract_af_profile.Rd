@@ -8,7 +8,7 @@ extract_af_profile(
   fcs_file,
   af_n_bands = "auto",
   af_max_cells = 50000,
-  af_auto_max_bands = 20,
+  af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
   af_n_bands_sensitivity = 1.5,
@@ -21,11 +21,11 @@ extract_af_profile(
 \item{fcs_file}{Path to an unstained/autofluorescence `.fcs` file.}
 
 \item{af_n_bands}{Number of AF bands to extract. The default, `"auto"`,
-chooses the count from AF event shapes.}
+keeps distinct k-means signatures from up to `af_auto_max_bands` centers.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used.}
 
-\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.}
+\item{af_auto_max_bands}{Maximum k-means centers that `"auto"` may score.}
 
 \item{af_min_cluster_events}{Minimum number of AF events required to keep a
 k-means AF cluster.}
@@ -33,9 +33,8 @@ k-means AF cluster.}
 \item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
 events required to keep a k-means AF cluster.}
 
-\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
-when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-select fewer bands. Default is `1.5`.}
+\item{af_n_bands_sensitivity}{Compatibility argument retained for older
+workflows.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

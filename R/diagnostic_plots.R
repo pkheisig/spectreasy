@@ -366,6 +366,36 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
     )
 }
 
+.residual_detector_channel_order <- function(detectors) {
+    detectors <- as.character(detectors)
+    key <- toupper(trimws(sub("-A$", "", detectors, ignore.case = TRUE)))
+    has_prefix <- grepl("^(UV|YG|V|B|Y|G|R)[0-9]+", key, perl = TRUE)
+    prefix <- rep("", length(key))
+    prefix[has_prefix] <- sub("^(UV|YG|V|B|Y|G|R)([0-9]+).*$", "\\1", key[has_prefix], perl = TRUE)
+
+    channel <- rep(.Machine$integer.max, length(key))
+    channel[has_prefix] <- suppressWarnings(as.integer(
+        sub("^(UV|YG|V|B|Y|G|R)([0-9]+).*$", "\\2", key[has_prefix], perl = TRUE)
+    ))
+    missing_channel <- !is.finite(channel)
+    if (any(missing_channel)) {
+        channel[missing_channel] <- suppressWarnings(as.integer(
+            sub("^[^0-9]*([0-9]+).*$", "\\1", key[missing_channel], perl = TRUE)
+        ))
+    }
+    channel[!is.finite(channel)] <- .Machine$integer.max
+
+    laser_rank <- dplyr::case_when(
+        prefix == "UV" ~ 1L,
+        prefix == "V" ~ 2L,
+        prefix == "B" ~ 3L,
+        prefix %in% c("YG", "Y", "G") ~ 4L,
+        prefix == "R" ~ 5L,
+        TRUE ~ 99L
+    )
+    order(laser_rank, channel, key, detectors, na.last = TRUE)
+}
+
 .collect_report_residual_matrix <- function(results, detector_names = NULL) {
     if (!is.list(results) || length(results) == 0) {
         return(NULL)
@@ -414,9 +444,7 @@ plot_detector_rms_residuals <- function(results, M = NULL, pd = NULL, output_fil
     }
 
     detector_names <- colnames(residuals)
-    label_info <- .resolve_detector_residual_labels(detector_names, pd = pd)
-    levels_sorted <- label_info$levels_sorted
-    levels_sorted <- levels_sorted[levels_sorted %in% detector_names]
+    levels_sorted <- detector_names[.residual_detector_channel_order(detector_names)]
     if (length(levels_sorted) == 0) {
         levels_sorted <- detector_names
     }
@@ -439,8 +467,8 @@ plot_detector_rms_residuals <- function(results, M = NULL, pd = NULL, output_fil
     }
 
     separators <- which(plot_df$Laser[-1] != plot_df$Laser[-nrow(plot_df)]) + 0.5
-    p <- ggplot2::ggplot(plot_df, ggplot2::aes(DetectorIndex, RMS, fill = Laser)) +
-        ggplot2::geom_col(width = 0.82, color = "grey35", linewidth = 0.15) +
+    p <- ggplot2::ggplot(plot_df, ggplot2::aes(DetectorIndex, RMS)) +
+        ggplot2::geom_col(width = 0.82, fill = "grey35", color = "grey25", linewidth = 0.15) +
         ggplot2::geom_vline(xintercept = separators, color = "grey45", linewidth = 0.25) +
         ggplot2::scale_x_continuous(
             breaks = plot_df$DetectorIndex,
@@ -448,20 +476,15 @@ plot_detector_rms_residuals <- function(results, M = NULL, pd = NULL, output_fil
             expand = ggplot2::expansion(mult = c(0.005, 0.005))
         ) +
         ggplot2::scale_y_continuous(labels = scales::label_number(big.mark = ",")) +
-        ggplot2::scale_fill_manual(
-            values = c(UV = "#6A3D9A", Violet = "#7B2CBF", Blue = "#1F78B4", YG = "#66A61E", Red = "#E31A1C", Other = "grey55"),
-            drop = FALSE
-        ) +
         ggplot2::labs(
             title = "RMS residual per detector",
-            subtitle = "RMS_d = sqrt(mean_i R[i,d]^2), pooled across report events. Detectors are sorted by laser/channel order.",
+            subtitle = "RMS_d = sqrt(mean_i R[i,d]^2), pooled across report events. Detectors are sorted UV, V, B, YG, R and then by detector number.",
             x = "Detector",
-            y = "RMS residual (raw detector units)",
-            fill = "Laser"
+            y = "RMS residual (raw detector units)"
         ) +
         ggplot2::theme_minimal(base_size = 13.75) +
         ggplot2::theme(
-            legend.position = "bottom",
+            legend.position = "none",
             axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6.2),
             panel.grid.major.x = ggplot2::element_blank(),
             panel.grid.minor.x = ggplot2::element_blank(),

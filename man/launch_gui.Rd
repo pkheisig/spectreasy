@@ -36,13 +36,5 @@ the Vite dev server (`npm run dev`) from the packaged GUI source folder.}
 Invisibly returns NULL. This function blocks while the API is running.
 }
 \description{
-Backward-compatible alias for \code{\link[=adjust_matrix]{adjust_matrix}}.
-Starts the backend Plumber API for the interactive matrix adjustment interface.
-}
-\examples{
-if (interactive()) {
-  launch_gui(open_browser = FALSE)
-  launch_gui(matrix_dir = "/path/to/my/matrices", open_browser = FALSE)
-  launch_gui(dev_mode = TRUE, open_browser = FALSE)
-}
+`launch_gui()` is kept as a backward-compatible alias for [adjust_matrix()].
 }

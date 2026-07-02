@@ -1,7 +1,9 @@
 # Internal helpers for QC report generation.
-.draw_qc_report_plot_page <- function(p, square = FALSE, height_ratio = 1.0, width_ratio = 1.0) {
+.draw_qc_report_plot_page <- function(p, square = FALSE, height_ratio = 1.0, width_ratio = 1.0, newpage = TRUE) {
     if (is.null(p)) return(invisible(NULL))
-    grid::grid.newpage()
+    if (isTRUE(newpage)) {
+        grid::grid.newpage()
+    }
     grob <- ggplot2::ggplotGrob(p)
     if (!isTRUE(square) && height_ratio == 1.0 && width_ratio == 1.0) {
         grid::grid.draw(grob)
@@ -37,7 +39,7 @@
     grob$grobs[[guide_idx[1]]]
 }
 
-.draw_qc_report_spectra_page <- function(p) {
+.draw_qc_report_spectra_page <- function(p, newpage = TRUE) {
     if (is.null(p)) return(invisible(NULL))
 
     n_labels <- 0L
@@ -97,7 +99,9 @@
     )
     legend_grob <- .extract_qc_report_legend(legend_plot)
 
-    grid::grid.newpage()
+    if (isTRUE(newpage)) {
+        grid::grid.newpage()
+    }
     grid::grid.draw(
         grid::editGrob(
             plot_grob,
@@ -186,9 +190,7 @@
         return(NULL)
     }
     detector_names <- colnames(residuals)
-    label_info <- .resolve_detector_residual_labels(detector_names, pd = pd)
-    levels_sorted <- label_info$levels_sorted
-    levels_sorted <- levels_sorted[levels_sorted %in% detector_names]
+    levels_sorted <- detector_names[.residual_detector_channel_order(detector_names)]
     if (length(levels_sorted) == 0) {
         levels_sorted <- detector_names
     }
@@ -529,9 +531,9 @@
 }
 
 .add_qc_report_density_colors <- function(plot_df) {
-    plot_df$color <- "#0000FF"
+    plot_df$color <- .scatter_density_base_color()
     groups <- split(seq_len(nrow(plot_df)), interaction(plot_df$panel_row, plot_df$panel_col, drop = TRUE))
-    ramp <- grDevices::colorRampPalette(c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"))
+    ramp <- .scatter_density_color_ramp()
     for (idx in groups) {
         if (length(idx) > 1 && stats::var(plot_df$x[idx]) > 0 && stats::var(plot_df$y[idx]) > 0) {
             plot_df$color[idx] <- grDevices::densCols(plot_df$x[idx], plot_df$y[idx], colramp = ramp)
@@ -675,7 +677,11 @@
                                             page_idx,
                                             page_total,
                                             point_color = "#163B5C",
-                                            axis_color = "#C75000") {
+                                            axis_color = "#C75000",
+                                            title = NULL) {
+    if (is.null(title)) {
+        title <- paste0("Sample NxN Scatter Matrix: ", sample_name)
+    }
     panel_used <- unique(panel_info$lim_df[, c("panel_row", "panel_col"), drop = FALSE])
     panel_grid <- expand.grid(
         panel_row = factor(panel_info$page_rows, levels = panel_info$page_rows),
@@ -721,7 +727,7 @@
             )
         ) +
         ggplot2::labs(
-            title = paste0("Sample NxN Scatter Matrix: ", sample_name),
+            title = title,
             subtitle = paste0("Page ", page_idx, " of ", page_total)
         ) +
         ggplot2::theme_bw(base_size = 6.5) +
@@ -811,6 +817,83 @@
             )
             k <- k + 1L
         }
+    }
+
+    pages
+}
+
+.build_qc_report_control_scatter_pages <- function(unmixed_list,
+                                                   sample_to_marker = NULL,
+                                                   markers = NULL,
+                                                   marker_display = NULL,
+                                                   rows_per_page = 10,
+                                                   max_points_per_sample = 1000,
+                                                   transform = c("none", "asinh"),
+                                                   asinh_cofactor = 150,
+                                                   axis_limit = NULL,
+                                                   seed = NULL) {
+    transform <- match.arg(transform)
+    .with_optional_seed(seed)
+
+    data_list <- .extract_unmix_scatter_data_list(unmixed_list)
+    sample_stains <- .normalize_unmix_scatter_mapping(names(data_list), sample_to_marker = sample_to_marker)
+    marker_info <- .resolve_unmix_scatter_markers(sample_stains, markers = markers, marker_display = marker_display)
+    markers <- marker_info$markers
+    marker_labels <- marker_info$marker_labels
+    panel_info <- .build_unmix_scatter_panel_data(
+        data_list = data_list,
+        sample_stains = sample_stains,
+        markers = markers,
+        max_points_per_sample = max_points_per_sample,
+        transform = transform,
+        asinh_cofactor = asinh_cofactor,
+        axis_limit = axis_limit
+    )
+
+    page_defs <- .build_qc_report_sample_page_defs(markers, block_size = rows_per_page)
+    page_total <- length(page_defs)
+    if (page_total == 0) {
+        return(list())
+    }
+
+    pages <- list()
+    k <- 1L
+    for (page_idx in seq_along(page_defs)) {
+        def <- page_defs[[page_idx]]
+        row_markers <- markers[def$row_idx]
+        col_markers <- markers[def$col_idx]
+        keep_rows <- as.character(panel_info$plot_df$panel_row) %in% row_markers
+        keep_cols <- as.character(panel_info$plot_df$panel_col) %in% col_markers
+        keep_lim_rows <- as.character(panel_info$lim_df$panel_row) %in% row_markers
+        keep_lim_cols <- as.character(panel_info$lim_df$panel_col) %in% col_markers
+        plot_df <- panel_info$plot_df[keep_rows & keep_cols, , drop = FALSE]
+        lim_df <- panel_info$lim_df[keep_lim_rows & keep_lim_cols, , drop = FALSE]
+        if (nrow(plot_df) == 0 || nrow(lim_df) == 0) {
+            next
+        }
+
+        page_rows <- .pad_qc_report_page_levels(row_markers, block_size = rows_per_page, prefix = "row")
+        page_cols <- .pad_qc_report_page_levels(col_markers, block_size = rows_per_page, prefix = "col")
+        plot_df$panel_row <- factor(as.character(plot_df$panel_row), levels = page_rows)
+        plot_df$panel_col <- factor(as.character(plot_df$panel_col), levels = page_cols)
+        lim_df$panel_row <- factor(as.character(lim_df$panel_row), levels = page_rows)
+        lim_df$panel_col <- factor(as.character(lim_df$panel_col), levels = page_cols)
+
+        page_labels <- marker_labels
+        missing_rows <- setdiff(page_rows, names(page_labels))
+        missing_cols <- setdiff(page_cols, names(page_labels))
+        if (length(missing_rows) > 0) page_labels[missing_rows] <- ""
+        if (length(missing_cols) > 0) page_labels[missing_cols] <- ""
+
+        pages[[k]] <- .build_sample_scatter_page_plot(
+            panel_info = list(plot_df = plot_df, lim_df = lim_df, page_cols = page_cols, page_rows = page_rows),
+            marker_labels = page_labels,
+            sample_name = "Controls",
+            page_idx = page_idx,
+            page_total = page_total,
+            title = "Control NxN Scatter Matrix"
+        )
+        k <- k + 1L
     }
 
     pages
@@ -998,6 +1081,23 @@ qc_samples <- function(results,
     }
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
+    report_page_started <- FALSE
+    draw_report_plot_page <- function(p, square = FALSE, height_ratio = 1.0, width_ratio = 1.0) {
+        .draw_qc_report_plot_page(
+            p,
+            square = square,
+            height_ratio = height_ratio,
+            width_ratio = width_ratio,
+            newpage = report_page_started
+        )
+        report_page_started <<- TRUE
+        invisible(NULL)
+    }
+    draw_report_spectra_page <- function(p) {
+        .draw_qc_report_spectra_page(p, newpage = report_page_started)
+        report_page_started <<- TRUE
+        invisible(NULL)
+    }
 
     if (!is.null(max_events_per_sample) && any(as.numeric(file_counts) > as.numeric(max_events_per_sample)[1], na.rm = TRUE)) {
         message(
@@ -1037,7 +1137,7 @@ qc_samples <- function(results,
     if (nrow(M_no_af) > 0) {
         spectra_plot <- plot_spectra(M_no_af, pd = pd, output_file = NULL)
         .save_qc_report_png(spectra_plot, retained_qc_plot_dir, "spectra_overlay.png")
-        .draw_qc_report_spectra_page(spectra_plot)
+        draw_report_spectra_page(spectra_plot)
     }
 
     if (nrow(M_no_af) > 1) {
@@ -1057,7 +1157,7 @@ qc_samples <- function(results,
         for (i in seq_along(sim_pages)) {
             p <- sim_pages[[i]]
             .save_qc_report_png(p, retained_qc_plot_dir, sprintf("similarity_matrix_%02d.png", i))
-            .draw_qc_report_plot_page(p)
+            draw_report_plot_page(p)
         }
     }
 
@@ -1100,7 +1200,7 @@ qc_samples <- function(results,
             for (i in seq_along(nps_pages)) {
                 p <- nps_pages[[i]]
                 .save_qc_report_png(p, retained_qc_plot_dir, sprintf("negative_population_spread_%02d.png", i))
-                .draw_qc_report_plot_page(p)
+                draw_report_plot_page(p)
             }
         }
     }
@@ -1121,7 +1221,7 @@ qc_samples <- function(results,
     for (i in seq_along(scatter_pages)) {
         p <- scatter_pages[[i]]
         .save_qc_report_png(p, retained_qc_plot_dir, sprintf("sample_nxn_scatter_%02d.png", i))
-        .draw_qc_report_plot_page(p, square = TRUE)
+        draw_report_plot_page(p, square = TRUE)
     }
 
     if (!is.null(res_list)) {
@@ -1136,7 +1236,7 @@ qc_samples <- function(results,
         detector_rms_plot <- plot_detector_rms_residuals(res_list, M = M, pd = pd, output_file = NULL)
         if (!is.null(detector_rms_plot)) {
             .save_qc_report_png(detector_rms_plot, retained_qc_plot_dir, "rms_residual_per_detector.png")
-            .draw_qc_report_plot_page(
+            draw_report_plot_page(
                 detector_rms_plot,
                 height_ratio = 0.74,
                 width_ratio = 0.90
@@ -1159,7 +1259,7 @@ qc_samples <- function(results,
         for (i in seq_along(rms_pages)) {
             p <- rms_pages[[i]]
             .save_qc_report_png(p, retained_qc_plot_dir, sprintf("overall_detector_reconstruction_error_%02d.png", i))
-            .draw_qc_report_plot_page(
+            draw_report_plot_page(
                 p,
                 height_ratio = 0.72,
                 width_ratio = 0.72

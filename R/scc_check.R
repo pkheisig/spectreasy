@@ -284,10 +284,6 @@
 #' @param use_scatter_gating Logical; if `TRUE` (default), use scatter/intensity
 #'   gating and show scatter gate plots in the report. If `FALSE`, use and show
 #'   the legacy histogram gate.
-#' @param include_multi_af Logical; forward to [build_reference_matrix()].
-#' @param af_dir AF directory forwarded to [build_reference_matrix()].
-#' @param af_bands_per_file Number of AF bands requested per AF file when
-#'   multiple AF sources are pooled.
 #' @param unmix_scatter_max_points Maximum events sampled per control for the
 #'   SCC unmixing scatter matrix.
 #' @param unmix_scatter_axis_limit Optional fixed symmetric axis limit for the
@@ -317,9 +313,6 @@ qc_controls <- function(
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
     save_qc_pngs = FALSE,
     use_scatter_gating = TRUE,
-    include_multi_af = FALSE,
-    af_dir = "af",
-    af_bands_per_file = 5,
     unmix_scatter_max_points = 1000,
     unmix_scatter_axis_limit = NULL,
     seed = NULL,
@@ -352,9 +345,6 @@ qc_controls <- function(
         output_folder = plot_dir_info$plot_dir,
         save_qc_plots = TRUE,
         control_df = control_input,
-        include_multi_af = include_multi_af,
-        af_dir = af_dir,
-        af_bands_per_file = af_bands_per_file,
         cytometer = cytometer,
         use_scatter_gating = use_scatter_gating,
         seed = seed,
@@ -456,17 +446,19 @@ qc_controls <- function(
             }
         }
         scatter_markers <- rownames(M_no_af)
-        p_scatter <- plot_unmixing_scatter_matrix(
+        scatter_pages <- .build_qc_report_control_scatter_pages(
             unmixed_list = unmixed_list,
             sample_to_marker = sample_to_marker,
             markers = scatter_markers,
             marker_display = NULL,
-            output_file = NULL,
+            rows_per_page = 10,
             max_points_per_sample = unmix_scatter_max_points,
             axis_limit = unmix_scatter_axis_limit,
             seed = seed
         )
-        .draw_report_ggplot_page(p_scatter, square = TRUE)
+        for (p_scatter in scatter_pages) {
+            .draw_report_ggplot_page(p_scatter, square = TRUE)
+        }
     }
 
     if (nrow(qc_summary) > 0) {

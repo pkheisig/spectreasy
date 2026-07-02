@@ -9,13 +9,10 @@ build_reference_matrix(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  include_multi_af = FALSE,
   exclude_af = FALSE,
-  af_dir = "af",
   af_n_bands = "auto",
-  af_bands_per_file = 5,
   af_max_cells = 50000,
-  af_auto_max_bands = 20,
+  af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
   af_n_bands_sensitivity = 1.5,
@@ -48,28 +45,17 @@ When `FALSE` (default), the function returns the matrix without writing QC files
 \item{control_df}{Optional control mapping as a data.frame or CSV path.
 Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.}
 
-\item{include_multi_af}{Logical; if `TRUE`, include additional AF controls from `af_dir`.}
-
 \item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls entirely,
-even when they are present in `control_df`, the SCC folder, or `af_dir`.}
+even when they are present in `control_df` or the SCC folder.}
 
-\item{af_dir}{Directory with extra AF controls when `include_multi_af = TRUE`.}
-
-\item{af_n_bands}{Number of AF basis signatures to extract from the pooled
-unstained/AF control when only one AF source is available (`1` = classic
-single AF signature). The default, `"auto"`, chooses the number from AF
-event shapes and prunes near-duplicate AF signatures.}
-
-\item{af_bands_per_file}{Number of AF basis signatures requested per AF file
-when multiple AF sources are pooled (`5` files with the default `5` yields
-up to `25` shared AF bank signatures).}
+\item{af_n_bands}{Number of k-means AF basis signatures to extract from
+pooled unstained/AF control events, or `"auto"` to keep distinct signatures
+from up to `af_auto_max_bands` k-means centers. Default is `"auto"`.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used when
 deriving AF basis signatures.}
 
-\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.
-If auto selection repeatedly reaches this value, inspect QC and consider
-increasing it.}
+\item{af_auto_max_bands}{Maximum k-means centers that `"auto"` may score.}
 
 \item{af_min_cluster_events}{Minimum number of AF events required to keep a
 k-means AF cluster. Used together with `af_min_cluster_proportion`; the
@@ -79,11 +65,8 @@ larger threshold is applied.}
 events required to keep a k-means AF cluster. The default `0.005` means
 0.5\% of the AF events used for extraction.}
 
-\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
-when `af_n_bands = "auto"`. Lower values allow richer AF models; higher
-values select fewer bands before near-duplicate AF signatures are pruned.
-Values must be between `0.1` and `5`; the default `1.5` corresponds to a
-0.75\% minimum k-means fit improvement.}
+\item{af_n_bands_sensitivity}{Compatibility argument retained for older
+workflows.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

@@ -907,7 +907,7 @@ test_that("AF profile extraction can auto-select band count", {
     )
 
     expect_equal(nrow(profiles$signatures), 2)
-    expect_true(profiles$selection$method %in% c("gmm_bic_on_pcs", "distinct_shape_count"))
+    expect_equal(profiles$selection$method, "kmeans_distinct")
     expect_equal(profiles$selection$n_bands, 2)
 })
 
@@ -935,7 +935,7 @@ test_that("AF auto band selection can exceed the old 10-band ceiling", {
         min_cluster_proportion = 0
     )
 
-    expect_equal(profiles$selection$method, "distinct_shape_count")
+    expect_equal(profiles$selection$method, "kmeans_distinct")
     expect_equal(profiles$selection$n_bands, 12)
     expect_equal(nrow(profiles$signatures), 12)
 })
@@ -944,9 +944,9 @@ test_that("AF auto band selection prunes near-duplicate AF signatures", {
     detector_names <- c("B1-A", "YG1-A", "V1-A", "R1-A")
     centers <- list(
         c(1, 0.20, 0.05, 0.02),
-        c(1, 0.21, 0.05, 0.02),
+        c(1, 0.2005, 0.05, 0.02),
         c(0.05, 1, 0.18, 0.03),
-        c(0.05, 1, 0.19, 0.03)
+        c(0.05, 1, 0.1805, 0.03)
     )
     af_events <- do.call(rbind, lapply(centers, function(v) {
         matrix(rep(v * 1000, 30), ncol = length(detector_names), byrow = TRUE)
@@ -964,7 +964,6 @@ test_that("AF auto band selection prunes near-duplicate AF signatures", {
     )
 
     expect_lt(nrow(profiles$signatures), profiles$selection$raw_center_count)
-    expect_gt(profiles$selection$pruned_similar_bands, 0)
     expect_equal(profiles$selection$n_bands, nrow(profiles$signatures))
 })
 
@@ -974,13 +973,22 @@ test_that("AF auto is the default for matrix-building APIs", {
     expect_equal(formals(spectreasy::unmix_samples)$af_n_bands, "auto")
 })
 
-test_that("AF auto default sensitivity keeps smaller useful bands", {
-    expect_equal(spectreasy:::.reference_af_sensitivity_to_min_improvement(1.5), 0.0075)
-    expect_equal(spectreasy:::.reference_af_sensitivity_to_min_improvement(1), 0.005)
-    expect_equal(spectreasy:::.reference_af_max_cosine_similarity(), 0.995)
+test_that("AF auto default similarity threshold keeps distinct bands", {
+    expect_equal(spectreasy:::.reference_af_auto_similarity_threshold, 0.99999)
+    centers <- rbind(
+        c(1, 0.1, 0.0),
+        c(1, 0.1, 0.0),
+        c(0.1, 1, 0.0)
+    )
+    selected <- spectreasy:::.reference_select_distinct_af_centers(
+        centers = centers,
+        cluster_sizes = c(50L, 40L, 30L),
+        min_cluster_size = 1L
+    )
+    expect_equal(nrow(selected$centers), 2)
 })
 
-test_that("AF k-means cluster retention uses the larger event or proportion threshold", {
+test_that("fixed AF k-means requests precise band count when possible", {
     detector_names <- c("B1-A", "YG1-A", "V1-A")
     af_events <- rbind(
         matrix(rep(c(100, 15, 5), 4978), ncol = 3, byrow = TRUE),
@@ -1006,7 +1014,9 @@ test_that("AF k-means cluster retention uses the larger event or proportion thre
     )
 
     expect_equal(nrow(old_like_profiles$signatures), 2)
-    expect_equal(nrow(proportion_profiles$signatures), 1)
+    expect_equal(nrow(proportion_profiles$signatures), 2)
+    expect_equal(proportion_profiles$selection$method, "kmeans_fixed")
+    expect_equal(proportion_profiles$selection$requested_bands, 2)
 })
 
 test_that("AF profile extraction handles empty and all-zero AF events", {
@@ -1029,36 +1039,29 @@ test_that("AF profile extraction handles empty and all-zero AF events", {
     expect_equal(zero_profiles$signatures[1, ], c("B1-A" = 0, "YG1-A" = 0))
 })
 
-test_that("AF argument validation supports multi-AF bands per file", {
+test_that("AF argument validation supports auto and fixed k-means bands", {
     args <- spectreasy:::.validate_build_reference_af_args(
         af_n_bands = 2,
-        af_bands_per_file = 5,
         af_max_cells = 500
     )
 
     expect_equal(args$af_n_bands, 2L)
-    expect_equal(args$af_bands_per_file, 5L)
     expect_equal(args$af_max_cells, 500L)
-    expect_equal(args$af_auto_max_bands, 20L)
+    expect_equal(args$af_auto_max_bands, 100L)
     expect_equal(args$af_min_cluster_events, 20L)
     expect_equal(args$af_min_cluster_proportion, 0.005)
     expect_equal(args$af_n_bands_sensitivity, 1.5)
     expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_bands_per_file = 0),
-        "af_bands_per_file"
-    )
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(0, 500, af_bands_per_file = 1),
+        spectreasy:::.validate_build_reference_af_args(0, 500),
         "af_n_bands"
     )
     args_auto <- spectreasy:::.validate_build_reference_af_args(
         af_n_bands = "auto",
-        af_bands_per_file = 5,
         af_max_cells = 500
     )
     expect_equal(args_auto$af_n_bands, "auto")
     expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 99, af_bands_per_file = 1),
+        spectreasy:::.validate_build_reference_af_args(2, 99),
         "af_max_cells"
     )
     expect_error(
@@ -1075,7 +1078,6 @@ test_that("AF argument validation supports multi-AF bands per file", {
     )
     args_improvement <- spectreasy:::.validate_build_reference_af_args(
         af_n_bands = "auto",
-        af_bands_per_file = 5,
         af_max_cells = 500,
         af_n_bands_sensitivity = 1
     )
@@ -1094,19 +1096,69 @@ test_that("AF argument validation supports multi-AF bands per file", {
     )
 })
 
-test_that("extra AF files are banked centrally, not processed as one averaged SCC row", {
-    af_file <- file.path(tempdir(), "af", "mixed_af.fcs")
-    config <- list(include_multi_af = TRUE, af_dir = dirname(af_file), exclude_af = FALSE)
-
-    processed <- spectreasy:::.process_reference_file(
-        fcs_file = af_file,
-        control_df = NULL,
-        sample_patterns = spectreasy::get_fluorophore_patterns(),
-        metadata = list(detector_names = c("B1-A")),
-        config = config
+test_that("mapped SCC AF files are pooled into one AF bank size request", {
+    detector_names <- c("B1-A", "YG1-A")
+    fcs_files <- file.path(tempdir(), paste0(c("Unstained_1", "Unstained_2", "Unstained_3"), ".fcs"))
+    control_df <- data.frame(
+        filename = basename(fcs_files),
+        fluorophore = c("AF", "AF_2", "AF_3"),
+        marker = "Autofluorescence",
+        control.type = "cells",
+        stringsAsFactors = FALSE
+    )
+    captured <- new.env(parent = emptyenv())
+    testthat::local_mocked_bindings(
+        .extract_reference_af_gated_events = function(fcs_file, detector_names, config = NULL) {
+            i <- match(normalizePath(fcs_file, mustWork = FALSE), normalizePath(fcs_files, mustWork = FALSE))
+            events <- matrix(i, nrow = 3, ncol = length(detector_names), dimnames = list(NULL, detector_names))
+            list(
+                events = events,
+                source = data.table::data.table(
+                    file = basename(fcs_file),
+                    path = fcs_file,
+                    n_total = 3L,
+                    n_scatter_gated = 3L,
+                    scatter_gate_pct = 100,
+                    fsc_channel = "FSC-A",
+                    ssc_channel = "SSC-A"
+                )
+            )
+        },
+        .extract_reference_af_profiles = function(detector_names, n_bands, max_cells, af_events, auto_max_bands,
+                 min_cluster_events, min_cluster_proportion, n_bands_sensitivity) {
+            captured$n_bands <- n_bands
+            captured$event_count <- nrow(af_events)
+            signatures <- matrix(c(1, 0.1, 0.1, 1, 0.5, 0.5), nrow = 3, byrow = TRUE)
+            rownames(signatures) <- c("AF", "AF_2", "AF_3")
+            colnames(signatures) <- detector_names
+            list(
+                raw_median = c("B1-A" = 2, "YG1-A" = 2),
+                signatures = signatures,
+                selection = list(method = "kmeans_fixed", n_bands = 3L)
+            )
+        },
+        .env = asNamespace("spectreasy")
     )
 
-    expect_null(processed)
+    out <- spectreasy:::.collect_reference_af_profiles(
+        control_df = control_df,
+        fcs_files = fcs_files,
+        detector_names = detector_names,
+        af_n_bands = 3L,
+        af_max_cells = 500L,
+        af_auto_max_bands = 100L,
+        af_min_cluster_events = 20L,
+        af_min_cluster_proportion = 0.005,
+        af_n_bands_sensitivity = 1.5,
+        fcs_files_all = fcs_files
+    )
+
+    expect_equal(captured$n_bands, 3L)
+    expect_equal(captured$event_count, 9L)
+    expect_equal(out$af_bank_info$source_count, 3L)
+    expect_equal(out$af_bank_info$requested_bands, 3L)
+    expect_equal(out$af_bank_info$mode, "pooled_af_sources")
+    expect_equal(out$af_bank_info$sources$source_type, rep("mapped_unstained", 3))
 })
 
 test_that("cell histogram gating keeps full middle negative mode for bright controls", {

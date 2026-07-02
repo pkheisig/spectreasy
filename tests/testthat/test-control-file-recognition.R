@@ -39,7 +39,6 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
     out_csv <- tempfile(fileext = ".csv")
     df <- spectreasy::create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         output_file = out_csv
     )
 
@@ -145,7 +144,6 @@ testthat::test_that("create_control_file warns when peak detection cannot read a
     testthat::expect_warning(
         df <- spectreasy::create_control_file(
             input_folder = scc_dir,
-            include_af_folder = FALSE,
             output_file = out_csv
         ),
         regexp = "Could not read FCS file while auto-detecting peak channel"
@@ -211,7 +209,6 @@ testthat::test_that("custom fluorophore overrides accept common filename forms",
     out_csv <- tempfile(fileext = ".csv")
     df <- spectreasy::create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         unknown_fluor_policy = "empty",
         output_file = out_csv,
         custom_fluorophores = c("odd-control-name" = "BUV737")
@@ -245,7 +242,6 @@ testthat::test_that("create_control_file keeps dictionary peak channel for known
 
     df <- spectreasy::create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         cytometer = "aurora",
         unknown_fluor_policy = "empty",
         custom_fluorophores = c("Mystery Dye (Beads)" = "Mystery Dye"),

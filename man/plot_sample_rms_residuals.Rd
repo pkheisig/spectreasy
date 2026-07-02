@@ -2,7 +2,7 @@
 % Please edit documentation in R/diagnostic_plots.R
 \name{plot_sample_rms_residuals}
 \alias{plot_sample_rms_residuals}
-\title{Plot RMS Residual Distribution Across Samples}
+\title{Plot Overall Detector Reconstruction Error Across Samples}
 \usage{
 plot_sample_rms_residuals(
   results,
@@ -27,5 +27,5 @@ plot_sample_rms_residuals(
 A `ggplot` object.
 }
 \description{
-Plot RMS Residual Distribution Across Samples
+Plot Overall Detector Reconstruction Error Across Samples
 }

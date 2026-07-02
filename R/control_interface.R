@@ -487,7 +487,7 @@
     ex <- trimws(as.character(existing_vals))
     ex <- ex[!is.na(ex) & nzchar(ex)]
     if (!any(toupper(ex) == "AF")) return("AF")
-    k <- 1
+    k <- 2
     repeat {
         cand <- paste0("AF_", k)
         if (!(cand %in% ex)) return(cand)
@@ -614,36 +614,7 @@
     do.call(rbind, rows)
 }
 
-.build_control_file_af_df <- function(af_files) {
-    if (length(af_files) == 0) {
-        return(.empty_control_file_df())
-    }
-
-    rows <- lapply(seq_along(af_files), function(i) {
-        fn <- af_files[i]
-        tag <- if (i == 1) "AF" else paste0("AF_", i)
-        data.frame(
-            filename = fn,
-            fluorophore = tag,
-            marker = "Autofluorescence",
-            channel = "",
-            control.type = "cells",
-            is.viability = "",
-            stringsAsFactors = FALSE
-        )
-    })
-    do.call(rbind, rows)
-}
-
-.combine_control_file_seed_rows <- function(scc_df, af_df) {
-    df <- do.call(rbind, list(af_df, scc_df))
-    df[!duplicated(df$filename), , drop = FALSE]
-}
-
-.control_file_row_path <- function(fn, input_folder, af_folder, include_af_folder = TRUE) {
-    if (isTRUE(include_af_folder) && file.exists(file.path(af_folder, fn))) {
-        return(file.path(af_folder, fn))
-    }
+.control_file_row_path <- function(fn, input_folder) {
     file.path(input_folder, fn)
 }
 
@@ -741,8 +712,6 @@
 
 .annotate_control_file_rows <- function(df,
                                         input_folder,
-                                        af_folder,
-                                        include_af_folder,
                                         cytometer,
                                         unknown_fluor_policy,
                                         ref) {
@@ -755,7 +724,7 @@
 
     for (i in seq_len(nrow(df))) {
         fn <- df$filename[i]
-        path <- .control_file_row_path(fn, input_folder = input_folder, af_folder = af_folder, include_af_folder = include_af_folder)
+        path <- .control_file_row_path(fn, input_folder = input_folder)
         summary <- .summarize_control_file_fcs(path, channel_alias_map = channel_alias_map)
         channel_alias_map <- summary$channel_alias_map
 
@@ -854,15 +823,13 @@
     list(df = df, auto_af_files = auto_af_files)
 }
 
-.finalize_control_file_df <- function(df, scc_files, af_files, auto_af_files = character()) {
+.finalize_control_file_df <- function(df, scc_files, auto_af_files = character()) {
     bead_negative_files <- scc_files[vapply(scc_files, .control_file_is_bead_negative_filename, logical(1))]
     primary_af_candidates <- scc_files[grep("Unstained|US_UT", scc_files, ignore.case = TRUE)]
     primary_af_candidates <- setdiff(primary_af_candidates, bead_negative_files)
     auto_af_files <- auto_af_files[!vapply(auto_af_files, .control_file_is_bead_negative_filename, logical(1))]
     auto_af_primary <- if (length(auto_af_files) > 0) auto_af_files[1] else ""
-    primary_af_file <- if (length(af_files) > 0) {
-        af_files[1]
-    } else if (length(primary_af_candidates) > 0) {
+    primary_af_file <- if (length(primary_af_candidates) > 0) {
         primary_af_candidates[1]
     } else if (nzchar(auto_af_primary)) {
         auto_af_primary
@@ -917,8 +884,6 @@
 #' Generates a spectreasy-compatible control CSV.
 #' 
 #' @param input_folder Directory containing single-stained control FCS files.
-#' @param af_folder Optional AF folder.
-#' @param include_af_folder Logical. Include AF folder files in the control file.
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @param default_control_type Deprecated. Kept for backward compatibility and ignored.
@@ -957,14 +922,11 @@
 #'
 #' control_df <- create_control_file(
 #'   input_folder = scc_dir,
-#'   include_af_folder = FALSE,
 #'   cytometer = "auto",
 #'   output_file = file.path(td, "fcs_mapping.csv")
 #' )
 #' head(control_df)
 create_control_file <- function(input_folder = "scc",
-                                af_folder = "af",
-                                include_af_folder = TRUE,
                                 cytometer = "auto",
                                 default_control_type = "cells",
                                 unknown_fluor_policy = c("empty", "by_channel", "filename"),
@@ -972,28 +934,19 @@ create_control_file <- function(input_folder = "scc",
                                 custom_fluorophores = NULL) {
     unknown_fluor_policy <- match.arg(unknown_fluor_policy)
     scc_files <- list.files(input_folder, pattern = "\\.fcs$", full.names = FALSE, ignore.case = TRUE)
-    af_files <- if (include_af_folder && dir.exists(af_folder)) {
-        list.files(af_folder, pattern = "\\.fcs$", full.names = FALSE, ignore.case = TRUE)
-    } else {
-        character(0)
-    }
 
     if (length(scc_files) == 0) stop("No FCS files found in ", input_folder)
 
     cytometer_resolved <- .resolve_cytometer_from_files(
         cytometer,
-        files = c(file.path(input_folder, scc_files), file.path(af_folder, af_files))
+        files = file.path(input_folder, scc_files)
     )
     ref <- .prepare_control_file_reference(cytometer_resolved)
-    scc_df <- .build_control_file_scc_df(scc_files, ref = ref, custom_fluorophores = custom_fluorophores)
-    af_df <- .build_control_file_af_df(af_files)
-    df <- .combine_control_file_seed_rows(scc_df = scc_df, af_df = af_df)
+    df <- .build_control_file_scc_df(scc_files, ref = ref, custom_fluorophores = custom_fluorophores)
 
     annotated <- .annotate_control_file_rows(
         df = df,
         input_folder = input_folder,
-        af_folder = af_folder,
-        include_af_folder = include_af_folder,
         cytometer = cytometer_resolved,
         unknown_fluor_policy = unknown_fluor_policy,
         ref = ref
@@ -1001,7 +954,6 @@ create_control_file <- function(input_folder = "scc",
     df <- .finalize_control_file_df(
         df = annotated$df,
         scc_files = scc_files,
-        af_files = af_files,
         auto_af_files = annotated$auto_af_files
     )
 
@@ -1009,15 +961,14 @@ create_control_file <- function(input_folder = "scc",
     df
 }
 
-#' Get Spectra via Internal Backend (Robust Multi-AF)
+#' Get Spectra via Internal Backend
 #'
-#' Extracts SCC signatures using internal logic and optional AF signatures from
-#' the `af/` folder, then combines them for downstream unmixing.
+#' Extracts SCC signatures using internal logic. AF/unstained controls should be
+#' mapped as files inside `control_dir`.
 #'
 #' @param flow_frame A `flowFrame` used to determine detector ordering.
 #' @param control_file Path to spectreasy-compatible control CSV.
 #' @param control_dir Directory containing SCC FCS files.
-#' @param af_dir Directory containing optional AF FCS files.
 #' @param method Reserved for future method selection.
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
@@ -1037,7 +988,6 @@ create_control_file <- function(input_folder = "scc",
 get_control_spectra <- function(flow_frame,
                                 control_file = "fcs_mapping.csv",
                                 control_dir = "scc",
-                                af_dir = "af",
                                 method = "WLS",
                                 cytometer = "auto") {
     # 1. Get detector info
@@ -1048,51 +998,8 @@ get_control_spectra <- function(flow_frame,
 
     control_file <- .resolve_control_file_path(control_file)
 
-    # 2. Extract SCC signatures
     message("  - Extracting reference signatures from single-color controls...")
     control_df <- utils::read.csv(control_file, stringsAsFactors = FALSE, check.names = FALSE)
     M_scc <- build_reference_matrix(input_folder = control_dir, control_df = control_df, cytometer = cytometer_resolved)
-    M_scc <- M_scc[, detector_names, drop = FALSE]
-
-    # 3. Extract Multi-AF signatures
-    if (dir.exists(af_dir)) {
-        message("  - Extracting additional AF signatures from '", af_dir, "' folder...")
-        M_af <- extract_af_signatures(af_dir, detector_names)
-        M_expanded <- rbind(M_scc, M_af)
-    } else {
-        M_expanded <- M_scc
-    }
-    
-    return(M_expanded[, detector_names, drop = FALSE])
-}
-
-#' Internal Helper: Extract Gated AF Signatures
-#' @noRd
-extract_af_signatures <- function(af_dir, detector_names) {
-    af_files <- list.files(af_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-    if (length(af_files) == 0) return(matrix(0, nrow = 0, ncol = length(detector_names)))
-    
-    spectra <- list()
-    for (f in af_files) {
-        ff <- flowCore::read.FCS(f, transformation = FALSE, truncate_max_range = FALSE)
-        raw_data <- flowCore::exprs(ff)
-        pd <- flowCore::pData(flowCore::parameters(ff))
-        fsc <- pd$name[grepl("^FSC", pd$name) & grepl("-A$", pd$name)][1]
-        ssc <- pd$name[grepl("^SSC", pd$name) & grepl("-A$", pd$name)][1]
-        
-        # 20-80% quantile gate on FSC/SSC to isolate main population
-        idx <- which(raw_data[, fsc] > quantile(raw_data[, fsc], 0.2) &
-                     raw_data[, fsc] < quantile(raw_data[, fsc], 0.8) &
-                     raw_data[, ssc] > quantile(raw_data[, ssc], 0.2) &
-                     raw_data[, ssc] < quantile(raw_data[, ssc], 0.8))
-        
-        if (length(idx) < 10) idx <- seq_len(nrow(raw_data)) 
-        
-        sig <- apply(raw_data[idx, detector_names, drop = FALSE], 2, median)
-        sig_norm <- sig / max(sig)
-        
-        tag <- if(length(spectra) == 0) "AF" else paste0("AF_", length(spectra) + 1)
-        spectra[[tag]] <- sig_norm
-    }
-    return(do.call(rbind, spectra))
+    M_scc[, detector_names, drop = FALSE]
 }

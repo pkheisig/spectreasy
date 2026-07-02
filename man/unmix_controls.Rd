@@ -17,12 +17,10 @@ unmix_controls(
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
   af_n_bands = "auto",
-  af_bands_per_file = 5,
-  af_auto_max_bands = 20,
+  af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
   af_n_bands_sensitivity = 1.5,
-  include_multi_af = FALSE,
   rwls_max_iter = 1L,
   unmix_threads = 1L,
   save_qc_plots = FALSE,
@@ -58,16 +56,12 @@ they are present in the SCC folder or control mapping.}
 
 \item{seed}{Optional integer seed for deterministic subsampling and plotting.}
 
-\item{af_n_bands}{Number of AF bands to extract from the unstained control
-when only one AF source is available. Use `"auto"` to select the count
-from AF event shapes and prune near-duplicate AF signatures. Default is
-`"auto"`.}
+\item{af_n_bands}{Number of k-means AF basis signatures to extract from
+pooled unstained/AF control events, or `"auto"` to keep distinct signatures
+from up to `af_auto_max_bands` k-means centers. Default is `"auto"`.}
 
-\item{af_bands_per_file}{Number of AF bands requested per AF file when
-multiple AF sources are pooled. Default is 5.}
-
-\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.
-Default is 20.}
+\item{af_auto_max_bands}{Maximum k-means centers that `"auto"` may score.
+Default is 100.}
 
 \item{af_min_cluster_events}{Minimum number of AF events required to keep a
 k-means AF cluster. Used together with `af_min_cluster_proportion`.}
@@ -75,12 +69,8 @@ k-means AF cluster. Used together with `af_min_cluster_proportion`.}
 \item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
 events required to keep a k-means AF cluster. Default is 0.005.}
 
-\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
-when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-select fewer bands before near-duplicate AF signatures are pruned. Default
-is `1.5`.}
-
-\item{include_multi_af}{Logical; whether to include additional AF files from `af_dir`. Default is FALSE.}
+\item{af_n_bands_sensitivity}{Compatibility argument retained for older
+workflows.}
 
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
 iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the

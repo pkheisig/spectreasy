@@ -35,8 +35,7 @@
 # Returns a validated list containing these parameters.
 .validate_build_reference_af_args <- function(af_n_bands,
                                               af_max_cells,
-                                              af_bands_per_file = 5,
-                                              af_auto_max_bands = 20,
+                                              af_auto_max_bands = 100,
                                               af_min_cluster_events = 20,
                                               af_min_cluster_proportion = 0.005,
                                               af_n_bands_sensitivity = 1.5) {
@@ -48,11 +47,6 @@
     }
     if (!identical(af_n_bands, "auto") && (!is.finite(af_n_bands) || is.na(af_n_bands) || af_n_bands < 1)) {
         stop("af_n_bands must be an integer >= 1 or \"auto\".")
-    }
-
-    af_bands_per_file <- as.integer(af_bands_per_file[1])
-    if (!is.finite(af_bands_per_file) || is.na(af_bands_per_file) || af_bands_per_file < 1) {
-        stop("af_bands_per_file must be an integer >= 1.")
     }
 
     af_max_cells <- as.integer(af_max_cells[1])
@@ -87,7 +81,6 @@
 
     list(
         af_n_bands = af_n_bands,
-        af_bands_per_file = af_bands_per_file,
         af_max_cells = af_max_cells,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
@@ -95,6 +88,8 @@
         af_n_bands_sensitivity = af_n_bands_sensitivity
     )
 }
+
+.reference_af_auto_similarity_threshold <- 0.99999
 
 .reference_min_af_cluster_size <- function(n_events,
                                            min_cluster_events = 20,
@@ -105,240 +100,113 @@
     )
 }
 
-.reference_af_sensitivity_to_min_improvement <- function(sensitivity) {
-    as.numeric(sensitivity) / 200
-}
-
-.reference_af_max_cosine_similarity <- function() {
-    0.995
-}
-
-.prune_reference_similar_af_centers <- function(centers,
-                                                max_cosine = .reference_af_max_cosine_similarity()) {
+.reference_normalize_af_centers <- function(centers) {
     centers <- as.matrix(centers)
-    n_centers <- nrow(centers)
-    if (n_centers <= 1) {
-        return(list(centers = centers, kept = seq_len(n_centers), pruned = integer(0), max_cosine = max_cosine))
-    }
-
-    norms <- sqrt(rowSums(centers^2))
-    usable <- is.finite(norms) & norms > 0
-    if (!any(usable)) {
-        return(list(centers = centers[1, , drop = FALSE], kept = 1L, pruned = seq.int(2L, n_centers), max_cosine = max_cosine))
-    }
-
-    keep <- integer()
-    for (i in seq_len(n_centers)) {
-        if (!usable[i]) {
-            next
+    centers <- t(apply(centers, 1, function(v) {
+        v <- pmax(v, 0)
+        vmax <- max(v, na.rm = TRUE)
+        if (!is.finite(vmax) || vmax <= 0) {
+            return(rep(0, length(v)))
         }
-        if (length(keep) == 0) {
-            keep <- i
-            next
-        }
-        denom <- norms[i] * norms[keep]
-        cosine <- as.numeric((centers[i, , drop = FALSE] %*% t(centers[keep, , drop = FALSE])) / denom)
-        if (!any(is.finite(cosine) & cosine >= max_cosine)) {
-            keep <- c(keep, i)
-        }
+        v / vmax
+    }))
+    if (is.null(dim(centers))) {
+        centers <- matrix(centers, nrow = 1L)
     }
-
-    if (length(keep) == 0) {
-        keep <- which(usable)[1]
-    }
-    pruned <- setdiff(seq_len(n_centers), keep)
-    list(
-        centers = centers[keep, , drop = FALSE],
-        kept = keep,
-        pruned = pruned,
-        max_cosine = max_cosine
-    )
+    centers
 }
 
-.select_reference_kmeans_improvement_af_band_count <- function(scores,
-                                                               max_bands,
-                                                               min_cluster_size,
-                                                               min_improvement,
-                                                               nstart = 20,
-                                                               iter.max = 200) {
-    scores <- as.matrix(scores)
-    n_events <- nrow(scores)
-    max_bands <- min(as.integer(max_bands), n_events)
-    if (!is.finite(max_bands) || is.na(max_bands) || max_bands < 2 || n_events < 2) {
-        return(NULL)
+.reference_cosine_matrix <- function(A, B) {
+    A <- as.matrix(A)
+    B <- as.matrix(B)
+    if (nrow(A) == 0 || nrow(B) == 0) {
+        return(matrix(numeric(), nrow = nrow(A), ncol = nrow(B)))
     }
-
-    wss <- rep(NA_real_, max_bands)
-    min_sizes <- rep(NA_integer_, max_bands)
-    center <- matrix(colMeans(scores, na.rm = TRUE), nrow = 1)
-    wss[1] <- sum(rowSums(sweep(scores, 2, center[1, ], FUN = "-")^2))
-    min_sizes[1] <- n_events
-
-    for (k in seq.int(2L, max_bands)) {
-        fit <- tryCatch(
-            stats::kmeans(scores, centers = k, nstart = nstart, iter.max = iter.max),
-            error = function(e) NULL
-        )
-        if (!is.null(fit)) {
-            wss[k] <- fit$tot.withinss
-            min_sizes[k] <- min(tabulate(fit$cluster, nbins = k))
-        }
-    }
-
-    improvement <- rep(NA_real_, max_bands)
-    prev_idx <- seq_len(max_bands - 1L)
-    next_idx <- seq.int(2L, max_bands)
-    valid_pairs <- is.finite(wss[next_idx]) & is.finite(wss[prev_idx]) & wss[prev_idx] > 0
-    improvement[next_idx[valid_pairs]] <- (wss[prev_idx[valid_pairs]] - wss[next_idx[valid_pairs]]) / wss[prev_idx[valid_pairs]]
-
-    n_bands <- 1L
-    if (max_bands >= 2) {
-        for (k in seq.int(2L, max_bands)) {
-            if (!is.finite(improvement[k]) || improvement[k] < min_improvement || min_sizes[k] < min_cluster_size) {
-                break
-            }
-            n_bands <- k
-        }
-    }
-
-    list(
-        n_bands = as.integer(n_bands),
-        method = "kmeans_sensitivity_on_pcs",
-        min_improvement = min_improvement,
-        max_bands = max_bands,
-        min_cluster_size = min_cluster_size,
-        hit_max_bands = as.integer(n_bands) >= as.integer(max_bands),
-        wss = wss,
-        improvement = improvement,
-        min_cluster_sizes = min_sizes
-    )
+    A_norm <- sqrt(rowSums(A^2)) + 1e-9
+    B_norm <- sqrt(rowSums(B^2)) + 1e-9
+    (A %*% t(B)) / (A_norm %o% B_norm)
 }
 
-.select_reference_auto_af_band_count <- function(af_shape,
-                                                max_bands = 20,
-                                                pca_variance = 0.98,
-                                                min_cluster_size = 20,
-                                                min_cluster_proportion = 0.005,
-                                                sensitivity = 1.5) {
+.reference_kmeans_af_centers <- function(af_shape,
+                                         n_centers,
+                                         min_cluster_events = 20,
+                                         min_cluster_proportion = 0.005,
+                                         nstart = 10,
+                                         iter.max = 100) {
     af_shape <- as.matrix(af_shape)
-    n_events <- nrow(af_shape)
-    if (n_events < 2 || ncol(af_shape) < 2) {
-        return(list(n_bands = 1L, method = "fallback", reason = "too_few_events_or_detectors"))
+    if (nrow(af_shape) == 0) {
+        return(list(centers = af_shape, cluster_sizes = integer(), requested_centers = as.integer(n_centers)))
+    }
+    unique_count <- nrow(unique(as.data.frame(round(af_shape, digits = 8))))
+    n_eff <- min(as.integer(n_centers), nrow(af_shape), unique_count)
+    if (!is.finite(n_eff) || is.na(n_eff) || n_eff < 1L) {
+        n_eff <- 1L
+    }
+
+    if (n_eff == 1L) {
+        centers <- matrix(colMeans(af_shape, na.rm = TRUE), nrow = 1L)
+        colnames(centers) <- colnames(af_shape)
+        cluster_sizes <- nrow(af_shape)
+    } else {
+        km <- stats::kmeans(af_shape, centers = n_eff, nstart = nstart, iter.max = iter.max)
+        centers <- as.matrix(km$centers)
+        cluster_sizes <- tabulate(km$cluster, nbins = nrow(centers))
     }
 
     min_cluster_size <- .reference_min_af_cluster_size(
-        n_events = n_events,
-        min_cluster_events = min_cluster_size,
+        n_events = nrow(af_shape),
+        min_cluster_events = min_cluster_events,
         min_cluster_proportion = min_cluster_proportion
     )
-    rounded_shape <- as.data.frame(round(af_shape, digits = 6))
-    distinct_n <- nrow(unique(rounded_shape))
-    max_bands <- min(as.integer(max_bands), n_events, distinct_n)
-    if (!is.finite(max_bands) || is.na(max_bands) || max_bands < 2) {
-        return(list(n_bands = 1L, method = "fallback", reason = "one_distinct_shape"))
-    }
-    if (distinct_n <= max_bands) {
-        shape_counts <- table(do.call(paste, c(rounded_shape, sep = "\r")))
-        if (all(shape_counts >= min_cluster_size)) {
-            return(list(
-                n_bands = as.integer(distinct_n),
-                method = "distinct_shape_count",
-                max_bands = max_bands,
-                min_cluster_size = min_cluster_size,
-                min_cluster_proportion = min_cluster_proportion,
-                hit_max_bands = identical(as.integer(distinct_n), as.integer(max_bands)),
-                reason = "small_exact_shape_set"
-            ))
-        }
-    }
+    ord <- order(cluster_sizes, decreasing = TRUE)
+    centers <- centers[ord, , drop = FALSE]
+    cluster_sizes <- cluster_sizes[ord]
 
-    pc <- tryCatch(
-        stats::prcomp(af_shape, center = TRUE, scale. = FALSE, rank. = min(max_bands, ncol(af_shape), n_events - 1L)),
-        error = function(e) NULL
+    list(
+        centers = centers,
+        cluster_sizes = cluster_sizes,
+        min_cluster_size = min_cluster_size,
+        requested_centers = as.integer(n_centers),
+        effective_centers = as.integer(n_eff)
     )
-    if (is.null(pc) || length(pc$sdev) == 0 || !any(is.finite(pc$sdev) & pc$sdev > 0)) {
-        return(list(n_bands = 1L, method = "fallback", reason = "pca_failed"))
+}
+
+.reference_select_distinct_af_centers <- function(centers,
+                                                  cluster_sizes,
+                                                  min_cluster_size,
+                                                  similarity_threshold = .reference_af_auto_similarity_threshold) {
+    centers <- as.matrix(centers)
+    if (nrow(centers) == 0) {
+        return(list(centers = centers, cluster_sizes = integer(), selected = integer()))
     }
 
-    eig <- pc$sdev^2
-    eig <- eig[is.finite(eig) & eig > 0]
-    cum_var <- cumsum(eig) / sum(eig)
-    pca_n <- which(cum_var >= pca_variance)[1]
-    if (is.na(pca_n)) pca_n <- length(eig)
-    pca_n <- min(max(1L, as.integer(pca_n)), max_bands)
+    keep_size <- cluster_sizes >= min_cluster_size
+    if (!any(keep_size)) {
+        keep_size[1L] <- TRUE
+    }
+    centers <- centers[keep_size, , drop = FALSE]
+    cluster_sizes <- cluster_sizes[keep_size]
 
-    if (!is.null(sensitivity)) {
-        improvement_n <- min(10L, pca_n, ncol(pc$x))
-        improvement_scores <- pc$x[, seq_len(improvement_n), drop = FALSE]
-        improvement_selection <- .select_reference_kmeans_improvement_af_band_count(
-            scores = improvement_scores,
-            max_bands = max_bands,
-            min_cluster_size = min_cluster_size,
-            min_improvement = .reference_af_sensitivity_to_min_improvement(sensitivity)
-        )
-        if (!is.null(improvement_selection)) {
-            improvement_selection$sensitivity <- sensitivity
-            improvement_selection$pca_components <- improvement_n
-            improvement_selection$cumulative_variance <- cum_var[improvement_n]
-            return(improvement_selection)
+    selected <- integer()
+    for (i in seq_len(nrow(centers))) {
+        if (length(selected) == 0L) {
+            selected <- i
+            next
+        }
+        sim <- .reference_cosine_matrix(centers[i, , drop = FALSE], centers[selected, , drop = FALSE])
+        max_sim <- suppressWarnings(max(sim, na.rm = TRUE))
+        if (!is.finite(max_sim) || max_sim < similarity_threshold) {
+            selected <- c(selected, i)
         }
     }
-
-    scores <- pc$x[, seq_len(min(pca_n, ncol(pc$x))), drop = FALSE]
-    if (ncol(scores) == 0 || nrow(scores) <= ncol(scores)) {
-        return(list(
-            n_bands = pca_n,
-            method = "pca_variance",
-            pca_components = pca_n,
-            cumulative_variance = cum_var[pca_n],
-            max_bands = max_bands,
-            min_cluster_size = min_cluster_size,
-            min_cluster_proportion = min_cluster_proportion,
-            hit_max_bands = identical(as.integer(pca_n), as.integer(max_bands)),
-            reason = "not_enough_events_for_gmm"
-        ))
-    }
-
-    fit <- tryCatch(
-        suppressWarnings(mclust::Mclust(scores, G = seq_len(max_bands), verbose = FALSE)),
-        error = function(e) NULL
-    )
-    if (is.null(fit) || is.null(fit$G) || !is.finite(fit$G)) {
-        return(list(
-            n_bands = pca_n,
-            method = "pca_variance",
-            pca_components = pca_n,
-            cumulative_variance = cum_var[pca_n],
-            max_bands = max_bands,
-            min_cluster_size = min_cluster_size,
-            min_cluster_proportion = min_cluster_proportion,
-            hit_max_bands = identical(as.integer(pca_n), as.integer(max_bands)),
-            reason = "gmm_failed"
-        ))
-    }
-
-    n_bands <- as.integer(fit$G)
-    raw_n_bands <- n_bands
-    if (!is.null(fit$classification)) {
-        cluster_sizes <- table(factor(fit$classification, levels = seq_len(n_bands)))
-        tiny_clusters <- sum(cluster_sizes < min_cluster_size)
-        if (tiny_clusters > 0 && n_bands > 1) {
-            n_bands <- max(1L, n_bands - tiny_clusters)
-        }
+    if (length(selected) == 0L) {
+        selected <- 1L
     }
 
     list(
-        n_bands = min(max(1L, n_bands), max_bands),
-        method = "gmm_bic_on_pcs",
-        pca_components = pca_n,
-        cumulative_variance = cum_var[pca_n],
-        max_bands = max_bands,
-        raw_selected_bands = raw_n_bands,
-        min_cluster_size = min_cluster_size,
-        min_cluster_proportion = min_cluster_proportion,
-        hit_max_bands = raw_n_bands >= max_bands,
-        bic = if (!is.null(fit$bic)) fit$bic else NA_real_,
-        model_name = if (!is.null(fit$modelName)) fit$modelName else NA_character_
+        centers = centers[selected, , drop = FALSE],
+        cluster_sizes = cluster_sizes[selected],
+        selected = selected
     )
 }
 
@@ -381,20 +249,12 @@
 
 # Prepares the complete list of FCS files to be processed.
 # Locates FCS files in the input folder and applies AF filtering,
-# and optionally appends additional AF files from an external directory (af_dir).
 # Returns a list containing 'fcs_files' (standard controls) and 'fcs_files_all' (all controls including AF).
-.prepare_reference_file_set <- function(input_folder, include_multi_af = FALSE, af_dir = "af", exclude_af = FALSE) {
-    fcs_files <- list.files(input_folder, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-    if (length(fcs_files) == 0) stop("No FCS files found in ", input_folder)
+.prepare_reference_file_set <- function(input_folder, exclude_af = FALSE) {
+    fcs_files_all <- list.files(input_folder, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+    if (length(fcs_files_all) == 0) stop("No FCS files found in ", input_folder)
 
-    fcs_files <- .filter_reference_af_files(fcs_files, input_folder = input_folder, exclude_af = exclude_af)
-
-    fcs_files_all <- fcs_files
-    if (!isTRUE(exclude_af) && isTRUE(include_multi_af) && dir.exists(af_dir)) {
-        af_files <- list.files(af_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-        message("Found ", length(af_files), " extra AF files in '", af_dir, "'")
-        fcs_files_all <- c(af_files, fcs_files)
-    }
+    fcs_files <- .filter_reference_af_files(fcs_files_all, input_folder = input_folder, exclude_af = exclude_af)
 
     list(fcs_files = fcs_files, fcs_files_all = fcs_files_all)
 }
@@ -670,16 +530,16 @@
     peak_vals
 }
 
-# Extracts normalized Autofluorescence (AF) median profiles from gated unstained events.
-# Uses K-means clustering on the scale-free spectral shapes to partition AF signatures.
-# Each centroid is normalized by its peak detector to yield a relative signature from 0 to 1.
+# Extracts normalized Autofluorescence (AF) profiles from gated unstained events.
+# Uses k-means on scale-free spectral shapes to build the AF bank.
+# Each center is normalized by its peak detector to yield a relative signature from 0 to 1.
 # Returns a list with the raw median spectrum and a matrix of normalized AF basis signatures.
 .extract_reference_af_profiles <- function(ff_af = NULL,
                                            detector_names,
                                            n_bands = "auto",
                                            max_cells = 50000,
                                            af_events = NULL,
-                                           auto_max_bands = 20,
+                                           auto_max_bands = 100,
                                            min_cluster_events = 20,
                                            min_cluster_proportion = 0.005,
                                            n_bands_sensitivity = 1.5) {
@@ -723,63 +583,50 @@
     af_shape <- af_pos[keep, , drop = FALSE] / row_scale[keep]
     selection <- NULL
     if (is.character(n_bands) && identical(tolower(trimws(n_bands[1])), "auto")) {
-        selection <- .select_reference_auto_af_band_count(
-            af_shape,
-            max_bands = auto_max_bands,
-            min_cluster_size = min_cluster_events,
-            min_cluster_proportion = min_cluster_proportion,
-            sensitivity = n_bands_sensitivity
-        )
-        n_bands <- selection$n_bands
-    }
-    n_eff <- min(as.integer(n_bands), nrow(af_shape))
-    if (n_eff < 1) n_eff <- 1
-    distinct_n <- nrow(unique(as.data.frame(round(af_shape, digits = 6))))
-    n_eff <- min(n_eff, max(distinct_n, 1L))
-
-    if (n_eff == 1) {
-        centers <- matrix(colMeans(af_shape, na.rm = TRUE), nrow = 1)
-    } else {
-        km <- stats::kmeans(af_shape, centers = n_eff, nstart = 10, iter.max = 100)
-        centers <- km$centers
-        cluster_sizes <- as.numeric(table(factor(km$cluster, levels = seq_len(n_eff))))
-        min_cluster_size <- .reference_min_af_cluster_size(
-            n_events = nrow(af_shape),
+        km <- .reference_kmeans_af_centers(
+            af_shape = af_shape,
+            n_centers = auto_max_bands,
             min_cluster_events = min_cluster_events,
             min_cluster_proportion = min_cluster_proportion
         )
-        keep_idx <- which(cluster_sizes >= min_cluster_size)
-        if (length(keep_idx) == 0) keep_idx <- which.max(cluster_sizes)
-        centers <- centers[keep_idx, , drop = FALSE]
-        cluster_sizes <- cluster_sizes[keep_idx]
-        ord <- order(cluster_sizes, decreasing = TRUE)
-        centers <- centers[ord, , drop = FALSE]
-    }
-
-    centers <- t(apply(centers, 1, function(v) {
-        v <- pmax(v, 0)
-        vmax <- max(v, na.rm = TRUE)
-        if (!is.finite(vmax) || vmax <= 0) {
-            return(rep(0, length(v)))
-        }
-        v / vmax
-    }))
-
-    if (is.null(dim(centers))) {
-        centers <- matrix(centers, nrow = 1)
-    }
-
-    if (!is.null(selection) && nrow(centers) > 1) {
-        raw_center_count <- nrow(centers)
-        pruned <- .prune_reference_similar_af_centers(centers)
-        centers <- pruned$centers
-        selection$raw_selected_bands <- selection$n_bands
-        selection$n_bands <- nrow(centers)
-        selection$final_bands <- nrow(centers)
-        selection$pruned_similar_bands <- length(pruned$pruned)
-        selection$similarity_prune_max_cosine <- pruned$max_cosine
-        selection$raw_center_count <- raw_center_count
-        selection$kept_center_indices <- pruned$kept
+        centers_norm <- .reference_normalize_af_centers(km$centers)
+        distinct <- .reference_select_distinct_af_centers(
+            centers = centers_norm,
+            cluster_sizes = km$cluster_sizes,
+            min_cluster_size = km$min_cluster_size
+        )
+        centers <- distinct$centers
+        selection <- list(
+            method = "kmeans_distinct",
+            n_bands = nrow(centers),
+            requested_bands = "auto",
+            max_bands = as.integer(auto_max_bands),
+            raw_center_count = nrow(km$centers),
+            raw_selected_bands = nrow(km$centers),
+            final_bands = nrow(centers),
+            cluster_sizes = distinct$cluster_sizes,
+            min_cluster_size = km$min_cluster_size,
+            similarity_threshold = .reference_af_auto_similarity_threshold,
+            selected_center_indices = distinct$selected,
+            hit_max_bands = nrow(km$centers) >= as.integer(auto_max_bands)
+        )
+    } else {
+        km <- .reference_kmeans_af_centers(
+            af_shape = af_shape,
+            n_centers = as.integer(n_bands),
+            min_cluster_events = 1L,
+            min_cluster_proportion = 0
+        )
+        centers <- .reference_normalize_af_centers(km$centers)
+        selection <- list(
+            method = "kmeans_fixed",
+            n_bands = nrow(centers),
+            requested_bands = as.integer(n_bands),
+            raw_center_count = nrow(km$centers),
+            final_bands = nrow(centers),
+            cluster_sizes = km$cluster_sizes,
+            hit_max_bands = FALSE
+        )
     }
     rownames(centers) <- c("AF", if (nrow(centers) > 1) paste0("AF_", seq.int(2, nrow(centers))) else NULL)
     colnames(centers) <- detector_names
@@ -894,7 +741,6 @@
                                            fcs_files,
                                            detector_names,
                                            af_n_bands,
-                                           af_bands_per_file,
                                            af_max_cells,
                                            af_auto_max_bands,
                                            af_min_cluster_events,
@@ -914,22 +760,41 @@
 
     af_paths <- character()
     af_source_types <- character()
-    if (!is.null(af_fn)) {
-        af_path <- fcs_files[grep(af_fn, fcs_files, fixed = TRUE)]
+    fcs_keys <- tools::file_path_sans_ext(basename(fcs_files_all))
+    if (!is.null(control_df) && nrow(control_df) > 0) {
+        af_rows <- .is_af_control_row(
+            fluorophore = if ("fluorophore" %in% colnames(control_df)) control_df$fluorophore else NULL,
+            marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
+            filename = control_df$filename
+        )
+        if (any(af_rows)) {
+            af_df <- control_df[af_rows, , drop = FALSE]
+            control_type <- if ("control.type" %in% colnames(af_df)) {
+                tolower(trimws(as.character(af_df$control.type)))
+            } else {
+                rep("", nrow(af_df))
+            }
+            bead_negative <- vapply(af_df$filename, .reference_is_bead_negative_file, logical(1))
+            af_df <- af_df[control_type != "beads" & !bead_negative, , drop = FALSE]
+            if (nrow(af_df) > 0) {
+                af_file_keys <- tools::file_path_sans_ext(basename(as.character(af_df$filename)))
+                hits <- match(af_file_keys, fcs_keys)
+                hits <- hits[!is.na(hits)]
+                if (length(hits) > 0) {
+                    af_paths <- c(af_paths, fcs_files_all[hits])
+                    af_source_types <- c(af_source_types, rep("mapped_unstained", length(hits)))
+                }
+            }
+        }
+    }
+    if (length(af_paths) == 0 && !is.null(af_fn)) {
+        af_path <- fcs_files_all[match(af_fn, fcs_keys)]
+        af_path <- af_path[!is.na(af_path)]
         if (length(af_path) > 0) {
             af_paths <- c(af_paths, af_path[1])
             af_source_types <- c(af_source_types, "primary_unstained")
         }
     }
-    extra_af_paths <- fcs_files_all[vapply(
-        fcs_files_all,
-        .is_reference_extra_af_file,
-        logical(1),
-        include_multi_af = .get_reference_config_value(config, "include_multi_af", FALSE),
-        af_dir = .get_reference_config_value(config, "af_dir", "af")
-    )]
-    af_paths <- c(af_paths, extra_af_paths)
-    af_source_types <- c(af_source_types, rep("extra_af", length(extra_af_paths)))
     keep_unique <- !duplicated(normalizePath(af_paths, mustWork = FALSE))
     af_paths <- af_paths[keep_unique]
     af_source_types <- af_source_types[keep_unique]
@@ -945,11 +810,7 @@
 
         af_events <- do.call(rbind, lapply(af_gated_list, `[[`, "events"))
         n_af_sources <- length(af_gated_list)
-        requested_bands <- if (n_af_sources > 1) {
-            n_af_sources * af_bands_per_file
-        } else {
-            af_n_bands
-        }
+        requested_bands <- af_n_bands
         af_profiles <- .extract_reference_af_profiles(
             detector_names = detector_names,
             n_bands = requested_bands,
@@ -970,14 +831,13 @@
             sources = af_sources,
             pooled_events = nrow(af_events),
             requested_bands = requested_bands,
-            af_bands_per_file = if (n_af_sources > 1) af_bands_per_file else NA_integer_,
             derived_bands = if (!is.null(af_signatures_norm)) nrow(af_signatures_norm) else 0L,
             af_auto_max_bands = if (identical(requested_bands, "auto")) af_auto_max_bands else NA_integer_,
             af_min_cluster_events = af_min_cluster_events,
             af_min_cluster_proportion = af_min_cluster_proportion,
             af_n_bands_sensitivity = if (identical(requested_bands, "auto")) af_n_bands_sensitivity else NA_real_,
             auto_selection = af_profiles$selection,
-            mode = if (n_af_sources > 1) "pooled_multi_af_per_file_scaled" else "single_af"
+            mode = if (n_af_sources > 1) "pooled_af_sources" else "single_af"
         )
         if (!is.null(af_signatures_norm)) {
             msg <- if (n_af_sources == 1) {
@@ -1002,20 +862,6 @@
     }
 
     list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info)
-}
-
-# Checks if a file path points to an extra autofluorescence file.
-# Specifically checks if the file resides in the designated AF directory and include_multi_af is enabled.
-# Returns TRUE if it is an extra AF file, otherwise FALSE.
-.is_reference_extra_af_file <- function(fcs_file, include_multi_af = FALSE, af_dir = "af") {
-    if (!isTRUE(include_multi_af)) {
-        return(FALSE)
-    }
-    grepl(
-        normalizePath(af_dir, mustWork = FALSE),
-        normalizePath(fcs_file, mustWork = FALSE),
-        fixed = TRUE
-    )
 }
 
 # Validates raw FCS data for corruption or extreme values.
@@ -2499,11 +2345,7 @@
     sn_ext <- basename(fcs_file)
     sn <- tools::file_path_sans_ext(sn_ext)
 
-    is_extra_af <- .is_reference_extra_af_file(
-        fcs_file = fcs_file,
-        include_multi_af = config$include_multi_af,
-        af_dir = config$af_dir
-    )
+    is_extra_af <- FALSE
 
     row_info <- .get_control_rows_for_reference(control_df, c(sn_ext, sn))
     sample_info <- .resolve_reference_sample_type(
@@ -2764,33 +2606,22 @@
 #'   When `FALSE` (default), the function returns the matrix without writing QC files.
 #' @param control_df Optional control mapping as a data.frame or CSV path.
 #'   Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.
-#' @param include_multi_af Logical; if `TRUE`, include additional AF controls from `af_dir`.
 #' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls entirely,
-#'   even when they are present in `control_df`, the SCC folder, or `af_dir`.
-#' @param af_dir Directory with extra AF controls when `include_multi_af = TRUE`.
-#' @param af_n_bands Number of AF basis signatures to extract from the pooled
-#'   unstained/AF control when only one AF source is available (`1` = classic
-#'   single AF signature). The default, `"auto"`, chooses the number from AF
-#'   event shapes and prunes near-duplicate AF signatures.
-#' @param af_bands_per_file Number of AF basis signatures requested per AF file
-#'   when multiple AF sources are pooled (`5` files with the default `5` yields
-#'   up to `25` shared AF bank signatures).
+#'   even when they are present in `control_df` or the SCC folder.
+#' @param af_n_bands Number of k-means AF basis signatures to extract from
+#'   pooled unstained/AF control events, or `"auto"` to keep distinct signatures
+#'   from up to `af_auto_max_bands` k-means centers. Default is `"auto"`.
 #' @param af_max_cells Maximum number of scatter-gated AF events used when
 #'   deriving AF basis signatures.
-#' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
-#'   If auto selection repeatedly reaches this value, inspect QC and consider
-#'   increasing it.
+#' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
 #'   k-means AF cluster. Used together with `af_min_cluster_proportion`; the
 #'   larger threshold is applied.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
 #'   events required to keep a k-means AF cluster. The default `0.005` means
 #'   0.5\% of the AF events used for extraction.
-#' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
-#'   when `af_n_bands = "auto"`. Lower values allow richer AF models; higher
-#'   values select fewer bands before near-duplicate AF signatures are pruned.
-#'   Values must be between `0.1` and `5`; the default `1.5` corresponds to a
-#'   0.75\% minimum k-means fit improvement.
+#' @param af_n_bands_sensitivity Compatibility argument retained for older
+#'   workflows.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
@@ -2838,13 +2669,10 @@ build_reference_matrix <- function(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  include_multi_af = FALSE,
   exclude_af = FALSE,
-  af_dir = "af",
   af_n_bands = "auto",
-  af_bands_per_file = 5,
   af_max_cells = 50000,
-  af_auto_max_bands = 20,
+  af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
   af_n_bands_sensitivity = 1.5,
@@ -2869,14 +2697,12 @@ build_reference_matrix <- function(
     af_args <- .validate_build_reference_af_args(
         af_n_bands = af_n_bands,
         af_max_cells = af_max_cells,
-        af_bands_per_file = af_bands_per_file,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
         af_n_bands_sensitivity = af_n_bands_sensitivity
     )
     af_n_bands <- af_args$af_n_bands
-    af_bands_per_file <- af_args$af_bands_per_file
     af_max_cells <- af_args$af_max_cells
     af_auto_max_bands <- af_args$af_auto_max_bands
     af_min_cluster_events <- af_args$af_min_cluster_events
@@ -2888,8 +2714,6 @@ build_reference_matrix <- function(
     sample_patterns <- get_fluorophore_patterns()
     file_info <- .prepare_reference_file_set(
         input_folder = input_folder,
-        include_multi_af = include_multi_af,
-        af_dir = af_dir,
         exclude_af = exclude_af
     )
     out_path <- .prepare_reference_output_path(output_folder = output_folder, save_qc_plots = save_qc_plots)
@@ -2897,8 +2721,6 @@ build_reference_matrix <- function(
     cytometer <- .resolve_cytometer_from_pd(cytometer, metadata$pd_meta)
 
     config <- list(
-        include_multi_af = include_multi_af,
-        af_dir = af_dir,
         exclude_af = exclude_af,
         default_sample_type = default_sample_type,
         outlier_percentile = outlier_percentile,
@@ -2935,7 +2757,6 @@ build_reference_matrix <- function(
         fcs_files_all = file_info$fcs_files_all,
         detector_names = metadata$detector_names,
         af_n_bands = af_n_bands,
-        af_bands_per_file = af_bands_per_file,
         af_max_cells = af_max_cells,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,

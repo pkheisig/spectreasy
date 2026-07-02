@@ -48,7 +48,6 @@
     message("Auto-generating control file from SCC filenames and peak channels...")
     create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         cytometer = cytometer,
         default_control_type = auto_default_control_type,
         unknown_fluor_policy = auto_unknown_fluor_policy,
@@ -157,13 +156,11 @@
     control_df[!missing_af, , drop = FALSE]
 }
 
-.run_unmix_preflight <- function(control_df, scc_dir, exclude_af = FALSE, include_multi_af = FALSE) {
+.run_unmix_preflight <- function(control_df, scc_dir, exclude_af = FALSE) {
     validate_control_file_mapping(
         control_df = control_df,
         scc_dir = scc_dir,
-        include_multi_af = include_multi_af,
         exclude_af = exclude_af,
-        af_dir = "af",
         require_all_scc_mapped = TRUE,
         require_channels = TRUE,
         stop_on_error = FALSE
@@ -179,7 +176,6 @@
     message("Control preflight failed; attempting automatic control-file regeneration...")
     create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         cytometer = cytometer,
         default_control_type = auto_default_control_type,
         unknown_fluor_policy = auto_unknown_fluor_policy,
@@ -351,23 +347,17 @@
 #' @param unmix_method SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
-#' @param af_n_bands Number of AF bands to extract from the unstained control
-#'   when only one AF source is available. Use `"auto"` to select the count
-#'   from AF event shapes and prune near-duplicate AF signatures. Default is
-#'   `"auto"`.
-#' @param af_bands_per_file Number of AF bands requested per AF file when
-#'   multiple AF sources are pooled. Default is 5.
-#' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
-#'   Default is 20.
+#' @param af_n_bands Number of k-means AF basis signatures to extract from
+#'   pooled unstained/AF control events, or `"auto"` to keep distinct signatures
+#'   from up to `af_auto_max_bands` k-means centers. Default is `"auto"`.
+#' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
+#'   Default is 100.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
 #'   k-means AF cluster. Used together with `af_min_cluster_proportion`.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
 #'   events required to keep a k-means AF cluster. Default is 0.005.
-#' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
-#'   when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-#'   select fewer bands before near-duplicate AF signatures are pruned. Default
-#'   is `1.5`.
-#' @param include_multi_af Logical; whether to include additional AF files from `af_dir`. Default is FALSE.
+#' @param af_n_bands_sensitivity Compatibility argument retained for older
+#'   workflows.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
@@ -412,12 +402,10 @@ unmix_controls <- function(
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
     af_n_bands = "auto",
-    af_bands_per_file = 5,
-    af_auto_max_bands = 20,
+    af_auto_max_bands = 100,
     af_min_cluster_events = 20,
     af_min_cluster_proportion = 0.005,
     af_n_bands_sensitivity = 1.5,
-    include_multi_af = FALSE,
     rwls_max_iter = 1L,
     unmix_threads = 1L,
     save_qc_plots = FALSE,
@@ -460,7 +448,7 @@ unmix_controls <- function(
         .unmix_confirm_created_control_file(control_file)
     }
 
-    preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af, include_multi_af = include_multi_af)
+    preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af)
     if (!preflight$ok) {
         .stop_unmix_preflight(preflight, auto_unknown_fluor_policy = auto_unknown_fluor_policy)
     }
@@ -484,12 +472,10 @@ unmix_controls <- function(
         cytometer = cytometer,
         exclude_af = exclude_af,
         af_n_bands = af_n_bands,
-        af_bands_per_file = af_bands_per_file,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
         af_n_bands_sensitivity = af_n_bands_sensitivity,
-        include_multi_af = include_multi_af,
         use_scatter_gating = use_scatter_gating,
         seed = seed,
         ...
@@ -571,9 +557,7 @@ unmix_controls <- function(
             qc_plot_dir = qc_controls_dir,
             save_qc_pngs = save_qc_plots,
             use_scatter_gating = use_scatter_gating,
-            include_multi_af = include_multi_af,
             exclude_af = exclude_af,
-            af_bands_per_file = af_bands_per_file,
             unmix_scatter_max_points = 1000,
             seed = seed,
             unmixing_matrix_file = output_paths$reference_matrix_csv

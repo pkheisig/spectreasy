@@ -328,10 +328,18 @@ plot_spectra <- function(ref_matrix,
     c(lo, hi)
 }
 
+.scatter_density_base_color <- function() {
+    "#0037B8"
+}
+
+.scatter_density_color_ramp <- function() {
+    grDevices::colorRampPalette(c("#0037B8", "#006E9F", "#008C55", "#B87500", "#A60022"))
+}
+
 .add_unmix_scatter_density_colors <- function(plot_df) {
-    plot_df$color <- "#0000FF"
+    plot_df$color <- .scatter_density_base_color()
     groups <- split(seq_len(nrow(plot_df)), interaction(plot_df$panel_row, plot_df$panel_col, drop = TRUE))
-    ramp <- grDevices::colorRampPalette(c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"))
+    ramp <- .scatter_density_color_ramp()
     for (idx in groups) {
         if (length(idx) > 1 && stats::var(plot_df$x[idx]) > 0 && stats::var(plot_df$y[idx]) > 0) {
             plot_df$color[idx] <- grDevices::densCols(plot_df$x[idx], plot_df$y[idx], colramp = ramp)

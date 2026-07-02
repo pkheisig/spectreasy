@@ -157,9 +157,11 @@ test_that("qc_samples has stable pages and no recommendation page", {
     expect_true(file.exists(pdf_out))
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 5)
+    expect_equal(info$pages, 4)
 
-    txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
+    page_text <- pdftools::pdf_text(pdf_out)
+    expect_true(grepl("Reference Spectra Overlay", page_text[[1]], fixed = TRUE))
+    txt <- paste(page_text, collapse = "\n")
     expect_false(grepl("Conclusions & Recommendations", txt, fixed = TRUE))
     expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))
     expect_false(grepl("Sample NxN Scatter Matrix: SampleB", txt, fixed = TRUE))
@@ -191,7 +193,7 @@ test_that("qc_samples skips negative population spread for NNLS", {
     spectreasy::qc_samples(results = results, M = M, output_file = pdf_out, method = "NNLS")
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 4)
+    expect_equal(info$pages, 3)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_false(grepl("Negative Population Spread", txt, fixed = TRUE))
@@ -227,7 +229,7 @@ test_that("qc_samples can include NxN pages for all samples", {
     )
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 6)
+    expect_equal(info$pages, 5)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))
@@ -476,7 +478,7 @@ test_that("unmix_samples can dynamically construct reference matrix and handle m
     expect_true(sum(unmixed_df[2, c("AF", "AF_2")] != 0) <= 1)
 })
 
-test_that("unmix_controls supports af_n_bands and include_multi_af", {
+test_that("unmix_controls supports fixed AF k-means bands from SCC mapping", {
     scc_dir <- tempfile("scc_dir_controls_")
     dir.create(scc_dir)
     
@@ -531,8 +533,7 @@ test_that("unmix_controls supports af_n_bands and include_multi_af", {
         control_file = control_file,
         auto_create_control = FALSE,
         output_dir = output_dir,
-        af_n_bands = 2,
-        include_multi_af = FALSE
+        af_n_bands = 2
     )
     
     expect_true(all(c("FITC", "PE", "AF", "AF_2") %in% rownames(res$M)))

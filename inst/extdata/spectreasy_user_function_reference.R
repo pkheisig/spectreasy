@@ -1,14 +1,10 @@
-
-
     # -------------------------------------------------------------------------
     # Typical simple workflow
     # -------------------------------------------------------------------------
 
     control_file <- create_control_file(
         input_folder = "scc",
-        af_folder = "af",
-        include_af_folder = TRUE,
-        cytometer = "Aurora",
+        cytometer = "auto",
         default_control_type = "cells",
         unknown_fluor_policy = c("empty", "by_channel", "filename"),
         output_file = "fcs_mapping.csv",
@@ -18,9 +14,7 @@
     control_check <- validate_control_file_mapping(
         control_df = control_file,
         scc_dir = "scc",
-        include_multi_af = FALSE,
         exclude_af = FALSE,
-        af_dir = "af",
         require_all_scc_mapped = TRUE,
         require_channels = TRUE,
         stop_on_error = FALSE
@@ -38,7 +32,7 @@
         scc_dir = "scc",
         control_file = "fcs_mapping.csv",
         auto_create_control = TRUE,
-        cytometer = "Aurora",
+        cytometer = "auto",
         auto_default_control_type = "beads",
         auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
         output_dir = "spectreasy_outputs/unmix_controls",
@@ -46,16 +40,16 @@
         unmix_method = "WLS",
         unmix_scatter_panel_size_mm = 30,
         seed = NULL,
-        af_n_bands = 10,
-        af_bands_per_file = 5,
-        af_auto_max_bands = 20,
+        af_n_bands = "auto",
+        af_auto_max_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
         af_n_bands_sensitivity = 1.5,
-        include_multi_af = FALSE,
         rwls_max_iter = 1L,
         unmix_threads = 1L,
         save_qc_plots = FALSE,
+        save_report = TRUE,
+        output_file = NULL,
         use_scatter_gating = TRUE
         # Additional build_reference_matrix() arguments can be passed here.
     )
@@ -70,26 +64,15 @@
         scc_dir = "scc",
         output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
         control_file = "fcs_mapping.csv",
-        cytometer = "Aurora",
+        cytometer = "auto",
         method = "WLS",
         qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
         save_qc_pngs = FALSE,
         use_scatter_gating = TRUE,
-        include_multi_af = FALSE,
-        af_dir = "af",
-        af_bands_per_file = 5,
         unmix_scatter_max_points = 1000,
         unmix_scatter_axis_limit = NULL,
         seed = NULL
         # Additional build_reference_matrix() arguments can be passed here.
-    )
-
-    launch_gui(
-        matrix_dir = NULL,
-        samples_dir = NULL,
-        port = 8000,
-        open_browser = TRUE,
-        dev_mode = FALSE
     )
 
     unmixed <- unmix_samples(
@@ -109,23 +92,26 @@
         method = "WLS",
         rwls_max_iter = 1L,
         n_threads = 1L,
-        cytometer = "Aurora",
+        cytometer = "auto",
         scc_dir = NULL,
         control_file = NULL,
-        af_n_bands = 10,
-        af_bands_per_file = 5,
-        af_auto_max_bands = 20,
+        af_n_bands = "auto",
+        af_auto_max_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
         af_n_bands_sensitivity = 1.5,
         exclude_af = FALSE,
-        include_multi_af = FALSE,
+        estimate_af = FALSE,
         output_dir = file.path(
             "spectreasy_outputs",
             "unmix_samples",
             "unmixed_fcs"
         ),
         write_fcs = TRUE,
+        save_report = TRUE,
+        output_file = NULL,
+        save_qc_plots = FALSE,
+        qc_plot_dir = NULL,
         subsample_n = NULL,
         seed = NULL,
         return_type = c("list", "flowSet", "SingleCellExperiment"),
@@ -147,13 +133,42 @@
         pd = NULL,
         max_events_per_sample = 1000,
         overview_files_per_page = 15,
-        matrix_markers_per_page = 15,
+        matrix_markers_per_page = 20,
         sample_nxn_rows_per_page = 10,
-        sample_nxn_max_points = 1000,
+        sample_nxn_max_points = max_events_per_sample,
         sample_nxn_transform = c("none", "asinh"),
         sample_nxn_asinh_cofactor = 150,
         sample_nxn_axis_limit = NULL,
-        nxn_all_samples = FALSE
+        nxn_all_samples = FALSE,
+        qc_plot_dir = NULL,
+        save_qc_pngs = FALSE,
+        qc_metrics_dir = NULL
+    )
+
+    # -------------------------------------------------------------------------
+    # Interactive tools
+    # -------------------------------------------------------------------------
+
+    adjust_matrix(
+        matrix_dir = NULL,
+        samples_dir = NULL,
+        port = 8000,
+        open_browser = TRUE,
+        dev_mode = FALSE
+    )
+
+    launch_gui(
+        matrix_dir = NULL,
+        samples_dir = NULL,
+        port = 8000,
+        open_browser = TRUE,
+        dev_mode = FALSE
+    )
+
+    build_spectral_panel(
+        port = 8000,
+        open_browser = TRUE,
+        dev_mode = FALSE
     )
 
     # -------------------------------------------------------------------------
@@ -161,10 +176,10 @@
     # -------------------------------------------------------------------------
 
     profile <- extract_af_profile(
-        fcs_file = "af/unstained.fcs",
+        fcs_file = "scc/Unstained.fcs",
         af_n_bands = "auto",
         af_max_cells = 50000,
-        af_auto_max_bands = 20,
+        af_auto_max_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
         af_n_bands_sensitivity = 1.5,
@@ -214,19 +229,16 @@
         output_folder = "gating_and_spectrum_plots",
         save_qc_plots = FALSE,
         control_df = NULL,
-        include_multi_af = FALSE,
         exclude_af = FALSE,
-        af_dir = "af",
-        af_n_bands = 10,
-        af_bands_per_file = 5,
+        af_n_bands = "auto",
         af_max_cells = 50000,
-        af_auto_max_bands = 20,
+        af_auto_max_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
         af_n_bands_sensitivity = 1.5,
         seed = NULL,
         default_sample_type = "beads",
-        cytometer = "Aurora",
+        cytometer = "auto",
         use_scatter_gating = TRUE,
         histogram_pct_beads = 0.98,
         histogram_direction_beads = "right",
@@ -277,7 +289,10 @@
         height = 100,
         unit = "mm",
         dpi = 600,
-        theme_custom = NULL
+        theme_custom = NULL,
+        annotate_peaks = "auto",
+        peak_label_max = 40,
+        peak_label_size = 2.6
     )
 
     unmixing_matrix_plot <- plot_unmixing_matrix(
@@ -325,6 +340,10 @@
         method = "OLS"
     )
 
+    directional_spread <- calculate_directional_spread_score(
+        SSM = ssm
+    )
+
     ssm_plot <- plot_ssm(
         SSM = ssm,
         output_file = NULL,
@@ -336,9 +355,8 @@
         flow_frame = flow_frame,
         control_file = "fcs_mapping.csv",
         control_dir = "scc",
-        af_dir = "af",
         method = "WLS",
-        cytometer = "Aurora"
+        cytometer = "auto"
     )
 
     # -------------------------------------------------------------------------
@@ -355,6 +373,10 @@
 
     sorted_detectors <- get_sorted_detectors(
         pd = parameter_data
+    )
+
+    cytometers <- supported_cytometers(
+        include_auto = FALSE
     )
 
     example_data <- spectreasy_example_data(
