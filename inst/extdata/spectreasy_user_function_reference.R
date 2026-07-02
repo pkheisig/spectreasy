@@ -291,7 +291,7 @@
         dpi = 600,
         theme_custom = NULL,
         annotate_peaks = "auto",
-        peak_label_max = 40,
+        peak_label_max = 40L,
         peak_label_size = 2.6
     )
 

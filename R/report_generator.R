@@ -288,13 +288,7 @@
         max_markers_per_page <- 20L
     }
 
-    n_pages <- if (n_markers <= max_markers_per_page) {
-        1L
-    } else if (n_markers <= 2L * max_markers_per_page) {
-        2L
-    } else {
-        3L
-    }
+    n_pages <- max(1L, ceiling(n_markers / max_markers_per_page))
 
     base_size <- n_markers %/% n_pages
     remainder <- n_markers %% n_pages

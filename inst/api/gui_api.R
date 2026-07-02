@@ -54,8 +54,44 @@ is_probably_matrix_csv <- function(path) {
     mean(numeric_ok) >= 0.8
 }
 
+matrix_filename_contains_matrix <- function(filename) {
+    if (is.null(filename) || length(filename) == 0 || is.na(filename[1])) {
+        return(FALSE)
+    }
+    normalized <- tolower(gsub("[^[:alnum:]]+", "", basename(as.character(filename)[1])))
+    isTRUE(grepl("matrix", normalized, fixed = TRUE))
+}
+
+list_matrix_csv_files <- function() {
+    matrix_dir <- get_matrix_dir()
+    if (!dir.exists(matrix_dir)) {
+        return(character(0))
+    }
+
+    files <- list.files(
+        matrix_dir,
+        pattern = "\\.csv$",
+        recursive = TRUE,
+        full.names = FALSE,
+        ignore.case = TRUE
+    )
+    files <- gsub("\\\\", "/", files)
+    files <- files[vapply(files, matrix_filename_contains_matrix, logical(1))]
+    sort(files)
+}
+
 matrix_path <- function(filename) {
-    file.path(get_matrix_dir(), basename(trimws(as.character(filename)[1])))
+    if (is.null(filename) || length(filename) == 0 || is.na(filename[1])) {
+        stop("Invalid matrix filename")
+    }
+    rel <- trimws(as.character(filename)[1])
+    rel <- gsub("\\\\", "/", rel)
+    rel <- sub("^/+", "", rel)
+    parts <- strsplit(rel, "/", fixed = TRUE)[[1]]
+    if (!isTRUE(nzchar(rel)) || any(parts %in% c("", ".", ".."))) {
+        stop("Invalid matrix filename")
+    }
+    file.path(get_matrix_dir(), do.call(file.path, as.list(parts)))
 }
 
 read_matrix_csv <- function(path) {
@@ -229,15 +265,12 @@ function(req) {
 #* List available matrices
 #* @get /matrices
 function() {
-    files <- sort(list.files(get_matrix_dir(), pattern = ".*\\.csv$", ignore.case = TRUE))
+    files <- list_matrix_csv_files()
     if (length(files) == 0) {
         return(character(0))
     }
     paths <- file.path(get_matrix_dir(), files)
     keep <- vapply(paths, is_probably_matrix_csv, logical(1))
-    if (!any(keep)) {
-        return(as.character(files))
-    }
     return(as.character(files[keep]))
 }
 
@@ -372,6 +405,7 @@ function(req) {
     )
     df <- merge_hidden_af_rows(df, source_paths = source_paths)
 
+    dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
     utils::write.csv(df, path, row.names = FALSE, quote = TRUE)
     return(list(success = TRUE, path = path))
 }
@@ -407,6 +441,7 @@ function(res) {
 #* @param content The CSV content as text
 function(filename, content) {
     dest <- matrix_path(filename)
+    dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
     writeLines(content, dest)
     return(list(success = TRUE, filename = filename))
 }

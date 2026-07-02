@@ -311,6 +311,41 @@ test_that("qc_samples matrix pages split markers into balanced groups", {
     )), 3)
 })
 
+test_that("spectral panel similarity matrix pages use report-specific chunking", {
+    make_square <- function(n) {
+        M <- diag(n)
+        rownames(M) <- paste0("F", seq_len(n))
+        colnames(M) <- paste0("F", seq_len(n))
+        M
+    }
+
+    expect_equal(
+        lengths(spectreasy:::.split_qc_report_matrix_marker_batches(rownames(make_square(15)), max_markers_per_page = 15)),
+        15L
+    )
+    expect_equal(
+        lengths(spectreasy:::.split_qc_report_matrix_marker_batches(rownames(make_square(16)), max_markers_per_page = 8)),
+        c(8L, 8L)
+    )
+    expect_equal(
+        lengths(spectreasy:::.split_qc_report_matrix_marker_batches(rownames(make_square(24)), max_markers_per_page = 8)),
+        c(8L, 8L, 8L)
+    )
+})
+
+test_that("calculate_similarity_matrix clamps negative numerical noise to zero", {
+    M <- matrix(c(
+        1, 0,
+        -1e-12, 1
+    ), nrow = 2, byrow = TRUE)
+    rownames(M) <- c("A", "B")
+    colnames(M) <- c("D1", "D2")
+
+    sim <- spectreasy:::calculate_similarity_matrix(M)
+    expect_gte(sim["A", "B"], 0)
+    expect_equal(sim["A", "B"], 0)
+})
+
 test_that("qc_samples loads M from unmixing_matrix_file", {
     set.seed(1)
     n <- 120

@@ -266,7 +266,7 @@ calculate_similarity_matrix <- function(M) {
     M_norm <- M / norms
     sim_mat <- M_norm %*% t(M_norm)
     sim_mat[sim_mat > 1] <- 1
-    sim_mat[sim_mat < -1] <- -1
+    sim_mat[sim_mat < 0] <- 0
     return(sim_mat)
 }
 
@@ -300,6 +300,7 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
     long$is_diagonal <- as.character(long$Marker1) == as.character(long$Marker2)
     diag_long <- long[long$is_diagonal, , drop = FALSE]
     offdiag_long <- long[!long$is_diagonal, , drop = FALSE]
+    offdiag_long$Similarity <- pmax(0, pmin(1, offdiag_long$Similarity))
     offdiag_long$SimilarityFill <- pmin(offdiag_long$Similarity, 0.99)
     
     n_markers <- max(length(row_markers), length(col_markers))

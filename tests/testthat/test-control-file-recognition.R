@@ -180,6 +180,48 @@ testthat::test_that("supported cytometer metadata is normalized", {
     testthat::expect_equal(aurora_ref$channel_map[["YG4-A"]], "PE-Fire 640")
 })
 
+testthat::test_that("spectral panel cytometer configurations load cleanly", {
+    discover <- spectreasy:::.spectral_panel_payload(
+        cytometer = "discover",
+        configuration = "discover_s8",
+        fluorophores = character()
+    )
+    testthat::expect_equal(discover$configuration, "discover_s8")
+    testthat::expect_equal(nrow(discover$detectors), 78)
+    testthat::expect_true(all(c("UV1 (375)-A", "R8 (845)-A") %in% discover$detectors$detector))
+
+    id7000 <- spectreasy:::.spectral_panel_payload(
+        cytometer = "id7000",
+        fluorophores = character()
+    )
+    testthat::expect_equal(id7000$configuration, "id7000_5l")
+    testthat::expect_equal(nrow(id7000$detectors), 147)
+    testthat::expect_false(any(grepl("^320", id7000$detectors$detector)))
+
+    id7000_4l <- spectreasy:::.spectral_panel_payload(
+        cytometer = "id7000",
+        configuration = "id7000_4l",
+        fluorophores = character()
+    )
+    testthat::expect_equal(nrow(id7000_4l$detectors), 112)
+    testthat::expect_false(any(grepl("^355|^320", id7000_4l$detectors$detector)))
+
+    id7000_3l <- spectreasy:::.spectral_panel_payload(
+        cytometer = "id7000",
+        configuration = "id7000_3l",
+        fluorophores = character()
+    )
+    testthat::expect_equal(nrow(id7000_3l$detectors), 86)
+    testthat::expect_false(any(grepl("^355|^320|^561", id7000_3l$detectors$detector)))
+
+    xenith <- spectreasy:::.spectral_panel_payload(
+        cytometer = "xenith",
+        fluorophores = character()
+    )
+    by_laser <- split(xenith$detectors$emission, xenith$detectors$laser)
+    testthat::expect_true(all(vapply(by_laser, function(x) all(diff(x) >= 0), logical(1))))
+})
+
 testthat::test_that("cytometer auto detection recognizes detector naming conventions", {
     xenith_pd <- data.frame(
         name = c("FL07-A", "FL08-A", "FL37-A", "FL36-A", "FSC51-A", "SSC52-A", "Time"),

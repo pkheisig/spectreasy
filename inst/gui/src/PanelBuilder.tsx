@@ -88,6 +88,12 @@ const toNumber = (value: string | number | undefined) => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const toSimilarityValue = (value: string | number | undefined) => {
+    const numeric = toNumber(value);
+    if (Math.abs(numeric) < 0.005) return 0;
+    return Math.max(0, Math.min(1, numeric));
+};
+
 const laserLabel = (laser: string) => {
     if (laser === 'YellowGreen') return 'YG 561';
     if (laser === 'Violet') return 'V 405';
@@ -101,10 +107,18 @@ const laserLabel = (laser: string) => {
 
 const unique = <T,>(values: T[]) => Array.from(new Set(values));
 
+const detectorPointX = (index: number, count: number, left: number, width: number) => (
+    count <= 1 ? left + width / 2 : left + (index / (count - 1)) * width
+);
+
+const detectorColumnCenterX = (index: number, count: number, left: number, width: number) => (
+    left + ((index + 0.5) / Math.max(1, count)) * width
+);
+
 const linePath = (row: NumericRow, detectors: DetectorInfo[], width: number, height: number, left = 0) => {
     if (detectors.length === 0) return '';
     return detectors.map((det, index) => {
-        const x = left + (detectors.length === 1 ? width / 2 : (index / (detectors.length - 1)) * width);
+        const x = detectorPointX(index, detectors.length, left, width);
         const y = height - toNumber(row[det.detector]) * (height - 32) - 24;
         return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
@@ -387,7 +401,7 @@ const detectImportedPanelRows = (text: string, fluorophores: FluorInfo[]) => {
     return imported;
 };
 
-const getCytometerName = (val: any): string => {
+const getCytometerName = (val: unknown): string => {
     if (!val) return '';
     if (Array.isArray(val)) return String(val[0] || '');
     return String(val);
@@ -514,7 +528,9 @@ const PanelBuilder = () => {
                 const parsed = JSON.parse(stored);
                 if (Array.isArray(parsed)) return parsed;
             }
-        } catch {}
+        } catch {
+            return Array(emptySlots).fill('');
+        }
         return Array(emptySlots).fill('');
     });
     const slotsRef = useRef<string[]>(slots);
@@ -896,6 +912,9 @@ const PanelBuilder = () => {
 
     const chartWidth = Math.max(1040, payload.detectors.length * 22);
     const chartHeight = 230;
+    const spectrumLeft = 42;
+    const spectrumRight = chartWidth - 8;
+    const spectrumPlotWidth = spectrumRight - spectrumLeft;
     const signatureLeft = 58;
     const signatureTop = 22;
     const signaturePlotHeight = 265;
@@ -969,7 +988,7 @@ const PanelBuilder = () => {
                                 className="configuration-select"
                                 value={configuration}
                                 onChange={event => void changeConfiguration(event.target.value)}
-                                aria-label="Aurora laser configuration"
+                                aria-label="Detector configuration"
                             >
                                 {payload.configurations.map(config => (
                                     <option key={config.id} value={config.id}>
@@ -1067,13 +1086,13 @@ const PanelBuilder = () => {
                                 const y = chartHeight - (tick / 100) * (chartHeight - 32) - 24;
                                 return (
                                     <g key={tick}>
-                                        <line x1={42} y1={y} x2={chartWidth - 8} y2={y} stroke="var(--chart-grid)" strokeWidth={1} />
+                                        <line x1={spectrumLeft} y1={y} x2={spectrumRight} y2={y} stroke="var(--chart-grid)" strokeWidth={1} />
                                         <text x={28} y={y + 4} fontSize={12} textAnchor="end" className="chart-axis-text">{tick}</text>
                                     </g>
                                 );
                             })}
                             {payload.detectors.map((det, index) => {
-                                const x = 42 + (index / Math.max(1, payload.detectors.length - 1)) * (chartWidth - 56);
+                                const x = detectorPointX(index, payload.detectors.length, spectrumLeft, spectrumPlotWidth);
                                 return (
                                     <g key={det.detector}>
                                         <line x1={x} y1={6} x2={x} y2={chartHeight - 24} stroke="var(--chart-grid)" strokeWidth={1} />
@@ -1083,14 +1102,14 @@ const PanelBuilder = () => {
                                     </g>
                                 );
                             })}
-                            <rect x={42} y={chartHeight - 14} width={chartWidth - 56} height={6} fill="url(#rainbow-axis-gradient)" />
-                            <line x1={42} y1={chartHeight - 24} x2={chartWidth - 8} y2={chartHeight - 24} stroke="var(--chart-axis)" strokeWidth={3} />
+                            <rect x={spectrumLeft} y={chartHeight - 14} width={spectrumPlotWidth} height={6} fill="url(#rainbow-axis-gradient)" />
+                            <line x1={spectrumLeft} y1={chartHeight - 24} x2={spectrumRight} y2={chartHeight - 24} stroke="var(--chart-axis)" strokeWidth={3} />
                             {selected.map(fluor => {
                                 const row = spectraByName.get(fluor);
                                 if (!row) return null;
                                 const isHovered = hoveredFluor === fluor;
                                 const hasHoverActive = hoveredFluor !== null;
-                                const pathData = linePath(row, payload.detectors, chartWidth - 56, chartHeight, 42);
+                                const pathData = linePath(row, payload.detectors, spectrumPlotWidth, chartHeight, spectrumLeft);
                                 return (
                                     <g key={fluor}>
                                         <path
@@ -1219,7 +1238,7 @@ const PanelBuilder = () => {
                                                         <th className="row-label">{rowName}</th>
                                                         {selected.map((colName, colIndex) => {
                                                             if (colIndex > rowIndex) return null;
-                                                            const value = rowName === colName ? 1 : toNumber(similarityByName.get(rowName)?.[colName]);
+                                                            const value = rowName === colName ? 1 : toSimilarityValue(similarityByName.get(rowName)?.[colName]);
                                                             const cellStyle = getSimilarityStyle(value, rowName === colName, theme);
                                                             return (
                                                                 <td key={colName} style={cellStyle}>
@@ -1273,8 +1292,7 @@ const PanelBuilder = () => {
                                                 })}
                                                 <text x={14} y={signatureTop + signaturePlotHeight / 2} fontSize={13} fontWeight={700} textAnchor="middle" transform={`rotate(-90 14 ${signatureTop + signaturePlotHeight / 2})`} fill={textHeading}>Intensity</text>
                                                 {payload.detectors.map((det, index) => {
-                                                    const x = signatureLeft + index * signatureColumnWidth;
-                                                    const centerX = x + signatureColumnWidth / 2;
+                                                    const centerX = detectorColumnCenterX(index, payload.detectors.length, signatureLeft, signaturePlotWidth);
                                                     const value = toNumber(row[det.detector]);
                                                     return (
                                                         <g key={det.detector}>
