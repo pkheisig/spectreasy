@@ -18,7 +18,6 @@ qc_controls(
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   save_qc_pngs = FALSE,
   use_scatter_gating = TRUE,
-  af_bands_per_file = NULL,
   unmix_scatter_max_points = 1000,
   unmix_scatter_axis_limit = NULL,
   seed = NULL,
@@ -67,10 +66,6 @@ cleanup plus the intensity-vs-FSC GMM/EM selector and show the scatter
 gate plot in the report. If `FALSE`, use and show the legacy
 one-dimensional histogram gate. AutoSpectral-style SCC controls show the
 spectral-selection plot instead of an intensity gate.}
-
-\item{af_bands_per_file}{Deprecated compatibility argument. Multiple AF
-sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
-control the size of the one shared AF bank.}
 
 \item{unmix_scatter_max_points}{Maximum events sampled per control for the
 SCC unmixing scatter matrix.}

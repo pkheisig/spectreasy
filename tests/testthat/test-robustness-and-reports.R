@@ -159,9 +159,11 @@ test_that("qc_samples has stable pages and no recommendation page", {
     expect_true(file.exists(pdf_out))
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 6)
+    expect_equal(info$pages, 4)
 
-    txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
+    pages <- pdftools::pdf_text(pdf_out)
+    expect_true(grepl("Reference Spectra Overlay", pages[1], fixed = TRUE))
+    txt <- paste(pages, collapse = "\n")
     expect_false(grepl("Conclusions & Recommendations", txt, fixed = TRUE))
     expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))
     expect_false(grepl("Sample NxN Scatter Matrix: SampleB", txt, fixed = TRUE))
@@ -194,9 +196,11 @@ test_that("qc_samples skips negative population spread for NNLS", {
     spectreasy::qc_samples(results = results, M = M, output_file = pdf_out, method = "NNLS")
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 5)
+    expect_equal(info$pages, 3)
 
-    txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
+    pages <- pdftools::pdf_text(pdf_out)
+    expect_true(grepl("Reference Spectra Overlay", pages[1], fixed = TRUE))
+    txt <- paste(pages, collapse = "\n")
     expect_false(grepl("Negative Population Spread", txt, fixed = TRUE))
 })
 
@@ -231,9 +235,11 @@ test_that("qc_samples can include NxN pages for all samples", {
     )
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 7)
+    expect_equal(info$pages, 5)
 
-    txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
+    pages <- pdftools::pdf_text(pdf_out)
+    expect_true(grepl("Reference Spectra Overlay", pages[1], fixed = TRUE))
+    txt <- paste(pages, collapse = "\n")
     expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))
     expect_true(grepl("Sample NxN Scatter Matrix: SampleB", txt, fixed = TRUE))
 })

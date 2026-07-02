@@ -44,7 +44,6 @@ if (FALSE) {
         unmix_scatter_panel_size_mm = 30,
         seed = NULL,
         af_n_bands = "auto",
-        af_bands_per_file = NULL,
         af_auto_max_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
@@ -87,7 +86,6 @@ if (FALSE) {
         qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
         save_qc_pngs = FALSE,
         use_scatter_gating = TRUE,
-        af_bands_per_file = NULL,
         unmix_scatter_max_points = 1000,
         unmix_scatter_axis_limit = NULL,
         seed = NULL
@@ -124,7 +122,6 @@ if (FALSE) {
         scc_dir = NULL,
         control_file = NULL,
         af_n_bands = "auto",
-        af_bands_per_file = NULL,
         af_auto_max_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
@@ -250,7 +247,6 @@ if (FALSE) {
         control_df = NULL,
         exclude_af = FALSE,
         af_n_bands = "auto",
-        af_bands_per_file = NULL,
         af_max_cells = 50000,
         af_auto_max_bands = 100,
         af_min_cluster_events = 20,
@@ -373,6 +369,10 @@ if (FALSE) {
     ssm <- calculate_ssm(
         M = M,
         method = "OLS"
+    )
+
+    dss <- calculate_directional_spread_score(
+        SSM = ssm
     )
 
     ssm_plot <- plot_ssm(

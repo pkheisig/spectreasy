@@ -18,12 +18,11 @@ extract_af_profile(
 \item{fcs_file}{Path to an unstained/autofluorescence `.fcs` file.}
 
 \item{af_n_bands}{Number of AF bands to extract. The default, `"auto"`,
-builds a SOM bank up to `af_auto_max_bands` nodes plus a mean AF row.}
+keeps distinct k-means signatures from up to `af_auto_max_bands` centers.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used.}
 
-\item{af_auto_max_bands}{Maximum SOM nodes that `"auto"` may create before
-prepending the mean AF row.}
+\item{af_auto_max_bands}{Maximum k-means centers that `"auto"` may score.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

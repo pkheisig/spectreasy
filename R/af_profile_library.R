@@ -92,10 +92,9 @@ af_profile_dir <- function(create = TRUE) {
 #'
 #' @param fcs_file Path to an unstained/autofluorescence `.fcs` file.
 #' @param af_n_bands Number of AF bands to extract. The default, `"auto"`,
-#'   builds a SOM bank up to `af_auto_max_bands` nodes plus a mean AF row.
+#'   keeps distinct k-means signatures from up to `af_auto_max_bands` centers.
 #' @param af_max_cells Maximum number of scatter-gated AF events used.
-#' @param af_auto_max_bands Maximum SOM nodes that `"auto"` may create before
-#'   prepending the mean AF row.
+#' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param show_plot Logical; print the AF spectra plot after extraction.
 #' @param verbose Logical; print progress updates while extracting.
@@ -122,7 +121,6 @@ extract_af_profile <- function(fcs_file,
     af_args <- .validate_build_reference_af_args(
         af_n_bands = af_n_bands,
         af_max_cells = af_max_cells,
-        af_bands_per_file = 1,
         af_auto_max_bands = af_auto_max_bands
     )
     .with_optional_seed(seed)
@@ -156,8 +154,8 @@ extract_af_profile <- function(fcs_file,
 
     if (isTRUE(verbose)) {
         message(
-            "  Building SOM AF bank",
-            if (identical(af_args$af_n_bands, "auto")) paste0(" with ", af_args$af_auto_max_bands, " nodes plus the mean AF row") else paste0(" with ", af_args$af_n_bands, " node(s) plus the mean AF row"),
+            "  Building k-means AF bank",
+            if (identical(af_args$af_n_bands, "auto")) paste0(" from up to ", af_args$af_auto_max_bands, " centers") else paste0(" with ", af_args$af_n_bands, " band(s)"),
             "..."
         )
     }

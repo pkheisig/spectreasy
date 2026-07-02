@@ -850,9 +850,9 @@ test_that("AF profile extraction clusters pooled AF phenotypes", {
         af_events = af_events
     )
 
-    expect_equal(nrow(profiles$signatures), 3)
+    expect_equal(nrow(profiles$signatures), 2)
     expect_equal(colnames(profiles$signatures), detector_names)
-    expect_equal(rownames(profiles$signatures), c("AF", "AF_2", "AF_3"))
+    expect_equal(rownames(profiles$signatures), c("AF", "AF_2"))
 
     expected_shapes <- rbind(
         c("B1-A" = 1, "YG1-A" = 0.15, "V1-A" = 0.05),
@@ -870,7 +870,7 @@ test_that("AF profile extraction clusters pooled AF phenotypes", {
     expect_equal(profiles$raw_median, c("B1-A" = 55, "YG1-A" = 52.5, "V1-A" = 12.5), tolerance = 1e-6)
 })
 
-test_that("AF profile extraction uses SOM auto bank", {
+test_that("AF profile extraction uses k-means auto bank", {
     detector_names <- c("B1-A", "YG1-A", "V1-A")
     af_events <- rbind(
         matrix(rep(c(100, 15, 5), 120), ncol = 3, byrow = TRUE),
@@ -885,12 +885,12 @@ test_that("AF profile extraction uses SOM auto bank", {
         af_events = af_events
     )
 
-    expect_equal(nrow(profiles$signatures), 101)
-    expect_equal(profiles$selection$method, "som_grid")
-    expect_equal(profiles$selection$n_bands, 101)
+    expect_equal(nrow(profiles$signatures), 2)
+    expect_equal(profiles$selection$method, "kmeans_distinct")
+    expect_equal(profiles$selection$n_bands, 2)
 })
 
-test_that("AF SOM auto bank can exceed the old 10-band ceiling", {
+test_that("AF k-means auto bank can exceed the old 10-band ceiling", {
     detector_names <- paste0("D", seq_len(12), "-A")
     centers <- lapply(seq_len(12), function(i) {
         v <- rep(0.01, length(detector_names))
@@ -912,12 +912,13 @@ test_that("AF SOM auto bank can exceed the old 10-band ceiling", {
         auto_max_bands = 20
     )
 
-    expect_equal(profiles$selection$method, "som_grid")
-    expect_equal(profiles$selection$n_bands, 21)
-    expect_equal(nrow(profiles$signatures), 21)
+    expect_equal(profiles$selection$method, "kmeans_distinct")
+    expect_gte(nrow(profiles$signatures), 12)
+    expect_lte(nrow(profiles$signatures), 20)
+    expect_equal(profiles$selection$n_bands, nrow(profiles$signatures))
 })
 
-test_that("AF SOM auto bank retains similar AF signatures for covariance assignment", {
+test_that("AF k-means auto bank retains distinct AF signatures for covariance assignment", {
     detector_names <- c("B1-A", "YG1-A", "V1-A", "R1-A")
     centers <- list(
         c(1, 0.20, 0.05, 0.02),
@@ -938,7 +939,8 @@ test_that("AF SOM auto bank retains similar AF signatures for covariance assignm
         auto_max_bands = 10
     )
 
-    expect_equal(nrow(profiles$signatures), 11)
+    expect_gte(nrow(profiles$signatures), 2)
+    expect_lte(nrow(profiles$signatures), 10)
     expect_equal(nrow(profiles$signatures), profiles$selection$raw_center_count)
     expect_equal(profiles$selection$n_bands, nrow(profiles$signatures))
 })
@@ -983,7 +985,7 @@ test_that("AF refinement appends or reports a second-pass outcome", {
     expect_gte(nrow(profiles$signatures), 1)
 })
 
-test_that("AF SOM bank keeps requested sparse AF nodes for covariance assignment", {
+test_that("AF k-means bank keeps requested sparse AF nodes for covariance assignment", {
     detector_names <- c("B1-A", "YG1-A", "V1-A")
     af_events <- rbind(
         matrix(rep(c(100, 15, 5), 4978), ncol = 3, byrow = TRUE),
@@ -1004,8 +1006,8 @@ test_that("AF SOM bank keeps requested sparse AF nodes for covariance assignment
         af_events = af_events
     )
 
-    expect_equal(nrow(first_profiles$signatures), 3)
-    expect_equal(nrow(second_profiles$signatures), 3)
+    expect_equal(nrow(first_profiles$signatures), 2)
+    expect_equal(nrow(second_profiles$signatures), 2)
 })
 
 test_that("AF profile extraction handles empty AF events and rejects zero-signal AF", {
@@ -1027,36 +1029,29 @@ test_that("AF profile extraction handles empty AF events and rejects zero-signal
     )
 })
 
-test_that("AF argument validation keeps deprecated bands-per-file compatibility", {
+test_that("AF argument validation keeps current AF bank controls", {
     args <- spectreasy:::.validate_build_reference_af_args(
         af_n_bands = 2,
-        af_bands_per_file = 5,
         af_max_cells = 500
     )
 
     expect_equal(args$af_n_bands, 2L)
-    expect_equal(args$af_bands_per_file, 5L)
     expect_equal(args$af_max_cells, 500L)
     expect_equal(args$af_auto_max_bands, 100L)
     expect_equal(args$af_min_cluster_events, 20L)
     expect_equal(args$af_min_cluster_proportion, 0.005)
     expect_equal(args$af_n_bands_sensitivity, 1.5)
     expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_bands_per_file = 0),
-        "af_bands_per_file"
-    )
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(0, 500, af_bands_per_file = 1),
+        spectreasy:::.validate_build_reference_af_args(0, 500),
         "af_n_bands"
     )
     args_auto <- spectreasy:::.validate_build_reference_af_args(
         af_n_bands = "auto",
-        af_bands_per_file = 5,
         af_max_cells = 500
     )
     expect_equal(args_auto$af_n_bands, "auto")
     expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 99, af_bands_per_file = 1),
+        spectreasy:::.validate_build_reference_af_args(2, 99),
         "af_max_cells"
     )
     expect_error(
@@ -1073,7 +1068,6 @@ test_that("AF argument validation keeps deprecated bands-per-file compatibility"
     )
     args_improvement <- spectreasy:::.validate_build_reference_af_args(
         af_n_bands = "auto",
-        af_bands_per_file = 5,
         af_max_cells = 500,
         af_n_bands_sensitivity = 1
     )
@@ -1155,7 +1149,6 @@ test_that("multiple AF files are pooled into one AF bank size request", {
         fcs_files_all = c(primary, extra_1, extra_2),
         detector_names = detector_names,
         af_n_bands = 3L,
-        af_bands_per_file = 5L,
         af_max_cells = 500L,
         af_auto_max_bands = 100L
     )
@@ -1164,7 +1157,6 @@ test_that("multiple AF files are pooled into one AF bank size request", {
     expect_equal(captured$n_events, 9L)
     expect_equal(out$af_bank_info$source_count, 3L)
     expect_equal(out$af_bank_info$requested_bands, 3L)
-    expect_true(is.na(out$af_bank_info$af_bands_per_file))
     expect_equal(out$af_bank_info$mode, "pooled_af_sources")
     expect_equal(out$af_bank_info$sources$source_type, rep("mapped_unstained", 3))
 })

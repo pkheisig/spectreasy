@@ -515,7 +515,7 @@
     ex <- trimws(as.character(existing_vals))
     ex <- ex[!is.na(ex) & nzchar(ex)]
     if (!any(toupper(ex) == "AF")) return("AF")
-    k <- 1
+    k <- 2
     repeat {
         cand <- paste0("AF_", k)
         if (!(cand %in% ex)) return(cand)

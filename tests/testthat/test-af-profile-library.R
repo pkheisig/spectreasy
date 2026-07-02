@@ -66,7 +66,7 @@ test_that("add_af_profile appends loaded AF bands and replaces existing AF by de
     })
 })
 
-test_that("extract_af_profile builds the default saved SOM AF bank", {
+test_that("extract_af_profile builds the default saved k-means AF bank", {
     detector_names <- c("B1-A", "YG1-A", "V1-A")
     af_events <- rbind(
         matrix(rep(c(100, 15, 5), 120), ncol = 3, byrow = TRUE),
@@ -111,10 +111,10 @@ test_that("extract_af_profile builds the default saved SOM AF bank", {
     )
 
     expect_s3_class(afp, "spectreasy_af_profile")
-    expect_equal(nrow(afp$profile), 101)
-    expect_equal(rownames(afp$profile), c("AF", paste0("AF_", seq.int(2, 101))))
-    expect_equal(afp$extraction$auto_selection$method, "som_grid")
-    expect_equal(afp$extraction$auto_selection$n_bands, 101)
+    expect_equal(nrow(afp$profile), 2)
+    expect_equal(rownames(afp$profile), c("AF", "AF_2"))
+    expect_equal(afp$extraction$auto_selection$method, "kmeans_distinct")
+    expect_equal(afp$extraction$auto_selection$n_bands, 2)
     expect_s3_class(afp$plot, "ggplot")
 })
 

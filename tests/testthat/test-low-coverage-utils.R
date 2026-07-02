@@ -103,6 +103,13 @@ test_that("diagnostic plot helpers handle save and no-residual branches", {
     p_rms <- spectreasy:::plot_detector_rms_residuals(list(sample = res_list), M = M, output_file = rms_png, pd = pd)
     expect_s3_class(p_rms, "ggplot")
     expect_true(file.exists(rms_png))
+    expect_null(p_rms$labels$fill)
+
+    unsorted_detectors <- c("B11-A", "V2-A", "UV1-A", "B1-A", "R1-A", "YG10-A", "B2-A", "V11-A", "YG2-A")
+    expect_equal(
+        unsorted_detectors[spectreasy:::.residual_detector_channel_order(unsorted_detectors)],
+        c("UV1-A", "V2-A", "V11-A", "B1-A", "B2-A", "B11-A", "YG2-A", "YG10-A", "R1-A")
+    )
 
     expect_warning(
         p_null <- spectreasy::plot_detector_residuals(list(data = data.frame(x = 1), residuals = NULL), M),

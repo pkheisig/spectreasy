@@ -1182,21 +1182,22 @@
                 markers = rownames(M_no_af)
             )
         }
-        p_scatter <- tryCatch(
-            plot_unmixing_scatter_matrix(
+        scatter_pages <- tryCatch(
+            .build_qc_report_control_scatter_pages(
                 unmixed_list = unmixed_list,
                 sample_to_marker = marker_mapping$sample_to_marker,
                 markers = rownames(M_no_af),
                 marker_display = NULL,
-                output_file = NULL,
                 max_points_per_sample = unmix_scatter_max_points,
                 axis_limit = unmix_scatter_axis_limit,
                 seed = seed
             ),
-            error = function(e) NULL
+            error = function(e) list()
         )
-        if (!is.null(p_scatter)) {
-            .draw_report_ggplot_page(p_scatter, square = TRUE)
+        if (length(scatter_pages) > 0L) {
+            for (p_scatter in scatter_pages) {
+                .draw_report_ggplot_page(p_scatter, square = TRUE)
+            }
         }
 
         .draw_scc_post_unmix_qc_pages(
@@ -1253,9 +1254,6 @@
 #'   gate plot in the report. If `FALSE`, use and show the legacy
 #'   one-dimensional histogram gate. AutoSpectral-style SCC controls show the
 #'   spectral-selection plot instead of an intensity gate.
-#' @param af_bands_per_file Deprecated compatibility argument. Multiple AF
-#'   sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
-#'   control the size of the one shared AF bank.
 #' @param unmix_scatter_max_points Maximum events sampled per control for the
 #'   SCC unmixing scatter matrix.
 #' @param unmix_scatter_axis_limit Optional fixed symmetric axis limit for the
@@ -1287,7 +1285,6 @@ qc_controls <- function(
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
     save_qc_pngs = FALSE,
     use_scatter_gating = TRUE,
-    af_bands_per_file = NULL,
     unmix_scatter_max_points = 1000,
     unmix_scatter_axis_limit = NULL,
     seed = NULL,
@@ -1379,7 +1376,6 @@ qc_controls <- function(
         output_folder = plot_dir_info$plot_dir,
         save_qc_plots = TRUE,
         control_df = control_input,
-        af_bands_per_file = af_bands_per_file,
         cytometer = cytometer,
         use_scatter_gating = use_scatter_gating,
         seed = seed,

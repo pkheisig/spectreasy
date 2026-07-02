@@ -348,20 +348,15 @@
 #'   per-cell SCC/AF band matching with an OLS refit.
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
-#' @param af_n_bands Number of SOM nodes used to extract AF basis signatures
-#'   from pooled unstained/AF control events, or `"auto"` to use
-#'   `af_auto_max_bands`. A mean AF row is prepended to the SOM nodes.
-#'   Default is `"auto"`.
-#' @param af_bands_per_file Deprecated compatibility argument. Multiple AF
-#'   sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
-#'   control the size of the one shared AF bank.
-#' @param af_auto_max_bands Maximum SOM nodes that `"auto"` may create before
-#'   prepending the mean AF row.
+#' @param af_n_bands Number of k-means AF basis signatures to extract from
+#'   pooled unstained/AF control events, or `"auto"` to keep distinct signatures
+#'   from up to `af_auto_max_bands` k-means centers. Default is `"auto"`.
+#' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
 #'   Default is 100.
-#' @param af_min_cluster_events Compatibility argument retained for older
-#'   workflows.
-#' @param af_min_cluster_proportion Compatibility argument retained for older
-#'   workflows.
+#' @param af_min_cluster_events Minimum k-means cluster size retained in
+#'   `"auto"` mode.
+#' @param af_min_cluster_proportion Minimum k-means cluster proportion retained
+#'   in `"auto"` mode.
 #' @param af_n_bands_sensitivity Compatibility argument retained for older
 #'   workflows.
 #' @param af_refine Logical; if `TRUE`, run the optional second-pass AF
@@ -444,7 +439,6 @@ unmix_controls <- function(
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
     af_n_bands = "auto",
-    af_bands_per_file = NULL,
     af_auto_max_bands = 100,
     af_min_cluster_events = 20,
     af_min_cluster_proportion = 0.005,
@@ -546,7 +540,6 @@ unmix_controls <- function(
         cytometer = cytometer,
         exclude_af = exclude_af,
         af_n_bands = af_n_bands,
-        af_bands_per_file = af_bands_per_file,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,

@@ -293,7 +293,6 @@
                                   scc_dir = NULL,
                                   control_file = NULL,
                                   af_n_bands = "auto",
-                                  af_bands_per_file = NULL,
                                   af_auto_max_bands = 100,
                                   af_min_cluster_events = 20,
                                   af_min_cluster_proportion = 0.005,
@@ -849,20 +848,17 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   matrix.
 #' @param control_file Legacy compatibility argument. To create a reference
 #'   matrix from a control mapping, run [unmix_controls()] first.
-#' @param af_n_bands Number of SOM nodes used to extract AF basis signatures
-#'   from pooled unstained/AF control events, or `"auto"` to use
-#'   `af_auto_max_bands`. A mean AF row is prepended to the SOM nodes. Legacy
-#'   compatibility argument; build AF references with [unmix_controls()].
-#' @param af_bands_per_file Deprecated compatibility argument. Multiple AF
-#'   sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
-#'   control the size of the one shared AF bank.
-#' @param af_auto_max_bands Maximum SOM nodes that `"auto"` may create before
-#'   prepending the mean AF row. Legacy compatibility argument; build AF
+#' @param af_n_bands Number of k-means AF basis signatures to extract from
+#'   pooled unstained/AF control events, or `"auto"` to keep distinct signatures
+#'   from up to `af_auto_max_bands` k-means centers. Legacy compatibility
+#'   argument; build AF references with [unmix_controls()].
+#' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
+#'   Legacy compatibility argument; build AF
 #'   references with [unmix_controls()].
-#' @param af_min_cluster_events Compatibility argument retained for older
-#'   workflows.
-#' @param af_min_cluster_proportion Compatibility argument retained for older
-#'   workflows.
+#' @param af_min_cluster_events Minimum k-means cluster size retained in
+#'   `"auto"` mode.
+#' @param af_min_cluster_proportion Minimum k-means cluster proportion retained
+#'   in `"auto"` mode.
 #' @param af_n_bands_sensitivity Compatibility argument retained for older
 #'   workflows.
 #' @param af_refine Logical; if `TRUE`, run the optional second-pass AF
@@ -972,7 +968,6 @@ unmix_samples <- function(sample_dir = "samples",
                           scc_dir = NULL,
                           control_file = NULL,
                           af_n_bands = "auto",
-                          af_bands_per_file = NULL,
                           af_auto_max_bands = 100,
                           af_min_cluster_events = 20,
                           af_min_cluster_proportion = 0.005,
@@ -1037,7 +1032,6 @@ unmix_samples <- function(sample_dir = "samples",
         scc_dir = scc_dir,
         control_file = control_file,
         af_n_bands = af_n_bands,
-        af_bands_per_file = af_bands_per_file,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,

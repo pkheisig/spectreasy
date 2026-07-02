@@ -11,7 +11,6 @@ build_reference_matrix(
   control_df = NULL,
   exclude_af = FALSE,
   af_n_bands = "auto",
-  af_bands_per_file = NULL,
   af_max_cells = 50000,
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,
@@ -59,38 +58,33 @@ Expected columns: `filename`, `fluorophore`, and `channel`.}
 \item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls entirely,
 even when they are present in `control_df` or the SCC folder.}
 
-\item{af_n_bands}{Number of SOM nodes used to extract AF basis signatures
-from pooled unstained/AF control events, or `"auto"` to use
-`af_auto_max_bands`. A mean AF row is prepended to the SOM nodes, so the
-default creates 100 SOM rows plus the mean row before QC/removal steps.}
-
-\item{af_bands_per_file}{Deprecated compatibility argument. Multiple AF
-sources are pooled before SOM extraction; `af_n_bands`/`af_auto_max_bands`
-control the size of the one shared AF bank.}
+\item{af_n_bands}{Number of k-means AF basis signatures to extract from
+pooled unstained/AF control events, or `"auto"` to keep distinct signatures
+from up to `af_auto_max_bands` k-means centers.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used when
 deriving AF basis signatures.}
 
-\item{af_auto_max_bands}{Maximum SOM nodes that `"auto"` may create before
-prepending the mean AF row. Default is 100.}
+\item{af_auto_max_bands}{Maximum k-means centers that `"auto"` may score.
+Default is 100.}
 
-\item{af_min_cluster_events}{Compatibility argument retained for older
-workflows.}
+\item{af_min_cluster_events}{Minimum k-means cluster size retained in
+`"auto"` mode.}
 
-\item{af_min_cluster_proportion}{Compatibility argument retained for older
-workflows.}
+\item{af_min_cluster_proportion}{Minimum k-means cluster proportion retained
+in `"auto"` mode.}
 
 \item{af_n_bands_sensitivity}{Compatibility argument retained for older
 workflows.}
 
 \item{af_refine}{Logical; if `TRUE`, run a second AF-library refinement pass
-that modulates SOM AF spectra from high-error unstained cells.}
+that modulates k-means AF spectra from high-error unstained cells.}
 
 \item{af_refine_problem_quantile}{Quantile used to choose high-error
 unstained cells for AF refinement. Default is 0.99.}
 
 \item{af_deduplicate}{Logical; if `TRUE`, remove near-identical AF spectra
-after SOM extraction/refinement using cosine similarity. Default is
+after k-means extraction/refinement using cosine similarity. Default is
 `FALSE` for backward compatibility.}
 
 \item{af_deduplication_threshold}{Cosine similarity threshold used when
