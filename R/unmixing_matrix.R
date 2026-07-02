@@ -47,7 +47,7 @@ derive_unmixing_matrix <- function(M,
         if (identical(method_upper, "RWLS")) {
             warning(
                 "Static RWLS matrix is a WLS proxy and may differ from per-cell RWLS solutions. ",
-                "Use dynamic method = 'RWLS' in unmix_samples() for robust per-cell fits."
+                "Use unmixing_method = 'RWLS' in unmix_samples() for robust per-cell fits."
             )
         }
         detector_weights <- .wls_static_detector_weights(
@@ -73,7 +73,7 @@ derive_unmixing_matrix <- function(M,
 
         warning(
             "Static NNLS matrix is a linear proxy and may differ from per-cell NNLS solutions. ",
-            "Use dynamic method = 'NNLS' in unmix_samples() for exact constrained per-cell fits."
+            "Use unmixing_method = 'NNLS' in unmix_samples() for exact constrained per-cell fits."
         )
 
     } else {

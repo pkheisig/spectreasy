@@ -183,6 +183,21 @@
     .write_qc_report_csv(as.data.frame(mat, check.names = FALSE), path, row_id = row_id)
 }
 
+.prepare_qc_report_metrics_dir <- function(qc_metrics_dir = NULL) {
+    if (!is.null(qc_metrics_dir) && length(qc_metrics_dir) > 0 &&
+        !is.na(qc_metrics_dir[1]) && nzchar(trimws(as.character(qc_metrics_dir)[1]))) {
+        qc_metrics_dir <- as.character(qc_metrics_dir)[1]
+        dir.create(qc_metrics_dir, showWarnings = FALSE, recursive = TRUE)
+        obsolete_files <- file.path(
+            qc_metrics_dir,
+            c("sample_qc_summary.csv", "spectral_spread_matrix.csv", "directional_spread_score.csv")
+        )
+        unlink(obsolete_files[file.exists(obsolete_files)], force = TRUE)
+        return(qc_metrics_dir)
+    }
+    NULL
+}
+
 .compute_qc_report_detector_rms <- function(res_list, M = NULL, pd = NULL) {
     detector_names <- if (!is.null(M)) colnames(.as_reference_matrix(M, "M")) else NULL
     residuals <- .collect_report_residual_matrix(res_list, detector_names = detector_names)
@@ -950,7 +965,7 @@
 #'   `save_qc_pngs = TRUE`.
 #' @param save_qc_pngs Logical; if `TRUE`, save report plot pages as PNG files
 #'   alongside the PDF report.
-#' @param qc_metrics_dir Optional directory where plot-ready sample QC metric
+#' @param qc_metrics_dir Optional directory where plot-ready QC metric
 #'   CSVs are written alongside the PDF report.
 #'
 #' @return Invisibly returns a list with `output_file`, `qc_plot_dir`, and
@@ -1066,13 +1081,7 @@ qc_samples <- function(results,
         save_qc_pngs = save_qc_pngs,
         output_file = output_file
     )
-    if (!is.null(qc_metrics_dir) && length(qc_metrics_dir) > 0 &&
-        !is.na(qc_metrics_dir[1]) && nzchar(trimws(as.character(qc_metrics_dir)[1]))) {
-        qc_metrics_dir <- as.character(qc_metrics_dir)[1]
-        dir.create(qc_metrics_dir, showWarnings = FALSE, recursive = TRUE)
-    } else {
-        qc_metrics_dir <- NULL
-    }
+    qc_metrics_dir <- .prepare_qc_report_metrics_dir(qc_metrics_dir)
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
     report_page_started <- FALSE
@@ -1105,12 +1114,6 @@ qc_samples <- function(results,
     M_no_af <- M[keep_non_af, , drop = FALSE]
     M_af <- M[!keep_non_af, , drop = FALSE]
     if (!is.null(qc_metrics_dir)) {
-        sample_summary <- data.frame(
-            sample = names(file_counts),
-            n_events = as.integer(file_counts),
-            stringsAsFactors = FALSE
-        )
-        .write_qc_report_csv(sample_summary, file.path(qc_metrics_dir, "sample_qc_summary.csv"))
         if (nrow(M_no_af) > 0) {
             .write_qc_report_matrix_metric(
                 M_no_af,
@@ -1153,27 +1156,6 @@ qc_samples <- function(results,
             .save_qc_report_png(p, retained_qc_plot_dir, sprintf("similarity_matrix_%02d.png", i))
             draw_report_plot_page(p)
         }
-    }
-
-    message("  - Writing Spread Matrix metrics...")
-    if (nrow(M_no_af) > 1) {
-        ssm_method <- if (method %in% c("NNLS", "RWLS", "AutoSpectral")) {
-            if (identical(method, "RWLS")) "WLS" else "OLS"
-        } else {
-            method
-        }
-        ssm <- calculate_ssm(M_no_af, method = ssm_method)
-        spread_score <- calculate_directional_spread_score(ssm)
-        .write_qc_report_matrix_metric(
-            ssm,
-            file.path(qc_metrics_dir, "spectral_spread_matrix.csv"),
-            row_id = "spilling_marker"
-        )
-        .write_qc_report_matrix_metric(
-            spread_score,
-            file.path(qc_metrics_dir, "directional_spread_score.csv"),
-            row_id = "spilling_marker"
-        )
     }
 
     if (identical(method, "NNLS")) {

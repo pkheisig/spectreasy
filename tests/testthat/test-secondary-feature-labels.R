@@ -40,7 +40,7 @@ testthat::test_that("unmix_samples writes secondary feature names from control m
     spectreasy::unmix_samples(
         sample_dir = sample_dir,
         M = M,
-        method = "OLS",
+        unmixing_method = "OLS",
         output_dir = output_dir,
         write_fcs = TRUE
     )

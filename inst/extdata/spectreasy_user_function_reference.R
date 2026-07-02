@@ -36,7 +36,7 @@
         auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
         output_dir = "spectreasy_outputs/unmix_controls",
         exclude_af = FALSE,
-        unmix_method = "WLS",
+        unmixing_method = "WLS",
         unmix_scatter_panel_size_mm = 30,
         seed = NULL,
         af_n_bands = "auto",
@@ -65,6 +65,7 @@
         method = "WLS",
         qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
         save_qc_pngs = FALSE,
+        qc_metrics_dir = NULL,
         use_scatter_gating = TRUE,
         unmix_scatter_max_points = 1000,
         unmix_scatter_axis_limit = NULL,
@@ -86,17 +87,9 @@
             "scc_variances.csv"
         ),
         detector_noise_file = NULL,
-        method = "WLS",
+        unmixing_method = "WLS",
         rwls_max_iter = 1L,
         n_threads = 1L,
-        cytometer = "auto",
-        scc_dir = NULL,
-        control_file = NULL,
-        af_n_bands = "auto",
-        af_auto_max_bands = 100,
-        af_min_cluster_events = 20,
-        af_min_cluster_proportion = 0.005,
-        exclude_af = FALSE,
         estimate_af = FALSE,
         output_dir = file.path(
             "spectreasy_outputs",
@@ -111,6 +104,8 @@
         seed = NULL,
         return_type = c("list", "flowSet", "SingleCellExperiment"),
         verbose = TRUE
+        # Deprecated compatibility arguments can be passed through ...,
+        # but reference matrices should normally be built with unmix_controls().
     )
 
     qc_samples_report <- qc_samples(

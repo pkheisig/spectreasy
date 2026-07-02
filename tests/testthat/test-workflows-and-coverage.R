@@ -216,7 +216,7 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
         scc_dir = wf$scc_dir,
         control_file = control_csv,
         output_dir = output_dir,
-        unmix_method = "OLS",
+        unmixing_method = "OLS",
         save_qc_plots = TRUE,
         seed = 1,
         subsample_n = 400
@@ -243,7 +243,7 @@ test_that("unmix_controls handles WLS output and exclude_af branch", {
         control_file = control_csv,
         output_dir = output_dir,
         exclude_af = TRUE,
-        unmix_method = "WLS",
+        unmixing_method = "WLS",
         seed = 1,
         subsample_n = 400
     )
@@ -270,7 +270,7 @@ test_that("unmix_controls tolerates a missing unstained mapping row", {
         scc_dir = wf$scc_dir,
         control_file = control_csv,
         output_dir = output_dir,
-        unmix_method = "WLS",
+        unmixing_method = "WLS",
         seed = 1,
         subsample_n = 300
     )
@@ -309,9 +309,7 @@ test_that("unmix_samples runs WLS without recomputing missing SCC variances", {
         sample_dir = sample_dir,
         unmixing_matrix_file = ref_file,
         variances_file = var_file,
-        method = "WLS",
-        scc_dir = wf$scc_dir,
-        control_file = wf$control_df,
+        unmixing_method = "WLS",
         output_dir = output_dir,
         write_fcs = TRUE
     )
@@ -342,7 +340,7 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
         spectreasy::unmix_samples(
             sample_dir = sample_dir,
             M = M,
-            method = "OLS",
+            unmixing_method = "OLS",
             output_dir = output_dir
         )
     )
@@ -357,6 +355,7 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
     wf <- make_synthetic_workflow()
     output_pdf <- tempfile(fileext = ".pdf")
     qc_plot_dir <- tempfile("spectreasy_covr_scc_report_")
+    qc_metrics_dir <- tempfile("spectreasy_covr_scc_metrics_")
     control_csv <- tempfile(fileext = ".csv")
     utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
 
@@ -367,6 +366,7 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
         method = "NNLS",
         qc_plot_dir = qc_plot_dir,
         save_qc_pngs = TRUE,
+        qc_metrics_dir = qc_metrics_dir,
         seed = 1,
         subsample_n = 400
     )
@@ -376,6 +376,15 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
     expect_true(is.matrix(out$M))
     expect_true(is.data.frame(out$qc_summary))
     expect_equal(out$method, "NNLS")
+    expect_equal(out$qc_metrics_dir, qc_metrics_dir)
+    expect_true(file.exists(file.path(qc_metrics_dir, "reference_spectra.csv")))
+    expect_true(file.exists(file.path(qc_metrics_dir, "fluorophore_spectral_similarity.csv")))
+    expect_true(file.exists(file.path(qc_metrics_dir, "rms_residual_per_detector.csv")))
+    expect_true(file.exists(file.path(qc_metrics_dir, "overall_detector_reconstruction_error_per_sample.csv")))
+    expect_false(file.exists(file.path(qc_metrics_dir, "negative_population_spread.csv")))
+    expect_false(file.exists(file.path(qc_metrics_dir, "sample_qc_summary.csv")))
+    expect_false(file.exists(file.path(qc_metrics_dir, "spectral_spread_matrix.csv")))
+    expect_false(file.exists(file.path(qc_metrics_dir, "directional_spread_score.csv")))
 
     # Test default output file behavior
     default_pdf <- "spectreasy_outputs/unmix_controls/qc_controls_report.pdf"

@@ -253,7 +253,7 @@
     unmixed_list
 }
 
-.derive_unmix_static_matrix <- function(M, fcs_files, unmix_method) {
+.derive_unmix_static_matrix <- function(M, fcs_files, unmixing_method) {
     # If M has multiple AF bands, only use the base "AF" band (and non-AF markers) for the static unmixing matrix
     # to avoid singularity (since we cannot statically unmix more markers than detectors).
     marker_names <- rownames(M)
@@ -272,7 +272,7 @@
         M_static <- M
     }
 
-    static_unmixing_matrix_method <- toupper(unmix_method)
+    static_unmixing_matrix_method <- toupper(unmixing_method)
     if (static_unmixing_matrix_method %in% c("WLS", "RWLS")) {
         W <- derive_unmixing_matrix(M_static, method = "WLS")
     } else {
@@ -338,7 +338,7 @@
 #' @param output_dir Output directory for SCC workflow artifacts.
 #' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls even when
 #'   they are present in the SCC folder or control mapping.
-#' @param unmix_method SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).
+#' @param unmixing_method SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
 #' @param af_n_bands Number of k-means AF basis signatures to extract from
@@ -351,7 +351,7 @@
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
 #'   events required to keep a k-means AF cluster. Default is 0.005.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
-#'   iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
+#'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
 #' @param unmix_threads Positive integer; number of threads to use for event-wise
 #'   multi-AF WLS/RWLS SCC unmixing. The default, 1, keeps execution single-threaded.
@@ -386,7 +386,7 @@ unmix_controls <- function(
     auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
     output_dir = "spectreasy_outputs/unmix_controls",
     exclude_af = FALSE,
-    unmix_method = "WLS",
+    unmixing_method = "WLS",
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
     af_n_bands = "auto",
@@ -411,6 +411,11 @@ unmix_controls <- function(
     if ("af_n_bands_sensitivity" %in% names(extra_args)) {
         warning("af_n_bands_sensitivity is ignored and has been removed.", call. = FALSE)
         extra_args$af_n_bands_sensitivity <- NULL
+    }
+    if ("unmix_method" %in% names(extra_args)) {
+        warning("unmix_method is deprecated; use unmixing_method.", call. = FALSE)
+        unmixing_method <- extra_args$unmix_method
+        extra_args$unmix_method <- NULL
     }
     if ("output_file" %in% names(extra_args)) {
         warning("output_file is ignored by unmix_controls(); use output_dir for automatic reports or qc_controls() for an explicit report path.", call. = FALSE)
@@ -504,10 +509,9 @@ unmix_controls <- function(
     unmixed_list <- unmix_samples(
         sample_dir = scc_dir,
         M = M,
-        method = unmix_method,
+        unmixing_method = unmixing_method,
         rwls_max_iter = rwls_max_iter,
         n_threads = unmix_threads,
-        cytometer = cytometer,
         output_dir = output_paths$unmixed_dir,
         write_fcs = TRUE,
         save_report = FALSE
@@ -520,7 +524,7 @@ unmix_controls <- function(
         exclude_af = exclude_af
     )
 
-    static_info <- .derive_unmix_static_matrix(M, fcs_files = meta_info$fcs_files, unmix_method = unmix_method)
+    static_info <- .derive_unmix_static_matrix(M, fcs_files = meta_info$fcs_files, unmixing_method = unmixing_method)
     W <- static_info$W
     save_unmixing_matrix(W, output_paths$unmixing_matrix_csv)
 
@@ -548,9 +552,10 @@ unmix_controls <- function(
             output_file = output_file,
             control_file = control_file,
             cytometer = cytometer,
-            method = unmix_method,
+            method = unmixing_method,
             qc_plot_dir = qc_controls_dir,
             save_qc_pngs = save_qc_plots,
+            qc_metrics_dir = qc_controls_dir,
             use_scatter_gating = use_scatter_gating,
             exclude_af = exclude_af,
             unmix_scatter_max_points = 1000,

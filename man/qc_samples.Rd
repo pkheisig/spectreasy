@@ -89,7 +89,7 @@ If `FALSE` (default), only include NxN pages for the first sample in `results`.}
 \item{save_qc_pngs}{Logical; if `TRUE`, save report plot pages as PNG files
 alongside the PDF report.}
 
-\item{qc_metrics_dir}{Optional directory where plot-ready sample QC metric
+\item{qc_metrics_dir}{Optional directory where plot-ready QC metric
 CSVs are written alongside the PDF report.}
 }
 \value{

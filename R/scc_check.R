@@ -281,6 +281,8 @@
 #' @param save_qc_pngs Logical; if `TRUE`, keep the intermediate QC PNG files in
 #'   `qc_plot_dir`. If `FALSE` (default), PNGs are written to a temporary directory
 #'   for report assembly and removed afterward.
+#' @param qc_metrics_dir Optional directory where plot-ready SCC QC metric
+#'   CSVs are written alongside the PDF report.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use scatter/intensity
 #'   gating and show scatter gate plots in the report. If `FALSE`, use and show
 #'   the legacy histogram gate.
@@ -292,7 +294,7 @@
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #' @return Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
-#'   `af_bank_info`, and `method`.
+#'   `qc_metrics_dir`, `af_bank_info`, and `method`.
 #'   `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 #' @examples
 #' if (interactive()) {
@@ -312,6 +314,7 @@ qc_controls <- function(
     method = "WLS",
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
     save_qc_pngs = FALSE,
+    qc_metrics_dir = NULL,
     use_scatter_gating = TRUE,
     unmix_scatter_max_points = 1000,
     unmix_scatter_axis_limit = NULL,
@@ -336,6 +339,7 @@ qc_controls <- function(
     if (!is.null(plot_dir_info$cleanup_dir)) {
         on.exit(unlink(plot_dir_info$cleanup_dir, recursive = TRUE, force = TRUE), add = TRUE)
     }
+    qc_metrics_dir <- .prepare_qc_report_metrics_dir(qc_metrics_dir)
 
     control_resolved <- .resolve_control_file_path(control_file)
     control_input <- if (file.exists(control_resolved)) control_resolved else NULL
@@ -401,6 +405,24 @@ qc_controls <- function(
 
     keep_non_af <- !grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
     M_no_af <- M_report[keep_non_af, , drop = FALSE]
+    M_af <- M_report[!keep_non_af, , drop = FALSE]
+
+    if (!is.null(qc_metrics_dir)) {
+        if (nrow(M_no_af) > 0) {
+            .write_qc_report_matrix_metric(
+                M_no_af,
+                file.path(qc_metrics_dir, "reference_spectra.csv"),
+                row_id = "fluorophore"
+            )
+        }
+        if (nrow(M_af) > 0) {
+            .write_qc_report_matrix_metric(
+                M_af,
+                file.path(qc_metrics_dir, "af_bank_spectra.csv"),
+                row_id = "af_band"
+            )
+        }
+    }
 
     if (nrow(M_no_af) > 0) {
         .draw_report_ggplot_page(plot_spectra(M_no_af, pd = pd, output_file = NULL), height_ratio = 0.6)
@@ -408,16 +430,47 @@ qc_controls <- function(
 
     if (nrow(M_no_af) > 1) {
         sim_mat <- calculate_similarity_matrix(M_no_af)
+        .write_qc_report_matrix_metric(
+            sim_mat,
+            file.path(qc_metrics_dir, "fluorophore_spectral_similarity.csv"),
+            row_id = "fluorophore"
+        )
         .draw_report_ggplot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
         unmixed_list <- unmix_samples(
             sample_dir = scc_dir,
             M = M_report,
-            method = method,
-            cytometer = cytometer,
+            unmixing_method = method,
             write_fcs = FALSE,
             save_report = FALSE,
             verbose = FALSE
         )
+        if (!identical(method, "NNLS")) {
+            control_results_df <- .normalize_qc_report_results_df(unmixed_list)
+            nps_scores <- calculate_nps(control_results_df)
+            nps_scores <- nps_scores[!grepl("^AF($|_)", nps_scores$Marker, ignore.case = TRUE), , drop = FALSE]
+            if (nrow(nps_scores) > 0) {
+                .write_qc_report_csv(
+                    nps_scores,
+                    file.path(qc_metrics_dir, "negative_population_spread.csv")
+                )
+            }
+        }
+
+        detector_rms <- .compute_qc_report_detector_rms(unmixed_list, M = M_report, pd = pd)
+        if (!is.null(detector_rms)) {
+            .write_qc_report_csv(
+                detector_rms,
+                file.path(qc_metrics_dir, "rms_residual_per_detector.csv")
+            )
+        }
+        sample_rms <- .compute_qc_report_sample_rms(unmixed_list, M = M_report)
+        if (!is.null(sample_rms)) {
+            .write_qc_report_csv(
+                sample_rms,
+                file.path(qc_metrics_dir, "overall_detector_reconstruction_error_per_sample.csv")
+            )
+        }
+
         sample_to_marker <- NULL
         marker_display <- NULL
         if (nrow(qc_summary) > 0) {
@@ -468,5 +521,12 @@ qc_controls <- function(
     }
 
     message("SCC report saved to: ", output_file)
-    invisible(list(M = M_built, qc_summary = qc_summary, qc_plot_dir = retained_qc_plot_dir, af_bank_info = attr(M_built, "af_bank_info"), method = method))
+    invisible(list(
+        M = M_built,
+        qc_summary = qc_summary,
+        qc_plot_dir = retained_qc_plot_dir,
+        qc_metrics_dir = qc_metrics_dir,
+        af_bank_info = attr(M_built, "af_bank_info"),
+        method = method
+    ))
 }

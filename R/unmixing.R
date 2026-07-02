@@ -241,16 +241,7 @@
 
 .ensure_wls_variances <- function(M,
                                   method,
-                                  variances_file = NULL,
-                                  scc_dir = NULL,
-                                  control_file = NULL,
-                                  af_n_bands = "auto",
-                                  af_auto_max_bands = 100,
-                                  af_min_cluster_events = 20,
-                                  af_min_cluster_proportion = 0.005,
-                                  exclude_af = FALSE,
-                                  cytometer = "auto",
-                                  seed = NULL) {
+                                  variances_file = NULL) {
     if (!(toupper(method) %in% c("WLS", "RWLS"))) {
         return(M)
     }
@@ -591,32 +582,13 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param detector_noise_file Optional CSV path to detector-specific WLS noise
 #'   floors, as written by [unmix_controls()] (`"scc_detector_noise.csv"`). If
 #'   omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
-#'   estimates the floors from `scc_dir` when available, and otherwise falls
-#'   back to the built-in scalar noise floor.
-#' @param method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).
+#'   falls back to the built-in scalar noise floor.
+#' @param unmixing_method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).
 #' @param rwls_max_iter Positive integer; number of robust reweighting
-#'   iterations used when `method = "RWLS"`. The default, 1, preserves the
+#'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
 #' @param n_threads Positive integer; number of threads to use for event-wise
 #'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
-#' @param cytometer Cytometer name used only when `unmix_samples()` must build a
-#'   reference matrix dynamically. The default, `"auto"`, infers the cytometer
-#'   from FCS detector names when possible.
-#' @param scc_dir Directory containing single-color control files. Used to
-#'   dynamically build the reference matrix if `M` and `unmixing_matrix_file`
-#'   are missing.
-#' @param control_file Path to the control mapping CSV.
-#'   Used when dynamically building the reference matrix.
-#' @param af_n_bands Number of k-means AF basis signatures to extract from
-#'   pooled unstained/AF control events, or `"auto"` to keep distinct signatures
-#'   from up to `af_auto_max_bands` k-means centers. Legacy compatibility
-#'   argument; build AF references with [unmix_controls()].
-#' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
-#' @param af_min_cluster_events Minimum number of AF events required to keep a
-#'   k-means AF cluster.
-#' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
-#'   events required to keep a k-means AF cluster.
-#' @param exclude_af Logical; whether to exclude AF from unmixing.
 #' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
 #'   stained sample event-wise WLS residuals, select the best candidate model by
 #'   held-out WLS residual score, and append the selected AF rows to the
@@ -643,6 +615,9 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   `altExp(x, "detector_residuals")` when available.
 #' @param verbose Logical; if `TRUE`, print progress messages while unmixing
 #'   each sample.
+#' @param ... Deprecated compatibility arguments. Build reference matrices with
+#'   [unmix_controls()] rather than passing SCC/AF reference-building arguments
+#'   to `unmix_samples()`.
 #' @return Either a named list with one element per sample, a `flowSet`, or a
 #'   `SingleCellExperiment` depending on `return_type`. For `return_type = "list"`,
 #'   the result has class `spectreasy_unmixed_results`; list elements contain
@@ -681,7 +656,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   APC_sample = simulate_sample("APC", M_demo)
 #' ))
 #'
-#' unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", output_dir = tempdir())
+#' unmixed <- unmix_samples(toy_fs, M = M_demo, unmixing_method = "OLS", output_dir = tempdir())
 #' names(unmixed)
 #' @export
 unmix_samples <- function(sample_dir = "samples", 
@@ -689,17 +664,9 @@ unmix_samples <- function(sample_dir = "samples",
                           unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
                           variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
                           detector_noise_file = NULL,
-                          method = "WLS", 
+                          unmixing_method = "WLS", 
                           rwls_max_iter = 1L,
                           n_threads = 1L,
-                          cytometer = "auto",
-                          scc_dir = NULL,
-                          control_file = NULL,
-                          af_n_bands = "auto",
-                          af_auto_max_bands = 100,
-                          af_min_cluster_events = 20,
-                          af_min_cluster_proportion = 0.005,
-                          exclude_af = FALSE,
                           estimate_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
@@ -709,10 +676,56 @@ unmix_samples <- function(sample_dir = "samples",
                           subsample_n = NULL,
                           seed = NULL,
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
-                          verbose = TRUE) {
+                          verbose = TRUE,
+                          ...) {
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
     variances_file_was_missing <- missing(variances_file)
+    extra_args <- list(...)
+    if ("method" %in% names(extra_args)) {
+        warning("method is deprecated for unmix_samples(); use unmixing_method.", call. = FALSE)
+        unmixing_method <- extra_args$method
+        extra_args$method <- NULL
+    }
+    if ("output_file" %in% names(extra_args)) {
+        warning("output_file is ignored by unmix_samples(); use output_dir for automatic reports or qc_samples() for an explicit report path.", call. = FALSE)
+        extra_args$output_file <- NULL
+    }
+
+    cytometer <- "auto"
+    scc_dir <- NULL
+    control_file <- NULL
+    af_n_bands <- "auto"
+    af_auto_max_bands <- 100
+    af_min_cluster_events <- 20
+    af_min_cluster_proportion <- 0.005
+    exclude_af <- FALSE
+    allow_dynamic_reference <- FALSE
+    reference_arg_names <- c(
+        "cytometer",
+        "scc_dir",
+        "control_file",
+        "af_n_bands",
+        "af_auto_max_bands",
+        "af_min_cluster_events",
+        "af_min_cluster_proportion",
+        "exclude_af"
+    )
+    reference_args <- intersect(reference_arg_names, names(extra_args))
+    if (length(reference_args) > 0) {
+        warning(
+            "Reference-building arguments are deprecated in unmix_samples(); run unmix_controls() first and pass its saved matrix or M.",
+            call. = FALSE
+        )
+        for (nm in reference_args) {
+            assign(nm, extra_args[[nm]])
+            extra_args[[nm]] <- NULL
+        }
+        allow_dynamic_reference <- TRUE
+    }
+    if (length(extra_args) > 0) {
+        stop("Unused argument(s): ", paste(names(extra_args), collapse = ", "), call. = FALSE)
+    }
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")
@@ -738,7 +751,7 @@ unmix_samples <- function(sample_dir = "samples",
             unmixing_matrix_file = unmixing_matrix_file,
             scc_dir = scc_dir
         )
-    } else {
+    } else if (isTRUE(allow_dynamic_reference)) {
         # Try to build reference matrix dynamically
         resolved_scc_dir <- if (!is.null(scc_dir)) scc_dir else "scc"
         if (dir.exists(resolved_scc_dir)) {
@@ -766,12 +779,17 @@ unmix_samples <- function(sample_dir = "samples",
                 stop("No reference matrix provided, and 'scc' directory not found. Supply M, a valid unmixing_matrix_file, or an scc_dir.")
             }
         }
+    } else {
+        stop(
+            "No reference matrix provided. Run unmix_controls() first, then supply M or a valid unmixing_matrix_file.",
+            call. = FALSE
+        )
     }
 
-    method_upper <- toupper(method)
+    method_upper <- toupper(unmixing_method)
     allowed_methods <- c("WLS", "RWLS", "OLS", "NNLS")
     if (!(method_upper %in% allowed_methods)) {
-        stop("method must be one of: ", paste(allowed_methods, collapse = ", "))
+        stop("unmixing_method must be one of: ", paste(allowed_methods, collapse = ", "))
     }
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(n_threads)
@@ -779,16 +797,7 @@ unmix_samples <- function(sample_dir = "samples",
     M <- .ensure_wls_variances(
         M = M,
         method = method_upper,
-        variances_file = variances_file,
-        scc_dir = scc_dir,
-        control_file = control_file,
-        af_n_bands = af_n_bands,
-        af_auto_max_bands = af_auto_max_bands,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        exclude_af = exclude_af,
-        cytometer = cytometer,
-        seed = seed
+        variances_file = variances_file
     )
 
     sample_entries <- .prepare_unmix_samples_input(sample_dir)

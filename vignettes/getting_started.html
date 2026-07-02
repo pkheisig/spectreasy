@@ -396,7 +396,7 @@ then pauses for review.</p>
 <span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>  <span class="at">auto_create_mapping =</span> <span class="cn">TRUE</span>,</span>
 <span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>  <span class="at">cytometer =</span> <span class="st">&quot;Aurora&quot;</span>,</span>
 <span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>  <span class="at">auto_unknown_fluor_policy =</span> <span class="st">&quot;by_channel&quot;</span>,</span>
-<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>  <span class="at">unmix_method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>  <span class="at">unmixing_method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
 <span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>  <span class="at">unmix_scatter_panel_size_mm =</span> <span class="dv">30</span>,</span>
 <span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>  <span class="at">save_qc_plots =</span> <span class="cn">TRUE</span></span>
 <span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>)</span></code></pre></div>
@@ -751,8 +751,7 @@ for the core <code>unmix_controls()</code> -&gt;
 <code>unmix_samples()</code> workflow shown above.</p>
 <div id="per-cell-autofluorescence-af-extraction" class="section level2">
 <h2>Per-cell Autofluorescence (AF) Extraction</h2>
-<p>By default, <code>unmix_controls()</code> and dynamic
-<code>unmix_samples()</code> reference-matrix builds use
+<p>By default, <code>unmix_controls()</code> uses
 <code>af_n_bands = &quot;auto&quot;</code> to choose autofluorescence signatures
 from the unstained control. If your cells have different AF shapes from
 cell to cell, auto can split AF into several basis signatures.</p>
@@ -767,22 +766,19 @@ pooled before AF extraction.</p>
 <span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>  <span class="at">control_file =</span> <span class="st">&quot;fcs_mapping.csv&quot;</span>,</span>
 <span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a>  <span class="at">cytometer =</span> <span class="st">&quot;Aurora&quot;</span>,</span>
 <span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="st">&quot;spectreasy_outputs/unmix_controls_multi_af&quot;</span>,</span>
-<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>  <span class="at">unmix_method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>  <span class="at">unmixing_method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
 <span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>  <span class="at">af_n_bands =</span> <span class="st">&quot;auto&quot;</span>,</span>
 <span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a>  <span class="at">seed =</span> <span class="dv">1</span></span>
 <span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a>)</span></code></pre></div>
-<p>If you want <code>unmix_samples()</code> to rebuild the reference
-matrix dynamically from the SCC files, pass the same AF setting
-there as well:</p>
+<p>Then unmix samples with the control-stage matrix. AF settings stay in
+<code>unmix_controls()</code>; <code>unmix_samples()</code> just consumes
+the resulting matrix.</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>unmixed_multi_af <span class="ot">&lt;-</span> <span class="fu">unmix_samples</span>(</span>
 <span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>  <span class="at">sample_dir =</span> <span class="st">&quot;sample&quot;</span>,</span>
-<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>  <span class="at">unmixing_matrix_file =</span> <span class="cn">NULL</span>,</span>
-<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>  <span class="at">scc_dir =</span> <span class="st">&quot;scc&quot;</span>,</span>
-<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a>  <span class="at">control_file =</span> <span class="st">&quot;fcs_mapping.csv&quot;</span>,</span>
-<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
-<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a>  <span class="at">af_n_bands =</span> <span class="st">&quot;auto&quot;</span>,</span>
-<span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="st">&quot;spectreasy_outputs/unmix_samples_multi_af&quot;</span></span>
-<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a>)</span></code></pre></div>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>  <span class="at">unmixing_matrix_file =</span> ctrl_multi_af<span class="sc">$</span>reference_matrix_file,</span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>  <span class="at">unmixing_method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="st">&quot;spectreasy_outputs/unmix_samples_multi_af&quot;</span></span>
+<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a>)</span></code></pre></div>
 <p><code>af_n_bands</code> is like choosing how many AF “flavors” to
 model. More bands can fit complex AF better, but too many similar bands
 can make the matrix unstable. With
@@ -799,7 +795,7 @@ reviewed control CSV file via <code>control_file</code> to
 <span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a>  <span class="at">control_file =</span> control_file,</span>
 <span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a>  <span class="at">cytometer =</span> <span class="st">&quot;Aurora&quot;</span>,</span>
 <span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="fu">file.path</span>(project_dir, <span class="st">&quot;spectreasy_outputs&quot;</span>, <span class="st">&quot;unmix_controls_noninteractive&quot;</span>),</span>
-<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a>  <span class="at">unmix_method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
+<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a>  <span class="at">unmixing_method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
 <span id="cb13-7"><a href="#cb13-7" tabindex="-1"></a>  <span class="at">seed =</span> <span class="dv">1</span></span>
 <span id="cb13-8"><a href="#cb13-8" tabindex="-1"></a>)</span>
 <span id="cb13-9"><a href="#cb13-9" tabindex="-1"></a></span>
@@ -823,14 +819,14 @@ remains useful as control-spread QC metadata.</p>
 <span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a>mapped_names[na_idx] <span class="ot">&lt;-</span> <span class="fu">rownames</span>(reference_matrix)[na_idx]</span>
 <span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a><span class="fu">rownames</span>(reference_matrix) <span class="ot">&lt;-</span> <span class="fu">unname</span>(mapped_names)</span>
 <span id="cb14-8"><a href="#cb14-8" tabindex="-1"></a></span>
-<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a>unmixed_dynamic <span class="ot">&lt;-</span> <span class="fu">unmix_samples</span>(</span>
+<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a>unmixed_direct <span class="ot">&lt;-</span> <span class="fu">unmix_samples</span>(</span>
 <span id="cb14-10"><a href="#cb14-10" tabindex="-1"></a>  <span class="at">sample_dir =</span> <span class="fu">file.path</span>(project_dir, <span class="st">&quot;sample&quot;</span>),</span>
 <span id="cb14-11"><a href="#cb14-11" tabindex="-1"></a>  <span class="at">M =</span> reference_matrix,</span>
-<span id="cb14-12"><a href="#cb14-12" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
-<span id="cb14-13"><a href="#cb14-13" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="fu">file.path</span>(project_dir, <span class="st">&quot;spectreasy_outputs&quot;</span>, <span class="st">&quot;unmix_samples_dynamic&quot;</span>)</span>
+<span id="cb14-12"><a href="#cb14-12" tabindex="-1"></a>  <span class="at">unmixing_method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
+<span id="cb14-13"><a href="#cb14-13" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="fu">file.path</span>(project_dir, <span class="st">&quot;spectreasy_outputs&quot;</span>, <span class="st">&quot;unmix_samples_direct&quot;</span>)</span>
 <span id="cb14-14"><a href="#cb14-14" tabindex="-1"></a>)</span>
 <span id="cb14-15"><a href="#cb14-15" tabindex="-1"></a></span>
-<span id="cb14-16"><a href="#cb14-16" tabindex="-1"></a><span class="fu">names</span>(unmixed_dynamic)</span>
+<span id="cb14-16"><a href="#cb14-16" tabindex="-1"></a><span class="fu">names</span>(unmixed_direct)</span>
 <span id="cb14-17"><a href="#cb14-17" tabindex="-1"></a><span class="co">#&gt; [1] &quot;sample&quot;</span></span></code></pre></div>
 </div>
 <div id="inspect-quick-qc-plots" class="section level2">

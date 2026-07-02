@@ -12,7 +12,7 @@ unmix_controls(
   auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
   output_dir = "spectreasy_outputs/unmix_controls",
   exclude_af = FALSE,
-  unmix_method = "WLS",
+  unmixing_method = "WLS",
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
   af_n_bands = "auto",
@@ -46,7 +46,7 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 \item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls even when
 they are present in the SCC folder or control mapping.}
 
-\item{unmix_method}{SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).}
+\item{unmixing_method}{SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).}
 
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
 
@@ -66,7 +66,7 @@ k-means AF cluster. Used together with `af_min_cluster_proportion`.}
 events required to keep a k-means AF cluster. Default is 0.005.}
 
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
-iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
+iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
 \item{unmix_threads}{Positive integer; number of threads to use for event-wise

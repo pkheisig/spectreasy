@@ -15,6 +15,7 @@ qc_controls(
   method = "WLS",
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   save_qc_pngs = FALSE,
+  qc_metrics_dir = NULL,
   use_scatter_gating = TRUE,
   unmix_scatter_max_points = 1000,
   unmix_scatter_axis_limit = NULL,
@@ -49,6 +50,9 @@ when `save_qc_pngs = TRUE`.}
 `qc_plot_dir`. If `FALSE` (default), PNGs are written to a temporary directory
 for report assembly and removed afterward.}
 
+\item{qc_metrics_dir}{Optional directory where plot-ready SCC QC metric
+CSVs are written alongside the PDF report.}
+
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use scatter/intensity
 gating and show scatter gate plots in the report. If `FALSE`, use and show
 the legacy histogram gate.}
@@ -66,7 +70,7 @@ ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.}
 }
 \value{
 Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
-  `af_bank_info`, and `method`.
+  `qc_metrics_dir`, `af_bank_info`, and `method`.
   `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 }
 \description{

@@ -11,17 +11,9 @@ unmix_samples(
     "scc_reference_matrix.csv"),
   variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
   detector_noise_file = NULL,
-  method = "WLS",
+  unmixing_method = "WLS",
   rwls_max_iter = 1L,
   n_threads = 1L,
-  cytometer = "auto",
-  scc_dir = NULL,
-  control_file = NULL,
-  af_n_bands = "auto",
-  af_auto_max_bands = 100,
-  af_min_cluster_events = 20,
-  af_min_cluster_proportion = 0.005,
-  exclude_af = FALSE,
   estimate_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
@@ -31,7 +23,8 @@ unmix_samples(
   subsample_n = NULL,
   seed = NULL,
   return_type = c("list", "flowSet", "SingleCellExperiment"),
-  verbose = TRUE
+  verbose = TRUE,
+  ...
 )
 }
 \arguments{
@@ -53,43 +46,16 @@ default WLS model does not use them as detector weights.}
 \item{detector_noise_file}{Optional CSV path to detector-specific WLS noise
 floors, as written by [unmix_controls()] (`"scc_detector_noise.csv"`). If
 omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
-estimates the floors from `scc_dir` when available, and otherwise falls
-back to the built-in scalar noise floor.}
+falls back to the built-in scalar noise floor.}
 
-\item{method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}
+\item{unmixing_method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}
 
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
-iterations used when `method = "RWLS"`. The default, 1, preserves the
+iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
 \item{n_threads}{Positive integer; number of threads to use for event-wise
 multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
-
-\item{cytometer}{Cytometer name used only when `unmix_samples()` must build a
-reference matrix dynamically. The default, `"auto"`, infers the cytometer
-from FCS detector names when possible.}
-
-\item{scc_dir}{Directory containing single-color control files. Used to
-dynamically build the reference matrix if `M` and `unmixing_matrix_file`
-are missing.}
-
-\item{control_file}{Path to the control mapping CSV.
-Used when dynamically building the reference matrix.}
-
-\item{af_n_bands}{Number of k-means AF basis signatures to extract from
-pooled unstained/AF control events, or `"auto"` to keep distinct signatures
-from up to `af_auto_max_bands` k-means centers. Legacy compatibility
-argument; build AF references with [unmix_controls()].}
-
-\item{af_auto_max_bands}{Maximum k-means centers that `"auto"` may score.}
-
-\item{af_min_cluster_events}{Minimum number of AF events required to keep a
-k-means AF cluster.}
-
-\item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
-events required to keep a k-means AF cluster.}
-
-\item{exclude_af}{Logical; whether to exclude AF from unmixing.}
 
 \item{estimate_af}{Logical; if `TRUE`, estimate AF signatures directly from
 stained sample event-wise WLS residuals, select the best candidate model by
@@ -126,6 +92,10 @@ unmixed values are returned in assay `"unmixed"`, with detector residuals in
 
 \item{verbose}{Logical; if `TRUE`, print progress messages while unmixing
 each sample.}
+
+\item{...}{Deprecated compatibility arguments. Build reference matrices with
+[unmix_controls()] rather than passing SCC/AF reference-building arguments
+to `unmix_samples()`.}
 }
 \value{
 Either a named list with one element per sample, a `flowSet`, or a
@@ -170,6 +140,6 @@ toy_fs <- flowCore::flowSet(list(
   APC_sample = simulate_sample("APC", M_demo)
 ))
 
-unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", output_dir = tempdir())
+unmixed <- unmix_samples(toy_fs, M = M_demo, unmixing_method = "OLS", output_dir = tempdir())
 names(unmixed)
 }

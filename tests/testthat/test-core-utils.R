@@ -276,7 +276,7 @@ test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_controls)))
     expect_true("estimate_af" %in% names(formals(spectreasy::unmix_samples)))
     expect_false(formals(spectreasy::unmix_samples)$estimate_af)
-    expect_equal(formals(spectreasy::unmix_samples)$method, "WLS")
+    expect_equal(formals(spectreasy::unmix_samples)$unmixing_method, "WLS")
 })
 
 test_that("calc_residuals multi-AF RWLS honors rwls_max_iter", {
@@ -393,7 +393,7 @@ test_that("unmix_samples loads sibling SCC detector-noise file for WLS", {
     unmixed <- spectreasy::unmix_samples(
         sample_dir = sample_dir,
         unmixing_matrix_file = tmp_ref,
-        method = "WLS",
+        unmixing_method = "WLS",
         output_dir = output_dir,
         write_fcs = FALSE
     )
@@ -439,14 +439,14 @@ test_that("unmix_samples can estimate missing AF from stained samples", {
     without_af <- spectreasy::unmix_samples(
         sample_dir = fs,
         M = M_marker,
-        method = "WLS",
+        unmixing_method = "WLS",
         write_fcs = FALSE,
         verbose = FALSE
     )
     with_af <- spectreasy::unmix_samples(
         sample_dir = fs,
         M = M_marker,
-        method = "WLS",
+        unmixing_method = "WLS",
         estimate_af = TRUE,
         write_fcs = FALSE,
         verbose = FALSE,
@@ -590,7 +590,7 @@ test_that("unmix_samples writes unmixed FCS with passthrough acquisition paramet
     unmixed <- spectreasy::unmix_samples(
         sample_dir = sample_dir,
         M = M,
-        method = "OLS",
+        unmixing_method = "OLS",
         output_dir = output_dir,
         write_fcs = TRUE
     )
@@ -632,7 +632,7 @@ test_that("unmix_samples uses safe output filenames and supports flowSet return"
     unmixed_fs <- spectreasy::unmix_samples(
         sample_dir = fs,
         M = M,
-        method = "OLS",
+        unmixing_method = "OLS",
         output_dir = output_dir,
         write_fcs = TRUE,
         return_type = "flowSet"
@@ -685,7 +685,7 @@ test_that("unmix_samples supports SingleCellExperiment input and output", {
         spectreasy::unmix_samples(
             sample_dir = toy_sce,
             M = M,
-            method = "OLS",
+            unmixing_method = "OLS",
             write_fcs = FALSE,
             return_type = "SingleCellExperiment"
         )
@@ -970,7 +970,7 @@ test_that("AF auto band selection prunes near-duplicate AF signatures", {
 test_that("AF auto is the default for matrix-building APIs", {
     expect_equal(formals(spectreasy::build_reference_matrix)$af_n_bands, "auto")
     expect_equal(formals(spectreasy::unmix_controls)$af_n_bands, "auto")
-    expect_equal(formals(spectreasy::unmix_samples)$af_n_bands, "auto")
+    expect_false("af_n_bands" %in% names(formals(spectreasy::unmix_samples)))
 })
 
 test_that("AF auto default similarity threshold keeps distinct bands", {
@@ -1429,7 +1429,7 @@ test_that("unmix_samples integrates with variances CSV file", {
         M = NULL,
         unmixing_matrix_file = tmp_ref,
         variances_file = tmp_var,
-        method = "WLS",
+        unmixing_method = "WLS",
         output_dir = output_dir,
         write_fcs = TRUE
     )
@@ -1497,7 +1497,7 @@ test_that("unmix_samples finds sibling variances for saved reference matrix", {
     unmixed <- spectreasy::unmix_samples(
         sample_dir = sample_dir,
         unmixing_matrix_file = tmp_ref,
-        method = "WLS",
+        unmixing_method = "WLS",
         output_dir = output_dir,
         write_fcs = TRUE
     )

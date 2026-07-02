@@ -90,7 +90,7 @@ test_that("qc_samples accepts unmix_samples results directly", {
     unmixed <- spectreasy::unmix_samples(
         toy_fs,
         M = M,
-        method = "OLS",
+        unmixing_method = "OLS",
         output_dir = tempdir(),
         write_fcs = FALSE
     )
@@ -98,6 +98,16 @@ test_that("qc_samples accepts unmix_samples results directly", {
     expect_s3_class(unmixed, "spectreasy_unmixed_results")
     expect_true(file.exists(attr(unmixed, "qc_report_file")))
     expect_true(dir.exists(attr(unmixed, "qc_samples_dir")))
+    qc_samples_dir <- attr(unmixed, "qc_metrics_dir")
+    expect_true(dir.exists(qc_samples_dir))
+    expect_true(file.exists(file.path(qc_samples_dir, "reference_spectra.csv")))
+    expect_true(file.exists(file.path(qc_samples_dir, "fluorophore_spectral_similarity.csv")))
+    expect_true(file.exists(file.path(qc_samples_dir, "negative_population_spread.csv")))
+    expect_true(file.exists(file.path(qc_samples_dir, "rms_residual_per_detector.csv")))
+    expect_true(file.exists(file.path(qc_samples_dir, "overall_detector_reconstruction_error_per_sample.csv")))
+    expect_false(file.exists(file.path(qc_samples_dir, "sample_qc_summary.csv")))
+    expect_false(file.exists(file.path(qc_samples_dir, "spectral_spread_matrix.csv")))
+    expect_false(file.exists(file.path(qc_samples_dir, "directional_spread_score.csv")))
 
     combined <- as.data.frame(unmixed)
     expect_true("File" %in% colnames(combined))
@@ -488,19 +498,30 @@ test_that("unmix_samples can dynamically construct reference matrix and handle m
     sample_ff <- flowCore::flowFrame(sample_exprs)
     toy_fs <- flowCore::flowSet(list(Sample1 = sample_ff))
     
-    # 5. Call unmix_samples with scc_dir and af_n_bands = 2
+    # 5. Legacy compatibility: dynamic reference construction still works, but
+    # users should build references with unmix_controls().
     # Ensure unmixing_matrix_file points to a non-existent temp file so it triggers build
     temp_matrix_file <- tempfile(fileext = ".csv")
     
-    unmixed <- spectreasy::unmix_samples(
-        sample_dir = toy_fs,
-        unmixing_matrix_file = temp_matrix_file,
-        scc_dir = scc_dir,
-        control_file = control_file,
-        af_n_bands = 2,
-        write_fcs = FALSE,
-        return_type = "list"
+    saw_reference_warning <- FALSE
+    unmixed <- withCallingHandlers(
+        spectreasy::unmix_samples(
+            sample_dir = toy_fs,
+            unmixing_matrix_file = temp_matrix_file,
+            scc_dir = scc_dir,
+            control_file = control_file,
+            af_n_bands = 2,
+            write_fcs = FALSE,
+            return_type = "list"
+        ),
+        warning = function(w) {
+            if (grepl("Reference-building arguments are deprecated", conditionMessage(w))) {
+                saw_reference_warning <<- TRUE
+            }
+            invokeRestart("muffleWarning")
+        }
     )
+    expect_true(saw_reference_warning)
     
     expect_s3_class(unmixed, "spectreasy_unmixed_results")
     unmixed_df <- as.data.frame(unmixed)
@@ -685,7 +706,7 @@ test_that("unmix_samples supports in-memory subsampling via subsample_n", {
     unmixed <- spectreasy::unmix_samples(
         toy_fs,
         M = M,
-        method = "OLS",
+        unmixing_method = "OLS",
         output_dir = tmp_dir,
         write_fcs = TRUE,
         subsample_n = 10,
@@ -728,7 +749,7 @@ test_that("unmix_samples excludes secondary AF bands from written FCS files", {
     unmixed <- spectreasy::unmix_samples(
         toy_fs,
         M = M,
-        method = "OLS",
+        unmixing_method = "OLS",
         output_dir = tmp_dir,
         write_fcs = TRUE
     )
