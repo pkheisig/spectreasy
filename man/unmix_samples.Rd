@@ -21,13 +21,11 @@ unmix_samples(
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
-  af_n_bands_sensitivity = 1.5,
   exclude_af = FALSE,
   estimate_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
   save_report = TRUE,
-  output_file = NULL,
   save_qc_plots = FALSE,
   qc_plot_dir = NULL,
   subsample_n = NULL,
@@ -91,9 +89,6 @@ k-means AF cluster.}
 \item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
 events required to keep a k-means AF cluster.}
 
-\item{af_n_bands_sensitivity}{Compatibility argument retained for older
-workflows.}
-
 \item{exclude_af}{Logical; whether to exclude AF from unmixing.}
 
 \item{estimate_af}{Logical; if `TRUE`, estimate AF signatures directly from
@@ -110,10 +105,6 @@ Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
 \item{save_report}{Logical; if `TRUE`, write a sample QC PDF report and
 sample QC metric CSVs from the in-memory unmixing results without rerunning
 unmixing. Defaults to `TRUE`.}
-
-\item{output_file}{Optional output path for the sample QC PDF report. When
-this is `NULL`, each `unmix_samples()` report run is written to a fresh
-`qc_samples`, `qc_samples_2`, ... folder beside the unmixed FCS output.}
 
 \item{save_qc_plots}{Logical; if `TRUE`, save QC report plots as PNG files
 in `qc_plot_dir` while creating the PDF report.}

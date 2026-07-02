@@ -99,8 +99,6 @@ af_profile_dir <- function(create = TRUE) {
 #'   k-means AF cluster.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
 #'   events required to keep a k-means AF cluster.
-#' @param af_n_bands_sensitivity Compatibility argument retained for older
-#'   workflows.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param show_plot Logical; print the AF spectra plot after extraction.
 #' @param verbose Logical; print progress updates while extracting.
@@ -113,7 +111,6 @@ extract_af_profile <- function(fcs_file,
                                af_auto_max_bands = 100,
                                af_min_cluster_events = 20,
                                af_min_cluster_proportion = 0.005,
-                               af_n_bands_sensitivity = 1.5,
                                seed = NULL,
                                show_plot = TRUE,
                                verbose = TRUE) {
@@ -132,8 +129,7 @@ extract_af_profile <- function(fcs_file,
         af_max_cells = af_max_cells,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity
+        af_min_cluster_proportion = af_min_cluster_proportion
     )
     .with_optional_seed(seed)
 
@@ -179,8 +175,7 @@ extract_af_profile <- function(fcs_file,
             af_events = gated$events,
             auto_max_bands = af_args$af_auto_max_bands,
             min_cluster_events = af_args$af_min_cluster_events,
-            min_cluster_proportion = af_args$af_min_cluster_proportion,
-            n_bands_sensitivity = af_args$af_n_bands_sensitivity
+            min_cluster_proportion = af_args$af_min_cluster_proportion
         ),
         warning = function(w) {
             if (grepl("Quick-TRANSfer stage steps exceeded maximum", conditionMessage(w), fixed = TRUE)) {
@@ -207,7 +202,6 @@ extract_af_profile <- function(fcs_file,
             af_auto_max_bands = af_args$af_auto_max_bands,
             af_min_cluster_events = af_args$af_min_cluster_events,
             af_min_cluster_proportion = af_args$af_min_cluster_proportion,
-            af_n_bands_sensitivity = af_args$af_n_bands_sensitivity,
             auto_selection = af_profiles$selection
         )
     )

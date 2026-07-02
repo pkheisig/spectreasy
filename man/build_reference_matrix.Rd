@@ -15,7 +15,6 @@ build_reference_matrix(
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
-  af_n_bands_sensitivity = 1.5,
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
@@ -64,9 +63,6 @@ larger threshold is applied.}
 \item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
 events required to keep a k-means AF cluster. The default `0.005` means
 0.5\% of the AF events used for extraction.}
-
-\item{af_n_bands_sensitivity}{Compatibility argument retained for older
-workflows.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

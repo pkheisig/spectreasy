@@ -1050,7 +1050,6 @@ test_that("AF argument validation supports auto and fixed k-means bands", {
     expect_equal(args$af_auto_max_bands, 100L)
     expect_equal(args$af_min_cluster_events, 20L)
     expect_equal(args$af_min_cluster_proportion, 0.005)
-    expect_equal(args$af_n_bands_sensitivity, 1.5)
     expect_error(
         spectreasy:::.validate_build_reference_af_args(0, 500),
         "af_n_bands"
@@ -1075,24 +1074,6 @@ test_that("AF argument validation supports auto and fixed k-means bands", {
     expect_error(
         spectreasy:::.validate_build_reference_af_args(2, 500, af_min_cluster_proportion = 1.5),
         "af_min_cluster_proportion"
-    )
-    args_improvement <- spectreasy:::.validate_build_reference_af_args(
-        af_n_bands = "auto",
-        af_max_cells = 500,
-        af_n_bands_sensitivity = 1
-    )
-    expect_equal(args_improvement$af_n_bands_sensitivity, 1)
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_n_bands_sensitivity = 5.5),
-        "af_n_bands_sensitivity"
-    )
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_n_bands_sensitivity = 0.05),
-        "af_n_bands_sensitivity"
-    )
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_n_bands_sensitivity = NULL),
-        "af_n_bands_sensitivity"
     )
 })
 
@@ -1125,7 +1106,7 @@ test_that("mapped SCC AF files are pooled into one AF bank size request", {
             )
         },
         .extract_reference_af_profiles = function(detector_names, n_bands, max_cells, af_events, auto_max_bands,
-                 min_cluster_events, min_cluster_proportion, n_bands_sensitivity) {
+                 min_cluster_events, min_cluster_proportion) {
             captured$n_bands <- n_bands
             captured$event_count <- nrow(af_events)
             signatures <- matrix(c(1, 0.1, 0.1, 1, 0.5, 0.5), nrow = 3, byrow = TRUE)
@@ -1149,7 +1130,6 @@ test_that("mapped SCC AF files are pooled into one AF bank size request", {
         af_auto_max_bands = 100L,
         af_min_cluster_events = 20L,
         af_min_cluster_proportion = 0.005,
-        af_n_bands_sensitivity = 1.5,
         fcs_files_all = fcs_files
     )
 

@@ -248,7 +248,6 @@
                                   af_auto_max_bands = 100,
                                   af_min_cluster_events = 20,
                                   af_min_cluster_proportion = 0.005,
-                                  af_n_bands_sensitivity = 1.5,
                                   exclude_af = FALSE,
                                   cytometer = "auto",
                                   seed = NULL) {
@@ -617,8 +616,6 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   k-means AF cluster.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
 #'   events required to keep a k-means AF cluster.
-#' @param af_n_bands_sensitivity Compatibility argument retained for older
-#'   workflows.
 #' @param exclude_af Logical; whether to exclude AF from unmixing.
 #' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
 #'   stained sample event-wise WLS residuals, select the best candidate model by
@@ -631,9 +628,6 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param save_report Logical; if `TRUE`, write a sample QC PDF report and
 #'   sample QC metric CSVs from the in-memory unmixing results without rerunning
 #'   unmixing. Defaults to `TRUE`.
-#' @param output_file Optional output path for the sample QC PDF report. When
-#'   this is `NULL`, each `unmix_samples()` report run is written to a fresh
-#'   `qc_samples`, `qc_samples_2`, ... folder beside the unmixed FCS output.
 #' @param save_qc_plots Logical; if `TRUE`, save QC report plots as PNG files
 #'   in `qc_plot_dir` while creating the PDF report.
 #' @param qc_plot_dir Directory for sample QC report PNG files when
@@ -705,13 +699,11 @@ unmix_samples <- function(sample_dir = "samples",
                           af_auto_max_bands = 100,
                           af_min_cluster_events = 20,
                           af_min_cluster_proportion = 0.005,
-                          af_n_bands_sensitivity = 1.5,
                           exclude_af = FALSE,
                           estimate_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
                           save_report = TRUE,
-                          output_file = NULL,
                           save_qc_plots = FALSE,
                           qc_plot_dir = NULL,
                           subsample_n = NULL,
@@ -758,7 +750,6 @@ unmix_samples <- function(sample_dir = "samples",
                 af_auto_max_bands = af_auto_max_bands,
                 af_min_cluster_events = af_min_cluster_events,
                 af_min_cluster_proportion = af_min_cluster_proportion,
-                af_n_bands_sensitivity = af_n_bands_sensitivity,
                 exclude_af = exclude_af,
                 cytometer = cytometer
             )
@@ -795,7 +786,6 @@ unmix_samples <- function(sample_dir = "samples",
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity,
         exclude_af = exclude_af,
         cytometer = cytometer,
         seed = seed
@@ -897,13 +887,8 @@ unmix_samples <- function(sample_dir = "samples",
     attr(results, "qc_plot_dir") <- NULL
 
     if (isTRUE(save_report)) {
-        qc_samples_dir <- NULL
-        if (is.null(output_file)) {
-            qc_samples_dir <- .next_safe_output_dir(.default_unmix_samples_report_dir(output_dir))
-            output_file <- file.path(qc_samples_dir, "qc_samples_report.pdf")
-        } else {
-            qc_samples_dir <- dirname(output_file)
-        }
+        qc_samples_dir <- .next_safe_output_dir(.default_unmix_samples_report_dir(output_dir))
+        output_file <- file.path(qc_samples_dir, "qc_samples_report.pdf")
         message("Automatic sample QC report enabled: ", output_file)
         report_res <- qc_samples(
             results = results,

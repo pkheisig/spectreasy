@@ -7,9 +7,8 @@
 unmix_controls(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",
-  auto_create_control = TRUE,
+  auto_create_mapping = TRUE,
   cytometer = "auto",
-  auto_default_control_type = "beads",
   auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
   output_dir = "spectreasy_outputs/unmix_controls",
   exclude_af = FALSE,
@@ -20,12 +19,10 @@ unmix_controls(
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
-  af_n_bands_sensitivity = 1.5,
   rwls_max_iter = 1L,
   unmix_threads = 1L,
   save_qc_plots = FALSE,
   save_report = TRUE,
-  output_file = NULL,
   use_scatter_gating = TRUE,
   ...
 )
@@ -35,12 +32,11 @@ unmix_controls(
 
 \item{control_file}{Path to control mapping CSV.}
 
-\item{auto_create_control}{Logical; auto-generate control file when missing.}
+\item{auto_create_mapping}{Logical; auto-generate the FCS mapping CSV when
+`control_file` is missing.}
 
 \item{cytometer}{Cytometer name used as a channel-mapping hint. The default,
 `"auto"`, infers the cytometer from FCS detector names when possible.}
-
-\item{auto_default_control_type}{Deprecated and ignored.}
 
 \item{auto_unknown_fluor_policy}{Auto-fill policy for unresolved fluorophores
 when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
@@ -69,9 +65,6 @@ k-means AF cluster. Used together with `af_min_cluster_proportion`.}
 \item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
 events required to keep a k-means AF cluster. Default is 0.005.}
 
-\item{af_n_bands_sensitivity}{Compatibility argument retained for older
-workflows.}
-
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
 iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
@@ -84,10 +77,6 @@ intensity-gate, and spectrum PNGs under `output_dir`.}
 
 \item{save_report}{Logical; if `TRUE`, write the SCC QC PDF report
 automatically after controls are unmixed. Defaults to `TRUE`.}
-
-\item{output_file}{Optional output path for the SCC QC PDF report. When this
-is `NULL`, each automatic report is written to a fresh `qc_controls`,
-`qc_controls_2`, ... folder under `output_dir`.}
 
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,
@@ -117,7 +106,7 @@ if (interactive()) {
   ctrl <- unmix_controls(
     scc_dir = "scc",
     control_file = "fcs_mapping.csv",
-    auto_create_control = TRUE,
+    auto_create_mapping = TRUE,
     cytometer = "auto",
     output_dir = "spectreasy_outputs/unmix_controls"
   )

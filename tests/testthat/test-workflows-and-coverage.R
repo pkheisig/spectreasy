@@ -196,7 +196,7 @@ test_that("unmix_controls does not overwrite an existing invalid control file", 
         spectreasy::unmix_controls(
             scc_dir = wf$scc_dir,
             control_file = control_csv,
-            auto_create_control = TRUE,
+            auto_create_mapping = TRUE,
             output_dir = output_dir,
             seed = 1,
             subsample_n = 400

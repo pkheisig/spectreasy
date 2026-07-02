@@ -138,7 +138,7 @@ unmixed <- unmix_samples(
 ## 2. Start the control-stage workflow
 
 Run `unmix_controls()` first. If `fcs_mapping.csv` is missing,
-`auto_create_control = TRUE` creates it automatically and then pauses for
+`auto_create_mapping = TRUE` creates it automatically and then pauses for
 review.
 
 ```{r, eval = FALSE}
@@ -146,7 +146,7 @@ setwd(project_dir)
 
 unmix_controls(
   scc_dir = "scc",
-  auto_create_control = TRUE,
+  auto_create_mapping = TRUE,
   cytometer = "Aurora",
   auto_unknown_fluor_policy = "by_channel",
   unmix_method = "WLS",
@@ -338,9 +338,9 @@ cell, auto can split AF into several basis signatures.
 
 Use the multi-AF settings in the control-stage call. `af_n_bands` controls
 how many AF basis signatures are extracted from the unstained control. Set it
-to `"auto"` to let `spectreasy` choose the count, and tune that choice with
-`af_n_bands_sensitivity`. `include_multi_af` tells `spectreasy` to include
-additional AF controls from the `af/` directory when those files are available.
+to `"auto"` to let `spectreasy` keep distinct k-means signatures from the
+pooled AF events. Additional unstained controls in `scc/` are pooled before AF
+extraction.
 
 ```{r, eval = FALSE}
 ctrl_multi_af <- unmix_controls(
@@ -349,15 +349,13 @@ ctrl_multi_af <- unmix_controls(
   cytometer = "Aurora",
   output_dir = "spectreasy_outputs/unmix_controls_multi_af",
   unmix_method = "WLS",
-  include_multi_af = TRUE,
   af_n_bands = "auto",
-  af_n_bands_sensitivity = 1.5,
   seed = 1
 )
 ```
 
 If you want `unmix_samples()` to rebuild the reference matrix dynamically from
-the SCC files, pass the same two AF settings there as well:
+the SCC files, pass the same AF setting there as well:
 
 ```{r, eval = FALSE}
 unmixed_multi_af <- unmix_samples(
@@ -366,19 +364,15 @@ unmixed_multi_af <- unmix_samples(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",
   method = "WLS",
-  include_multi_af = TRUE,
   af_n_bands = "auto",
-  af_n_bands_sensitivity = 1.5,
   output_dir = "spectreasy_outputs/unmix_samples_multi_af"
 )
 ```
 
 `af_n_bands` is like choosing how many AF "flavors" to model. More bands can
 fit complex AF better, but too many similar bands can make the matrix
-unstable. With `af_n_bands = "auto"`, `af_n_bands_sensitivity` controls how
-easily auto adds another band, and near-duplicate AF signatures are pruned
-before unmixing. The default `1.5` is balanced; lower values such as `1` allow
-more bands, while higher values such as `2.5` or `5` select fewer bands.
+unstable. With `af_n_bands = "auto"`, near-duplicate AF signatures are pruned
+before unmixing.
 
 ## Use a reviewed control CSV in non-interactive workflows
 

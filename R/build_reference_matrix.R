@@ -37,8 +37,7 @@
                                               af_max_cells,
                                               af_auto_max_bands = 100,
                                               af_min_cluster_events = 20,
-                                              af_min_cluster_proportion = 0.005,
-                                              af_n_bands_sensitivity = 1.5) {
+                                              af_min_cluster_proportion = 0.005) {
     af_n_bands_raw <- af_n_bands[1]
     af_n_bands <- if (is.character(af_n_bands_raw) && identical(tolower(trimws(af_n_bands_raw)), "auto")) {
         "auto"
@@ -70,22 +69,12 @@
         stop("af_min_cluster_proportion must be a number between 0 and 1.")
     }
 
-    if (is.null(af_n_bands_sensitivity)) {
-        stop("af_n_bands_sensitivity must be a number between 0.1 and 5.")
-    }
-    af_n_bands_sensitivity <- as.numeric(af_n_bands_sensitivity[1])
-    if (!is.finite(af_n_bands_sensitivity) || is.na(af_n_bands_sensitivity) ||
-        af_n_bands_sensitivity < 0.1 || af_n_bands_sensitivity > 5) {
-        stop("af_n_bands_sensitivity must be a number between 0.1 and 5.")
-    }
-
     list(
         af_n_bands = af_n_bands,
         af_max_cells = af_max_cells,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity
+        af_min_cluster_proportion = af_min_cluster_proportion
     )
 }
 
@@ -541,8 +530,7 @@
                                            af_events = NULL,
                                            auto_max_bands = 100,
                                            min_cluster_events = 20,
-                                           min_cluster_proportion = 0.005,
-                                           n_bands_sensitivity = 1.5) {
+                                           min_cluster_proportion = 0.005) {
     if (is.null(af_events)) {
         if (is.null(ff_af)) {
             stop("Either ff_af or af_events must be provided.")
@@ -745,7 +733,6 @@
                                            af_auto_max_bands,
                                            af_min_cluster_events,
                                            af_min_cluster_proportion,
-                                           af_n_bands_sensitivity,
                                            exclude_af = FALSE,
                                            fcs_files_all = fcs_files,
                                            config = NULL) {
@@ -818,8 +805,7 @@
             af_events = af_events,
             auto_max_bands = af_auto_max_bands,
             min_cluster_events = af_min_cluster_events,
-            min_cluster_proportion = af_min_cluster_proportion,
-            n_bands_sensitivity = af_n_bands_sensitivity
+            min_cluster_proportion = af_min_cluster_proportion
         )
         af_data_raw <- af_profiles$raw_median
         af_signatures_norm <- af_profiles$signatures
@@ -835,7 +821,6 @@
             af_auto_max_bands = if (identical(requested_bands, "auto")) af_auto_max_bands else NA_integer_,
             af_min_cluster_events = af_min_cluster_events,
             af_min_cluster_proportion = af_min_cluster_proportion,
-            af_n_bands_sensitivity = if (identical(requested_bands, "auto")) af_n_bands_sensitivity else NA_real_,
             auto_selection = af_profiles$selection,
             mode = if (n_af_sources > 1) "pooled_af_sources" else "single_af"
         )
@@ -2620,8 +2605,6 @@
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
 #'   events required to keep a k-means AF cluster. The default `0.005` means
 #'   0.5\% of the AF events used for extraction.
-#' @param af_n_bands_sensitivity Compatibility argument retained for older
-#'   workflows.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
@@ -2675,7 +2658,6 @@ build_reference_matrix <- function(
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
-  af_n_bands_sensitivity = 1.5,
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
@@ -2699,15 +2681,13 @@ build_reference_matrix <- function(
         af_max_cells = af_max_cells,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity
+        af_min_cluster_proportion = af_min_cluster_proportion
     )
     af_n_bands <- af_args$af_n_bands
     af_max_cells <- af_args$af_max_cells
     af_auto_max_bands <- af_args$af_auto_max_bands
     af_min_cluster_events <- af_args$af_min_cluster_events
     af_min_cluster_proportion <- af_args$af_min_cluster_proportion
-    af_n_bands_sensitivity <- af_args$af_n_bands_sensitivity
 
     .with_optional_seed(seed)
 
@@ -2741,8 +2721,7 @@ build_reference_matrix <- function(
         cytometer = cytometer,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity
+        af_min_cluster_proportion = af_min_cluster_proportion
     )
 
     message("Found ", length(metadata$detector_names), " spectral detectors. Sorting by laser...")
@@ -2761,7 +2740,6 @@ build_reference_matrix <- function(
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity,
         exclude_af = exclude_af,
         config = config
     )

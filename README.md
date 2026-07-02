@@ -67,7 +67,7 @@ For the remainder of this walkthrough, the commands are shown as they would be r
 
 ## 2. Start the control-stage workflow
 
-Run `unmix_controls()` first. If `fcs_mapping.csv` is missing, `auto_create_control = TRUE` creates it automatically and then pauses for review.
+Run `unmix_controls()` first. If `fcs_mapping.csv` is missing, `auto_create_mapping = TRUE` creates it automatically and then pauses for review.
 Default parameter values for unmix_controls() are included for clarity. You don't have to type those out. 
 
 ```r
@@ -75,7 +75,7 @@ setwd(project_dir)
 
 ctrl <- unmix_controls(
   scc_dir = "scc",
-  auto_create_control = TRUE,
+  auto_create_mapping = TRUE,
   auto_unknown_fluor_policy = "by_channel",
   unmix_scatter_panel_size_mm = 30,
   save_qc_plots = TRUE

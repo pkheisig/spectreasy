@@ -31,9 +31,8 @@
     ctrl <- unmix_controls(
         scc_dir = "scc",
         control_file = "fcs_mapping.csv",
-        auto_create_control = TRUE,
+        auto_create_mapping = TRUE,
         cytometer = "auto",
-        auto_default_control_type = "beads",
         auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
         output_dir = "spectreasy_outputs/unmix_controls",
         exclude_af = FALSE,
@@ -44,12 +43,10 @@
         af_auto_max_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
-        af_n_bands_sensitivity = 1.5,
         rwls_max_iter = 1L,
         unmix_threads = 1L,
         save_qc_plots = FALSE,
         save_report = TRUE,
-        output_file = NULL,
         use_scatter_gating = TRUE
         # Additional build_reference_matrix() arguments can be passed here.
     )
@@ -99,7 +96,6 @@
         af_auto_max_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
-        af_n_bands_sensitivity = 1.5,
         exclude_af = FALSE,
         estimate_af = FALSE,
         output_dir = file.path(
@@ -109,7 +105,6 @@
         ),
         write_fcs = TRUE,
         save_report = TRUE,
-        output_file = NULL,
         save_qc_plots = FALSE,
         qc_plot_dir = NULL,
         subsample_n = NULL,
@@ -182,7 +177,6 @@
         af_auto_max_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
-        af_n_bands_sensitivity = 1.5,
         seed = NULL,
         show_plot = TRUE,
         verbose = TRUE
@@ -235,7 +229,6 @@
         af_auto_max_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
-        af_n_bands_sensitivity = 1.5,
         seed = NULL,
         default_sample_type = "beads",
         cytometer = "auto",

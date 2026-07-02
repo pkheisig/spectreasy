@@ -42,14 +42,12 @@
 .unmix_generate_control_file <- function(scc_dir,
                                          control_file,
                                          cytometer,
-                                         auto_default_control_type,
                                          auto_unknown_fluor_policy) {
     message("Control file not found: ", control_file)
     message("Auto-generating control file from SCC filenames and peak channels...")
     create_control_file(
         input_folder = scc_dir,
         cytometer = cytometer,
-        default_control_type = auto_default_control_type,
         unknown_fluor_policy = auto_unknown_fluor_policy,
         output_file = control_file
     )
@@ -59,24 +57,22 @@
 
 .prepare_unmix_control_df <- function(control_file,
                                       scc_dir,
-                                      auto_create_control,
+                                      auto_create_mapping,
                                       cytometer,
-                                      auto_default_control_type,
                                       auto_unknown_fluor_policy) {
     created_control_file <- FALSE
 
     if (!file.exists(control_file)) {
-        if (!isTRUE(auto_create_control)) {
+        if (!isTRUE(auto_create_mapping)) {
             stop(
                 "Control file not found: ", control_file, "\n",
-                "Set auto_create_control = TRUE to auto-generate it from SCC files."
+                "Set auto_create_mapping = TRUE to auto-generate it from SCC files."
             )
         }
         .unmix_generate_control_file(
             scc_dir = scc_dir,
             control_file = control_file,
             cytometer = cytometer,
-            auto_default_control_type = auto_default_control_type,
             auto_unknown_fluor_policy = auto_unknown_fluor_policy
         )
         created_control_file <- TRUE
@@ -170,14 +166,12 @@
 .unmix_regenerate_control_df <- function(control_file,
                                          scc_dir,
                                          cytometer,
-                                         auto_default_control_type,
                                          auto_unknown_fluor_policy,
                                          exclude_af = FALSE) {
     message("Control preflight failed; attempting automatic control-file regeneration...")
     create_control_file(
         input_folder = scc_dir,
         cytometer = cytometer,
-        default_control_type = auto_default_control_type,
         unknown_fluor_policy = auto_unknown_fluor_policy,
         output_file = control_file
     )
@@ -335,10 +329,10 @@
 #'
 #' @param scc_dir Directory containing SCC FCS files.
 #' @param control_file Path to control mapping CSV.
-#' @param auto_create_control Logical; auto-generate control file when missing.
+#' @param auto_create_mapping Logical; auto-generate the FCS mapping CSV when
+#'   `control_file` is missing.
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
-#' @param auto_default_control_type Deprecated and ignored.
 #' @param auto_unknown_fluor_policy Auto-fill policy for unresolved fluorophores
 #'   when creating controls (`"by_channel"`, `"empty"`, `"filename"`).
 #' @param output_dir Output directory for SCC workflow artifacts.
@@ -356,8 +350,6 @@
 #'   k-means AF cluster. Used together with `af_min_cluster_proportion`.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
 #'   events required to keep a k-means AF cluster. Default is 0.005.
-#' @param af_n_bands_sensitivity Compatibility argument retained for older
-#'   workflows.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
@@ -367,9 +359,6 @@
 #'   intensity-gate, and spectrum PNGs under `output_dir`.
 #' @param save_report Logical; if `TRUE`, write the SCC QC PDF report
 #'   automatically after controls are unmixed. Defaults to `TRUE`.
-#' @param output_file Optional output path for the SCC QC PDF report. When this
-#'   is `NULL`, each automatic report is written to a fresh `qc_controls`,
-#'   `qc_controls_2`, ... folder under `output_dir`.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
 #'   use the legacy one-dimensional histogram gate.
@@ -383,7 +372,7 @@
 #'   ctrl <- unmix_controls(
 #'     scc_dir = "scc",
 #'     control_file = "fcs_mapping.csv",
-#'     auto_create_control = TRUE,
+#'     auto_create_mapping = TRUE,
 #'     cytometer = "auto",
 #'     output_dir = "spectreasy_outputs/unmix_controls"
 #'   )
@@ -392,9 +381,8 @@
 unmix_controls <- function(
     scc_dir = "scc",
     control_file = "fcs_mapping.csv",
-    auto_create_control = TRUE,
+    auto_create_mapping = TRUE,
     cytometer = "auto",
-    auto_default_control_type = "beads",
     auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
     output_dir = "spectreasy_outputs/unmix_controls",
     exclude_af = FALSE,
@@ -405,17 +393,29 @@ unmix_controls <- function(
     af_auto_max_bands = 100,
     af_min_cluster_events = 20,
     af_min_cluster_proportion = 0.005,
-    af_n_bands_sensitivity = 1.5,
     rwls_max_iter = 1L,
     unmix_threads = 1L,
     save_qc_plots = FALSE,
     save_report = TRUE,
-    output_file = NULL,
     use_scatter_gating = TRUE,
     ...
 ) {
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
     .with_optional_seed(seed)
+    extra_args <- list(...)
+    if ("auto_create_control" %in% names(extra_args)) {
+        warning("auto_create_control is deprecated; use auto_create_mapping.", call. = FALSE)
+        auto_create_mapping <- isTRUE(extra_args$auto_create_control)
+        extra_args$auto_create_control <- NULL
+    }
+    if ("af_n_bands_sensitivity" %in% names(extra_args)) {
+        warning("af_n_bands_sensitivity is ignored and has been removed.", call. = FALSE)
+        extra_args$af_n_bands_sensitivity <- NULL
+    }
+    if ("output_file" %in% names(extra_args)) {
+        warning("output_file is ignored by unmix_controls(); use output_dir for automatic reports or qc_controls() for an explicit report path.", call. = FALSE)
+        extra_args$output_file <- NULL
+    }
 
     control_file <- .resolve_control_file_path(control_file)
 
@@ -431,9 +431,8 @@ unmix_controls <- function(
     control_info <- .prepare_unmix_control_df(
         control_file = control_file,
         scc_dir = scc_dir,
-        auto_create_control = auto_create_control,
+        auto_create_mapping = auto_create_mapping,
         cytometer = cytometer,
-        auto_default_control_type = auto_default_control_type,
         auto_unknown_fluor_policy = auto_unknown_fluor_policy
     )
     control_df <- .normalize_unmix_control_df(control_info$control_df)
@@ -455,16 +454,13 @@ unmix_controls <- function(
 
     output_paths <- .unmix_output_paths(output_dir)
     qc_controls_dir <- NULL
+    output_file <- NULL
     if (isTRUE(save_report)) {
-        if (is.null(output_file)) {
-            qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
-            output_file <- file.path(qc_controls_dir, "qc_controls_report.pdf")
-        } else {
-            qc_controls_dir <- dirname(output_file)
-        }
+        qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
+        output_file <- file.path(qc_controls_dir, "qc_controls_report.pdf")
         message("Automatic SCC QC report enabled: ", output_file)
     }
-    M <- build_reference_matrix(
+    build_args <- c(list(
         input_folder = scc_dir,
         output_folder = output_dir,
         save_qc_plots = save_qc_plots,
@@ -475,11 +471,10 @@ unmix_controls <- function(
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity,
         use_scatter_gating = use_scatter_gating,
-        seed = seed,
-        ...
-    )
+        seed = seed
+    ), extra_args)
+    M <- do.call(build_reference_matrix, build_args)
     if (is.null(M) || nrow(M) == 0) stop("No valid spectra found while building reference matrix.")
 
     .save_reference_matrix_csv(M, output_paths$reference_matrix_csv)

@@ -566,7 +566,7 @@ test_that("unmix_controls supports fixed AF k-means bands from SCC mapping", {
     res <- spectreasy::unmix_controls(
         scc_dir = scc_dir,
         control_file = control_file,
-        auto_create_control = FALSE,
+        auto_create_mapping = FALSE,
         output_dir = output_dir,
         af_n_bands = 2
     )
