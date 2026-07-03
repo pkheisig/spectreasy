@@ -969,7 +969,6 @@ create_control_file <- function(input_folder = "scc",
 #' @param flow_frame A `flowFrame` used to determine detector ordering.
 #' @param control_file Path to spectreasy-compatible control CSV.
 #' @param control_dir Directory containing SCC FCS files.
-#' @param method Reserved for future method selection.
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @return Expanded reference matrix aligned to the detectors in `flow_frame`.
@@ -988,7 +987,6 @@ create_control_file <- function(input_folder = "scc",
 get_control_spectra <- function(flow_frame,
                                 control_file = "fcs_mapping.csv",
                                 control_dir = "scc",
-                                method = "WLS",
                                 cytometer = "auto") {
     # 1. Get detector info
     pd <- flowCore::pData(flowCore::parameters(flow_frame))

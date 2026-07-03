@@ -11,7 +11,6 @@ unmix_controls(
   cytometer = "auto",
   auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
   output_dir = "spectreasy_outputs/unmix_controls",
-  exclude_af = FALSE,
   unmixing_method = "WLS",
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
@@ -42,9 +41,6 @@ unmix_controls(
 when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 
 \item{output_dir}{Output directory for SCC workflow artifacts.}
-
-\item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls even when
-they are present in the SCC folder or control mapping.}
 
 \item{unmixing_method}{SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).}
 

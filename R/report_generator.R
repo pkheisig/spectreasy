@@ -935,7 +935,7 @@
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param output_file Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.
-#' @param method Unmixing method used to create `results` (`"AutoSpectral"`,
+#' @param unmixing_method Unmixing method used to create `results` (`"AutoSpectral"`,
 #'   `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
 #'   because constrained NNLS results are non-negative by construction.
 #' @param res_list Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.
@@ -967,6 +967,8 @@
 #'   alongside the PDF report.
 #' @param qc_metrics_dir Optional directory where plot-ready QC metric
 #'   CSVs are written alongside the PDF report.
+#' @param ... Deprecated compatibility arguments. `method` is accepted with a
+#'   warning; use `unmixing_method`.
 #'
 #' @return Invisibly returns a list with `output_file`, `qc_plot_dir`, and
 #'   `qc_metrics_dir`; writes report artifacts to disk.
@@ -999,7 +1001,7 @@ qc_samples <- function(results,
                        M = NULL,
                        unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
                        output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
-                       method = NULL,
+                       unmixing_method = NULL,
                        res_list = NULL,
                        png_dir = NULL,
                        pd = NULL,
@@ -1014,16 +1016,26 @@ qc_samples <- function(results,
                        nxn_all_samples = FALSE,
                        qc_plot_dir = NULL,
                        save_qc_pngs = FALSE,
-                       qc_metrics_dir = NULL) {
+                       qc_metrics_dir = NULL,
+                       ...) {
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the QC PDF report.", call. = FALSE)
     }
     sample_nxn_transform <- match.arg(sample_nxn_transform)
-    method_attr <- attr(results, "method")
-    if (is.null(method)) {
-        method <- if (!is.null(method_attr)) method_attr else "AutoSpectral"
+    extra_args <- list(...)
+    if ("method" %in% names(extra_args)) {
+        warning("method is deprecated for qc_samples(); use unmixing_method.", call. = FALSE)
+        unmixing_method <- extra_args$method
+        extra_args$method <- NULL
     }
-    method <- .normalize_unmix_method(method)
+    if (length(extra_args) > 0) {
+        stop("Unused argument(s): ", paste(names(extra_args), collapse = ", "), call. = FALSE)
+    }
+    method_attr <- attr(results, "method")
+    if (is.null(unmixing_method)) {
+        unmixing_method <- if (!is.null(method_attr)) method_attr else "AutoSpectral"
+    }
+    unmixing_method <- .normalize_unmix_method(unmixing_method)
 
     message("Generating spectreasy Summary Report...")
     if (!is.null(png_dir)) {
@@ -1158,7 +1170,7 @@ qc_samples <- function(results,
         }
     }
 
-    if (identical(method, "NNLS")) {
+    if (identical(unmixing_method, "NNLS")) {
         message("  - Skipping NPS diagnostics for NNLS...")
     } else {
         message("  - Adding NPS diagnostics...")

@@ -214,38 +214,14 @@
     df[fn %in% filenames, ]
 }
 
-# Filters out Autofluorescence (AF) or unstained control files from the main FCS files set.
-# Used when exclude_af is TRUE to ensure only single-color controls (and not unstained files)
-# are processed during reference matrix construction.
-# Returns the filtered FCS file list, stopping if no non-AF files remain.
-.filter_reference_af_files <- function(fcs_files, input_folder, exclude_af = FALSE) {
-    if (!isTRUE(exclude_af)) {
-        return(fcs_files)
-    }
-
-    keep_non_af_files <- !.is_af_filename(fcs_files)
-    n_excluded_files <- sum(!keep_non_af_files)
-    if (n_excluded_files > 0) {
-        message("Excluding ", n_excluded_files, " AF/unstained SCC file(s) from reference-matrix construction.")
-    }
-    fcs_files <- fcs_files[keep_non_af_files]
-    if (length(fcs_files) == 0) {
-        stop("No non-AF FCS files found in ", input_folder, " after exclude_af filtering.")
-    }
-
-    fcs_files
-}
-
 # Prepares the complete list of FCS files to be processed.
-# Locates FCS files in the input folder and applies AF filtering,
-# Returns a list containing 'fcs_files' (standard controls) and 'fcs_files_all' (all controls including AF).
-.prepare_reference_file_set <- function(input_folder, exclude_af = FALSE) {
+# Locates FCS files in the input folder.
+# Returns a list containing 'fcs_files' and 'fcs_files_all'.
+.prepare_reference_file_set <- function(input_folder) {
     fcs_files_all <- list.files(input_folder, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     if (length(fcs_files_all) == 0) stop("No FCS files found in ", input_folder)
 
-    fcs_files <- .filter_reference_af_files(fcs_files_all, input_folder = input_folder, exclude_af = exclude_af)
-
-    list(fcs_files = fcs_files, fcs_files_all = fcs_files_all)
+    list(fcs_files = fcs_files_all, fcs_files_all = fcs_files_all)
 }
 
 # Prepares and returns the normalized path of the output directory.
@@ -331,10 +307,18 @@
 # Used for gating populations in FSC/SSC scatter plots based on GMM component mean and variance.
 # Returns a data.table containing the ellipse points.
 .get_reference_ellipse <- function(mean, sigma, level = 0.95, n = 100, scale = 1.0) {
+    if (length(mean) < 2 || any(!is.finite(mean)) ||
+        !is.matrix(sigma) || any(dim(sigma) < 2) || any(!is.finite(sigma))) {
+        return(NULL)
+    }
     chi2_val <- qchisq(level, df = 2)
     eig <- eigen(sigma)
-    a <- sqrt(eig$values[1] * chi2_val) * scale
-    b <- sqrt(eig$values[2] * chi2_val) * scale
+    eig_values <- pmax(Re(eig$values), 0)
+    if (length(eig_values) < 2 || any(!is.finite(eig_values)) || sum(eig_values > 0) == 0) {
+        return(NULL)
+    }
+    a <- sqrt(eig_values[1] * chi2_val) * scale
+    b <- sqrt(eig_values[2] * chi2_val) * scale
     angle <- atan2(eig$vectors[2, 1], eig$vectors[1, 1])
     theta <- seq(0, 2 * pi, length.out = n)
     ellipse_x <- a * cos(theta)
@@ -472,13 +456,21 @@
     if (length(populations) == 1) {
         ell <- .get_reference_ellipse(gmm_result$means[, populations], gmm_result$sigmas[[populations]], level, scale = scale)
     } else {
+        ellipses <- lapply(populations, function(k) {
+            .get_reference_ellipse(gmm_result$means[, k], gmm_result$sigmas[[k]], level, scale = scale)
+        })
+        ellipses <- ellipses[!vapply(ellipses, is.null, logical(1))]
+        if (length(ellipses) == 0) {
+            return(NULL)
+        }
         all_pts <- data.table::rbindlist(
-            lapply(populations, function(k) {
-                .get_reference_ellipse(gmm_result$means[, k], gmm_result$sigmas[[k]], level, scale = scale)
-            })
+            ellipses
         )
         hull_idx <- grDevices::chull(all_pts$x, all_pts$y)
         ell <- all_pts[hull_idx, ]
+    }
+    if (is.null(ell) || nrow(ell) == 0) {
+        return(NULL)
     }
     ell$x <- pmax(0, pmin(ell$x, clip_x))
     ell$y <- pmax(0, pmin(ell$y, clip_y))
@@ -625,11 +617,7 @@
 # Determines the name of the autofluorescence (unstained) control file.
 # Looks it up in the control mapping or falls back to identifying files matching AF file naming heuristics.
 # Returns the AF file basename (without extension) or NULL.
-.resolve_reference_af_name <- function(control_df, fcs_files, exclude_af = FALSE) {
-    if (isTRUE(exclude_af)) {
-        return(NULL)
-    }
-
+.resolve_reference_af_name <- function(control_df, fcs_files) {
     af_fn <- NULL
     if (!is.null(control_df)) {
         af_rows <- if ("fluorophore" %in% colnames(control_df)) {
@@ -733,17 +721,12 @@
                                            af_auto_max_bands,
                                            af_min_cluster_events,
                                            af_min_cluster_proportion,
-                                           exclude_af = FALSE,
                                            fcs_files_all = fcs_files,
                                            config = NULL) {
     af_data_raw <- NULL
     af_signatures_norm <- NULL
     af_bank_info <- NULL
-    af_fn <- .resolve_reference_af_name(control_df = control_df, fcs_files = fcs_files, exclude_af = exclude_af)
-
-    if (isTRUE(exclude_af)) {
-        return(list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info))
-    }
+    af_fn <- .resolve_reference_af_name(control_df = control_df, fcs_files = fcs_files)
 
     af_paths <- character()
     af_source_types <- character()
@@ -924,7 +907,7 @@
     invisible(TRUE)
 }
 
-.active_reference_control_rows <- function(control_df, fcs_files_all, exclude_af = FALSE) {
+.active_reference_control_rows <- function(control_df, fcs_files_all) {
     if (is.null(control_df) || !is.data.frame(control_df) || nrow(control_df) == 0 ||
         !all(c("filename", "fluorophore") %in% colnames(control_df))) {
         return(data.frame())
@@ -939,20 +922,15 @@
         marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
         filename = control_df$filename
     )
-    if (isTRUE(exclude_af)) {
-        active <- active & !is_af
-    } else {
-        active <- active & !is_af
-    }
+    active <- active & !is_af
 
     control_df[active, , drop = FALSE]
 }
 
-.validate_reference_complete_controls <- function(control_df, fcs_files_all, processed_results, exclude_af = FALSE) {
+.validate_reference_complete_controls <- function(control_df, fcs_files_all, processed_results) {
     active_rows <- .active_reference_control_rows(
         control_df = control_df,
-        fcs_files_all = fcs_files_all,
-        exclude_af = exclude_af
+        fcs_files_all = fcs_files_all
     )
     if (nrow(active_rows) == 0) {
         return(invisible(TRUE))
@@ -2347,9 +2325,6 @@
         ""
     }
 
-    if (isTRUE(config$exclude_af) && (.is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext) || is_extra_af)) {
-        return(NULL)
-    }
     if (is_extra_af) {
         return(NULL)
     }
@@ -2591,8 +2566,6 @@
 #'   When `FALSE` (default), the function returns the matrix without writing QC files.
 #' @param control_df Optional control mapping as a data.frame or CSV path.
 #'   Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.
-#' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls entirely,
-#'   even when they are present in `control_df` or the SCC folder.
 #' @param af_n_bands Number of k-means AF basis signatures to extract from
 #'   pooled unstained/AF control events, or `"auto"` to keep distinct signatures
 #'   from up to `af_auto_max_bands` k-means centers. Default is `"auto"`.
@@ -2652,7 +2625,6 @@ build_reference_matrix <- function(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  exclude_af = FALSE,
   af_n_bands = "auto",
   af_max_cells = 50000,
   af_auto_max_bands = 100,
@@ -2692,16 +2664,12 @@ build_reference_matrix <- function(
     .with_optional_seed(seed)
 
     sample_patterns <- get_fluorophore_patterns()
-    file_info <- .prepare_reference_file_set(
-        input_folder = input_folder,
-        exclude_af = exclude_af
-    )
+    file_info <- .prepare_reference_file_set(input_folder = input_folder)
     out_path <- .prepare_reference_output_path(output_folder = output_folder, save_qc_plots = save_qc_plots)
     metadata <- .prepare_reference_detector_info(file_info$fcs_files[1])
     cytometer <- .resolve_cytometer_from_pd(cytometer, metadata$pd_meta)
 
     config <- list(
-        exclude_af = exclude_af,
         default_sample_type = default_sample_type,
         outlier_percentile = outlier_percentile,
         debris_percentile = debris_percentile,
@@ -2740,7 +2708,6 @@ build_reference_matrix <- function(
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
-        exclude_af = exclude_af,
         config = config
     )
 
@@ -2780,8 +2747,7 @@ build_reference_matrix <- function(
     .validate_reference_complete_controls(
         control_df = control_df,
         fcs_files_all = file_info$fcs_files_all,
-        processed_results = results_list,
-        exclude_af = exclude_af
+        processed_results = results_list
     )
 
     M <- .finalize_reference_matrix(

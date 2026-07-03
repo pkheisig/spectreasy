@@ -12,7 +12,7 @@ qc_controls(
   output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
   control_file = "fcs_mapping.csv",
   cytometer = "auto",
-  method = "WLS",
+  unmixing_method = "WLS",
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   save_qc_pngs = FALSE,
   qc_metrics_dir = NULL,
@@ -40,7 +40,7 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 \item{cytometer}{Cytometer name passed to [build_reference_matrix()]. The
 default, `"auto"`, infers the cytometer from FCS detector names when possible.}
 
-\item{method}{Unmixing method used for the control scatter matrix
+\item{unmixing_method}{Unmixing method used for the control scatter matrix
 (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}
 
 \item{qc_plot_dir}{Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
@@ -66,11 +66,12 @@ ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 
-\item{...}{Additional arguments forwarded to [build_reference_matrix()].}
+\item{...}{Additional arguments forwarded to [build_reference_matrix()].
+Deprecated `method` is accepted with a warning; use `unmixing_method`.}
 }
 \value{
 Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
-  `qc_metrics_dir`, `af_bank_info`, and `method`.
+  `qc_metrics_dir`, `af_bank_info`, and `unmixing_method`.
   `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 }
 \description{

@@ -274,7 +274,7 @@
 #' @param control_file Control mapping CSV path.
 #' @param cytometer Cytometer name passed to [build_reference_matrix()]. The
 #'   default, `"auto"`, infers the cytometer from FCS detector names when possible.
-#' @param method Unmixing method used for the control scatter matrix
+#' @param unmixing_method Unmixing method used for the control scatter matrix
 #'   (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).
 #' @param qc_plot_dir Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
 #'   when `save_qc_pngs = TRUE`.
@@ -293,8 +293,9 @@
 #'   ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
+#'   Deprecated `method` is accepted with a warning; use `unmixing_method`.
 #' @return Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
-#'   `qc_metrics_dir`, `af_bank_info`, and `method`.
+#'   `qc_metrics_dir`, `af_bank_info`, and `unmixing_method`.
 #'   `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 #' @examples
 #' if (interactive()) {
@@ -311,7 +312,7 @@ qc_controls <- function(
     output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
     control_file = "fcs_mapping.csv",
     cytometer = "auto",
-    method = "WLS",
+    unmixing_method = "WLS",
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
     save_qc_pngs = FALSE,
     qc_metrics_dir = NULL,
@@ -324,9 +325,15 @@ qc_controls <- function(
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the SCC PDF report.", call. = FALSE)
     }
-    method <- toupper(as.character(method)[1])
-    if (!(method %in% c("WLS", "RWLS", "OLS", "NNLS"))) {
-        stop("method must be one of: WLS, RWLS, OLS, NNLS", call. = FALSE)
+    extra_args <- list(...)
+    if ("method" %in% names(extra_args)) {
+        warning("method is deprecated for qc_controls(); use unmixing_method.", call. = FALSE)
+        unmixing_method <- extra_args$method
+        extra_args$method <- NULL
+    }
+    unmixing_method <- toupper(as.character(unmixing_method)[1])
+    if (!(unmixing_method %in% c("WLS", "RWLS", "OLS", "NNLS"))) {
+        stop("unmixing_method must be one of: WLS, RWLS, OLS, NNLS", call. = FALSE)
     }
 
     message("Generating SCC QC report...")
@@ -344,16 +351,19 @@ qc_controls <- function(
     control_resolved <- .resolve_control_file_path(control_file)
     control_input <- if (file.exists(control_resolved)) control_resolved else NULL
 
-    M_built <- build_reference_matrix(
-        input_folder = scc_dir,
-        output_folder = plot_dir_info$plot_dir,
-        save_qc_plots = TRUE,
-        control_df = control_input,
-        cytometer = cytometer,
-        use_scatter_gating = use_scatter_gating,
-        seed = seed,
-        ...
+    build_args <- c(
+        list(
+            input_folder = scc_dir,
+            output_folder = plot_dir_info$plot_dir,
+            save_qc_plots = TRUE,
+            control_df = control_input,
+            cytometer = cytometer,
+            use_scatter_gating = use_scatter_gating,
+            seed = seed
+        ),
+        extra_args
     )
+    M_built <- do.call(build_reference_matrix, build_args)
     if (is.null(M_built) || nrow(M_built) == 0) {
         stop("No valid spectra found while generating the SCC report.")
     }
@@ -439,12 +449,12 @@ qc_controls <- function(
         unmixed_list <- unmix_samples(
             sample_dir = scc_dir,
             M = M_report,
-            unmixing_method = method,
+            unmixing_method = unmixing_method,
             write_fcs = FALSE,
             save_report = FALSE,
             verbose = FALSE
         )
-        if (!identical(method, "NNLS")) {
+        if (!identical(unmixing_method, "NNLS")) {
             control_results_df <- .normalize_qc_report_results_df(unmixed_list)
             nps_scores <- calculate_nps(control_results_df)
             nps_scores <- nps_scores[!grepl("^AF($|_)", nps_scores$Marker, ignore.case = TRUE), , drop = FALSE]
@@ -527,6 +537,6 @@ qc_controls <- function(
         qc_plot_dir = retained_qc_plot_dir,
         qc_metrics_dir = qc_metrics_dir,
         af_bank_info = attr(M_built, "af_bank_info"),
-        method = method
+        unmixing_method = unmixing_method
     ))
 }

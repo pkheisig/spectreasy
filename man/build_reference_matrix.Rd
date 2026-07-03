@@ -9,7 +9,6 @@ build_reference_matrix(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  exclude_af = FALSE,
   af_n_bands = "auto",
   af_max_cells = 50000,
   af_auto_max_bands = 100,
@@ -43,9 +42,6 @@ When `FALSE` (default), the function returns the matrix without writing QC files
 
 \item{control_df}{Optional control mapping as a data.frame or CSV path.
 Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.}
-
-\item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls entirely,
-even when they are present in `control_df` or the SCC folder.}
 
 \item{af_n_bands}{Number of k-means AF basis signatures to extract from
 pooled unstained/AF control events, or `"auto"` to keep distinct signatures

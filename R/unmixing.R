@@ -699,7 +699,6 @@ unmix_samples <- function(sample_dir = "samples",
     af_auto_max_bands <- 100
     af_min_cluster_events <- 20
     af_min_cluster_proportion <- 0.005
-    exclude_af <- FALSE
     allow_dynamic_reference <- FALSE
     reference_arg_names <- c(
         "cytometer",
@@ -708,8 +707,7 @@ unmix_samples <- function(sample_dir = "samples",
         "af_n_bands",
         "af_auto_max_bands",
         "af_min_cluster_events",
-        "af_min_cluster_proportion",
-        "exclude_af"
+        "af_min_cluster_proportion"
     )
     reference_args <- intersect(reference_arg_names, names(extra_args))
     if (length(reference_args) > 0) {
@@ -763,7 +761,6 @@ unmix_samples <- function(sample_dir = "samples",
                 af_auto_max_bands = af_auto_max_bands,
                 af_min_cluster_events = af_min_cluster_events,
                 af_min_cluster_proportion = af_min_cluster_proportion,
-                exclude_af = exclude_af,
                 cytometer = cytometer
             )
             M <- .load_detector_noise_for_unmixing(
@@ -903,7 +900,7 @@ unmix_samples <- function(sample_dir = "samples",
             results = results,
             M = M,
             output_file = output_file,
-            method = method_upper,
+            unmixing_method = method_upper,
             qc_metrics_dir = qc_samples_dir,
             qc_plot_dir = qc_plot_dir,
             save_qc_pngs = save_qc_plots

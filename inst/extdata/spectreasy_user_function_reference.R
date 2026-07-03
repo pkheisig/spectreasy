@@ -14,7 +14,6 @@
     control_check <- validate_control_file_mapping(
         control_df = control_file,
         scc_dir = "scc",
-        exclude_af = FALSE,
         require_all_scc_mapped = TRUE,
         require_channels = TRUE,
         stop_on_error = FALSE
@@ -35,7 +34,6 @@
         cytometer = "auto",
         auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
         output_dir = "spectreasy_outputs/unmix_controls",
-        exclude_af = FALSE,
         unmixing_method = "WLS",
         unmix_scatter_panel_size_mm = 30,
         seed = NULL,
@@ -62,7 +60,7 @@
         output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
         control_file = "fcs_mapping.csv",
         cytometer = "auto",
-        method = "WLS",
+        unmixing_method = "WLS",
         qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
         save_qc_pngs = FALSE,
         qc_metrics_dir = NULL,
@@ -117,7 +115,7 @@
             "scc_reference_matrix.csv"
         ),
         output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
-        method = NULL,
+        unmixing_method = NULL,
         res_list = NULL,
         png_dir = NULL,
         pd = NULL,
@@ -218,7 +216,6 @@
         output_folder = "gating_and_spectrum_plots",
         save_qc_plots = FALSE,
         control_df = NULL,
-        exclude_af = FALSE,
         af_n_bands = "auto",
         af_max_cells = 50000,
         af_auto_max_bands = 100,
@@ -343,7 +340,6 @@
         flow_frame = flow_frame,
         control_file = "fcs_mapping.csv",
         control_dir = "scc",
-        method = "WLS",
         cytometer = "auto"
     )
 

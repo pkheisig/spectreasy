@@ -200,7 +200,7 @@ test_that("qc_samples skips negative population spread for NNLS", {
     colnames(M) <- c("B1-A", "YG1-A", "R1-A")
 
     pdf_out <- tempfile(fileext = ".pdf")
-    spectreasy::qc_samples(results = results, M = M, output_file = pdf_out, method = "NNLS")
+    spectreasy::qc_samples(results = results, M = M, output_file = pdf_out, unmixing_method = "NNLS")
 
     info <- pdftools::pdf_info(pdf_out)
     expect_equal(info$pages, 3)

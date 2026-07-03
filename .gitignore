@@ -84,3 +84,6 @@ backtup/
 # Local scratch and check folders
 scratch/
 check/
+
+# lookup for myself
+vignettes/snippets_examples.qmd

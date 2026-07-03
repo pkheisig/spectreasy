@@ -10,7 +10,7 @@ qc_samples(
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
   output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
-  method = NULL,
+  unmixing_method = NULL,
   res_list = NULL,
   png_dir = NULL,
   pd = NULL,
@@ -25,7 +25,8 @@ qc_samples(
   nxn_all_samples = FALSE,
   qc_plot_dir = NULL,
   save_qc_pngs = FALSE,
-  qc_metrics_dir = NULL
+  qc_metrics_dir = NULL,
+  ...
 )
 }
 \arguments{
@@ -44,7 +45,7 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{output_file}{Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.}
 
-\item{method}{Unmixing method used to create `results` (`"AutoSpectral"`,
+\item{unmixing_method}{Unmixing method used to create `results` (`"AutoSpectral"`,
 `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
 because constrained NNLS results are non-negative by construction.}
 
@@ -91,6 +92,9 @@ alongside the PDF report.}
 
 \item{qc_metrics_dir}{Optional directory where plot-ready QC metric
 CSVs are written alongside the PDF report.}
+
+\item{...}{Deprecated compatibility arguments. `method` is accepted with a
+warning; use `unmixing_method`.}
 }
 \value{
 Invisibly returns a list with `output_file`, `qc_plot_dir`, and

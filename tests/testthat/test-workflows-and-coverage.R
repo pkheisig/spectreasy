@@ -232,7 +232,7 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))
 })
 
-test_that("unmix_controls handles WLS output and exclude_af branch", {
+test_that("unmix_controls handles WLS output with AF controls", {
     wf <- make_synthetic_workflow(include_af = TRUE)
     output_dir <- tempfile("spectreasy_covr_auto_wls_")
     control_csv <- tempfile(fileext = ".csv")
@@ -242,7 +242,6 @@ test_that("unmix_controls handles WLS output and exclude_af branch", {
         scc_dir = wf$scc_dir,
         control_file = control_csv,
         output_dir = output_dir,
-        exclude_af = TRUE,
         unmixing_method = "WLS",
         seed = 1,
         subsample_n = 400
@@ -253,9 +252,9 @@ test_that("unmix_controls handles WLS output and exclude_af branch", {
     expect_true(file.exists(ctrl$qc_report_file))
     expect_true(dir.exists(ctrl$qc_controls_dir))
     expect_false(is.null(attr(ctrl$M, "detector_noise")))
-    expect_false(any(grepl("^AF($|_)", rownames(ctrl$M), ignore.case = TRUE)))
-    expect_false(any(grepl("Unstained", names(ctrl$unmixed_list), ignore.case = TRUE)))
-    expect_false(file.exists(file.path(output_dir, "unmixed_fcs", "Unstained (Cells)_unmixed.fcs")))
+    expect_true(any(grepl("^AF($|_)", rownames(ctrl$M), ignore.case = TRUE)))
+    expect_true(any(grepl("Unstained", names(ctrl$unmixed_list), ignore.case = TRUE)))
+    expect_true(file.exists(file.path(output_dir, "unmixed_fcs", "Unstained (Cells)_unmixed.fcs")))
 })
 
 test_that("unmix_controls tolerates a missing unstained mapping row", {
@@ -363,7 +362,7 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
         scc_dir = wf$scc_dir,
         output_file = output_pdf,
         control_file = control_csv,
-        method = "NNLS",
+        unmixing_method = "NNLS",
         qc_plot_dir = qc_plot_dir,
         save_qc_pngs = TRUE,
         qc_metrics_dir = qc_metrics_dir,
@@ -375,7 +374,7 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
     expect_true(dir.exists(out$qc_plot_dir))
     expect_true(is.matrix(out$M))
     expect_true(is.data.frame(out$qc_summary))
-    expect_equal(out$method, "NNLS")
+    expect_equal(out$unmixing_method, "NNLS")
     expect_equal(out$qc_metrics_dir, qc_metrics_dir)
     expect_true(file.exists(file.path(qc_metrics_dir, "reference_spectra.csv")))
     expect_true(file.exists(file.path(qc_metrics_dir, "fluorophore_spectral_similarity.csv")))

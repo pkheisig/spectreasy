@@ -716,6 +716,7 @@ const PanelBuilder = () => {
         const nextSlots = currentSlots.map((existing, i) => (i === index ? fluor : existing));
         slotsRef.current = nextSlots;
         setSlots(nextSlots);
+        localStorage.setItem('spectreasy_slots', JSON.stringify(nextSlots));
         setQueries(prev => ({ ...prev, [index]: '' }));
         setActiveSlot(null);
         await fetchPanel(cytometer, configuration, nextSlots.filter(Boolean)).catch(err => {
@@ -728,11 +729,16 @@ const PanelBuilder = () => {
         setMarkers(prev => {
             const next = { ...prev };
             delete next[index];
+            localStorage.setItem('spectreasy_markers', JSON.stringify(next));
             return next;
         });
     };
 
-    const addSlot = () => setSlots(prev => [...prev, '']);
+    const addSlot = () => setSlots(prev => {
+        const next = [...prev, ''];
+        localStorage.setItem('spectreasy_slots', JSON.stringify(next));
+        return next;
+    });
 
     const changeCytometer = async (nextCytometer: string) => {
         setLoading(true);
@@ -751,6 +757,8 @@ const PanelBuilder = () => {
             slotsRef.current = nextSlots;
             setSlots(nextSlots);
             setMarkers(nextMarkers);
+            localStorage.setItem('spectreasy_slots', JSON.stringify(nextSlots));
+            localStorage.setItem('spectreasy_markers', JSON.stringify(nextMarkers));
             setPayload(nextPayload);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Could not switch cytometer.');
@@ -770,6 +778,8 @@ const PanelBuilder = () => {
         slotsRef.current = nextSlots;
         setSlots(nextSlots);
         setMarkers(nextMarkers);
+        localStorage.setItem('spectreasy_slots', JSON.stringify(nextSlots));
+        localStorage.setItem('spectreasy_markers', JSON.stringify(nextMarkers));
         setPayload(nextPayload);
     };
 
@@ -791,6 +801,8 @@ const PanelBuilder = () => {
         slotsRef.current = emptySlotsArray;
         setSlots(emptySlotsArray);
         setMarkers({});
+        localStorage.setItem('spectreasy_slots', JSON.stringify(emptySlotsArray));
+        localStorage.setItem('spectreasy_markers', JSON.stringify({}));
         setQueries({});
         setActiveSlot(null);
         setLoading(true);
@@ -889,6 +901,8 @@ const PanelBuilder = () => {
                 if (row.marker) nextMarkers[index] = row.marker;
             });
             setMarkers(nextMarkers);
+            localStorage.setItem('spectreasy_slots', JSON.stringify(nextSlots));
+            localStorage.setItem('spectreasy_markers', JSON.stringify(nextMarkers));
             setQueries({});
             setActiveSlot(null);
             await fetchPanel(cytometer, configuration, imported.map(row => row.fluor));
@@ -1067,7 +1081,7 @@ const PanelBuilder = () => {
 
                 <main className="main-panel">
                     <div className="top-spectrum">
-                        <svg className="spectrum-svg" width="100%" height={chartHeight + 56} viewBox={`0 0 ${chartWidth} ${chartHeight + 56}`} role="img" aria-label="Combined spectral signatures">
+                        <svg className="spectrum-svg" width={chartWidth} height={chartHeight + 56} viewBox={`0 0 ${chartWidth} ${chartHeight + 56}`} role="img" aria-label="Combined spectral signatures">
                             <defs>
                                 <linearGradient id="rainbow-axis-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
                                     {payload.detectors.map((det, index) => {
@@ -1206,7 +1220,14 @@ const PanelBuilder = () => {
                                                                         className="matrix-marker-input"
                                                                         value={entry.marker}
                                                                         placeholder="Marker"
-                                                                        onChange={event => setMarkers(prev => ({ ...prev, [entry.slotIndex]: event.target.value }))}
+                                                                        onChange={event => {
+                                                                            const val = event.target.value;
+                                                                            setMarkers(prev => {
+                                                                                const next = { ...prev, [entry.slotIndex]: val };
+                                                                                localStorage.setItem('spectreasy_markers', JSON.stringify(next));
+                                                                                return next;
+                                                                            });
+                                                                        }}
                                                                     />
                                                                 )}
                                                             </td>,
@@ -1279,7 +1300,7 @@ const PanelBuilder = () => {
                                     return (
                                         <div className="signature-card" key={fluor}>
                                             <h3>{fluor}</h3>
-                                            <svg className="signature-band-svg" width="100%" height={signatureHeight} viewBox={`0 0 ${chartWidth} ${signatureHeight}`} role="img" aria-label={`${fluor} signature`}>
+                                            <svg className="signature-band-svg" width={chartWidth} height={signatureHeight} viewBox={`0 0 ${chartWidth} ${signatureHeight}`} role="img" aria-label={`${fluor} signature`}>
                                                 <rect x={signatureLeft} y={signatureTop} width={signaturePlotWidth} height={signaturePlotHeight} fill={plotBg} stroke={plotStroke} />
                                                 {[0, 1, 2, 3, 4, 5, 6].map(tick => {
                                                     const y = signatureY(tick, signatureTop, signaturePlotHeight);

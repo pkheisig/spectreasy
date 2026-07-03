@@ -100,28 +100,6 @@
     control_df
 }
 
-.filter_unmix_af_rows <- function(control_df, exclude_af = FALSE, emit_message = TRUE) {
-    excluded_af_filenames <- character()
-    if (!isTRUE(exclude_af)) {
-        return(list(control_df = control_df, excluded_af_filenames = excluded_af_filenames))
-    }
-
-    af_rows <- .is_af_control_row(
-        fluorophore = control_df$fluorophore,
-        marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
-        filename = control_df$filename
-    )
-    if (any(af_rows)) {
-        excluded_af_filenames <- unique(as.character(control_df$filename[af_rows]))
-        if (isTRUE(emit_message)) {
-            message("exclude_af = TRUE: ignoring ", sum(af_rows), " AF/unstained control row(s) from control mapping.")
-        }
-        control_df <- control_df[!af_rows, , drop = FALSE]
-    }
-
-    list(control_df = control_df, excluded_af_filenames = excluded_af_filenames)
-}
-
 .drop_missing_unmix_af_rows <- function(control_df, scc_dir, emit_message = TRUE) {
     if (is.null(control_df) || nrow(control_df) == 0 || !("filename" %in% colnames(control_df))) {
         return(control_df)
@@ -152,32 +130,14 @@
     control_df[!missing_af, , drop = FALSE]
 }
 
-.run_unmix_preflight <- function(control_df, scc_dir, exclude_af = FALSE) {
+.run_unmix_preflight <- function(control_df, scc_dir) {
     validate_control_file_mapping(
         control_df = control_df,
         scc_dir = scc_dir,
-        exclude_af = exclude_af,
         require_all_scc_mapped = TRUE,
         require_channels = TRUE,
         stop_on_error = FALSE
     )
-}
-
-.unmix_regenerate_control_df <- function(control_file,
-                                         scc_dir,
-                                         cytometer,
-                                         auto_unknown_fluor_policy,
-                                         exclude_af = FALSE) {
-    message("Control preflight failed; attempting automatic control-file regeneration...")
-    create_control_file(
-        input_folder = scc_dir,
-        cytometer = cytometer,
-        unknown_fluor_policy = auto_unknown_fluor_policy,
-        output_file = control_file
-    )
-    control_df <- utils::read.csv(control_file, stringsAsFactors = FALSE, check.names = FALSE)
-    filtered <- .filter_unmix_af_rows(control_df, exclude_af = exclude_af, emit_message = FALSE)
-    list(control_df = filtered$control_df, excluded_af_filenames = filtered$excluded_af_filenames)
 }
 
 .stop_unmix_preflight <- function(preflight, auto_unknown_fluor_policy) {
@@ -231,38 +191,16 @@
     list(fcs_files = fcs_files, pd = flowCore::pData(flowCore::parameters(ff_meta)))
 }
 
-.filter_unmix_excluded_af_outputs <- function(unmixed_list, scc_dir, excluded_af_filenames, unmixed_dir, exclude_af = FALSE) {
-    if (!isTRUE(exclude_af)) {
-        return(unmixed_list)
-    }
-
-    scc_basenames <- list.files(scc_dir, pattern = "\\.fcs$", full.names = FALSE, ignore.case = TRUE)
-    excluded_af_filenames <- unique(c(excluded_af_filenames, scc_basenames[.is_af_filename(scc_basenames)]))
-    excluded_af_keys <- tools::file_path_sans_ext(basename(excluded_af_filenames))
-    excluded_af_keys <- excluded_af_keys[!is.na(excluded_af_keys) & excluded_af_keys != ""]
-    if (length(excluded_af_keys) == 0) {
-        return(unmixed_list)
-    }
-
-    unmixed_list <- unmixed_list[!(names(unmixed_list) %in% excluded_af_keys)]
-    for (sample_key in excluded_af_keys) {
-        out_file <- file.path(unmixed_dir, paste0(sample_key, "_unmixed.fcs"))
-        if (file.exists(out_file)) file.remove(out_file)
-    }
-
-    unmixed_list
-}
-
 .derive_unmix_static_matrix <- function(M, fcs_files, unmixing_method) {
-    # If M has multiple AF bands, only use the base "AF" band (and non-AF markers) for the static unmixing matrix
-    # to avoid singularity (since we cannot statically unmix more markers than detectors).
+    # Static exported matrices cannot represent per-event AF selection reliably.
+    # Drop all AF rows and keep AF modeling in dynamic unmixing results.
     marker_names <- rownames(M)
-    extra_af_rows <- grepl("^AF_", marker_names, ignore.case = TRUE)
-    if (any(extra_af_rows)) {
-        M_static <- M[!extra_af_rows, , drop = FALSE]
+    af_rows <- grepl("^AF($|_)", marker_names, ignore.case = TRUE)
+    if (any(af_rows)) {
+        M_static <- M[!af_rows, , drop = FALSE]
         vars <- attr(M, "variances")
         if (!is.null(vars)) {
-            attr(M_static, "variances") <- vars[!extra_af_rows, , drop = FALSE]
+            attr(M_static, "variances") <- vars[!af_rows, , drop = FALSE]
         }
         detector_noise <- attr(M, "detector_noise")
         if (!is.null(detector_noise)) {
@@ -336,8 +274,6 @@
 #' @param auto_unknown_fluor_policy Auto-fill policy for unresolved fluorophores
 #'   when creating controls (`"by_channel"`, `"empty"`, `"filename"`).
 #' @param output_dir Output directory for SCC workflow artifacts.
-#' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls even when
-#'   they are present in the SCC folder or control mapping.
 #' @param unmixing_method SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
@@ -385,7 +321,6 @@ unmix_controls <- function(
     cytometer = "auto",
     auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
     output_dir = "spectreasy_outputs/unmix_controls",
-    exclude_af = FALSE,
     unmixing_method = "WLS",
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
@@ -444,15 +379,12 @@ unmix_controls <- function(
     control_file <- control_info$control_file
 
     control_df <- .drop_missing_unmix_af_rows(control_df, scc_dir = scc_dir)
-    filtered <- .filter_unmix_af_rows(control_df, exclude_af = exclude_af)
-    control_df <- filtered$control_df
-    excluded_af_filenames <- filtered$excluded_af_filenames
 
     if (isTRUE(control_info$created_control_file)) {
         .unmix_confirm_created_control_file(control_file)
     }
 
-    preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af)
+    preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir)
     if (!preflight$ok) {
         .stop_unmix_preflight(preflight, auto_unknown_fluor_policy = auto_unknown_fluor_policy)
     }
@@ -471,7 +403,6 @@ unmix_controls <- function(
         save_qc_plots = save_qc_plots,
         control_df = control_df,
         cytometer = cytometer,
-        exclude_af = exclude_af,
         af_n_bands = af_n_bands,
         af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
@@ -516,13 +447,6 @@ unmix_controls <- function(
         write_fcs = TRUE,
         save_report = FALSE
     )
-    unmixed_list <- .filter_unmix_excluded_af_outputs(
-        unmixed_list = unmixed_list,
-        scc_dir = scc_dir,
-        excluded_af_filenames = excluded_af_filenames,
-        unmixed_dir = output_paths$unmixed_dir,
-        exclude_af = exclude_af
-    )
 
     static_info <- .derive_unmix_static_matrix(M, fcs_files = meta_info$fcs_files, unmixing_method = unmixing_method)
     W <- static_info$W
@@ -552,12 +476,11 @@ unmix_controls <- function(
             output_file = output_file,
             control_file = control_file,
             cytometer = cytometer,
-            method = unmixing_method,
+            unmixing_method = unmixing_method,
             qc_plot_dir = qc_controls_dir,
             save_qc_pngs = save_qc_plots,
             qc_metrics_dir = qc_controls_dir,
             use_scatter_gating = use_scatter_gating,
-            exclude_af = exclude_af,
             unmix_scatter_max_points = 1000,
             seed = seed,
             unmixing_matrix_file = output_paths$reference_matrix_csv

@@ -8,7 +8,6 @@ get_control_spectra(
   flow_frame,
   control_file = "fcs_mapping.csv",
   control_dir = "scc",
-  method = "WLS",
   cytometer = "auto"
 )
 }
@@ -18,8 +17,6 @@ get_control_spectra(
 \item{control_file}{Path to spectreasy-compatible control CSV.}
 
 \item{control_dir}{Directory containing SCC FCS files.}
-
-\item{method}{Reserved for future method selection.}
 
 \item{cytometer}{Cytometer name used as a channel-mapping hint. The default,
 `"auto"`, infers the cytometer from FCS detector names when possible.}

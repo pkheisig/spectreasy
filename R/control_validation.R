@@ -27,7 +27,7 @@
     any(candidates %in% det_norm)
 }
 
-.control_validation_effective_scc_files <- function(dir_path, exclude_af = FALSE) {
+.control_validation_effective_scc_files <- function(dir_path) {
     files <- list.files(dir_path, pattern = "\\.fcs$", full.names = FALSE, ignore.case = TRUE)
     if (length(files) == 0) return(character())
     bases <- tools::file_path_sans_ext(files)
@@ -43,9 +43,6 @@
         files <- files[keep]
     }
     files <- unique(files)
-    if (isTRUE(exclude_af)) {
-        files <- files[!.is_af_filename(files)]
-    }
     files
 }
 
@@ -123,30 +120,28 @@
     list(errors = errors, is_af = is_af)
 }
 
-.collect_control_validation_known_files <- function(scc_dir, exclude_af = FALSE) {
-    scc_files <- .control_validation_effective_scc_files(scc_dir, exclude_af = exclude_af)
+.collect_control_validation_known_files <- function(scc_dir) {
+    scc_files <- .control_validation_effective_scc_files(scc_dir)
     list(scc_files = scc_files, known_files = unique(scc_files))
 }
 
-.validate_control_file_mapping_coverage <- function(df, is_af, known_files, scc_files, require_all_scc_mapped = TRUE, exclude_af = FALSE) {
+.validate_control_file_mapping_coverage <- function(df, known_files, scc_files, require_all_scc_mapped = TRUE) {
     errors <- character()
     warnings <- character()
 
-    eligible_rows <- if (isTRUE(exclude_af)) !is_af else rep(TRUE, nrow(df))
-
-    unknown_in_control <- setdiff(df$filename[eligible_rows], known_files)
+    unknown_in_control <- setdiff(df$filename, known_files)
     if (length(unknown_in_control) > 0) {
         warnings <- c(warnings, paste0("Ignoring control rows for files not found in scc_dir: ", paste(unknown_in_control, collapse = ", ")))
     }
 
     if (isTRUE(require_all_scc_mapped)) {
-        unmapped_scc <- setdiff(scc_files, df$filename[eligible_rows])
+        unmapped_scc <- setdiff(scc_files, df$filename)
         if (length(unmapped_scc) > 0) {
             errors <- c(errors, paste0("SCC files missing from control file: ", paste(unmapped_scc, collapse = ", ")))
         }
     }
 
-    active_rows <- df$filename %in% scc_files & eligible_rows
+    active_rows <- df$filename %in% scc_files
     list(errors = errors, warnings = warnings, active_rows = active_rows)
 }
 
@@ -224,8 +219,6 @@
 #'
 #' @param control_df Control mapping data.frame.
 #' @param scc_dir SCC directory containing FCS files.
-#' @param exclude_af Logical. If `TRUE`, AF/unstained controls are optional and
-#'   ignored during mapping completeness checks.
 #' @param require_all_scc_mapped Logical. If TRUE, every effective SCC file must
 #'   have a row in `control_df`.
 #' @param require_channels Logical. If TRUE, non-AF rows must define `channel`.
@@ -264,7 +257,6 @@
 validate_control_file_mapping <- function(
     control_df,
     scc_dir = "scc",
-    exclude_af = FALSE,
     require_all_scc_mapped = TRUE,
     require_channels = TRUE,
     stop_on_error = FALSE
@@ -277,17 +269,12 @@ validate_control_file_mapping <- function(
         row_checks <- .validate_control_validation_rows(df, require_channels = require_channels)
         errors <- c(errors, row_checks$errors)
 
-        known <- .collect_control_validation_known_files(
-            scc_dir = scc_dir,
-            exclude_af = exclude_af
-        )
+        known <- .collect_control_validation_known_files(scc_dir = scc_dir)
         coverage <- .validate_control_file_mapping_coverage(
             df = df,
-            is_af = row_checks$is_af,
             known_files = known$known_files,
             scc_files = known$scc_files,
-            require_all_scc_mapped = require_all_scc_mapped,
-            exclude_af = exclude_af
+            require_all_scc_mapped = require_all_scc_mapped
         )
         errors <- c(errors, coverage$errors)
         warnings <- c(warnings, coverage$warnings)
