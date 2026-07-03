@@ -497,6 +497,8 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' 
 #' @param sample_dir Directory containing experimental FCS files, a
 #'   `flowCore::flowSet`, or a `SingleCellExperiment` for in-memory workflows.
+#' @param samples_dir Alias for `sample_dir`, accepted for workflows and scripts
+#'   that use the plural directory name.
 #' @param M Optional reference matrix (Markers x Detectors). If supplied,
 #'   unmixing is computed dynamically using this matrix. If not supplied,
 #'   it is loaded from the CSV path provided in `unmixing_matrix_file`.
@@ -580,7 +582,8 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' unmixed <- unmix_samples(toy_fs, M = M_demo, unmixing_method = "OLS", output_dir = tempdir())
 #' names(unmixed)
 #' @export
-unmix_samples <- function(sample_dir = "samples", 
+unmix_samples <- function(sample_dir = "samples",
+                          samples_dir = NULL,
                           M = NULL, 
                           unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
                           detector_noise_file = NULL,
@@ -600,6 +603,12 @@ unmix_samples <- function(sample_dir = "samples",
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
     scc_dir <- NULL
+    if (!is.null(samples_dir)) {
+        if (!identical(sample_dir, "samples") && !identical(sample_dir, samples_dir)) {
+            stop("Use only one of sample_dir or samples_dir.", call. = FALSE)
+        }
+        sample_dir <- samples_dir
+    }
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")

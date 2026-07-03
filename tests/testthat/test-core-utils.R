@@ -256,6 +256,7 @@ test_that("calc_residuals RWLS down-weights detector-level outliers", {
 test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::calc_residuals)))
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_samples)))
+    expect_true("samples_dir" %in% names(formals(spectreasy::unmix_samples)))
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_controls)))
     expect_true("estimate_af" %in% names(formals(spectreasy::unmix_samples)))
     expect_false(formals(spectreasy::unmix_samples)$estimate_af)

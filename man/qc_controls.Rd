@@ -16,6 +16,12 @@ qc_controls(
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   save_qc_pngs = FALSE,
   qc_metrics_dir = NULL,
+  unmixed_list = NULL,
+  qc_summary = NULL,
+  report_plot_dir = NULL,
+  pd = NULL,
+  af_bank_info = NULL,
+  cleanup_report_plot_dir = FALSE,
   use_scatter_gating = TRUE,
   unmix_scatter_max_points = 1000,
   unmix_scatter_axis_limit = NULL,
@@ -52,6 +58,25 @@ for report assembly and removed afterward.}
 
 \item{qc_metrics_dir}{Optional directory where plot-ready SCC QC metric
 CSVs are written alongside the PDF report.}
+
+\item{unmixed_list}{Optional precomputed SCC unmixing results from
+[unmix_controls()]. When supplied with `M`, the report reuses these results
+instead of unmixing SCC files again.}
+
+\item{qc_summary}{Optional precomputed SCC gating summary from
+`attr(M, "qc_summary")`.}
+
+\item{report_plot_dir}{Optional directory containing precomputed SCC
+FSC/SSC, gate, and spectrum PNGs from [build_reference_matrix()].}
+
+\item{pd}{Optional detector metadata (`flowCore::pData(parameters(ff))`).}
+
+\item{af_bank_info}{Optional precomputed AF bank metadata from
+`attr(M, "af_bank_info")`.}
+
+\item{cleanup_report_plot_dir}{Logical; if `TRUE`, remove
+`report_plot_dir` after the PDF is assembled. Intended for internal
+temporary plot directories created by [unmix_controls()].}
 
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use scatter/intensity
 gating and show scatter gate plots in the report. If `FALSE`, use and show

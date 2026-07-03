@@ -153,7 +153,14 @@
     }
 
     if (!is.null(seed)) set.seed(seed)
-    km <- stats::kmeans(shape_mat, centers = n_eff, nstart = 8, iter.max = 100)
+    km <- withCallingHandlers(
+        stats::kmeans(shape_mat, centers = n_eff, nstart = 8, iter.max = 100),
+        warning = function(w) {
+            if (grepl("Quick-TRANSfer stage steps exceeded maximum", conditionMessage(w), fixed = TRUE)) {
+                invokeRestart("muffleWarning")
+            }
+        }
+    )
     cluster_sizes <- as.numeric(table(factor(km$cluster, levels = seq_len(n_eff))))
     min_cluster_size <- .reference_min_af_cluster_size(
         n_events = nrow(shape_mat),

@@ -502,7 +502,6 @@ plot_spectra <- function(ref_matrix,
         ) +
         ggplot2::labs(
             title = "Unmixing Scatter Matrix",
-            subtitle = "Good: row-stain events are high on Y and near zero on X (other markers).\nBad: large off-axis clouds indicate cross-talk, control mislabeling, or unstable unmixing."
         ) +
         ggplot2::theme_bw(base_size = 8.75) +
         ggplot2::theme(

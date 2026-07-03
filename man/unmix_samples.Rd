@@ -6,6 +6,7 @@
 \usage{
 unmix_samples(
   sample_dir = "samples",
+  samples_dir = NULL,
   M = NULL,
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
@@ -28,6 +29,9 @@ unmix_samples(
 \arguments{
 \item{sample_dir}{Directory containing experimental FCS files, a
 `flowCore::flowSet`, or a `SingleCellExperiment` for in-memory workflows.}
+
+\item{samples_dir}{Alias for `sample_dir`, accepted for workflows and scripts
+that use the plural directory name.}
 
 \item{M}{Optional reference matrix (Markers x Detectors). If supplied,
 unmixing is computed dynamically using this matrix. If not supplied,

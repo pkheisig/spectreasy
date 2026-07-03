@@ -144,15 +144,36 @@
     if (is.null(p) || is.null(qc_plot_dir)) {
         return(invisible(NULL))
     }
-    ggplot2::ggsave(
-        filename = file.path(qc_plot_dir, filename),
-        plot = p,
-        width = width,
-        height = height,
-        units = "in",
-        dpi = 200
+    .with_known_qc_plot_warnings_suppressed(
+        ggplot2::ggsave(
+            filename = file.path(qc_plot_dir, filename),
+            plot = p,
+            width = width,
+            height = height,
+            units = "in",
+            dpi = 200
+        )
     )
     invisible(file.path(qc_plot_dir, filename))
+}
+
+.is_known_qc_plot_warning <- function(message) {
+    grepl("Binning grid too coarse for current \\(small\\) bandwidth", message) ||
+        (
+            grepl("Removed [0-9]+ rows? containing missing values or values outside the scale range", message) &&
+                grepl("`geom_(tile|point)\\(\\)`", message)
+        )
+}
+
+.with_known_qc_plot_warnings_suppressed <- function(expr) {
+    withCallingHandlers(
+        expr,
+        warning = function(w) {
+            if (.is_known_qc_plot_warning(conditionMessage(w))) {
+                invokeRestart("muffleWarning")
+            }
+        }
+    )
 }
 
 .write_qc_report_csv <- function(x, path, row_id = NULL) {
@@ -1111,18 +1132,22 @@ qc_samples <- function(results,
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
     report_page_started <- FALSE
     draw_report_plot_page <- function(p, square = FALSE, height_ratio = 1.0, width_ratio = 1.0) {
-        .draw_qc_report_plot_page(
-            p,
-            square = square,
-            height_ratio = height_ratio,
-            width_ratio = width_ratio,
-            newpage = report_page_started
+        .with_known_qc_plot_warnings_suppressed(
+            .draw_qc_report_plot_page(
+                p,
+                square = square,
+                height_ratio = height_ratio,
+                width_ratio = width_ratio,
+                newpage = report_page_started
+            )
         )
         report_page_started <<- TRUE
         invisible(NULL)
     }
     draw_report_spectra_page <- function(p) {
-        .draw_qc_report_spectra_page(p, newpage = report_page_started)
+        .with_known_qc_plot_warnings_suppressed(
+            .draw_qc_report_spectra_page(p, newpage = report_page_started)
+        )
         report_page_started <<- TRUE
         invisible(NULL)
     }

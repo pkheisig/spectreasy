@@ -399,10 +399,18 @@ unmix_controls <- function(
         output_file <- file.path(qc_controls_dir, "qc_controls_report.pdf")
         message("Automatic SCC QC report enabled: ", output_file)
     }
+    build_qc_plots <- isTRUE(save_qc_plots) || isTRUE(save_report)
+    build_output_folder <- if (isTRUE(save_qc_plots)) {
+        output_dir
+    } else if (isTRUE(save_report)) {
+        tempfile("scc_report_plots_")
+    } else {
+        output_dir
+    }
     build_args <- c(list(
         input_folder = scc_dir,
-        output_folder = output_dir,
-        save_qc_plots = save_qc_plots,
+        output_folder = build_output_folder,
+        save_qc_plots = build_qc_plots,
         control_df = control_df,
         cytometer = cytometer,
         af_n_bands = af_n_bands,
@@ -479,6 +487,12 @@ unmix_controls <- function(
             qc_plot_dir = qc_controls_dir,
             save_qc_pngs = save_qc_plots,
             qc_metrics_dir = qc_controls_dir,
+            unmixed_list = unmixed_list,
+            qc_summary = attr(M, "qc_summary"),
+            report_plot_dir = attr(M, "qc_plot_dir"),
+            pd = meta_info$pd,
+            af_bank_info = attr(M, "af_bank_info"),
+            cleanup_report_plot_dir = !isTRUE(save_qc_plots),
             use_scatter_gating = use_scatter_gating,
             unmix_scatter_max_points = 1000,
             seed = seed,

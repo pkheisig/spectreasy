@@ -70,9 +70,7 @@ plot_nps <- function(nps_results, output_file = NULL, width = 200) {
     p <- p +
         ggplot2::labs(
             title = "Negative Population Spread (Unmixing Noise Floor)",
-            subtitle = "Lower is better. High spread can worsen separation between pos. and neg. populations.\n
-            Cell-based control colors will show higher MAD.\n
-            Use colors with high spread on abundant markers whenever possible.",
+            subtitle = "Lower is better. High spread can worsen separation between pos. and neg. populations.\nCell-based control colors will show higher MAD.\nUse colors with high spread on abundant markers whenever possible.",
             y = "Spread (MAD)",
             x = "Unmixed Marker"
         ) +
@@ -177,8 +175,7 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
         ) +
         ggplot2::labs(
             title = "Fluorophore Spectral Similarity",
-            subtitle = "Cosine similarity of reference signatures (0 = orthogonal, 1 = identical).\n
-            High similarity can indicate potential spillover.",
+            subtitle = "Cosine similarity of reference signatures (0 = orthogonal, 1 = identical).\nHigh similarity can indicate potential spillover.",
             x = NULL, y = NULL
         ) +
         ggplot2::theme_minimal(base_size = 13.75) +

@@ -137,7 +137,14 @@
         colnames(centers) <- colnames(af_shape)
         cluster_sizes <- nrow(af_shape)
     } else {
-        km <- stats::kmeans(af_shape, centers = n_eff, nstart = nstart, iter.max = iter.max)
+        km <- withCallingHandlers(
+            stats::kmeans(af_shape, centers = n_eff, nstart = nstart, iter.max = iter.max),
+            warning = function(w) {
+                if (grepl("Quick-TRANSfer stage steps exceeded maximum", conditionMessage(w), fixed = TRUE)) {
+                    invokeRestart("muffleWarning")
+                }
+            }
+        )
         centers <- as.matrix(km$centers)
         cluster_sizes <- tabulate(km$cluster, nbins = nrow(centers))
     }
@@ -2149,14 +2156,20 @@
         ggplot2::geom_tile(width = diff(x_breaks)[1], height = diff(y_breaks)[1]) +
         ggplot2::scale_fill_gradientn(colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"), guide = "none") +
         ggplot2::geom_path(data = final_gate, ggplot2::aes(x, y), inherit.aes = FALSE, color = "red", linewidth = 1) +
-        ggplot2::labs(title = paste0(sn, " - FSC/SSC"), x = fsc_desc, y = ssc_desc) +
+        ggplot2::labs(
+            title = paste0(sn, " - FSC/SSC"),
+            subtitle = paste0(round(100 * nrow(gated_data) / nrow(raw_data), 1), "% gated"),
+            x = fsc_desc,
+            y = ssc_desc
+        ) +
         ggplot2::theme_minimal() +
         ggplot2::theme(
             legend.position = "none",
             panel.grid = ggplot2::element_blank(),
             panel.background = ggplot2::element_rect(fill = "white", color = NA),
             axis.line = ggplot2::element_line(color = "black", linewidth = 0.35),
-            axis.ticks = ggplot2::element_line(color = "black", linewidth = 0.3)
+            axis.ticks = ggplot2::element_line(color = "black", linewidth = 0.3),
+            plot.subtitle = ggplot2::element_text(size = 10.6)
         ) +
         ggplot2::coord_cartesian(xlim = c(0, max(fsc_max, ssc_max) * 1.05), ylim = c(0, max(fsc_max, ssc_max) * 1.05))
     ggplot2::ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, width = 5, height = 5, dpi = 300)
@@ -2171,10 +2184,7 @@
 
     hist_subtitle_lines <- if (positive_gate_present) {
         c(
-            paste0(
-                round(100 * nrow(final_gated_data) / nrow(gated_data), 1),
-                "% positive gated | blue = negative gate | red = bright gate"
-            ),
+            paste0(round(100 * nrow(final_gated_data) / nrow(gated_data), 1), "% positive gated"),
             gate_method
         )
     } else {

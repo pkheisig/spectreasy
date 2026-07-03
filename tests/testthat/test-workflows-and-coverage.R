@@ -238,13 +238,17 @@ test_that("unmix_controls handles WLS output with AF controls", {
     control_csv <- tempfile(fileext = ".csv")
     utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
 
-    ctrl <- spectreasy::unmix_controls(
-        scc_dir = wf$scc_dir,
-        control_file = control_csv,
-        output_dir = output_dir,
-        unmixing_method = "WLS",
-        seed = 1,
-        subsample_n = 400
+    messages <- capture.output(
+        ctrl <- spectreasy::unmix_controls(
+            scc_dir = wf$scc_dir,
+            control_file = control_csv,
+            output_dir = output_dir,
+            unmixing_method = "WLS",
+            af_n_bands = 1,
+            seed = 1,
+            subsample_n = 400
+        ),
+        type = "message"
     )
 
     expect_equal(ctrl$static_unmixing_matrix_method, "WLS")
@@ -255,6 +259,11 @@ test_that("unmix_controls handles WLS output with AF controls", {
     expect_true(any(grepl("^AF($|_)", rownames(ctrl$M), ignore.case = TRUE)))
     expect_true(any(grepl("Unstained", names(ctrl$unmixed_list), ignore.case = TRUE)))
     expect_true(file.exists(file.path(output_dir, "unmixed_fcs", "Unstained (Cells)_unmixed.fcs")))
+    expect_false(any(grepl("scc_report_plots_", list.dirs(output_dir, recursive = TRUE, full.names = FALSE))))
+    expect_equal(sum(grepl("^Found 2 spectral detectors", messages)), 1L)
+    expect_equal(sum(grepl("^Processing SCC:", messages)), 2L)
+    expect_equal(sum(grepl("^Derived 1 AF basis", messages)), 1L)
+    expect_false(any(grepl("kmeans_distinct", messages)))
 })
 
 test_that("unmix_controls tolerates a missing unstained mapping row", {
@@ -344,6 +353,34 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
     expect_setequal(names(call_result$value), c("sample_a", "sample_b"))
     expect_true(file.exists(file.path(output_dir, "sample_a_unmixed.fcs")))
     expect_true(file.exists(file.path(output_dir, "sample_b_unmixed.fcs")))
+})
+
+test_that("unmix_samples accepts samples_dir as an alias for sample_dir", {
+    wf <- make_synthetic_workflow()
+    sample_dir <- tempfile("spectreasy_alias_samples_")
+    output_dir <- tempfile("spectreasy_alias_unmixed_")
+    dir.create(sample_dir, recursive = TRUE, showWarnings = FALSE)
+
+    flowCore::write.FCS(make_synthetic_ff(c("B1-A" = 900, "YG1-A" = 150)), file.path(sample_dir, "sample_alias.fcs"))
+
+    M <- spectreasy::build_reference_matrix(
+        input_folder = wf$scc_dir,
+        control_df = wf$control_df,
+        save_qc_plots = FALSE,
+        seed = 1,
+        subsample_n = 400
+    )
+
+    unmixed <- spectreasy::unmix_samples(
+        samples_dir = sample_dir,
+        M = M,
+        unmixing_method = "OLS",
+        output_dir = output_dir,
+        save_report = FALSE
+    )
+
+    expect_s3_class(unmixed, "spectreasy_unmixed_results")
+    expect_true(file.exists(file.path(output_dir, "sample_alias_unmixed.fcs")))
 })
 
 test_that("qc_controls writes a PDF from synthetic SCC files", {

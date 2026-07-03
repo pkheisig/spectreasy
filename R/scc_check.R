@@ -175,9 +175,9 @@
         file.path(report_plot_dir, gate_dir, paste0(sample_id, gate_suffix)),
         gate_title,
         x = grid::unit(0.74, "npc"),
-        y = grid::unit(0.62, "npc"),
+        y = grid::unit(0.71, "npc"),
         width = grid::unit(0.42, "npc"),
-        height = grid::unit(0.44, "npc")
+        height = grid::unit(0.26, "npc")
     )
     .draw_report_image_panel(
         file.path(report_plot_dir, "spectrum", paste0(sample_id, "_spectrum.png")),
@@ -283,6 +283,19 @@
 #'   for report assembly and removed afterward.
 #' @param qc_metrics_dir Optional directory where plot-ready SCC QC metric
 #'   CSVs are written alongside the PDF report.
+#' @param unmixed_list Optional precomputed SCC unmixing results from
+#'   [unmix_controls()]. When supplied with `M`, the report reuses these results
+#'   instead of unmixing SCC files again.
+#' @param qc_summary Optional precomputed SCC gating summary from
+#'   `attr(M, "qc_summary")`.
+#' @param report_plot_dir Optional directory containing precomputed SCC
+#'   FSC/SSC, gate, and spectrum PNGs from [build_reference_matrix()].
+#' @param pd Optional detector metadata (`flowCore::pData(parameters(ff))`).
+#' @param af_bank_info Optional precomputed AF bank metadata from
+#'   `attr(M, "af_bank_info")`.
+#' @param cleanup_report_plot_dir Logical; if `TRUE`, remove
+#'   `report_plot_dir` after the PDF is assembled. Intended for internal
+#'   temporary plot directories created by [unmix_controls()].
 #' @param use_scatter_gating Logical; if `TRUE` (default), use scatter/intensity
 #'   gating and show scatter gate plots in the report. If `FALSE`, use and show
 #'   the legacy histogram gate.
@@ -315,6 +328,12 @@ qc_controls <- function(
     qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
     save_qc_pngs = FALSE,
     qc_metrics_dir = NULL,
+    unmixed_list = NULL,
+    qc_summary = NULL,
+    report_plot_dir = NULL,
+    pd = NULL,
+    af_bank_info = NULL,
+    cleanup_report_plot_dir = FALSE,
     use_scatter_gating = TRUE,
     unmix_scatter_max_points = 1000,
     unmix_scatter_axis_limit = NULL,
@@ -336,33 +355,54 @@ qc_controls <- function(
         dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
     }
 
-    plot_dir_info <- .prepare_scc_report_plot_dir(qc_plot_dir = qc_plot_dir, save_qc_pngs = save_qc_pngs)
-    if (!is.null(plot_dir_info$cleanup_dir)) {
-        on.exit(unlink(plot_dir_info$cleanup_dir, recursive = TRUE, force = TRUE), add = TRUE)
-    }
     qc_metrics_dir <- .prepare_qc_report_metrics_dir(qc_metrics_dir)
 
-    control_resolved <- .resolve_control_file_path(control_file)
-    control_input <- if (file.exists(control_resolved)) control_resolved else NULL
+    can_reuse_reference <- !is.null(M) && !is.null(qc_summary) && !is.null(report_plot_dir)
+    if (isTRUE(can_reuse_reference)) {
+        M_built <- .as_reference_matrix(M, "M")
+        report_plot_dir <- normalizePath(report_plot_dir, mustWork = FALSE)
+        if (!dir.exists(report_plot_dir)) {
+            stop("report_plot_dir not found: ", report_plot_dir, call. = FALSE)
+        }
+        if (isTRUE(cleanup_report_plot_dir)) {
+            on.exit(unlink(report_plot_dir, recursive = TRUE, force = TRUE), add = TRUE)
+        }
+    } else {
+        plot_dir_info <- .prepare_scc_report_plot_dir(qc_plot_dir = qc_plot_dir, save_qc_pngs = save_qc_pngs)
+        if (!is.null(plot_dir_info$cleanup_dir)) {
+            on.exit(unlink(plot_dir_info$cleanup_dir, recursive = TRUE, force = TRUE), add = TRUE)
+        }
 
-    build_args <- c(
-        list(
-            input_folder = scc_dir,
-            output_folder = plot_dir_info$plot_dir,
-            save_qc_plots = TRUE,
-            control_df = control_input,
-            cytometer = cytometer,
-            use_scatter_gating = use_scatter_gating,
-            seed = seed
-        ),
-        extra_args
-    )
-    M_built <- do.call(build_reference_matrix, build_args)
-    if (is.null(M_built) || nrow(M_built) == 0) {
-        stop("No valid spectra found while generating the SCC report.")
+        control_resolved <- .resolve_control_file_path(control_file)
+        control_input <- if (file.exists(control_resolved)) control_resolved else NULL
+
+        build_args <- c(
+            list(
+                input_folder = scc_dir,
+                output_folder = plot_dir_info$plot_dir,
+                save_qc_plots = TRUE,
+                control_df = control_input,
+                cytometer = cytometer,
+                use_scatter_gating = use_scatter_gating,
+                seed = seed
+            ),
+            extra_args
+        )
+        M_built <- do.call(build_reference_matrix, build_args)
+        if (is.null(M_built) || nrow(M_built) == 0) {
+            stop("No valid spectra found while generating the SCC report.")
+        }
+
+        report_plot_dir <- attr(M_built, "qc_plot_dir")
+        if (is.null(report_plot_dir) || !dir.exists(report_plot_dir)) {
+            report_plot_dir <- plot_dir_info$plot_dir
+        }
+        af_bank_info <- attr(M_built, "af_bank_info")
     }
 
-    qc_summary <- attr(M_built, "qc_summary")
+    if (is.null(qc_summary)) {
+        qc_summary <- attr(M_built, "qc_summary")
+    }
     if (is.null(qc_summary)) {
         qc_summary <- data.frame()
     } else {
@@ -370,10 +410,6 @@ qc_controls <- function(
         qc_summary <- qc_summary[order(qc_summary$fluorophore, qc_summary$sample), , drop = FALSE]
     }
 
-    report_plot_dir <- attr(M_built, "qc_plot_dir")
-    if (is.null(report_plot_dir) || !dir.exists(report_plot_dir)) {
-        report_plot_dir <- plot_dir_info$plot_dir
-    }
     retained_qc_plot_dir <- if (isTRUE(save_qc_pngs)) report_plot_dir else NULL
 
     M_report <- NULL
@@ -391,12 +427,14 @@ qc_controls <- function(
         M_report <- M_built
     }
 
-    fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-    if (length(fcs_files) == 0) {
-        stop("No FCS files found in scc_dir: ", scc_dir)
+    if (is.null(pd)) {
+        fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+        if (length(fcs_files) == 0) {
+            stop("No FCS files found in scc_dir: ", scc_dir)
+        }
+        ff_meta <- flowCore::read.FCS(fcs_files[1], transformation = FALSE, truncate_max_range = FALSE)
+        pd <- flowCore::pData(flowCore::parameters(ff_meta))
     }
-    ff_meta <- flowCore::read.FCS(fcs_files[1], transformation = FALSE, truncate_max_range = FALSE)
-    pd <- flowCore::pData(flowCore::parameters(ff_meta))
 
     if (!requireNamespace("png", quietly = TRUE)) {
         stop("Package 'png' is required to embed SCC QC plots in the report.")
@@ -405,7 +443,10 @@ qc_controls <- function(
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
 
-    .draw_af_bank_qc_pages(M_built, attr(M_built, "af_bank_info"), pd = pd)
+    if (is.null(af_bank_info)) {
+        af_bank_info <- attr(M_built, "af_bank_info")
+    }
+    .draw_af_bank_qc_pages(M_built, af_bank_info, pd = pd)
 
     keep_non_af <- !grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
     M_no_af <- M_report[keep_non_af, , drop = FALSE]
@@ -440,14 +481,16 @@ qc_controls <- function(
             row_id = "fluorophore"
         )
         .draw_report_ggplot_page(plot_similarity_matrix(sim_mat, output_file = NULL))
-        unmixed_list <- unmix_samples(
-            sample_dir = scc_dir,
-            M = M_report,
-            unmixing_method = unmixing_method,
-            write_fcs = FALSE,
-            save_report = FALSE,
-            verbose = FALSE
-        )
+        if (is.null(unmixed_list)) {
+            unmixed_list <- unmix_samples(
+                sample_dir = scc_dir,
+                M = M_report,
+                unmixing_method = unmixing_method,
+                write_fcs = FALSE,
+                save_report = FALSE,
+                verbose = FALSE
+            )
+        }
         if (!identical(unmixing_method, "NNLS")) {
             control_results_df <- .normalize_qc_report_results_df(unmixed_list)
             nps_scores <- calculate_nps(control_results_df)
@@ -530,7 +573,7 @@ qc_controls <- function(
         qc_summary = qc_summary,
         qc_plot_dir = retained_qc_plot_dir,
         qc_metrics_dir = qc_metrics_dir,
-        af_bank_info = attr(M_built, "af_bank_info"),
+        af_bank_info = af_bank_info,
         unmixing_method = unmixing_method
     ))
 }
