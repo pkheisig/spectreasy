@@ -11,7 +11,6 @@ build_reference_matrix(
   control_df = NULL,
   af_n_bands = 10,
   af_max_cells = 50000,
-  af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
   seed = NULL,
@@ -45,13 +44,10 @@ Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is 
 
 \item{af_n_bands}{Number of AF basis signatures to extract from pooled
 unstained/AF control events. The default, `10`, is a conservative fixed
-AF bank size; use `"auto"` to keep distinct signatures from up to
-`af_auto_max_bands` k-means centers.}
+AF bank size.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used when
 deriving AF basis signatures.}
-
-\item{af_auto_max_bands}{Maximum k-means centers that `"auto"` may score.}
 
 \item{af_min_cluster_events}{Minimum number of AF events required to keep a
 k-means AF cluster. Used together with `af_min_cluster_proportion`; the

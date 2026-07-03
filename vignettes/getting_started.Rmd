@@ -328,16 +328,15 @@ core `unmix_controls()` -> `unmix_samples()` workflow shown above.
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `unmix_controls()` uses `af_n_bands = "auto"` to choose
-autofluorescence signatures from the unstained control. If your cells have
-different AF shapes from cell to cell, auto can split AF into several basis
-signatures.
+By default, `unmix_controls()` uses `af_n_bands = 10` to choose a
+conservative fixed AF bank from the unstained control. If your cells have
+different AF shapes from cell to cell, multiple AF bands can model several
+common AF signatures.
 
 Use the multi-AF settings in the control-stage call. `af_n_bands` controls
-how many AF basis signatures are extracted from the unstained control. Set it
-to `"auto"` to let `spectreasy` keep distinct k-means signatures from the
-pooled AF events. Additional unstained controls in `scc/` are pooled before AF
-extraction.
+how many AF basis signatures are extracted from the unstained control. The
+default `10` is a practical starting point. Additional unstained controls in
+`scc/` are pooled before AF extraction.
 
 ```{r, eval = FALSE}
 ctrl_multi_af <- unmix_controls(
@@ -346,7 +345,7 @@ ctrl_multi_af <- unmix_controls(
   cytometer = "Aurora",
   output_dir = "spectreasy_outputs/unmix_controls_multi_af",
   unmixing_method = "WLS",
-  af_n_bands = "auto",
+  af_n_bands = 10,
   seed = 1
 )
 ```
@@ -364,9 +363,8 @@ unmixed_multi_af <- unmix_samples(
 ```
 
 `af_n_bands` is like choosing how many AF "flavors" to model. More bands can
-fit complex AF better, but too many similar bands can make the matrix
-unstable. With `af_n_bands = "auto"`, near-duplicate AF signatures are pruned
-before unmixing.
+fit complex AF better, but too many similar bands can make the matrix unstable
+and slow down unmixing.
 
 ## Use a reviewed control CSV in non-interactive workflows
 

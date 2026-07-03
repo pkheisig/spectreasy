@@ -871,55 +871,6 @@ test_that("AF profile extraction clusters pooled AF phenotypes", {
     expect_equal(profiles$raw_median, c("B1-A" = 55, "YG1-A" = 52.5, "V1-A" = 12.5), tolerance = 1e-6)
 })
 
-test_that("AF profile extraction can auto-select band count", {
-    detector_names <- c("B1-A", "YG1-A", "V1-A")
-    af_events <- rbind(
-        matrix(rep(c(100, 15, 5), 120), ncol = 3, byrow = TRUE),
-        matrix(rep(c(10, 90, 20), 120), ncol = 3, byrow = TRUE)
-    )
-    colnames(af_events) <- detector_names
-
-    profiles <- spectreasy:::.extract_reference_af_profiles(
-        detector_names = detector_names,
-        n_bands = "auto",
-        max_cells = 500,
-        af_events = af_events
-    )
-
-    expect_equal(nrow(profiles$signatures), 2)
-    expect_equal(profiles$selection$method, "kmeans_distinct")
-    expect_equal(profiles$selection$n_bands, 2)
-})
-
-test_that("AF auto band selection can exceed the old 10-band ceiling", {
-    detector_names <- paste0("D", seq_len(12), "-A")
-    centers <- lapply(seq_len(12), function(i) {
-        v <- rep(0.01, length(detector_names))
-        v[i] <- 1
-        if (i > 1) v[i - 1] <- 0.15
-        if (i < length(detector_names)) v[i + 1] <- 0.15
-        v / max(v)
-    })
-    af_events <- do.call(rbind, lapply(centers, function(v) {
-        matrix(rep(v * 1000, 25), ncol = length(detector_names), byrow = TRUE)
-    }))
-    colnames(af_events) <- detector_names
-
-    profiles <- spectreasy:::.extract_reference_af_profiles(
-        detector_names = detector_names,
-        n_bands = "auto",
-        max_cells = 1000,
-        af_events = af_events,
-        auto_max_bands = 20,
-        min_cluster_events = 20,
-        min_cluster_proportion = 0
-    )
-
-    expect_equal(profiles$selection$method, "kmeans_distinct")
-    expect_equal(profiles$selection$n_bands, 12)
-    expect_equal(nrow(profiles$signatures), 12)
-})
-
 test_that("SCC report reference overlay includes only single-band AF", {
     M_one_af <- rbind(
         FITC = c(1, 0.2),
@@ -956,53 +907,11 @@ test_that("single-band AF uses robust median normalized shape", {
     expect_equal(as.numeric(profiles$signatures[1, ]), c(1, 0.1), tolerance = 1e-6)
 })
 
-test_that("AF auto band selection prunes near-duplicate AF signatures", {
-    detector_names <- c("B1-A", "YG1-A", "V1-A", "R1-A")
-    centers <- list(
-        c(1, 0.20, 0.05, 0.02),
-        c(1, 0.2005, 0.05, 0.02),
-        c(0.05, 1, 0.18, 0.03),
-        c(0.05, 1, 0.1805, 0.03)
-    )
-    af_events <- do.call(rbind, lapply(centers, function(v) {
-        matrix(rep(v * 1000, 30), ncol = length(detector_names), byrow = TRUE)
-    }))
-    colnames(af_events) <- detector_names
-
-    profiles <- spectreasy:::.extract_reference_af_profiles(
-        detector_names = detector_names,
-        n_bands = "auto",
-        max_cells = 1000,
-        af_events = af_events,
-        auto_max_bands = 10,
-        min_cluster_events = 20,
-        min_cluster_proportion = 0
-    )
-
-    expect_lt(nrow(profiles$signatures), profiles$selection$raw_center_count)
-    expect_equal(profiles$selection$n_bands, nrow(profiles$signatures))
-})
-
 test_that("fixed AF bank size is the default for AF extraction APIs", {
     expect_equal(formals(spectreasy::build_reference_matrix)$af_n_bands, 10)
     expect_equal(formals(spectreasy::unmix_controls)$af_n_bands, 10)
     expect_equal(formals(spectreasy::extract_af_profile)$af_n_bands, 10)
     expect_false("af_n_bands" %in% names(formals(spectreasy::unmix_samples)))
-})
-
-test_that("AF auto default similarity threshold keeps distinct bands", {
-    expect_equal(spectreasy:::.reference_af_auto_similarity_threshold, 0.99999)
-    centers <- rbind(
-        c(1, 0.1, 0.0),
-        c(1, 0.1, 0.0),
-        c(0.1, 1, 0.0)
-    )
-    selected <- spectreasy:::.reference_select_distinct_af_centers(
-        centers = centers,
-        cluster_sizes = c(50L, 40L, 30L),
-        min_cluster_size = 1L
-    )
-    expect_equal(nrow(selected$centers), 2)
 })
 
 test_that("fixed AF k-means requests precise band count when possible", {
@@ -1056,7 +965,7 @@ test_that("AF profile extraction handles empty and all-zero AF events", {
     expect_equal(zero_profiles$signatures[1, ], c("B1-A" = 0, "YG1-A" = 0))
 })
 
-test_that("AF argument validation supports auto and fixed k-means bands", {
+test_that("AF argument validation requires fixed numeric bands", {
     args <- spectreasy:::.validate_build_reference_af_args(
         af_n_bands = 2,
         af_max_cells = 500
@@ -1064,25 +973,19 @@ test_that("AF argument validation supports auto and fixed k-means bands", {
 
     expect_equal(args$af_n_bands, 2L)
     expect_equal(args$af_max_cells, 500L)
-    expect_equal(args$af_auto_max_bands, 100L)
     expect_equal(args$af_min_cluster_events, 20L)
     expect_equal(args$af_min_cluster_proportion, 0.005)
     expect_error(
         spectreasy:::.validate_build_reference_af_args(0, 500),
         "af_n_bands"
     )
-    args_auto <- spectreasy:::.validate_build_reference_af_args(
-        af_n_bands = "auto",
-        af_max_cells = 500
+    expect_error(
+        spectreasy:::.validate_build_reference_af_args("auto", 500),
+        "af_n_bands"
     )
-    expect_equal(args_auto$af_n_bands, "auto")
     expect_error(
         spectreasy:::.validate_build_reference_af_args(2, 99),
         "af_max_cells"
-    )
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_auto_max_bands = 0),
-        "af_auto_max_bands"
     )
     expect_error(
         spectreasy:::.validate_build_reference_af_args(2, 500, af_min_cluster_events = 0),
@@ -1122,7 +1025,7 @@ test_that("mapped SCC AF files are pooled into one AF bank size request", {
                 )
             )
         },
-        .extract_reference_af_profiles = function(detector_names, n_bands, max_cells, af_events, auto_max_bands,
+        .extract_reference_af_profiles = function(detector_names, n_bands, max_cells, af_events,
                  min_cluster_events, min_cluster_proportion) {
             captured$n_bands <- n_bands
             captured$event_count <- nrow(af_events)
@@ -1144,7 +1047,6 @@ test_that("mapped SCC AF files are pooled into one AF bank size request", {
         detector_names = detector_names,
         af_n_bands = 3L,
         af_max_cells = 500L,
-        af_auto_max_bands = 100L,
         af_min_cluster_events = 20L,
         af_min_cluster_proportion = 0.005,
         fcs_files_all = fcs_files

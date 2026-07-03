@@ -300,7 +300,6 @@ test_that("unmix_controls handles WLS output with AF controls", {
     expect_equal(sum(grepl("^Found 2 spectral detectors", messages)), 1L)
     expect_equal(sum(grepl("^Processing SCC:", messages)), 2L)
     expect_equal(sum(grepl("^Derived 1 AF basis", messages)), 1L)
-    expect_false(any(grepl("kmeans_distinct", messages)))
 })
 
 test_that("unmix_controls tolerates a missing unstained mapping row", {

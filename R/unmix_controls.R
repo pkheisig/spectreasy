@@ -308,10 +308,7 @@
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
 #' @param af_n_bands Number of AF basis signatures to extract from pooled
 #'   unstained/AF control events. The default, `10`, is a conservative fixed
-#'   AF bank size; use `"auto"` to keep distinct signatures from up to
-#'   `af_auto_max_bands` k-means centers.
-#' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
-#'   Default is 100.
+#'   AF bank size.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
 #'   k-means AF cluster. Used together with `af_min_cluster_proportion`.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
@@ -355,7 +352,6 @@ unmix_controls <- function(
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
     af_n_bands = 10,
-    af_auto_max_bands = 100,
     af_min_cluster_events = 20,
     af_min_cluster_proportion = 0.005,
     rwls_max_iter = 1L,
@@ -425,7 +421,6 @@ unmix_controls <- function(
         control_df = control_df,
         cytometer = cytometer,
         af_n_bands = af_n_bands,
-        af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
         use_scatter_gating = use_scatter_gating,

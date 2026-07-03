@@ -92,10 +92,8 @@ af_profile_dir <- function(create = TRUE) {
 #'
 #' @param fcs_file Path to an unstained/autofluorescence `.fcs` file.
 #' @param af_n_bands Number of AF bands to extract. The default, `10`, is a
-#'   conservative fixed AF bank size; use `"auto"` to keep distinct k-means
-#'   signatures from up to `af_auto_max_bands` centers.
+#'   conservative fixed AF bank size.
 #' @param af_max_cells Maximum number of scatter-gated AF events used.
-#' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
 #'   k-means AF cluster.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
@@ -109,7 +107,6 @@ af_profile_dir <- function(create = TRUE) {
 extract_af_profile <- function(fcs_file,
                                af_n_bands = 10,
                                af_max_cells = 50000,
-                               af_auto_max_bands = 100,
                                af_min_cluster_events = 20,
                                af_min_cluster_proportion = 0.005,
                                seed = NULL,
@@ -128,7 +125,6 @@ extract_af_profile <- function(fcs_file,
     af_args <- .validate_build_reference_af_args(
         af_n_bands = af_n_bands,
         af_max_cells = af_max_cells,
-        af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion
     )
@@ -164,7 +160,7 @@ extract_af_profile <- function(fcs_file,
     if (isTRUE(verbose)) {
         message(
             "  Building k-means AF bank",
-            if (identical(af_args$af_n_bands, "auto")) paste0(" from up to ", af_args$af_auto_max_bands, " centers") else paste0(" with ", af_args$af_n_bands, " band(s)"),
+            paste0(" with ", af_args$af_n_bands, " band(s)"),
             "..."
         )
     }
@@ -174,7 +170,6 @@ extract_af_profile <- function(fcs_file,
             n_bands = af_args$af_n_bands,
             max_cells = af_args$af_max_cells,
             af_events = gated$events,
-            auto_max_bands = af_args$af_auto_max_bands,
             min_cluster_events = af_args$af_min_cluster_events,
             min_cluster_proportion = af_args$af_min_cluster_proportion
         ),
@@ -200,10 +195,9 @@ extract_af_profile <- function(fcs_file,
             fcs_file = normalizePath(fcs_file, mustWork = FALSE),
             af_n_bands = af_args$af_n_bands,
             af_max_cells = af_args$af_max_cells,
-            af_auto_max_bands = af_args$af_auto_max_bands,
             af_min_cluster_events = af_args$af_min_cluster_events,
             af_min_cluster_proportion = af_args$af_min_cluster_proportion,
-            auto_selection = af_profiles$selection
+            selection = af_profiles$selection
         )
     )
     if (isTRUE(show_plot)) {

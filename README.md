@@ -223,7 +223,7 @@ The regular `OLS` and `NNLS` methods remain available as separate methods. They 
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `unmix_controls()` uses `af_n_bands = "auto"` to build a k-means AF bank from pooled unstained/AF control events. The first AF row is the mean AF profile, and additional k-means-derived AF rows represent common AF shapes seen in the unstained cells. During unmixing, each event chooses one AF profile before the final fit.
+By default, `unmix_controls()` uses `af_n_bands = 10` to build a conservative AF bank from pooled unstained/AF control events. With one AF band, the AF row is the median normalized AF shape; with multiple AF bands, k-means-derived AF rows represent common AF shapes seen in the unstained cells. During unmixing, each event chooses one AF profile before the final fit.
 
 Most users should leave the AF settings at their defaults. To use multiple unstained sources, put each unstained cell `.fcs` file in `scc/`. The automapper will identify them as separate AF controls and use one AF row per file in `fcs_mapping.csv`. The events from those files are pooled before AF extraction; `af_n_bands` controls how many AF basis spectra are learned from the pooled events.
 
@@ -233,7 +233,7 @@ ctrl_multi_af <- unmix_controls(
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
   output_dir = "spectreasy_outputs/unmix_controls_multi_af",
-  af_n_bands = "auto",
+  af_n_bands = 10,
   seed = 1
 )
 ```

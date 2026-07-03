@@ -15,7 +15,6 @@ unmix_controls(
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
   af_n_bands = 10,
-  af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
   rwls_max_iter = 1L,
@@ -50,11 +49,7 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 
 \item{af_n_bands}{Number of AF basis signatures to extract from pooled
 unstained/AF control events. The default, `10`, is a conservative fixed
-AF bank size; use `"auto"` to keep distinct signatures from up to
-`af_auto_max_bands` k-means centers.}
-
-\item{af_auto_max_bands}{Maximum k-means centers that `"auto"` may score.
-Default is 100.}
+AF bank size.}
 
 \item{af_min_cluster_events}{Minimum number of AF events required to keep a
 k-means AF cluster. Used together with `af_min_cluster_proportion`.}

@@ -747,22 +747,21 @@ for the core <code>unmix_controls()</code> -&gt;
 <div id="per-cell-autofluorescence-af-extraction" class="section level2">
 <h2>Per-cell Autofluorescence (AF) Extraction</h2>
 <p>By default, <code>unmix_controls()</code> uses
-<code>af_n_bands = &quot;auto&quot;</code> to choose autofluorescence signatures
-from the unstained control. If your cells have different AF shapes from
-cell to cell, auto can split AF into several basis signatures.</p>
+<code>af_n_bands = 10</code> to choose a conservative fixed AF bank from
+the unstained control. If your cells have different AF shapes from cell
+to cell, multiple AF bands can model several common AF signatures.</p>
 <p>Use the multi-AF settings in the control-stage call.
 <code>af_n_bands</code> controls how many AF basis signatures are
-extracted from the unstained control. Set it to <code>&quot;auto&quot;</code> to
-let <code>spectreasy</code> keep distinct k-means signatures from the
-pooled AF events. Additional unstained controls in <code>scc/</code> are
-pooled before AF extraction.</p>
+extracted from the unstained control. The default <code>10</code> is a
+practical starting point. Additional unstained controls in
+<code>scc/</code> are pooled before AF extraction.</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>ctrl_multi_af <span class="ot">&lt;-</span> <span class="fu">unmix_controls</span>(</span>
 <span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>  <span class="at">scc_dir =</span> <span class="st">&quot;scc&quot;</span>,</span>
 <span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>  <span class="at">control_file =</span> <span class="st">&quot;fcs_mapping.csv&quot;</span>,</span>
 <span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a>  <span class="at">cytometer =</span> <span class="st">&quot;Aurora&quot;</span>,</span>
 <span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="st">&quot;spectreasy_outputs/unmix_controls_multi_af&quot;</span>,</span>
 <span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>  <span class="at">unmixing_method =</span> <span class="st">&quot;WLS&quot;</span>,</span>
-<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>  <span class="at">af_n_bands =</span> <span class="st">&quot;auto&quot;</span>,</span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>  <span class="at">af_n_bands =</span> <span class="dv">10</span>,</span>
 <span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a>  <span class="at">seed =</span> <span class="dv">1</span></span>
 <span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a>)</span></code></pre></div>
 <p>Then unmix samples with the control-stage matrix. AF settings stay in
@@ -776,9 +775,7 @@ the resulting matrix.</p>
 <span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a>)</span></code></pre></div>
 <p><code>af_n_bands</code> is like choosing how many AF “flavors” to
 model. More bands can fit complex AF better, but too many similar bands
-can make the matrix unstable. With
-<code>af_n_bands = &quot;auto&quot;</code>, near-duplicate AF signatures are pruned
-before unmixing.</p>
+can make the matrix unstable and slow down unmixing.</p>
 </div>
 <div id="use-a-reviewed-control-csv-in-non-interactive-workflows" class="section level2">
 <h2>Use a reviewed control CSV in non-interactive workflows</h2>
