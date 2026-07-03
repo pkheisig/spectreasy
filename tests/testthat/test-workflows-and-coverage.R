@@ -232,6 +232,43 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))
 })
 
+test_that("unmix_controls tolerates output_dir pointing at unmixed_fcs and samples infer paired matrix", {
+    wf <- make_synthetic_workflow()
+    project_dir <- tempfile("spectreasy_loop_style_")
+    control_output_dir <- file.path(project_dir, "unmix_controls", "unmixed_fcs")
+    sample_output_dir <- file.path(project_dir, "unmix_samples", "unmixed_fcs")
+    sample_dir <- tempfile("spectreasy_loop_samples_")
+    control_csv <- tempfile(fileext = ".csv")
+    dir.create(sample_dir, recursive = TRUE, showWarnings = FALSE)
+    utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
+    flowCore::write.FCS(make_synthetic_ff(c("B1-A" = 900, "YG1-A" = 150), n = 120), file.path(sample_dir, "sample.fcs"))
+
+    ctrl <- spectreasy::unmix_controls(
+        scc_dir = wf$scc_dir,
+        control_file = control_csv,
+        output_dir = control_output_dir,
+        unmixing_method = "OLS",
+        save_report = FALSE,
+        seed = 1,
+        subsample_n = 120
+    )
+
+    expect_true(file.exists(file.path(project_dir, "unmix_controls", "scc_reference_matrix.csv")))
+    expect_equal(normalizePath(ctrl$reference_matrix_file), normalizePath(file.path(project_dir, "unmix_controls", "scc_reference_matrix.csv")))
+    expect_true(file.exists(file.path(project_dir, "unmix_controls", "unmixed_fcs", "FITC (Beads)_unmixed.fcs")))
+
+    unmixed <- spectreasy::unmix_samples(
+        sample_dir = sample_dir,
+        unmixing_method = "OLS",
+        output_dir = sample_output_dir,
+        write_fcs = FALSE,
+        save_report = FALSE
+    )
+
+    expect_s3_class(unmixed, "spectreasy_unmixed_results")
+    expect_equal(names(unmixed), "sample")
+})
+
 test_that("unmix_controls handles WLS output with AF controls", {
     wf <- make_synthetic_workflow(include_af = TRUE)
     output_dir <- tempfile("spectreasy_covr_auto_wls_")

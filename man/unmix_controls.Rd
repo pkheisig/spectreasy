@@ -14,7 +14,7 @@ unmix_controls(
   unmixing_method = "WLS",
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
-  af_n_bands = "auto",
+  af_n_bands = 10,
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
@@ -48,9 +48,10 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 
 \item{seed}{Optional integer seed for deterministic subsampling and plotting.}
 
-\item{af_n_bands}{Number of k-means AF basis signatures to extract from
-pooled unstained/AF control events, or `"auto"` to keep distinct signatures
-from up to `af_auto_max_bands` k-means centers. Default is `"auto"`.}
+\item{af_n_bands}{Number of AF basis signatures to extract from pooled
+unstained/AF control events. The default, `10`, is a conservative fixed
+AF bank size; use `"auto"` to keep distinct signatures from up to
+`af_auto_max_bands` k-means centers.}
 
 \item{af_auto_max_bands}{Maximum k-means centers that `"auto"` may score.
 Default is 100.}

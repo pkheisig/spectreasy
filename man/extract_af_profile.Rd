@@ -6,7 +6,7 @@
 \usage{
 extract_af_profile(
   fcs_file,
-  af_n_bands = "auto",
+  af_n_bands = 10,
   af_max_cells = 50000,
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,
@@ -19,8 +19,9 @@ extract_af_profile(
 \arguments{
 \item{fcs_file}{Path to an unstained/autofluorescence `.fcs` file.}
 
-\item{af_n_bands}{Number of AF bands to extract. The default, `"auto"`,
-keeps distinct k-means signatures from up to `af_auto_max_bands` centers.}
+\item{af_n_bands}{Number of AF bands to extract. The default, `10`, is a
+conservative fixed AF bank size; use `"auto"` to keep distinct k-means
+signatures from up to `af_auto_max_bands` centers.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used.}
 

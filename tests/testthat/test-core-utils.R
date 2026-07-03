@@ -920,6 +920,42 @@ test_that("AF auto band selection can exceed the old 10-band ceiling", {
     expect_equal(nrow(profiles$signatures), 12)
 })
 
+test_that("SCC report reference overlay includes only single-band AF", {
+    M_one_af <- rbind(
+        FITC = c(1, 0.2),
+        PE = c(0.2, 1),
+        AF = c(0.1, 0.3)
+    )
+    colnames(M_one_af) <- c("B1-A", "YG1-A")
+
+    M_multi_af <- rbind(
+        M_one_af,
+        AF_2 = c(0.4, 0.1)
+    )
+
+    expect_equal(rownames(spectreasy:::.scc_reference_overlay_matrix(M_one_af)), c("FITC", "PE", "AF"))
+    expect_equal(rownames(spectreasy:::.scc_reference_overlay_matrix(M_multi_af)), c("FITC", "PE"))
+})
+
+test_that("single-band AF uses robust median normalized shape", {
+    detector_names <- c("B1-A", "YG1-A")
+    af_events <- rbind(
+        matrix(rep(c(100, 10), 5), ncol = 2, byrow = TRUE),
+        c(1, 100)
+    )
+    colnames(af_events) <- detector_names
+
+    profiles <- spectreasy:::.extract_reference_af_profiles(
+        detector_names = detector_names,
+        n_bands = 1,
+        max_cells = 100,
+        af_events = af_events
+    )
+
+    expect_equal(profiles$selection$method, "median_fixed")
+    expect_equal(as.numeric(profiles$signatures[1, ]), c(1, 0.1), tolerance = 1e-6)
+})
+
 test_that("AF auto band selection prunes near-duplicate AF signatures", {
     detector_names <- c("B1-A", "YG1-A", "V1-A", "R1-A")
     centers <- list(
@@ -947,9 +983,10 @@ test_that("AF auto band selection prunes near-duplicate AF signatures", {
     expect_equal(profiles$selection$n_bands, nrow(profiles$signatures))
 })
 
-test_that("AF auto is the default for matrix-building APIs", {
-    expect_equal(formals(spectreasy::build_reference_matrix)$af_n_bands, "auto")
-    expect_equal(formals(spectreasy::unmix_controls)$af_n_bands, "auto")
+test_that("fixed AF bank size is the default for AF extraction APIs", {
+    expect_equal(formals(spectreasy::build_reference_matrix)$af_n_bands, 10)
+    expect_equal(formals(spectreasy::unmix_controls)$af_n_bands, 10)
+    expect_equal(formals(spectreasy::extract_af_profile)$af_n_bands, 10)
     expect_false("af_n_bands" %in% names(formals(spectreasy::unmix_samples)))
 })
 

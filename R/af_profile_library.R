@@ -91,8 +91,9 @@ af_profile_dir <- function(create = TRUE) {
 #' Extract an AF profile from one unstained FCS file
 #'
 #' @param fcs_file Path to an unstained/autofluorescence `.fcs` file.
-#' @param af_n_bands Number of AF bands to extract. The default, `"auto"`,
-#'   keeps distinct k-means signatures from up to `af_auto_max_bands` centers.
+#' @param af_n_bands Number of AF bands to extract. The default, `10`, is a
+#'   conservative fixed AF bank size; use `"auto"` to keep distinct k-means
+#'   signatures from up to `af_auto_max_bands` centers.
 #' @param af_max_cells Maximum number of scatter-gated AF events used.
 #' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
@@ -106,7 +107,7 @@ af_profile_dir <- function(create = TRUE) {
 #' @return A `spectreasy_af_profile` object containing `$profile` and `$plot`.
 #' @export
 extract_af_profile <- function(fcs_file,
-                               af_n_bands = "auto",
+                               af_n_bands = 10,
                                af_max_cells = 50000,
                                af_auto_max_bands = 100,
                                af_min_cluster_events = 20,

@@ -132,6 +132,62 @@
     W_mat
 }
 
+.default_unmixing_matrix_file <- function() {
+    file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv")
+}
+
+.candidate_unmixing_matrix_files <- function(unmixing_matrix_file, output_dir = NULL) {
+    candidates <- character()
+
+    if (!is.null(unmixing_matrix_file) && length(unmixing_matrix_file) > 0) {
+        matrix_file <- as.character(unmixing_matrix_file)[1]
+        if (!is.na(matrix_file) && nzchar(trimws(matrix_file))) {
+            candidates <- c(candidates, matrix_file)
+            if (identical(basename(matrix_file), "scc_reference_matrix.csv")) {
+                matrix_dir <- dirname(matrix_file)
+                candidates <- c(candidates, file.path(matrix_dir, "unmixed_fcs", "scc_reference_matrix.csv"))
+                if (identical(basename(normalizePath(matrix_dir, mustWork = FALSE)), "unmixed_fcs")) {
+                    candidates <- c(candidates, file.path(dirname(matrix_dir), "scc_reference_matrix.csv"))
+                }
+            }
+        }
+    }
+
+    if (!is.null(output_dir) && length(output_dir) > 0) {
+        sample_output_dir <- as.character(output_dir)[1]
+        if (!is.na(sample_output_dir) && nzchar(trimws(sample_output_dir))) {
+            sample_output_dir <- normalizePath(sample_output_dir, mustWork = FALSE)
+            unmix_samples_dir <- if (identical(basename(sample_output_dir), "unmixed_fcs")) {
+                dirname(sample_output_dir)
+            } else {
+                sample_output_dir
+            }
+            if (identical(basename(unmix_samples_dir), "unmix_samples")) {
+                project_dir <- dirname(unmix_samples_dir)
+                candidates <- c(
+                    candidates,
+                    file.path(project_dir, "unmix_controls", "scc_reference_matrix.csv"),
+                    file.path(project_dir, "unmix_controls", "unmixed_fcs", "scc_reference_matrix.csv")
+                )
+            }
+        }
+    }
+
+    unique(candidates[!is.na(candidates) & nzchar(trimws(candidates))])
+}
+
+.resolve_unmixing_matrix_file_for_samples <- function(unmixing_matrix_file, output_dir = NULL) {
+    candidates <- .candidate_unmixing_matrix_files(
+        unmixing_matrix_file = unmixing_matrix_file,
+        output_dir = output_dir
+    )
+    existing <- candidates[file.exists(candidates)]
+    if (length(existing) > 0) {
+        return(existing[[1]])
+    }
+    unmixing_matrix_file
+}
+
 .resolve_detector_noise_file_for_unmixing <- function(unmixing_matrix_file,
                                                      detector_noise_file = NULL) {
     if (!is.null(detector_noise_file) && file.exists(detector_noise_file)) {
@@ -609,6 +665,10 @@ unmix_samples <- function(sample_dir = "samples",
         }
         sample_dir <- samples_dir
     }
+    unmixing_matrix_file <- .resolve_unmixing_matrix_file_for_samples(
+        unmixing_matrix_file = unmixing_matrix_file,
+        output_dir = output_dir
+    )
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")

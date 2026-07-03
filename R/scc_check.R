@@ -259,6 +259,15 @@
     invisible(NULL)
 }
 
+.scc_reference_overlay_matrix <- function(M) {
+    M <- .as_reference_matrix(M, "M")
+    af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
+    if (sum(af_rows, na.rm = TRUE) <= 1L) {
+        return(M)
+    }
+    M[!af_rows, , drop = FALSE]
+}
+
 #' Generate SCC QC Report
 #'
 #' Builds a reference matrix from single-color controls, assembles a PDF report
@@ -448,9 +457,10 @@ qc_controls <- function(
     }
     .draw_af_bank_qc_pages(M_built, af_bank_info, pd = pd)
 
-    keep_non_af <- !grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
-    M_no_af <- M_report[keep_non_af, , drop = FALSE]
-    M_af <- M_report[!keep_non_af, , drop = FALSE]
+    af_rows <- grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
+    M_no_af <- M_report[!af_rows, , drop = FALSE]
+    M_af <- M_report[af_rows, , drop = FALSE]
+    M_reference_overlay <- .scc_reference_overlay_matrix(M_report)
 
     if (!is.null(qc_metrics_dir)) {
         if (nrow(M_no_af) > 0) {
@@ -469,8 +479,8 @@ qc_controls <- function(
         }
     }
 
-    if (nrow(M_no_af) > 0) {
-        .draw_report_ggplot_page(plot_spectra(M_no_af, pd = pd, output_file = NULL), height_ratio = 0.6)
+    if (nrow(M_reference_overlay) > 0) {
+        .draw_report_ggplot_page(plot_spectra(M_reference_overlay, pd = pd, output_file = NULL), height_ratio = 0.6)
     }
 
     if (nrow(M_no_af) > 1) {

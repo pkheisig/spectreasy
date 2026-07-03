@@ -159,7 +159,16 @@
     )
 }
 
+.normalize_unmix_controls_output_dir <- function(output_dir) {
+    output_dir <- as.character(output_dir)[1]
+    if (identical(basename(normalizePath(output_dir, mustWork = FALSE)), "unmixed_fcs")) {
+        return(dirname(output_dir))
+    }
+    output_dir
+}
+
 .unmix_output_paths <- function(output_dir) {
+    output_dir <- .normalize_unmix_controls_output_dir(output_dir)
     list(
         unmixed_dir = file.path(output_dir, "unmixed_fcs"),
         qc_controls_dir = file.path(output_dir, "qc_controls"),
@@ -297,9 +306,10 @@
 #' @param unmixing_method SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
-#' @param af_n_bands Number of k-means AF basis signatures to extract from
-#'   pooled unstained/AF control events, or `"auto"` to keep distinct signatures
-#'   from up to `af_auto_max_bands` k-means centers. Default is `"auto"`.
+#' @param af_n_bands Number of AF basis signatures to extract from pooled
+#'   unstained/AF control events. The default, `10`, is a conservative fixed
+#'   AF bank size; use `"auto"` to keep distinct signatures from up to
+#'   `af_auto_max_bands` k-means centers.
 #' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
 #'   Default is 100.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
@@ -344,7 +354,7 @@ unmix_controls <- function(
     unmixing_method = "WLS",
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
-    af_n_bands = "auto",
+    af_n_bands = 10,
     af_auto_max_bands = 100,
     af_min_cluster_events = 20,
     af_min_cluster_proportion = 0.005,
@@ -360,6 +370,7 @@ unmix_controls <- function(
     extra_args <- list(...)
 
     control_file <- .resolve_control_file_path(control_file)
+    output_dir <- .normalize_unmix_controls_output_dir(output_dir)
 
     if (!dir.exists(output_dir)) {
         dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)

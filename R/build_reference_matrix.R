@@ -133,7 +133,7 @@
     }
 
     if (n_eff == 1L) {
-        centers <- matrix(colMeans(af_shape, na.rm = TRUE), nrow = 1L)
+        centers <- matrix(apply(af_shape, 2, stats::median, na.rm = TRUE), nrow = 1L)
         colnames(centers) <- colnames(af_shape)
         cluster_sizes <- nrow(af_shape)
     } else {
@@ -163,7 +163,8 @@
         cluster_sizes = cluster_sizes,
         min_cluster_size = min_cluster_size,
         requested_centers = as.integer(n_centers),
-        effective_centers = as.integer(n_eff)
+        effective_centers = as.integer(n_eff),
+        center_method = if (n_eff == 1L) "median" else "kmeans"
     )
 }
 
@@ -606,7 +607,7 @@
         )
         centers <- .reference_normalize_af_centers(km$centers)
         selection <- list(
-            method = "kmeans_fixed",
+            method = if (identical(km$center_method, "median")) "median_fixed" else "kmeans_fixed",
             n_bands = nrow(centers),
             requested_bands = as.integer(n_bands),
             raw_center_count = nrow(km$centers),
@@ -820,12 +821,18 @@
             } else {
                 paste0(n_af_sources, " pooled AF control files")
             }
-            auto_msg <- if (!is.null(af_profiles$selection)) {
-                paste0(" (auto-selected from ", af_profiles$selection$method, ")")
+            selection_msg <- if (!is.null(af_profiles$selection)) {
+                requested <- af_profiles$selection$requested_bands
+                prefix <- if (is.character(requested) && identical(requested, "auto")) {
+                    "auto-selected from "
+                } else {
+                    "selected by "
+                }
+                paste0(" (", prefix, af_profiles$selection$method, ")")
             } else {
                 ""
             }
-            message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from ", msg, auto_msg, ".")
+            message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from ", msg, selection_msg, ".")
             if (!is.null(af_profiles$selection) && isTRUE(af_profiles$selection$hit_max_bands)) {
                 message(
                     "  Auto AF selection reached af_auto_max_bands = ",
@@ -2561,9 +2568,10 @@
 #'   When `FALSE` (default), the function returns the matrix without writing QC files.
 #' @param control_df Optional control mapping as a data.frame or CSV path.
 #'   Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.
-#' @param af_n_bands Number of k-means AF basis signatures to extract from
-#'   pooled unstained/AF control events, or `"auto"` to keep distinct signatures
-#'   from up to `af_auto_max_bands` k-means centers. Default is `"auto"`.
+#' @param af_n_bands Number of AF basis signatures to extract from pooled
+#'   unstained/AF control events. The default, `10`, is a conservative fixed
+#'   AF bank size; use `"auto"` to keep distinct signatures from up to
+#'   `af_auto_max_bands` k-means centers.
 #' @param af_max_cells Maximum number of scatter-gated AF events used when
 #'   deriving AF basis signatures.
 #' @param af_auto_max_bands Maximum k-means centers that `"auto"` may score.
@@ -2620,7 +2628,7 @@ build_reference_matrix <- function(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  af_n_bands = "auto",
+  af_n_bands = 10,
   af_max_cells = 50000,
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,

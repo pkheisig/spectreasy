@@ -9,7 +9,7 @@ build_reference_matrix(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  af_n_bands = "auto",
+  af_n_bands = 10,
   af_max_cells = 50000,
   af_auto_max_bands = 100,
   af_min_cluster_events = 20,
@@ -43,9 +43,10 @@ When `FALSE` (default), the function returns the matrix without writing QC files
 \item{control_df}{Optional control mapping as a data.frame or CSV path.
 Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.}
 
-\item{af_n_bands}{Number of k-means AF basis signatures to extract from
-pooled unstained/AF control events, or `"auto"` to keep distinct signatures
-from up to `af_auto_max_bands` k-means centers. Default is `"auto"`.}
+\item{af_n_bands}{Number of AF basis signatures to extract from pooled
+unstained/AF control events. The default, `10`, is a conservative fixed
+AF bank size; use `"auto"` to keep distinct signatures from up to
+`af_auto_max_bands` k-means centers.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used when
 deriving AF basis signatures.}
