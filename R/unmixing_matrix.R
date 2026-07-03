@@ -6,8 +6,6 @@
 #' 
 #' @param M Reference matrix (Markers x Detectors)
 #' @param method Unmixing method ("OLS", "WLS", "RWLS", or "NNLS").
-#' @param variances Deprecated. SCC population variances are retained as
-#'   reference QC metadata but are no longer used as WLS detector weights.
 #' @param background_noise Scalar or detector-length WLS noise floor used for
 #'   the static WLS approximation when `M` does not carry detector-noise metadata;
 #'   the built-in fallback is 125 raw detector units.
@@ -24,14 +22,10 @@
 #' @export
 derive_unmixing_matrix <- function(M,
                                    method = "OLS",
-                                   variances = NULL,
                                    background_noise = .default_wls_background_noise(),
                                    wls_signal_scale = .default_wls_signal_scale(),
                                    wls_max_weight_ratio = .default_wls_max_weight_ratio()) {
     M <- .as_reference_matrix(M, "M")
-    if (!is.null(variances)) {
-        attr(M, "variances") <- .as_reference_matrix(variances, "variances")
-    }
     # M is Markers (m) x Detectors (d)
     Mt <- t(M) # Detectors x Markers
 

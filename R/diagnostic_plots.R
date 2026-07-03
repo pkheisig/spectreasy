@@ -1,167 +1,3 @@
-.extract_top_detector_residuals <- function(res_list, top_n = 50) {
-    residuals <- res_list$residuals
-    if (is.null(residuals) || nrow(residuals) == 0) {
-        warning("No residuals provided to plot_detector_residuals. Skipping plot.")
-        return(NULL)
-    }
-
-    residual_score <- sqrt(rowMeans(residuals^2, na.rm = TRUE))
-    residual_score[!is.finite(residual_score)] <- -Inf
-    idx <- order(residual_score, decreasing = TRUE)[seq_len(min(top_n, nrow(res_list$data)))]
-    residuals[idx, , drop = FALSE]
-}
-
-.resolve_detector_residual_labels <- function(det_names, pd = NULL) {
-    if (!is.null(pd)) {
-        det_info <- get_sorted_detectors(pd)
-        common <- intersect(det_info$names, det_names)
-        return(list(levels_sorted = common, labels_sorted = det_info$labels[match(common, det_info$names)]))
-    }
-
-    nums <- as.numeric(gsub("[^0-9]", "", det_names))
-    levels_sorted <- det_names[order(nums)]
-    list(levels_sorted = levels_sorted, labels_sorted = levels_sorted)
-}
-
-.prepare_detector_residual_long_df <- function(R_sub, levels_sorted, labels_sorted) {
-    long <- as.data.frame(R_sub)
-    long$Cell <- seq_len(nrow(R_sub))
-    long <- tidyr::pivot_longer(long, cols = -Cell, names_to = "Detector", values_to = "Residual")
-    long$Detector <- factor(long$Detector, levels = levels_sorted, labels = labels_sorted)
-    long
-}
-
-.prepare_detector_overlay_df <- function(M, levels_sorted, labels_sorted, max_res) {
-    M_overlay <- as.data.frame(M[, levels_sorted, drop = FALSE])
-    M_overlay$Fluorophore <- rownames(M)
-    M_long <- tidyr::pivot_longer(M_overlay, cols = -Fluorophore, names_to = "Detector", values_to = "Signature")
-    M_long$Signature <- M_long$Signature * max_res
-    M_long$Detector <- factor(M_long$Detector, levels = levels_sorted, labels = labels_sorted)
-    M_long$Fluorophore <- factor(M_long$Fluorophore, levels = .natural_reference_row_levels(rownames(M)))
-    M_long
-}
-
-.compute_detector_residual_breaks <- function(long, M_long) {
-    y_all <- c(long$Residual, M_long$Signature)
-    y_all <- y_all[is.finite(y_all)]
-    if (length(y_all) == 0) return(NULL)
-
-    max_abs <- max(abs(y_all), na.rm = TRUE)
-    if (!is.finite(max_abs) || max_abs <= 0) return(NULL)
-
-    max_pow <- max(1, ceiling(log10(max_abs)))
-    pos_breaks <- 10^seq_len(max_pow)
-    pos_breaks <- pos_breaks[pos_breaks <= (max_abs * 1.05)]
-    if (length(pos_breaks) == 0) pos_breaks <- 10
-
-    has_negative <- any(y_all < 0, na.rm = TRUE)
-    y_breaks <- if (has_negative) c(-rev(pos_breaks), 0, pos_breaks) else c(0, pos_breaks)
-    sort(unique(y_breaks))
-}
-
-.build_detector_residual_plot <- function(long, M_long, top_n = 50, y_breaks = NULL) {
-    median_df <- long |>
-        dplyr::group_by(Detector) |>
-        dplyr::summarise(MedianResidual = stats::median(Residual, na.rm = TRUE), .groups = "drop")
-
-    ggplot2::ggplot() +
-        ggplot2::geom_line(
-            data = M_long,
-            ggplot2::aes(Detector, Signature, group = Fluorophore, color = Fluorophore),
-            alpha = 0.5,
-            linewidth = 0.5
-        ) +
-        ggplot2::geom_line(
-            data = median_df,
-            ggplot2::aes(Detector, MedianResidual, group = 1),
-            color = "black",
-            linewidth = 0.8
-        ) +
-        ggplot2::geom_point(
-            data = median_df,
-            ggplot2::aes(Detector, MedianResidual),
-            color = "black",
-            size = 1.1
-        ) +
-        ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
-        ggplot2::labs(
-            title = paste("Residual Contributions for Top", top_n, "Highest-Residual Cells"),
-            subtitle = "Good: median residual (black) stays near 0 across detectors. Bad: consistent detector-specific shifts (positive/negative) indicate missing signatures, matrix mismatch, or calibration drift.",
-            x = "Detector",
-            y = "Residual Value / Scaled Signature"
-        ) +
-        ggplot2::scale_y_continuous(
-            trans = scales::pseudo_log_trans(base = 10, sigma = 5),
-            breaks = y_breaks,
-            labels = scales::label_number(accuracy = 1, big.mark = ",", trim = TRUE)
-        ) +
-        ggplot2::theme_minimal(base_size = 13.75) +
-        ggplot2::theme(
-            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, size = 7.5),
-            plot.subtitle = ggplot2::element_text(size = 13.2, lineheight = 1.1)
-        )
-}
-
-#' Plot Detector-Level Residuals
-#' 
-#' Identifies which detectors contribute most to the unmixing mismatch for the
-#' highest-residual cells. Overlays the reference signatures to help identify
-#' the source of the mismatch.
-#' 
-#' @param res_list List returned by calc_residuals with return_residuals=TRUE
-#' @param M Reference matrix
-#' @param top_n Number of top high-error cells to analyze
-#' @param output_file Optional path to save the plot. Set `NULL` to return the plot without writing a file.
-#' @param width Plot width.
-#' @param height Plot height.
-#' @param pd Optional pData for descriptive labels
-#' @return A `ggplot` object or `NULL` when residuals are unavailable.
-#' @examples
-#' M_demo <- rbind(
-#'   FITC = c(1.00, 0.20, 0.05),
-#'   PE = c(0.10, 1.00, 0.20),
-#'   APC = c(0.05, 0.15, 1.00)
-#' )
-#' colnames(M_demo) <- c("B2-A", "YG1-A", "R1-A")
-#'
-#' marker_signal <- matrix(rexp(250 * nrow(M_demo), rate = 8), ncol = nrow(M_demo))
-#' colnames(marker_signal) <- rownames(M_demo)
-#' marker_signal[, "FITC"] <- rexp(250, rate = 0.6) + 2
-#' raw_signal <- marker_signal %*% M_demo +
-#'   matrix(rnorm(250 * ncol(M_demo), sd = 0.03), ncol = ncol(M_demo))
-#' exprs_mat <- cbind(
-#'   raw_signal,
-#'   Time = seq_len(250),
-#'   "FSC-A" = rnorm(250, mean = 90000, sd = 7000),
-#'   "SSC-A" = rnorm(250, mean = 45000, sd = 5000)
-#' )
-#' colnames(exprs_mat)[seq_len(ncol(M_demo))] <- colnames(M_demo)
-#' ff <- flowCore::flowFrame(exprs_mat)
-#' res <- calc_residuals(ff, M_demo, return_residuals = TRUE)
-#'
-#' p <- plot_detector_residuals(res, M_demo, top_n = 20, output_file = NULL)
-#' print(p)
-#' @export
-plot_detector_residuals <- function(res_list, M, top_n = 50, output_file = NULL, width = 250, height = 120, pd = NULL) {
-    M <- .as_reference_matrix(M, "M")
-    R_sub <- .extract_top_detector_residuals(res_list, top_n = top_n)
-    if (is.null(R_sub)) {
-        return(NULL)
-    }
-
-    label_info <- .resolve_detector_residual_labels(colnames(M), pd = pd)
-    long <- .prepare_detector_residual_long_df(R_sub, label_info$levels_sorted, label_info$labels_sorted)
-    max_res <- max(abs(long$Residual), na.rm = TRUE)
-    M_long <- .prepare_detector_overlay_df(M, label_info$levels_sorted, label_info$labels_sorted, max_res = max_res)
-    y_breaks <- .compute_detector_residual_breaks(long, M_long)
-    p <- .build_detector_residual_plot(long, M_long, top_n = top_n, y_breaks = y_breaks)
-
-    if (!is.null(output_file)) {
-        ggplot2::ggsave(output_file, p, width = width, height = height, units = "mm", dpi = 300)
-    }
-    return(p)
-}
-
 #' Calculate Negative Population Spread (NPS)
 #' 
 #' Quantifies the spreading of negative populations after unmixing. 
@@ -234,7 +70,9 @@ plot_nps <- function(nps_results, output_file = NULL, width = 200) {
     p <- p +
         ggplot2::labs(
             title = "Negative Population Spread (Unmixing Noise Floor)",
-            subtitle = "Lower is better (<100 is excellent, >500 hides dim signals).\nCell-based control colors will show higher MAD.",
+            subtitle = "Lower is better. High spread can worsen separation between pos. and neg. populations.\n
+            Cell-based control colors will show higher MAD.\n
+            Use colors with high spread on abundant markers whenever possible.",
             y = "Spread (MAD)",
             x = "Unmixed Marker"
         ) +
@@ -339,7 +177,8 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
         ) +
         ggplot2::labs(
             title = "Fluorophore Spectral Similarity",
-            subtitle = "Off-diagonal cosine similarity of reference signatures (0 = orthogonal, 1 = identical).\nDiagonal self-similarity is blanked so problematic pairs stand out.",
+            subtitle = "Cosine similarity of reference signatures (0 = orthogonal, 1 = identical).\n
+            High similarity can indicate potential spillover.",
             x = NULL, y = NULL
         ) +
         ggplot2::theme_minimal(base_size = 13.75) +
@@ -436,9 +275,123 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
     do.call(rbind, mats)
 }
 
-plot_detector_rms_residuals <- function(results, M = NULL, pd = NULL, output_file = NULL, width = 250, height = 120) {
+.resolve_residual_metric_method <- function(results, unmixing_method = NULL) {
+    method <- unmixing_method
+    if (is.null(method)) {
+        method <- attr(results, "method")
+    }
+    if (is.null(method) && is.list(results) && length(results) > 0) {
+        method <- attr(results[[1]], "method")
+    }
+    if (is.null(method)) {
+        return("OLS")
+    }
+    .normalize_unmix_method(method, choices = c("OLS", "NNLS", "WLS", "RWLS"))
+}
+
+.resolve_residual_metric_matrix <- function(results, M = NULL) {
+    if (!is.null(M)) {
+        return(.as_reference_matrix(M, "M"))
+    }
+    matrix_attr <- attr(results, "reference_matrix")
+    if (!is.null(matrix_attr)) {
+        return(.as_reference_matrix(matrix_attr, "M"))
+    }
+    if (is.list(results) && length(results) > 0) {
+        matrix_attr <- attr(results[[1]], "reference_matrix")
+        if (!is.null(matrix_attr)) {
+            return(.as_reference_matrix(matrix_attr, "M"))
+        }
+    }
+    NULL
+}
+
+.reconstruct_residual_raw_signal <- function(res_obj, M) {
+    if (!is.list(res_obj) || is.null(res_obj$data) || is.null(res_obj$residuals) || is.null(M)) {
+        return(NULL)
+    }
+    residuals <- as.matrix(res_obj$residuals)
+    markers <- intersect(rownames(M), colnames(res_obj$data))
+    detectors <- intersect(colnames(M), colnames(residuals))
+    if (length(markers) == 0 || length(detectors) == 0) {
+        return(NULL)
+    }
+    fitted <- as.matrix(res_obj$data[, markers, drop = FALSE]) %*% M[markers, detectors, drop = FALSE]
+    residuals <- residuals[, detectors, drop = FALSE]
+    fitted + residuals
+}
+
+.residual_metric_weights <- function(res_obj, M, unmixing_method = NULL) {
+    method <- .resolve_residual_metric_method(list(res_obj), unmixing_method = unmixing_method)
+    if (!(method %in% c("WLS", "RWLS")) || is.null(M)) {
+        return(NULL)
+    }
+    Y <- .reconstruct_residual_raw_signal(res_obj, M)
+    if (is.null(Y) || nrow(Y) == 0 || ncol(Y) == 0) {
+        return(NULL)
+    }
+    params <- .resolve_wls_noise_parameters(M[, colnames(Y), drop = FALSE])
+    weights <- t(apply(Y, 1, .wls_event_weights,
+        noise_floor = params$noise_floor,
+        signal_scale = params$signal_scale,
+        max_weight_ratio = params$max_weight_ratio
+    ))
+    colnames(weights) <- colnames(Y)
+    weights
+}
+
+.collect_report_residual_metric_matrix <- function(results, M = NULL, detector_names = NULL, unmixing_method = NULL) {
+    if (!is.list(results) || length(results) == 0) {
+        return(NULL)
+    }
+    M <- .resolve_residual_metric_matrix(results, M = M)
+    method <- .resolve_residual_metric_method(results, unmixing_method = unmixing_method)
+    mats <- lapply(results, function(res_obj) {
+        if (!is.list(res_obj) || is.null(res_obj$residuals)) return(NULL)
+        R <- as.matrix(res_obj$residuals)
+        if (nrow(R) == 0 || ncol(R) == 0) return(NULL)
+        if (method %in% c("WLS", "RWLS") && !is.null(M)) {
+            weights <- .residual_metric_weights(res_obj, M = M, unmixing_method = method)
+            if (!is.null(weights)) {
+                common <- intersect(colnames(R), colnames(weights))
+                R[, common] <- sqrt(R[, common, drop = FALSE]^2 * weights[, common, drop = FALSE])
+            } else {
+                R <- abs(R)
+            }
+        } else {
+            R <- abs(R)
+        }
+        R
+    })
+    mats <- mats[!vapply(mats, is.null, logical(1))]
+    if (length(mats) == 0) {
+        return(NULL)
+    }
+    if (is.null(detector_names)) {
+        detector_names <- unique(unlist(lapply(mats, colnames), use.names = FALSE))
+    }
+    detector_names <- detector_names[nzchar(detector_names)]
+    if (length(detector_names) == 0) {
+        return(NULL)
+    }
+    mats <- lapply(mats, function(R) {
+        common <- intersect(detector_names, colnames(R))
+        if (length(common) == 0) return(NULL)
+        out <- matrix(NA_real_, nrow = nrow(R), ncol = length(detector_names), dimnames = list(NULL, detector_names))
+        out[, common] <- R[, common, drop = FALSE]
+        out
+    })
+    mats <- mats[!vapply(mats, is.null, logical(1))]
+    if (length(mats) == 0) {
+        return(NULL)
+    }
+    do.call(rbind, mats)
+}
+
+plot_detector_rms_residuals <- function(results, M = NULL, pd = NULL, output_file = NULL, width = 250, height = 120, unmixing_method = NULL) {
     detector_names <- if (!is.null(M)) colnames(.as_reference_matrix(M, "M")) else NULL
-    residuals <- .collect_report_residual_matrix(results, detector_names = detector_names)
+    method <- .resolve_residual_metric_method(results, unmixing_method = unmixing_method)
+    residuals <- .collect_report_residual_metric_matrix(results, M = M, detector_names = detector_names, unmixing_method = unmixing_method)
     if (is.null(residuals) || nrow(residuals) == 0) {
         warning("No residuals available to plot detector RMS residuals.")
         return(NULL)
@@ -467,6 +420,7 @@ plot_detector_rms_residuals <- function(results, M = NULL, pd = NULL, output_fil
         return(NULL)
     }
 
+    y_label <- if (method %in% c("WLS", "RWLS")) "WLS-weighted RMS residual" else "RMS residual (raw detector units)"
     separators <- which(plot_df$Laser[-1] != plot_df$Laser[-nrow(plot_df)]) + 0.5
     p <- ggplot2::ggplot(plot_df, ggplot2::aes(DetectorIndex, RMS)) +
         ggplot2::geom_col(width = 0.82, fill = "grey35", color = "grey25", linewidth = 0.15) +
@@ -478,10 +432,10 @@ plot_detector_rms_residuals <- function(results, M = NULL, pd = NULL, output_fil
         ) +
         ggplot2::scale_y_continuous(labels = scales::label_number(big.mark = ",")) +
         ggplot2::labs(
-            title = "RMS residual per detector",
-            subtitle = "RMS_d = sqrt(mean_i R[i,d]^2), pooled across report events. Detectors are sorted UV, V, B, YG, R and then by detector number.",
+            title = "Reconstruction Error per Detector",
+            subtitle = "Root Mean Square (RMS) of reconstruction residuals per detector. Lower is better.",
             x = "Detector",
-            y = "RMS residual (raw detector units)"
+            y = y_label
         ) +
         ggplot2::theme_minimal(base_size = 13.75) +
         ggplot2::theme(
@@ -505,26 +459,44 @@ plot_detector_rms_residuals <- function(results, M = NULL, pd = NULL, output_fil
 #' @param output_file Optional path to save the plot. Set `NULL` to return the plot.
 #' @param width Width of plot in mm
 #' @param height Height of plot in mm
+#' @param unmixing_method Optional unmixing method used to score residuals.
+#'   When `"WLS"` or `"RWLS"`, residual RMS values use the WLS detector-noise
+#'   weights; otherwise raw detector residuals are used.
 #' @return A `ggplot` object.
 #' @export
-plot_sample_rms_residuals <- function(results, M = NULL, output_file = NULL, width = 225, height = 125) {
+plot_sample_rms_residuals <- function(results, M = NULL, output_file = NULL, width = 225, height = 125, unmixing_method = NULL) {
     if (!is.list(results) || length(results) == 0) {
         stop("results must be a non-empty list of unmixed results.")
     }
+    M_mat <- .resolve_residual_metric_matrix(results, M = M)
+    method <- .resolve_residual_metric_method(results, unmixing_method = unmixing_method)
+    y_label <- if (method %in% c("WLS", "RWLS")) "WLS-weighted RMS residual per cell" else "RMS residual per cell"
     
     sample_dfs <- list()
     for (sn in names(results)) {
         res_obj <- results[[sn]]
         if (is.list(res_obj) && !is.null(res_obj$residuals)) {
-            rms <- sqrt(rowMeans(res_obj$residuals^2, na.rm = TRUE))
+            residuals <- as.matrix(res_obj$residuals)
+            weights <- if (method %in% c("WLS", "RWLS")) .residual_metric_weights(res_obj, M = M_mat, unmixing_method = method) else NULL
+            if (!is.null(weights)) {
+                common <- intersect(colnames(residuals), colnames(weights))
+                if (length(common) > 0) {
+                    metric_sq <- residuals[, common, drop = FALSE]^2 * weights[, common, drop = FALSE]
+                    rms <- sqrt(rowMeans(metric_sq, na.rm = TRUE))
+                } else {
+                    rms <- sqrt(rowMeans(residuals^2, na.rm = TRUE))
+                }
+            } else {
+                rms <- sqrt(rowMeans(residuals^2, na.rm = TRUE))
+            }
             median_rms <- stats::median(rms, na.rm = TRUE)
             
             # Estimate peak raw signal for relative error context
-            if (!is.null(M)) {
-                M_mat <- .as_reference_matrix(M, "M")
+            if (!is.null(M_mat)) {
                 markers <- intersect(rownames(M_mat), colnames(res_obj$data))
-                Fitted <- as.matrix(res_obj$data[, markers, drop = FALSE]) %*% M_mat[, , drop = FALSE]
-                Y <- Fitted + res_obj$residuals
+                detectors <- intersect(colnames(M_mat), colnames(residuals))
+                Fitted <- as.matrix(res_obj$data[, markers, drop = FALSE]) %*% M_mat[markers, detectors, drop = FALSE]
+                Y <- Fitted + residuals[, detectors, drop = FALSE]
                 peak_signal <- stats::quantile(Y, 0.995, na.rm = TRUE)
             } else {
                 expr_cols <- setdiff(colnames(res_obj$data), c("File", "Time"))
@@ -559,9 +531,10 @@ plot_sample_rms_residuals <- function(results, M = NULL, output_file = NULL, wid
             breaks = c(0, 100, 500, 1000, 5000, 10000, 20000)
         ) +
         ggplot2::labs(
-            title = "Overall detector reconstruction error per sample",
-            subtitle = "Y-axis: RMS of residuals per cell (pseudo-log scale).\nX-axis: Median RMS & Error % (relative to peak signal).\nGood: <1.0%, Moderate: 1.0-3.0%.",
-            x = "Sample", y = "RMS Residual"
+            title = "Reconstruction Error per Sample",
+            subtitle = "Cell-level Root Mean Square (RMS) residuals norm. against the peak signal. Lower is better.",
+            x = "Sample",
+            y = y_label
         ) +
         ggplot2::theme_minimal(base_size = 13.75) +
         ggplot2::theme(
@@ -569,59 +542,6 @@ plot_sample_rms_residuals <- function(results, M = NULL, output_file = NULL, wid
             axis.text.x = ggplot2::element_text(size = 9.375, angle = 45, hjust = 1),
             plot.subtitle = ggplot2::element_text(size = 13.2, lineheight = 1.1)
         )
-        
-    if (!is.null(output_file)) {
-        ggplot2::ggsave(output_file, p, width = width, height = height, units = "mm", dpi = 300)
-    }
-    return(p)
-}
-
-#' Plot Residuals vs Marker Expression
-#'
-#' @param results List of unmixed results
-#' @param marker Name of marker to plot on X-axis
-#' @param output_file Optional path to save the plot
-#' @param width Plot width
-#' @param height Plot height
-#' @return A `ggplot` object
-#' @export
-plot_residuals_vs_expression <- function(results, marker, output_file = NULL, width = 160, height = 120) {
-    if (!is.list(results) || length(results) == 0) return(NULL)
-    
-    sample_dfs <- list()
-    for (sn in names(results)) {
-        res_obj <- results[[sn]]
-        if (is.list(res_obj) && !is.null(res_obj$residuals) && (marker %in% colnames(res_obj$data))) {
-            rms <- sqrt(rowMeans(res_obj$residuals^2, na.rm = TRUE))
-            expr <- res_obj$data[[marker]]
-            sample_dfs[[sn]] <- data.frame(
-                Sample = sn,
-                Expression = expr,
-                RMS = rms,
-                stringsAsFactors = FALSE
-            )
-        }
-    }
-    
-    if (length(sample_dfs) == 0) return(NULL)
-    df <- do.call(rbind, sample_dfs)
-    
-    max_pts <- 10000
-    if (nrow(df) > max_pts) {
-        df <- df[sample.int(nrow(df), max_pts), ]
-    }
-    
-    p <- ggplot2::ggplot(df, ggplot2::aes(Expression, RMS)) +
-        ggplot2::geom_point(alpha = 0.25, size = 0.4, color = "#163B5C") +
-        ggplot2::geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"), color = "#C75000", linewidth = 0.8, na.rm = TRUE) +
-        ggplot2::labs(
-            title = paste("Residual Mismatch Diagnostic:", marker),
-            subtitle = "Upward-sloping curve shows that higher expression causes higher residuals, flagging signature mismatch.",
-            x = paste("Unmixed", marker), y = "RMS Residual"
-        ) +
-        ggplot2::theme_minimal(base_size = 13.75) +
-        ggplot2::theme(plot.subtitle = ggplot2::element_text(size = 13.2, lineheight = 1.1)) +
-        ggplot2::facet_wrap(~Sample)
         
     if (!is.null(output_file)) {
         ggplot2::ggsave(output_file, p, width = width, height = height, units = "mm", dpi = 300)

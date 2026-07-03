@@ -8,19 +8,19 @@
 
 ## Changes
 
-- WLS now uses event-wise detector-error weights with detector-specific noise floors estimated from SCC low-signal tails by default. SCC variances are retained as reference QC metadata.
+- WLS now uses event-wise detector-error weights with detector-specific noise floors estimated from SCC low-signal tails by default.
 - Increased the default WLS maximum detector weight ratio from 100 to 1600 based on cross-dataset benchmark results.
 - `unmix_controls()` writes `scc_detector_noise.csv`; `unmix_samples(method = "WLS")` loads it beside `scc_reference_matrix.csv`, estimates from `scc_dir` when available, or falls back to a scalar noise floor of 125.
 - Multi-AF WLS now uses the same event-wise detector-error weights for AF-band selection and coefficient fitting.
 - `control.type` in the control mapping now controls bead/cell FSC/SSC gating, with filename guessing used only when the column is empty.
 - `universal.negative` can now point to a specific negative FCS file for SCC subtraction.
-- Removed the unused `background_noise` argument from spectral spread matrix calculation.
+- Removed legacy spectral spread matrix helpers and unused spread-score QC outputs.
 - Added AF basis-band extraction via `af_n_bands`/`af_max_cells` in `build_reference_matrix()`.
-- Added configurable AF auto-band limits, percentage-aware AF cluster retention, and sensitivity-based auto selection via `af_auto_max_bands`, `af_min_cluster_events`, `af_min_cluster_proportion`, and `af_n_bands_sensitivity`.
+- Added configurable AF auto-band limits and percentage-aware AF cluster retention via `af_auto_max_bands`, `af_min_cluster_events`, and `af_min_cluster_proportion`.
 - `af_n_bands = "auto"` is now the default in reference-matrix workflows, and auto-selected AF banks prune near-duplicate signatures before unmixing.
 - Added optional deterministic `seed` support in SCC report/matrix/control workflows.
 - Updated static matrix export in `unmix_controls()` to follow selected method (`OLS`, `WLS`, `NNLS` proxy).
-- Updated SCC/Sample QC reports to exclude AF bands from spectra overlays, SSM, and NPS pages.
+- Updated SCC/Sample QC reports to exclude AF bands from spectra overlays and NPS pages.
 - Removed the conclusions/recommendations page from sample QC report.
 - Improved detector fallback ordering in spectra overlays to laser-first order (`UV`, `V`, `B`, `YG`, `R`).
 - Split control-stage and sample-stage unmixing workflows.

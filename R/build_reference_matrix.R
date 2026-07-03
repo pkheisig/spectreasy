@@ -1837,9 +1837,8 @@
 
 # Computes the normalized spectral signature for a stained control sample.
 # Calculates the median intensity in each detector for the positive and negative gates,
-# subtracts the negative/background control, normalizes the spectrum by the peak signal,
-# and estimates the per-channel variance.
-# Returns a list with the normalized spectrum vector, raw positive/negative medians, and variance vector.
+# subtracts the negative/background control, and normalizes the spectrum by the peak signal.
+# Returns the normalized spectrum vector.
 .compute_reference_spectrum <- function(final_gated_data,
                                         gated_data,
                                         peak_vals,
@@ -1900,17 +1899,6 @@
     max_val <- max(sig_pure, na.rm = TRUE)
     if (max_val <= 0) max_val <- max(pos_spectrum_raw, na.rm = TRUE)
     res <- sig_pure / max_val
-
-    # Keep positive/negative population spread as reference QC metadata. These
-    # values are not used as default WLS detector-error weights.
-    pos_var <- apply(final_gated_data[, detector_names, drop = FALSE], 2, stats::var, na.rm = TRUE)
-    neg_var <- apply(neg_events, 2, stats::var, na.rm = TRUE)
-    tot_var <- pos_var + neg_var
-    tot_var[is.na(tot_var) | tot_var <= 0] <- 0
-    if (max_val > 0) {
-        tot_var <- tot_var / (max_val^2)
-    }
-    attr(res, "variance") <- tot_var
 
     res
 }
@@ -2161,9 +2149,15 @@
         ggplot2::geom_tile(width = diff(x_breaks)[1], height = diff(y_breaks)[1]) +
         ggplot2::scale_fill_gradientn(colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"), guide = "none") +
         ggplot2::geom_path(data = final_gate, ggplot2::aes(x, y), inherit.aes = FALSE, color = "red", linewidth = 1) +
-        ggplot2::labs(title = paste0(sn, " - FSC/SSC"), subtitle = paste0(round(100 * nrow(gated_data) / nrow(raw_data), 1), "% gated"), x = fsc_desc, y = ssc_desc) +
+        ggplot2::labs(title = paste0(sn, " - FSC/SSC"), x = fsc_desc, y = ssc_desc) +
         ggplot2::theme_minimal() +
-        ggplot2::theme(legend.position = "none", panel.grid = ggplot2::element_blank(), panel.background = ggplot2::element_rect(fill = "white", color = NA), plot.subtitle = ggplot2::element_text(size = 10.6)) +
+        ggplot2::theme(
+            legend.position = "none",
+            panel.grid = ggplot2::element_blank(),
+            panel.background = ggplot2::element_rect(fill = "white", color = NA),
+            axis.line = ggplot2::element_line(color = "black", linewidth = 0.35),
+            axis.ticks = ggplot2::element_line(color = "black", linewidth = 0.3)
+        ) +
         ggplot2::coord_cartesian(xlim = c(0, max(fsc_max, ssc_max) * 1.05), ylim = c(0, max(fsc_max, ssc_max) * 1.05))
     ggplot2::ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, width = 5, height = 5, dpi = 300)
 
@@ -2237,14 +2231,12 @@
             ggplot2::geom_point(size = 0.45, alpha = 0.45) +
             ggplot2::scale_color_manual(values = c(negative = "#2C7BE5", other = "grey55", positive = "#D62728"), drop = FALSE) +
             ggplot2::labs(
-                title = paste0(sn, " - ", peak_channel, " corrected scatter gate"),
-                subtitle = paste(unlist(lapply(c(attr(vals_log, "gate_method"), paste0(round(100 * nrow(final_gated_data) / nrow(gated_data), 1), "% positive gated | blue = negative gate | red = bright gate")), strwrap, width = 95), use.names = FALSE), collapse = "\n"),
+                title = paste0(sn, " - ", peak_channel),
                 x = paste0("log10(", peak_channel, ")"),
-                y = fsc_desc,
-                color = "class"
+                y = fsc_desc
             ) +
             ggplot2::theme_minimal(base_size = 11) +
-            ggplot2::theme(legend.position = "bottom", plot.subtitle = ggplot2::element_text(size = 8.4, lineheight = 1.05))
+            ggplot2::theme(legend.position = "none")
         ggplot2::ggsave(file.path(out_path, "intensity_scatter", paste0(sn, "_intensity_scatter.png")), p2_scatter, width = 6.5, height = 4, dpi = 300)
     } else {
         ggplot2::ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, width = 6.5, height = 4, dpi = 300)
@@ -2485,8 +2477,8 @@
 }
 
 # Combines individual sample spectra and AF signatures into a single spillover matrix.
-# Extracts spectra and variances, cleans up row/column names, structures the metadata attributes
-# (such as variances, QC summary, and parameter info), and performs basic sanity checks.
+# Extracts spectra, cleans up row/column names, structures the metadata attributes
+# (such as QC summary and parameter info), and performs basic sanity checks.
 # Returns the finalized reference matrix.
 .finalize_reference_matrix <- function(results_list,
                                        qc_summary_list,
@@ -2532,13 +2524,6 @@
 
     M <- do.call(rbind, spectra_list)
     colnames(M) <- detector_names
-    V <- do.call(rbind, lapply(spectra_list, function(x) {
-        v <- attr(x, "variance")
-        if (is.null(v)) rep(0, ncol(M)) else v
-    }))
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-    attr(M, "variances") <- V
 
     if (length(qc_summary_list) > 0) {
         attr(M, "qc_summary") <- data.table::rbindlist(qc_summary_list)

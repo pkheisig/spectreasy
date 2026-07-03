@@ -293,7 +293,6 @@
 #'   ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
-#'   Deprecated `method` is accepted with a warning; use `unmixing_method`.
 #' @return Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
 #'   `qc_metrics_dir`, `af_bank_info`, and `unmixing_method`.
 #'   `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
@@ -326,11 +325,6 @@ qc_controls <- function(
         stop("Please supply output_file to save the SCC PDF report.", call. = FALSE)
     }
     extra_args <- list(...)
-    if ("method" %in% names(extra_args)) {
-        warning("method is deprecated for qc_controls(); use unmixing_method.", call. = FALSE)
-        unmixing_method <- extra_args$method
-        extra_args$method <- NULL
-    }
     unmixing_method <- toupper(as.character(unmixing_method)[1])
     if (!(unmixing_method %in% c("WLS", "RWLS", "OLS", "NNLS"))) {
         stop("unmixing_method must be one of: WLS, RWLS, OLS, NNLS", call. = FALSE)
@@ -466,18 +460,18 @@ qc_controls <- function(
             }
         }
 
-        detector_rms <- .compute_qc_report_detector_rms(unmixed_list, M = M_report, pd = pd)
+        detector_rms <- .compute_qc_report_detector_rms(unmixed_list, M = M_report, pd = pd, unmixing_method = unmixing_method)
         if (!is.null(detector_rms)) {
             .write_qc_report_csv(
                 detector_rms,
                 file.path(qc_metrics_dir, "rms_residual_per_detector.csv")
             )
         }
-        sample_rms <- .compute_qc_report_sample_rms(unmixed_list, M = M_report)
+        sample_rms <- .compute_qc_report_sample_rms(unmixed_list, M = M_report, unmixing_method = unmixing_method)
         if (!is.null(sample_rms)) {
             .write_qc_report_csv(
                 sample_rms,
-                file.path(qc_metrics_dir, "overall_detector_reconstruction_error_per_sample.csv")
+                file.path(qc_metrics_dir, "detector_reconstruction_error.csv")
             )
         }
 

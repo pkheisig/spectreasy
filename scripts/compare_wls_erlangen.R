@@ -54,14 +54,12 @@ copy_if_exists <- function(src, dest) {
 
 reference_file <- file.path(data_dir, "spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv")
 detector_noise_file <- file.path(data_dir, "spectreasy_outputs", "unmix_controls", "scc_detector_noise.csv")
-variances_file <- file.path(data_dir, "spectreasy_outputs", "unmix_controls", "scc_variances.csv")
 
 if (!file.exists(reference_file)) stop("Reference matrix not found: ", reference_file)
 if (!file.exists(detector_noise_file)) stop("Detector noise file not found: ", detector_noise_file)
 
 copy_if_exists(reference_file, file.path(dirs$reference, "scc_reference_matrix.csv"))
 copy_if_exists(detector_noise_file, file.path(dirs$reference, "scc_detector_noise.csv"))
-copy_if_exists(variances_file, file.path(dirs$reference, "scc_variances.csv"))
 
 M_base <- read_reference_matrix(reference_file)
 detector_noise <- utils::read.csv(detector_noise_file, stringsAsFactors = FALSE, check.names = FALSE)

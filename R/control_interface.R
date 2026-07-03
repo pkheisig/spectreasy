@@ -886,7 +886,6 @@
 #' @param input_folder Directory containing single-stained control FCS files.
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
-#' @param default_control_type Deprecated. Kept for backward compatibility and ignored.
 #' @param unknown_fluor_policy How to fill unresolved fluorophores:
 #'   `"empty"` (recommended), `"by_channel"` (best-effort guess), `"filename"`.
 #' @param output_file Path where the CSV will be saved (default: "fcs_mapping.csv").
@@ -928,7 +927,6 @@
 #' head(control_df)
 create_control_file <- function(input_folder = "scc",
                                 cytometer = "auto",
-                                default_control_type = "cells",
                                 unknown_fluor_policy = c("empty", "by_channel", "filename"),
                                 output_file = "fcs_mapping.csv",
                                 custom_fluorophores = NULL) {

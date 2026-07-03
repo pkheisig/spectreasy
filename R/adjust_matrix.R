@@ -134,12 +134,6 @@
     invisible(NULL)
 }
 
-.prepare_launch_gui_paths <- .prepare_gui_paths
-.default_launch_gui_matrix_dir <- .default_adjust_matrix_matrix_dir
-.default_launch_gui_samples_dir <- .default_adjust_matrix_samples_dir
-.resolve_launch_gui_frontend <- .resolve_gui_frontend
-.start_launch_gui_dev_server <- .start_gui_dev_server
-
 .launch_spectreasy_gui <- function(matrix_dir = NULL,
                                    samples_dir = NULL,
                                    port = 8000,
@@ -247,12 +241,3 @@ adjust_matrix <- function(matrix_dir = NULL, samples_dir = NULL, port = 8000, op
     )
     invisible(NULL)
 }
-
-#' Launch spectreasy Interactive Adjustment GUI
-#'
-#' `launch_gui()` is kept as a backward-compatible alias for [adjust_matrix()].
-#'
-#' @inheritParams adjust_matrix
-#' @return Invisibly returns NULL. This function blocks while the API is running.
-#' @export
-launch_gui <- adjust_matrix

@@ -190,7 +190,12 @@
         dir.create(qc_metrics_dir, showWarnings = FALSE, recursive = TRUE)
         obsolete_files <- file.path(
             qc_metrics_dir,
-            c("sample_qc_summary.csv", "spectral_spread_matrix.csv", "directional_spread_score.csv")
+            c(
+                "sample_qc_summary.csv",
+                "spectral_spread_matrix.csv",
+                "directional_spread_score.csv",
+                "overall_detector_reconstruction_error_per_sample.csv"
+            )
         )
         unlink(obsolete_files[file.exists(obsolete_files)], force = TRUE)
         return(qc_metrics_dir)
@@ -198,9 +203,16 @@
     NULL
 }
 
-.compute_qc_report_detector_rms <- function(res_list, M = NULL, pd = NULL) {
+.compute_qc_report_detector_rms <- function(res_list, M = NULL, pd = NULL, unmixing_method = NULL) {
     detector_names <- if (!is.null(M)) colnames(.as_reference_matrix(M, "M")) else NULL
-    residuals <- .collect_report_residual_matrix(res_list, detector_names = detector_names)
+    method <- .resolve_residual_metric_method(res_list, unmixing_method = unmixing_method)
+    metric_name <- if (method %in% c("WLS", "RWLS")) "wls_weighted_rms" else "raw_rms"
+    residuals <- .collect_report_residual_metric_matrix(
+        res_list,
+        M = M,
+        detector_names = detector_names,
+        unmixing_method = unmixing_method
+    )
     if (is.null(residuals) || nrow(residuals) == 0) {
         return(NULL)
     }
@@ -216,29 +228,45 @@
         label = sub("-A$", "", levels_sorted, ignore.case = TRUE),
         laser = laser,
         rms_residual = as.numeric(rms),
+        residual_metric = metric_name,
+        unmixing_method = method,
         stringsAsFactors = FALSE
     )
     out[is.finite(out$rms_residual), , drop = FALSE]
 }
 
-.compute_qc_report_sample_rms <- function(res_list, M = NULL) {
+.compute_qc_report_sample_rms <- function(res_list, M = NULL, unmixing_method = NULL) {
     if (!is.list(res_list) || length(res_list) == 0) {
         return(NULL)
     }
+    M_mat <- .resolve_residual_metric_matrix(res_list, M = M)
+    method <- .resolve_residual_metric_method(res_list, unmixing_method = unmixing_method)
+    metric_name <- if (method %in% c("WLS", "RWLS")) "wls_weighted_rms" else "raw_rms"
     rows <- lapply(names(res_list), function(sn) {
         res_obj <- res_list[[sn]]
         if (!is.list(res_obj) || is.null(res_obj$residuals)) {
             return(NULL)
         }
-        rms <- sqrt(rowMeans(res_obj$residuals^2, na.rm = TRUE))
+        residuals <- as.matrix(res_obj$residuals)
+        weights <- if (method %in% c("WLS", "RWLS")) .residual_metric_weights(res_obj, M = M_mat, unmixing_method = method) else NULL
+        if (!is.null(weights)) {
+            common <- intersect(colnames(residuals), colnames(weights))
+            if (length(common) > 0) {
+                rms <- sqrt(rowMeans(residuals[, common, drop = FALSE]^2 * weights[, common, drop = FALSE], na.rm = TRUE))
+            } else {
+                rms <- sqrt(rowMeans(residuals^2, na.rm = TRUE))
+            }
+        } else {
+            rms <- sqrt(rowMeans(residuals^2, na.rm = TRUE))
+        }
         if (length(rms) == 0 || all(!is.finite(rms))) {
             return(NULL)
         }
-        if (!is.null(M)) {
-            M_mat <- .as_reference_matrix(M, "M")
+        if (!is.null(M_mat)) {
             markers <- intersect(rownames(M_mat), colnames(res_obj$data))
-            Fitted <- as.matrix(res_obj$data[, markers, drop = FALSE]) %*% M_mat[, , drop = FALSE]
-            Y <- Fitted + res_obj$residuals
+            detectors <- intersect(colnames(M_mat), colnames(residuals))
+            Fitted <- as.matrix(res_obj$data[, markers, drop = FALSE]) %*% M_mat[markers, detectors, drop = FALSE]
+            Y <- Fitted + residuals[, detectors, drop = FALSE]
             peak_signal <- stats::quantile(Y, 0.995, na.rm = TRUE, names = FALSE)
         } else {
             expr_cols <- setdiff(colnames(res_obj$data), c("File", "Time"))
@@ -257,6 +285,8 @@
             q95_rms_residual = stats::quantile(rms, 0.95, na.rm = TRUE, names = FALSE),
             q995_peak_signal = peak_signal,
             median_rms_percent_of_peak = error_ratio,
+            residual_metric = metric_name,
+            unmixing_method = method,
             stringsAsFactors = FALSE
         )
     })
@@ -317,14 +347,14 @@
     Map(function(start, end) marker_names[seq.int(start, end)], starts, ends)
 }
 
-.build_qc_report_rms_pages <- function(res_list, M = NULL, max_files_per_page = 15) {
+.build_qc_report_rms_pages <- function(res_list, M = NULL, max_files_per_page = 15, unmixing_method = NULL) {
     if (!is.list(res_list) || length(res_list) == 0) {
         return(list())
     }
 
     sample_names <- names(res_list)
     if (is.null(sample_names) || any(sample_names == "")) {
-        p <- plot_sample_rms_residuals(res_list, M = M, output_file = NULL)
+        p <- plot_sample_rms_residuals(res_list, M = M, output_file = NULL, unmixing_method = unmixing_method)
         return(if (is.null(p)) list() else list(p))
     }
 
@@ -332,7 +362,7 @@
     pages <- list()
     k <- 1L
     for (page_idx in seq_along(batches)) {
-        p <- plot_sample_rms_residuals(res_list[batches[[page_idx]]], M = M, output_file = NULL)
+        p <- plot_sample_rms_residuals(res_list[batches[[page_idx]]], M = M, output_file = NULL, unmixing_method = unmixing_method)
         if (is.null(p)) next
         pages[[k]] <- .label_qc_report_batch_page(
             p,
@@ -912,7 +942,7 @@
 #'
 #' Creates a multi-page report summarizing unmixing quality, including spectra,
 #' RMS residuals per detector, matrix diagnostics, NPS, per-sample NxN marker
-#' scatter pages, and the overall detector reconstruction error per sample.
+#' scatter pages, and detector reconstruction error.
 #'
 #' `qc_samples()` expects a combined data frame or the raw list returned
 #' by [unmix_samples()]. In the usual workflow, pass the unmixed results object
@@ -939,7 +969,6 @@
 #'   `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
 #'   because constrained NNLS results are non-negative by construction.
 #' @param res_list Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.
-#' @param png_dir Deprecated and ignored (kept for backward compatibility).
 #' @param pd Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
 #'   If omitted, `attr(M, "detector_pd")` is used when available.
 #' @param max_events_per_sample Maximum events per sample used for report-wide
@@ -967,8 +996,6 @@
 #'   alongside the PDF report.
 #' @param qc_metrics_dir Optional directory where plot-ready QC metric
 #'   CSVs are written alongside the PDF report.
-#' @param ... Deprecated compatibility arguments. `method` is accepted with a
-#'   warning; use `unmixing_method`.
 #'
 #' @return Invisibly returns a list with `output_file`, `qc_plot_dir`, and
 #'   `qc_metrics_dir`; writes report artifacts to disk.
@@ -1003,7 +1030,6 @@ qc_samples <- function(results,
                        output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
                        unmixing_method = NULL,
                        res_list = NULL,
-                       png_dir = NULL,
                        pd = NULL,
                        max_events_per_sample = 1000,
                        overview_files_per_page = 15,
@@ -1016,21 +1042,11 @@ qc_samples <- function(results,
                        nxn_all_samples = FALSE,
                        qc_plot_dir = NULL,
                        save_qc_pngs = FALSE,
-                       qc_metrics_dir = NULL,
-                       ...) {
+                       qc_metrics_dir = NULL) {
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the QC PDF report.", call. = FALSE)
     }
     sample_nxn_transform <- match.arg(sample_nxn_transform)
-    extra_args <- list(...)
-    if ("method" %in% names(extra_args)) {
-        warning("method is deprecated for qc_samples(); use unmixing_method.", call. = FALSE)
-        unmixing_method <- extra_args$method
-        extra_args$method <- NULL
-    }
-    if (length(extra_args) > 0) {
-        stop("Unused argument(s): ", paste(names(extra_args), collapse = ", "), call. = FALSE)
-    }
     method_attr <- attr(results, "method")
     if (is.null(unmixing_method)) {
         unmixing_method <- if (!is.null(method_attr)) method_attr else "AutoSpectral"
@@ -1038,9 +1054,6 @@ qc_samples <- function(results,
     unmixing_method <- .normalize_unmix_method(unmixing_method)
 
     message("Generating spectreasy Summary Report...")
-    if (!is.null(png_dir)) {
-        warning("png_dir is deprecated and ignored; report output is PDF-only.")
-    }
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")
@@ -1214,14 +1227,14 @@ qc_samples <- function(results,
 
     if (!is.null(res_list)) {
         message("  - Adding RMS residual per detector page...")
-        detector_rms <- .compute_qc_report_detector_rms(res_list, M = M, pd = pd)
+        detector_rms <- .compute_qc_report_detector_rms(res_list, M = M, pd = pd, unmixing_method = unmixing_method)
         if (!is.null(detector_rms) && !is.null(qc_metrics_dir)) {
             .write_qc_report_csv(
                 detector_rms,
                 file.path(qc_metrics_dir, "rms_residual_per_detector.csv")
             )
         }
-        detector_rms_plot <- plot_detector_rms_residuals(res_list, M = M, pd = pd, output_file = NULL)
+        detector_rms_plot <- plot_detector_rms_residuals(res_list, M = M, pd = pd, output_file = NULL, unmixing_method = unmixing_method)
         if (!is.null(detector_rms_plot)) {
             .save_qc_report_png(detector_rms_plot, retained_qc_plot_dir, "rms_residual_per_detector.png")
             draw_report_plot_page(
@@ -1231,22 +1244,23 @@ qc_samples <- function(results,
             )
         }
 
-        message("  - Adding overall detector reconstruction error per sample...")
-        sample_rms <- .compute_qc_report_sample_rms(res_list, M = M)
+        message("  - Adding detector reconstruction error...")
+        sample_rms <- .compute_qc_report_sample_rms(res_list, M = M, unmixing_method = unmixing_method)
         if (!is.null(sample_rms) && !is.null(qc_metrics_dir)) {
             .write_qc_report_csv(
                 sample_rms,
-                file.path(qc_metrics_dir, "overall_detector_reconstruction_error_per_sample.csv")
+                file.path(qc_metrics_dir, "detector_reconstruction_error.csv")
             )
         }
         rms_pages <- .build_qc_report_rms_pages(
             res_list,
             M = M,
-            max_files_per_page = overview_files_per_page
+            max_files_per_page = overview_files_per_page,
+            unmixing_method = unmixing_method
         )
         for (i in seq_along(rms_pages)) {
             p <- rms_pages[[i]]
-            .save_qc_report_png(p, retained_qc_plot_dir, sprintf("overall_detector_reconstruction_error_%02d.png", i))
+            .save_qc_report_png(p, retained_qc_plot_dir, sprintf("detector_reconstruction_error_%02d.png", i))
             draw_report_plot_page(
                 p,
                 height_ratio = 0.72,

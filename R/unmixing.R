@@ -132,34 +132,6 @@
     W_mat
 }
 
-.attach_matching_variances <- function(M, V, source = "variances") {
-    M <- .as_reference_matrix(M, "M")
-    V <- .as_reference_matrix(V, source)
-
-    missing_rows <- setdiff(rownames(M), rownames(V))
-    missing_cols <- setdiff(colnames(M), colnames(V))
-    if (length(missing_rows) > 0 || length(missing_cols) > 0) {
-        stop(
-            "WLS variances from ", source, " do not match the reference matrix.\n",
-            if (length(missing_rows) > 0) paste0("Missing marker rows: ", paste(missing_rows, collapse = ", "), "\n") else "",
-            if (length(missing_cols) > 0) paste0("Missing detector columns: ", paste(missing_cols, collapse = ", ")) else ""
-        )
-    }
-
-    V <- V[rownames(M), colnames(M), drop = FALSE]
-    attr(M, "variances") <- V
-    M
-}
-
-.load_variances_for_unmixing <- function(M, variances_file = NULL) {
-    if (is.null(variances_file) || !file.exists(variances_file)) {
-        return(M)
-    }
-
-    V <- .read_unmixing_matrix_csv(variances_file)
-    .attach_matching_variances(M, V, source = variances_file)
-}
-
 .resolve_detector_noise_file_for_unmixing <- function(unmixing_matrix_file,
                                                      detector_noise_file = NULL) {
     if (!is.null(detector_noise_file) && file.exists(detector_noise_file)) {
@@ -202,51 +174,6 @@
     }
 
     M
-}
-
-.resolve_variances_file_for_unmixing <- function(unmixing_matrix_file,
-                                                variances_file = NULL,
-                                                prefer_sibling = FALSE) {
-    if (is.null(variances_file)) {
-        return(variances_file)
-    }
-
-    if (!is.null(unmixing_matrix_file) && file.exists(unmixing_matrix_file)) {
-        sibling_variances_file <- file.path(dirname(unmixing_matrix_file), "scc_variances.csv")
-        if (isTRUE(prefer_sibling) && file.exists(sibling_variances_file)) {
-            return(sibling_variances_file)
-        }
-    }
-
-    if (file.exists(variances_file)) {
-        return(variances_file)
-    }
-
-    default_variances_file <- file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv")
-    if (!identical(normalizePath(variances_file, mustWork = FALSE), normalizePath(default_variances_file, mustWork = FALSE))) {
-        return(variances_file)
-    }
-
-    if (is.null(unmixing_matrix_file) || !file.exists(unmixing_matrix_file)) {
-        return(variances_file)
-    }
-
-    sibling_variances_file <- file.path(dirname(unmixing_matrix_file), "scc_variances.csv")
-    if (file.exists(sibling_variances_file)) {
-        return(sibling_variances_file)
-    }
-
-    variances_file
-}
-
-.ensure_wls_variances <- function(M,
-                                  method,
-                                  variances_file = NULL) {
-    if (!(toupper(method) %in% c("WLS", "RWLS"))) {
-        return(M)
-    }
-
-    .load_variances_for_unmixing(M, variances_file = variances_file)
 }
 
 .resolve_secondary_label_map <- function(primary_names, sample_dir) {
@@ -576,9 +503,6 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
-#' @param variances_file Optional CSV path to a saved variances matrix. SCC
-#'   variances are loaded as reference QC metadata when available, but the
-#'   default WLS model does not use them as detector weights.
 #' @param detector_noise_file Optional CSV path to detector-specific WLS noise
 #'   floors, as written by [unmix_controls()] (`"scc_detector_noise.csv"`). If
 #'   omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
@@ -615,9 +539,6 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   `altExp(x, "detector_residuals")` when available.
 #' @param verbose Logical; if `TRUE`, print progress messages while unmixing
 #'   each sample.
-#' @param ... Deprecated compatibility arguments. Build reference matrices with
-#'   [unmix_controls()] rather than passing SCC/AF reference-building arguments
-#'   to `unmix_samples()`.
 #' @return Either a named list with one element per sample, a `flowSet`, or a
 #'   `SingleCellExperiment` depending on `return_type`. For `return_type = "list"`,
 #'   the result has class `spectreasy_unmixed_results`; list elements contain
@@ -662,7 +583,6 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 unmix_samples <- function(sample_dir = "samples", 
                           M = NULL, 
                           unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
-                          variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
                           detector_noise_file = NULL,
                           unmixing_method = "WLS", 
                           rwls_max_iter = 1L,
@@ -676,58 +596,13 @@ unmix_samples <- function(sample_dir = "samples",
                           subsample_n = NULL,
                           seed = NULL,
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
-                          verbose = TRUE,
-                          ...) {
+                          verbose = TRUE) {
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
-    variances_file_was_missing <- missing(variances_file)
-    extra_args <- list(...)
-    if ("method" %in% names(extra_args)) {
-        warning("method is deprecated for unmix_samples(); use unmixing_method.", call. = FALSE)
-        unmixing_method <- extra_args$method
-        extra_args$method <- NULL
-    }
-    if ("output_file" %in% names(extra_args)) {
-        warning("output_file is ignored by unmix_samples(); use output_dir for automatic reports or qc_samples() for an explicit report path.", call. = FALSE)
-        extra_args$output_file <- NULL
-    }
-
-    cytometer <- "auto"
     scc_dir <- NULL
-    control_file <- NULL
-    af_n_bands <- "auto"
-    af_auto_max_bands <- 100
-    af_min_cluster_events <- 20
-    af_min_cluster_proportion <- 0.005
-    allow_dynamic_reference <- FALSE
-    reference_arg_names <- c(
-        "cytometer",
-        "scc_dir",
-        "control_file",
-        "af_n_bands",
-        "af_auto_max_bands",
-        "af_min_cluster_events",
-        "af_min_cluster_proportion"
-    )
-    reference_args <- intersect(reference_arg_names, names(extra_args))
-    if (length(reference_args) > 0) {
-        warning(
-            "Reference-building arguments are deprecated in unmix_samples(); run unmix_controls() first and pass its saved matrix or M.",
-            call. = FALSE
-        )
-        for (nm in reference_args) {
-            assign(nm, extra_args[[nm]])
-            extra_args[[nm]] <- NULL
-        }
-        allow_dynamic_reference <- TRUE
-    }
-    if (length(extra_args) > 0) {
-        stop("Unused argument(s): ", paste(names(extra_args), collapse = ", "), call. = FALSE)
-    }
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")
-        M <- .load_variances_for_unmixing(M, variances_file = variances_file)
         M <- .load_detector_noise_for_unmixing(
             M,
             detector_noise_file = detector_noise_file,
@@ -737,45 +612,12 @@ unmix_samples <- function(sample_dir = "samples",
         .stop_if_static_unmixing_matrix_path(unmixing_matrix_file, arg_name = "unmixing_matrix_file")
         M <- .read_unmixing_matrix_csv(unmixing_matrix_file)
         M <- .as_reference_matrix(M, "M")
-        variances_file <- .resolve_variances_file_for_unmixing(
-            unmixing_matrix_file = unmixing_matrix_file,
-            variances_file = variances_file,
-            prefer_sibling = variances_file_was_missing
-        )
-        M <- .load_variances_for_unmixing(M, variances_file = variances_file)
         M <- .load_detector_noise_for_unmixing(
             M,
             detector_noise_file = detector_noise_file,
             unmixing_matrix_file = unmixing_matrix_file,
             scc_dir = scc_dir
         )
-    } else if (isTRUE(allow_dynamic_reference)) {
-        # Try to build reference matrix dynamically
-        resolved_scc_dir <- if (!is.null(scc_dir)) scc_dir else "scc"
-        if (dir.exists(resolved_scc_dir)) {
-            message("Building reference matrix dynamically from: ", resolved_scc_dir)
-            M <- build_reference_matrix(
-                input_folder = resolved_scc_dir,
-                control_df = control_file,
-                af_n_bands = af_n_bands,
-                af_auto_max_bands = af_auto_max_bands,
-                af_min_cluster_events = af_min_cluster_events,
-                af_min_cluster_proportion = af_min_cluster_proportion,
-                cytometer = cytometer
-            )
-            M <- .load_detector_noise_for_unmixing(
-                M,
-                detector_noise_file = detector_noise_file,
-                scc_dir = resolved_scc_dir
-            )
-        } else {
-            if (!is.null(unmixing_matrix_file)) {
-                stop("unmixing_matrix_file not found: ", unmixing_matrix_file, 
-                     ". Also, no reference matrix provided and 'scc' directory not found.")
-            } else {
-                stop("No reference matrix provided, and 'scc' directory not found. Supply M, a valid unmixing_matrix_file, or an scc_dir.")
-            }
-        }
     } else {
         stop(
             "No reference matrix provided. Run unmix_controls() first, then supply M or a valid unmixing_matrix_file.",
@@ -791,11 +633,6 @@ unmix_samples <- function(sample_dir = "samples",
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(n_threads)
     estimate_af <- isTRUE(estimate_af)
-    M <- .ensure_wls_variances(
-        M = M,
-        method = method_upper,
-        variances_file = variances_file
-    )
 
     sample_entries <- .prepare_unmix_samples_input(sample_dir)
 

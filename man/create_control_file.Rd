@@ -7,7 +7,6 @@
 create_control_file(
   input_folder = "scc",
   cytometer = "auto",
-  default_control_type = "cells",
   unknown_fluor_policy = c("empty", "by_channel", "filename"),
   output_file = "fcs_mapping.csv",
   custom_fluorophores = NULL
@@ -18,8 +17,6 @@ create_control_file(
 
 \item{cytometer}{Cytometer name used as a channel-mapping hint. The default,
 `"auto"`, infers the cytometer from FCS detector names when possible.}
-
-\item{default_control_type}{Deprecated. Kept for backward compatibility and ignored.}
 
 \item{unknown_fluor_policy}{How to fill unresolved fluorophores:
 `"empty"` (recommended), `"by_channel"` (best-effort guess), `"filename"`.}

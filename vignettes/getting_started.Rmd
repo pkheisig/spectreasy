@@ -201,7 +201,6 @@ Key outputs from this step include:
 - `fcs_mapping.csv`
 - `spectreasy_outputs/unmix_controls/scc_detector_noise.csv`
 - `spectreasy_outputs/unmix_controls/scc_reference_matrix.csv`
-- `spectreasy_outputs/unmix_controls/scc_variances.csv`
 - `spectreasy_outputs/unmix_controls/scc_spectra.png`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
@@ -243,9 +242,7 @@ When `unmixing_method = "WLS"`, `spectreasy` uses an event-wise detector-error m
 detectors with higher non-negative signal in an event get lower weight for that
 event. The detector noise floor is estimated from the low-signal tail of the SCC
 files and written to `scc_detector_noise.csv`; if no estimate is available,
-`spectreasy` falls back to a scalar floor of 125. The SCC population variances
-in `scc_variances.csv` are still written as reference QC metadata, but they are
-not used as default WLS detector weights.
+`spectreasy` falls back to a scalar floor of 125.
 
 The `control.type` column in `fcs_mapping.csv` also matters here. It tells
 `spectreasy` whether each control should be gated as `beads` or `cells`. If
@@ -393,8 +390,7 @@ dim(ctrl_noninteractive$M)
 You can pass the in-memory reference matrix returned by `unmix_controls()`
 directly to `unmix_samples()` instead of loading it from the saved CSV file.
 For WLS, `unmix_samples()` will also load `scc_detector_noise.csv` beside the
-saved reference matrix when it is available. The optional `scc_variances.csv`
-remains useful as control-spread QC metadata.
+saved reference matrix when it is available.
 
 ```{r}
 fluor_reference_matrix <- ctrl$M
@@ -417,18 +413,13 @@ names(unmixed_direct)
 
 ## Inspect quick QC plots
 
-Reference spectra and spectral spread plots should be interpreted in
-fluorophore space, so the original fluorophore-labeled control matrix is used
-here.
+Reference spectra should be interpreted in fluorophore space, so the original
+fluorophore-labeled control matrix is used here.
 
 ```{r}
 reference_matrix_no_af <- fluor_reference_matrix[!grepl("^AF($|_)", rownames(fluor_reference_matrix), ignore.case = TRUE), , drop = FALSE]
 
 plot_spectra(reference_matrix_no_af, output_file = NULL)
-```
-
-```{r}
-plot_ssm(calculate_ssm(reference_matrix_no_af), output_file = NULL)
 ```
 
 ```{r}

@@ -12,7 +12,6 @@ qc_samples(
   output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
   unmixing_method = NULL,
   res_list = NULL,
-  png_dir = NULL,
   pd = NULL,
   max_events_per_sample = 1000,
   overview_files_per_page = 15,
@@ -25,8 +24,7 @@ qc_samples(
   nxn_all_samples = FALSE,
   qc_plot_dir = NULL,
   save_qc_pngs = FALSE,
-  qc_metrics_dir = NULL,
-  ...
+  qc_metrics_dir = NULL
 )
 }
 \arguments{
@@ -50,8 +48,6 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 because constrained NNLS results are non-negative by construction.}
 
 \item{res_list}{Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.}
-
-\item{png_dir}{Deprecated and ignored (kept for backward compatibility).}
 
 \item{pd}{Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
 If omitted, `attr(M, "detector_pd")` is used when available.}
@@ -93,8 +89,6 @@ alongside the PDF report.}
 \item{qc_metrics_dir}{Optional directory where plot-ready QC metric
 CSVs are written alongside the PDF report.}
 
-\item{...}{Deprecated compatibility arguments. `method` is accepted with a
-warning; use `unmixing_method`.}
 }
 \value{
 Invisibly returns a list with `output_file`, `qc_plot_dir`, and
@@ -103,7 +97,7 @@ Invisibly returns a list with `output_file`, `qc_plot_dir`, and
 \description{
 Creates a multi-page report summarizing unmixing quality, including spectra,
 RMS residuals per detector, matrix diagnostics, NPS, per-sample NxN marker
-scatter pages, and the overall detector reconstruction error per sample.
+scatter pages, and detector reconstruction error.
 }
 \details{
 `qc_samples()` expects a combined data frame or the raw list returned

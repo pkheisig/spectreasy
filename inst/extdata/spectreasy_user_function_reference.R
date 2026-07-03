@@ -5,7 +5,6 @@
     control_file <- create_control_file(
         input_folder = "scc",
         cytometer = "auto",
-        default_control_type = "cells",
         unknown_fluor_policy = c("empty", "by_channel", "filename"),
         output_file = "fcs_mapping.csv",
         custom_fluorophores = NULL
@@ -79,11 +78,6 @@
             "unmix_controls",
             "scc_reference_matrix.csv"
         ),
-        variances_file = file.path(
-            "spectreasy_outputs",
-            "unmix_controls",
-            "scc_variances.csv"
-        ),
         detector_noise_file = NULL,
         unmixing_method = "WLS",
         rwls_max_iter = 1L,
@@ -102,8 +96,6 @@
         seed = NULL,
         return_type = c("list", "flowSet", "SingleCellExperiment"),
         verbose = TRUE
-        # Deprecated compatibility arguments can be passed through ...,
-        # but reference matrices should normally be built with unmix_controls().
     )
 
     qc_samples_report <- qc_samples(
@@ -117,7 +109,6 @@
         output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
         unmixing_method = NULL,
         res_list = NULL,
-        png_dir = NULL,
         pd = NULL,
         max_events_per_sample = 1000,
         overview_files_per_page = 15,
@@ -138,14 +129,6 @@
     # -------------------------------------------------------------------------
 
     adjust_matrix(
-        matrix_dir = NULL,
-        samples_dir = NULL,
-        port = 8000,
-        open_browser = TRUE,
-        dev_mode = FALSE
-    )
-
-    launch_gui(
         matrix_dir = NULL,
         samples_dir = NULL,
         port = 8000,
@@ -255,7 +238,6 @@
     W <- derive_unmixing_matrix(
         M = M,
         method = "OLS",
-        variances = NULL,
         background_noise = 125,
         wls_signal_scale = 1,
         wls_max_weight_ratio = 1600
@@ -299,16 +281,6 @@
         seed = NULL
     )
 
-    detector_residual_plot <- plot_detector_residuals(
-        res_list = residuals,
-        M = M,
-        top_n = 50,
-        output_file = NULL,
-        width = 250,
-        height = 120,
-        pd = NULL
-    )
-
     nps <- calculate_nps(
         data = as.data.frame(unmixed),
         markers = NULL
@@ -320,21 +292,6 @@
         width = 200
     )
 
-    ssm <- calculate_ssm(
-        M = M,
-        method = "OLS"
-    )
-
-    directional_spread <- calculate_directional_spread_score(
-        SSM = ssm
-    )
-
-    ssm_plot <- plot_ssm(
-        SSM = ssm,
-        output_file = NULL,
-        width = 200,
-        height = 180
-    )
 
     spectra <- get_control_spectra(
         flow_frame = flow_frame,

@@ -293,7 +293,7 @@ dim(ctrl_noninteractive$M)
 
 You can pass the in-memory reference matrix returned by `unmix_controls()` directly to `unmix_samples()` instead of loading it from the saved CSV file.
 
-For WLS, `unmix_samples()` will also load `scc_detector_noise.csv` beside the saved reference matrix when it is available. `scc_variances.csv` remains useful as control-spread QC metadata.
+For WLS, `unmix_samples()` will also load `scc_detector_noise.csv` beside the saved reference matrix when it is available.
 
 ```r
 fluor_reference_matrix <- ctrl$M
@@ -317,7 +317,7 @@ names(unmixed_direct)
 
 ## Inspect quick QC plots
 
-Reference spectra and spectral spread plots should be interpreted in fluorophore space, so the original fluorophore-labeled control matrix is used here.
+Reference spectra should be interpreted in fluorophore space, so the original fluorophore-labeled control matrix is used here.
 
 ```r
 reference_matrix_no_af <- fluor_reference_matrix[!grepl("^AF($|_)", rownames(fluor_reference_matrix), ignore.case = TRUE), , drop = FALSE]
@@ -327,14 +327,6 @@ plot_spectra(reference_matrix_no_af, output_file = NULL)
 
 <p align="center">
   <img src="man/figures/vignette_spectra.png" width="80%" />
-</p>
-
-```r
-plot_ssm(calculate_ssm(reference_matrix_no_af), output_file = NULL)
-```
-
-<p align="center">
-  <img src="man/figures/vignette_ssm.png" width="80%" />
 </p>
 
 ```r

@@ -281,7 +281,7 @@ test_that("unmix_controls tolerates a missing unstained mapping row", {
     expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))
 })
 
-test_that("unmix_samples runs WLS without recomputing missing SCC variances", {
+test_that("unmix_samples runs WLS from a saved reference matrix without variance metadata", {
     wf <- make_synthetic_workflow()
     M <- spectreasy::build_reference_matrix(
         input_folder = wf$scc_dir,
@@ -292,12 +292,10 @@ test_that("unmix_samples runs WLS without recomputing missing SCC variances", {
     )
 
     ref_file <- tempfile("scc_reference_matrix_", fileext = ".csv")
-    var_file <- tempfile("scc_variances_", fileext = ".csv")
     ref_df <- as.data.frame(M, check.names = FALSE)
     ref_df$Marker <- rownames(M)
     ref_df <- ref_df[, c("Marker", setdiff(colnames(ref_df), "Marker")), drop = FALSE]
     utils::write.csv(ref_df, ref_file, row.names = FALSE)
-    if (file.exists(var_file)) file.remove(var_file)
 
     sample_dir <- tempfile("spectreasy_recompute_samples_")
     dir.create(sample_dir, recursive = TRUE, showWarnings = FALSE)
@@ -307,14 +305,12 @@ test_that("unmix_samples runs WLS without recomputing missing SCC variances", {
     res <- spectreasy::unmix_samples(
         sample_dir = sample_dir,
         unmixing_matrix_file = ref_file,
-        variances_file = var_file,
         unmixing_method = "WLS",
         output_dir = output_dir,
         write_fcs = TRUE
     )
 
     expect_s3_class(res, "spectreasy_unmixed_results")
-    expect_false(file.exists(var_file))
     expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
 })
 
@@ -379,7 +375,8 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
     expect_true(file.exists(file.path(qc_metrics_dir, "reference_spectra.csv")))
     expect_true(file.exists(file.path(qc_metrics_dir, "fluorophore_spectral_similarity.csv")))
     expect_true(file.exists(file.path(qc_metrics_dir, "rms_residual_per_detector.csv")))
-    expect_true(file.exists(file.path(qc_metrics_dir, "overall_detector_reconstruction_error_per_sample.csv")))
+    expect_true(file.exists(file.path(qc_metrics_dir, "detector_reconstruction_error.csv")))
+    expect_false(file.exists(file.path(qc_metrics_dir, "overall_detector_reconstruction_error_per_sample.csv")))
     expect_false(file.exists(file.path(qc_metrics_dir, "negative_population_spread.csv")))
     expect_false(file.exists(file.path(qc_metrics_dir, "sample_qc_summary.csv")))
     expect_false(file.exists(file.path(qc_metrics_dir, "spectral_spread_matrix.csv")))
@@ -422,12 +419,12 @@ test_that("qc_controls does not retain QC PNGs unless requested", {
     expect_false(dir.exists(qc_plot_dir))
 })
 
-test_that("launch_gui starts packaged GUI on localhost", {
+test_that("adjust_matrix starts packaged GUI on localhost", {
     skip_on_os("windows")
     skip_if_not_installed("plumber")
 
     expect_error(
-        spectreasy::launch_gui(matrix_dir = tempfile("spectreasy_missing_matrix_"), open_browser = FALSE),
+        spectreasy::adjust_matrix(matrix_dir = tempfile("spectreasy_missing_matrix_"), open_browser = FALSE),
         regexp = "cannot be found|No such file|mustWork"
     )
 
@@ -436,7 +433,7 @@ test_that("launch_gui starts packaged GUI on localhost", {
     port <- sample(18000:18999, 1)
 
     job <- parallel::mcparallel({
-        spectreasy::launch_gui(
+        spectreasy::adjust_matrix(
             matrix_dir = tmp_matrix_dir,
             open_browser = FALSE,
             dev_mode = FALSE,

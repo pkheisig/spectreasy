@@ -7,7 +7,6 @@
 derive_unmixing_matrix(
   M,
   method = "OLS",
-  variances = NULL,
   background_noise = .default_wls_background_noise(),
   wls_signal_scale = .default_wls_signal_scale(),
   wls_max_weight_ratio = .default_wls_max_weight_ratio()
@@ -17,9 +16,6 @@ derive_unmixing_matrix(
 \item{M}{Reference matrix (Markers x Detectors)}
 
 \item{method}{Unmixing method ("OLS", "WLS", "RWLS", or "NNLS").}
-
-\item{variances}{Deprecated. SCC population variances are retained as
-reference QC metadata but are no longer used as WLS detector weights.}
 
 \item{background_noise}{Scalar or detector-length WLS noise floor used for
 the static WLS approximation when `M` does not carry detector-noise metadata;

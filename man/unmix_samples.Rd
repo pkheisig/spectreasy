@@ -9,7 +9,6 @@ unmix_samples(
   M = NULL,
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
-  variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
   detector_noise_file = NULL,
   unmixing_method = "WLS",
   rwls_max_iter = 1L,
@@ -23,8 +22,7 @@ unmix_samples(
   subsample_n = NULL,
   seed = NULL,
   return_type = c("list", "flowSet", "SingleCellExperiment"),
-  verbose = TRUE,
-  ...
+  verbose = TRUE
 )
 }
 \arguments{
@@ -38,10 +36,6 @@ it is loaded from the CSV path provided in `unmixing_matrix_file`.}
 \item{unmixing_matrix_file}{Optional CSV path to a saved reference matrix.
 Used when `M` is not supplied. By default this points to the reference matrix
 produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
-
-\item{variances_file}{Optional CSV path to a saved variances matrix. SCC
-variances are loaded as reference QC metadata when available, but the
-default WLS model does not use them as detector weights.}
 
 \item{detector_noise_file}{Optional CSV path to detector-specific WLS noise
 floors, as written by [unmix_controls()] (`"scc_detector_noise.csv"`). If
@@ -93,9 +87,6 @@ unmixed values are returned in assay `"unmixed"`, with detector residuals in
 \item{verbose}{Logical; if `TRUE`, print progress messages while unmixing
 each sample.}
 
-\item{...}{Deprecated compatibility arguments. Build reference matrices with
-[unmix_controls()] rather than passing SCC/AF reference-building arguments
-to `unmix_samples()`.}
 }
 \value{
 Either a named list with one element per sample, a `flowSet`, or a

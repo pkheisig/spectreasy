@@ -169,7 +169,6 @@
         detector_noise_csv = file.path(output_dir, "scc_detector_noise.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
-        variances_csv = file.path(output_dir, "scc_variances.csv"),
         qc_report_pdf = file.path(output_dir, "qc_controls", "qc_controls_report.pdf")
     )
 }
@@ -198,10 +197,6 @@
     af_rows <- grepl("^AF($|_)", marker_names, ignore.case = TRUE)
     if (any(af_rows)) {
         M_static <- M[!af_rows, , drop = FALSE]
-        vars <- attr(M, "variances")
-        if (!is.null(vars)) {
-            attr(M_static, "variances") <- vars[!af_rows, , drop = FALSE]
-        }
         detector_noise <- attr(M, "detector_noise")
         if (!is.null(detector_noise)) {
             attr(M_static, "detector_noise") <- detector_noise
@@ -212,12 +207,37 @@
 
     static_unmixing_matrix_method <- toupper(unmixing_method)
     if (static_unmixing_matrix_method %in% c("WLS", "RWLS")) {
-        W <- derive_unmixing_matrix(M_static, method = "WLS")
+        W <- tryCatch(
+            derive_unmixing_matrix(M_static, method = "WLS"),
+            error = function(e) {
+                if (!grepl("singular", conditionMessage(e), ignore.case = TRUE)) {
+                    stop(e)
+                }
+                .derive_regularized_static_wls_matrix(M_static)
+            }
+        )
     } else {
         W <- derive_unmixing_matrix(M_static, method = static_unmixing_matrix_method)
     }
 
     list(W = W, static_unmixing_matrix_method = static_unmixing_matrix_method)
+}
+
+.derive_regularized_static_wls_matrix <- function(M) {
+    detector_weights <- .wls_static_detector_weights(
+        M = M,
+        background_noise = .default_wls_background_noise(),
+        signal_scale = .default_wls_signal_scale(),
+        max_weight_ratio = .default_wls_max_weight_ratio()
+    )
+    V_inv <- diag(detector_weights)
+    Mt <- t(M)
+    MVMt <- M %*% V_inv %*% Mt
+    ridge <- max(c(diag(MVMt), 1), na.rm = TRUE) * 1e-8
+    W <- solve(MVMt + diag(ridge, nrow(MVMt)), M %*% V_inv)
+    rownames(W) <- rownames(M)
+    colnames(W) <- colnames(M)
+    W
 }
 
 .resolve_unmix_marker_mappings <- function(control_df) {
@@ -338,24 +358,6 @@ unmix_controls <- function(
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
     .with_optional_seed(seed)
     extra_args <- list(...)
-    if ("auto_create_control" %in% names(extra_args)) {
-        warning("auto_create_control is deprecated; use auto_create_mapping.", call. = FALSE)
-        auto_create_mapping <- isTRUE(extra_args$auto_create_control)
-        extra_args$auto_create_control <- NULL
-    }
-    if ("af_n_bands_sensitivity" %in% names(extra_args)) {
-        warning("af_n_bands_sensitivity is ignored and has been removed.", call. = FALSE)
-        extra_args$af_n_bands_sensitivity <- NULL
-    }
-    if ("unmix_method" %in% names(extra_args)) {
-        warning("unmix_method is deprecated; use unmixing_method.", call. = FALSE)
-        unmixing_method <- extra_args$unmix_method
-        extra_args$unmix_method <- NULL
-    }
-    if ("output_file" %in% names(extra_args)) {
-        warning("output_file is ignored by unmix_controls(); use output_dir for automatic reports or qc_controls() for an explicit report path.", call. = FALSE)
-        extra_args$output_file <- NULL
-    }
 
     control_file <- .resolve_control_file_path(control_file)
 
@@ -414,9 +416,6 @@ unmix_controls <- function(
     if (is.null(M) || nrow(M) == 0) stop("No valid spectra found while building reference matrix.")
 
     .save_reference_matrix_csv(M, output_paths$reference_matrix_csv)
-    if (!is.null(attr(M, "variances"))) {
-        .save_reference_matrix_csv(attr(M, "variances"), output_paths$variances_csv)
-    }
     .save_detector_noise_csv(attr(M, "detector_noise"), output_paths$detector_noise_csv)
     meta_info <- .read_unmix_metadata_pd(scc_dir)
 
@@ -497,7 +496,6 @@ unmix_controls <- function(
         reference_matrix_file = output_paths$reference_matrix_csv,
         detector_noise_file = output_paths$detector_noise_csv,
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
-        variances_file = output_paths$variances_csv,
         qc_report_file = if (isTRUE(save_report)) output_file else NULL,
         qc_controls_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
         qc_metrics_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,

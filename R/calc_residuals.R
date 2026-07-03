@@ -182,7 +182,10 @@ calc_residuals <- function(flow_frame,
     if (!is.null(file_name)) out$File <- file_name
 
     if (return_residuals) {
-        return(list(data = out, residuals = R))
+        res <- list(data = out, residuals = R)
+        attr(res, "method") <- method
+        attr(res, "reference_matrix") <- M
+        return(res)
     } else {
         return(out)
     }

@@ -66,8 +66,7 @@ ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 
-\item{...}{Additional arguments forwarded to [build_reference_matrix()].
-Deprecated `method` is accepted with a warning; use `unmixing_method`.}
+\item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }
 \value{
 Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,

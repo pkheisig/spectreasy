@@ -54,18 +54,9 @@ test_that("derive_unmixing_matrix supports static WLS approximation and NNLS pro
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B2-A", "YG1-A", "R1-A")
 
-    V <- matrix(c(
-        10, 20, 30,
-        15, 25, 35
-    ), nrow = 2, byrow = TRUE, dimnames = dimnames(M))
     W_wls_default <- spectreasy::derive_unmixing_matrix(M, method = "WLS")
     expect_equal(dim(W_wls_default), dim(M))
     expect_true(all(is.finite(W_wls_default)))
-
-    W_wls <- spectreasy::derive_unmixing_matrix(M, method = "WLS", variances = V)
-    expect_equal(dim(W_wls), dim(M))
-    expect_true(all(is.finite(W_wls)))
-    expect_equal(W_wls, W_wls_default)
 
     expect_warning(
         W_nnls <- spectreasy::derive_unmixing_matrix(M, method = "NNLS"),
@@ -83,14 +74,6 @@ test_that("calc_residuals NNLS matches per-cell constrained reference fits", {
     ), nrow = 2, byrow = TRUE)
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B1-A", "YG1-A")
-
-    V <- matrix(c(
-        50, 10,
-        5, 60
-    ), nrow = 2, byrow = TRUE)
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-    attr(M, "variances") <- V
 
     exprs <- matrix(c(
         100,  20,
@@ -308,7 +291,7 @@ test_that("calc_residuals multi-AF RWLS honors rwls_max_iter", {
     )
 })
 
-test_that("calc_residuals WLS works without SCC-derived variances", {
+test_that("calc_residuals WLS works without detector-noise metadata", {
     M <- matrix(c(
         1, 0.2,
         0.1, 1
@@ -702,7 +685,7 @@ test_that("unmix_samples supports SingleCellExperiment input and output", {
     expect_setequal(rownames(residual_alt), c("B1-A", "YG1-A"))
 })
 
-test_that(".compute_reference_spectrum computes and attaches variance attribute", {
+test_that(".compute_reference_spectrum computes detector spectrum", {
     detector_names <- c("B1-A", "YG1-A")
     set.seed(42)
     final_gated_data <- matrix(rnorm(100, mean = 1000, sd = 50), ncol = 2)
@@ -726,11 +709,7 @@ test_that(".compute_reference_spectrum computes and attaches variance attribute"
     expect_type(res, "double")
     expect_equal(length(res), 2)
     expect_equal(names(res), detector_names)
-    
-    var_attr <- attr(res, "variance")
-    expect_type(var_attr, "double")
-    expect_equal(length(var_attr), 2)
-    expect_true(all(var_attr >= 0))
+    expect_null(attr(res, "variance"))
 })
 
 test_that(".compute_reference_spectrum honors named universal negative files", {
@@ -1271,7 +1250,7 @@ test_that("control.type from control file overrides filename fallback", {
     expect_equal(sample_info$type, "cells")
 })
 
-test_that("derive_unmixing_matrix WLS ignores SCC variances and honors detector noise", {
+test_that("derive_unmixing_matrix WLS honors detector noise", {
     M <- matrix(c(
         1.0, 0.2, 0.05,
         0.1, 1.0, 0.25
@@ -1279,25 +1258,13 @@ test_that("derive_unmixing_matrix WLS ignores SCC variances and honors detector 
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B1-A", "YG1-A", "R1-A")
     
-    V <- matrix(c(
-        100, 20, 5,
-        15, 120, 50
-    ), nrow = 2, byrow = TRUE)
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-    attr(M, "variances") <- V
-    
     expect_silent(
         W_wls <- spectreasy::derive_unmixing_matrix(M, method = "WLS")
     )
     
     expect_equal(dim(W_wls), dim(M))
-
-    W_wls_explicit <- spectreasy::derive_unmixing_matrix(M, method = "WLS", variances = V)
-    expect_equal(W_wls, W_wls_explicit)
     
     M_no_attr <- M
-    attr(M_no_attr, "variances") <- NULL
     expect_equal(spectreasy::derive_unmixing_matrix(M_no_attr, method = "WLS"), W_wls)
 
     attr(M_no_attr, "detector_noise") <- data.frame(
@@ -1381,127 +1348,4 @@ test_that("calc_residuals multi-AF WLS uses event-wise detector weights", {
     }
 
     expect_equal(as.matrix(res[, rownames(M)]), expected, tolerance = 1e-6)
-})
-
-test_that("unmix_samples integrates with variances CSV file", {
-    M <- matrix(c(
-        1, 0.2,
-        0.1, 1
-    ), nrow = 2, byrow = TRUE)
-    rownames(M) <- c("FITC", "PE")
-    colnames(M) <- c("B1-A", "YG1-A")
-
-    V <- matrix(c(
-        50, 10,
-        5, 60
-    ), nrow = 2, byrow = TRUE)
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-    
-    tmp_ref <- tempfile("ref_", fileext = ".csv")
-    tmp_var <- tempfile("var_", fileext = ".csv")
-    
-    ref_df <- as.data.frame(M)
-    ref_df$Marker <- rownames(M)
-    ref_df <- ref_df[, c("Marker", "B1-A", "YG1-A")]
-    write.csv(ref_df, tmp_ref, row.names = FALSE)
-    
-    var_df <- as.data.frame(V)
-    var_df$Marker <- rownames(V)
-    var_df <- var_df[, c("Marker", "B1-A", "YG1-A")]
-    write.csv(var_df, tmp_var, row.names = FALSE)
-    
-    exprs <- matrix(c(
-        100,  20,
-         10, 120
-    ), nrow = 2, byrow = TRUE)
-    colnames(exprs) <- c("B1-A", "YG1-A")
-    ff <- flowCore::flowFrame(exprs)
-    
-    sample_dir <- tempfile("samples_")
-    dir.create(sample_dir, showWarnings = FALSE)
-    flowCore::write.FCS(ff, file.path(sample_dir, "sample.fcs"))
-    
-    output_dir <- tempfile("unmixed_")
-    
-    unmixed <- spectreasy::unmix_samples(
-        sample_dir = sample_dir,
-        M = NULL,
-        unmixing_matrix_file = tmp_ref,
-        variances_file = tmp_var,
-        unmixing_method = "WLS",
-        output_dir = output_dir,
-        write_fcs = TRUE
-    )
-    
-    expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
-    expect_setequal(names(unmixed), "sample")
-})
-
-test_that("unmix_samples finds sibling variances for saved reference matrix", {
-    M <- matrix(c(
-        1, 0.2,
-        0.1, 1
-    ), nrow = 2, byrow = TRUE)
-    rownames(M) <- c("FITC", "PE")
-    colnames(M) <- c("B1-A", "YG1-A")
-
-    V <- matrix(c(
-        50, 10,
-        5, 60
-    ), nrow = 2, byrow = TRUE)
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-
-    matrix_dir <- tempfile("saved_matrix_")
-    dir.create(matrix_dir, showWarnings = FALSE)
-    tmp_ref <- file.path(matrix_dir, "scc_reference_matrix.csv")
-    tmp_var <- file.path(matrix_dir, "scc_variances.csv")
-
-    ref_df <- as.data.frame(M)
-    ref_df$Marker <- rownames(M)
-    ref_df <- ref_df[, c("Marker", "B1-A", "YG1-A")]
-    write.csv(ref_df, tmp_ref, row.names = FALSE)
-
-    var_df <- as.data.frame(V)
-    var_df$Marker <- rownames(V)
-    var_df <- var_df[, c("Marker", "B1-A", "YG1-A")]
-    write.csv(var_df, tmp_var, row.names = FALSE)
-
-    exprs <- matrix(c(
-        100, 20,
-        10, 120
-    ), nrow = 2, byrow = TRUE)
-    colnames(exprs) <- c("B1-A", "YG1-A")
-    ff <- flowCore::flowFrame(exprs)
-
-    sample_dir <- tempfile("samples_")
-    dir.create(sample_dir, showWarnings = FALSE)
-    flowCore::write.FCS(ff, file.path(sample_dir, "sample.fcs"))
-
-    output_dir <- tempfile("unmixed_")
-
-    work_dir <- tempfile("working_dir_")
-    dir.create(file.path(work_dir, "spectreasy_outputs", "unmix_controls"), recursive = TRUE)
-    wrong_var <- matrix(1, nrow = 1, ncol = 2, dimnames = list("Wrong", colnames(M)))
-    wrong_var_df <- as.data.frame(wrong_var)
-    wrong_var_df$Marker <- rownames(wrong_var)
-    wrong_var_df <- wrong_var_df[, c("Marker", "B1-A", "YG1-A")]
-    write.csv(
-        wrong_var_df,
-        file.path(work_dir, "spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
-        row.names = FALSE
-    )
-    withr::local_dir(work_dir)
-
-    unmixed <- spectreasy::unmix_samples(
-        sample_dir = sample_dir,
-        unmixing_matrix_file = tmp_ref,
-        unmixing_method = "WLS",
-        output_dir = output_dir,
-        write_fcs = TRUE
-    )
-
-    expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
-    expect_setequal(names(unmixed), "sample")
 })

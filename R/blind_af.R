@@ -7,11 +7,6 @@
     rows <- as.logical(rows)
     out <- M[rows, , drop = FALSE]
 
-    variances <- attr(M, "variances")
-    if (!is.null(variances)) {
-        attr(out, "variances") <- variances[rownames(out), colnames(out), drop = FALSE]
-    }
-
     detector_noise <- attr(M, "detector_noise")
     if (!is.null(detector_noise)) {
         attr(out, "detector_noise") <- detector_noise
@@ -187,17 +182,6 @@
     rownames(af_centers) <- c("AF", if (nrow(af_centers) > 1L) paste0("AF_", seq.int(2L, nrow(af_centers))) else NULL)
     colnames(af_centers) <- colnames(marker_M)
     out <- rbind(marker_M, af_centers)
-
-    variances <- attr(marker_M, "variances")
-    if (!is.null(variances)) {
-        af_variances <- matrix(
-            0,
-            nrow = nrow(af_centers),
-            ncol = ncol(marker_M),
-            dimnames = list(rownames(af_centers), colnames(marker_M))
-        )
-        attr(out, "variances") <- rbind(variances[rownames(marker_M), colnames(marker_M), drop = FALSE], af_variances)
-    }
 
     detector_noise <- attr(marker_M, "detector_noise")
     if (!is.null(detector_noise)) {
