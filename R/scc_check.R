@@ -353,10 +353,7 @@ qc_controls <- function(
         stop("Please supply output_file to save the SCC PDF report.", call. = FALSE)
     }
     extra_args <- list(...)
-    unmixing_method <- toupper(as.character(unmixing_method)[1])
-    if (!(unmixing_method %in% c("WLS", "RWLS", "OLS", "NNLS"))) {
-        stop("unmixing_method must be one of: WLS, RWLS, OLS, NNLS", call. = FALSE)
-    }
+    unmixing_method <- .normalize_unmix_method(unmixing_method)
 
     message("Generating SCC QC report...")
     out_dir <- dirname(output_file)

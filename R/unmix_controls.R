@@ -177,6 +177,7 @@
         reference_matrix_csv = file.path(output_dir, "scc_reference_matrix.csv"),
         detector_noise_csv = file.path(output_dir, "scc_detector_noise.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
+        spectral_variant_library_rds = file.path(output_dir, "scc_spectral_variants.rds"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
         qc_report_pdf = file.path(output_dir, "qc_controls", "qc_controls_report.pdf")
     )
@@ -214,8 +215,9 @@
         M_static <- M
     }
 
-    static_unmixing_matrix_method <- toupper(unmixing_method)
-    if (static_unmixing_matrix_method %in% c("WLS", "RWLS")) {
+    static_unmixing_matrix_method <- .normalize_unmix_method(unmixing_method)
+    static_solver_method <- .solver_method_for_unmix(static_unmixing_matrix_method)
+    if (static_solver_method %in% c("WLS", "RWLS")) {
         W <- tryCatch(
             derive_unmixing_matrix(M_static, method = "WLS"),
             error = function(e) {
@@ -226,7 +228,7 @@
             }
         )
     } else {
-        W <- derive_unmixing_matrix(M_static, method = static_unmixing_matrix_method)
+        W <- derive_unmixing_matrix(M_static, method = static_solver_method)
     }
 
     list(W = W, static_unmixing_matrix_method = static_unmixing_matrix_method)
@@ -303,7 +305,10 @@
 #' @param auto_unknown_fluor_policy Auto-fill policy for unresolved fluorophores
 #'   when creating controls (`"by_channel"`, `"empty"`, `"filename"`).
 #' @param output_dir Output directory for SCC workflow artifacts.
-#' @param unmixing_method SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).
+#' @param unmixing_method SCC unmixing method (`"WLS"`, `"RWLS"`,
+#'   `"OLS"`, `"NNLS"`, or `"AutoSpectral"`). `AutoSpectral` keeps the
+#'   existing k-means AF bank controlled by `af_n_bands`, then uses OLS
+#'   unmixing plus AutoSpectral-style SCC cleanup and spectral variants.
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
 #' @param af_n_bands Number of AF basis signatures to extract from pooled
@@ -324,7 +329,35 @@
 #'   automatically after controls are unmixed. Defaults to `TRUE`.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
-#'   use the legacy one-dimensional histogram gate.
+#'   use the legacy one-dimensional histogram gate. Ignored when
+#'   `unmixing_method = "AutoSpectral"`; AutoSpectral uses its own
+#'   post-FSC/SSC SCC spectral selector.
+#' @param clean_scc_with_unstained Logical; when `unmixing_method =
+#'   "AutoSpectral"`, subtract matching unstained/negative background events
+#'   before calculating SCC spectra.
+#' @param scc_background_method Background subtraction method for AutoSpectral
+#'   SCC cleanup (`"scatter_knn"` or `"none"`).
+#' @param scc_background_k Number of nearest unstained/negative events averaged
+#'   for scatter-matched SCC background subtraction.
+#' @param spectral_variant_som_nodes Number of nodes used per fluorophore when
+#'   learning AutoSpectral spectral variants.
+#' @param spectral_variant_top_k Number of best variant candidates to test per
+#'   positive fluorophore during AutoSpectral unmixing.
+#' @param spectral_variant_cosine_threshold Minimum cosine similarity to the
+#'   base fluorophore spectrum required for a variant to be retained.
+#' @param spectral_variant_max_variants Maximum retained variants per
+#'   fluorophore.
+#' @param spectral_variant_min_events Minimum cleaned positive SCC events
+#'   required to learn variants for one fluorophore.
+#' @param autospectral_n_candidates Number of peak-bright SCC candidate events
+#'   considered by the AutoSpectral-style selector.
+#' @param autospectral_n_spectral Number of least-background-like SCC events
+#'   kept for spectrum calculation by the AutoSpectral-style selector.
+#' @param autospectral_min_events Minimum event count required by the
+#'   AutoSpectral-style SCC selector.
+#' @param refine Logical; when `unmixing_method = "AutoSpectral"`, refine the
+#'   fixed-size k-means AF bank with native AutoSpectral-style unstained residual
+#'   modulation. `TRUE` is rejected for all other unmixing methods.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #'
 #' @return List with `M`, `W`, `unmixed_list`, and key output file paths,
@@ -359,9 +392,32 @@ unmix_controls <- function(
     save_qc_plots = FALSE,
     save_report = TRUE,
     use_scatter_gating = TRUE,
+    clean_scc_with_unstained = TRUE,
+    scc_background_method = c("scatter_knn", "none"),
+    scc_background_k = 2L,
+    spectral_variant_som_nodes = 16L,
+    spectral_variant_top_k = 3L,
+    spectral_variant_cosine_threshold = 0.98,
+    spectral_variant_max_variants = 8L,
+    spectral_variant_min_events = 50L,
+    autospectral_n_candidates = 1000L,
+    autospectral_n_spectral = 200L,
+    autospectral_min_events = 10L,
+    refine = FALSE,
     ...
 ) {
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
+    unmixing_method <- .normalize_unmix_method(unmixing_method)
+    use_autospectral <- identical(unmixing_method, "AutoSpectral")
+    refine <- .validate_reference_refine_arg(refine)
+    if (isTRUE(refine) && !use_autospectral) {
+        stop("refine = TRUE is only accepted when unmixing_method = \"AutoSpectral\".", call. = FALSE)
+    }
+    scc_background_args <- .validate_scc_background_args(
+        clean_scc_with_unstained = use_autospectral && isTRUE(clean_scc_with_unstained),
+        scc_background_method = scc_background_method,
+        scc_background_k = scc_background_k
+    )
     .with_optional_seed(seed)
     extra_args <- list(...)
 
@@ -424,10 +480,48 @@ unmix_controls <- function(
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
         use_scatter_gating = use_scatter_gating,
+        autospectral_scc_cleanup = use_autospectral,
+        clean_scc_with_unstained = scc_background_args$enabled,
+        scc_background_method = scc_background_args$method,
+        scc_background_k = scc_background_args$k,
+        autospectral_n_candidates = autospectral_n_candidates,
+        autospectral_n_spectral = autospectral_n_spectral,
+        autospectral_min_events = autospectral_min_events,
+        refine = refine,
         seed = seed
     ), extra_args)
     M <- do.call(build_reference_matrix, build_args)
     if (is.null(M) || nrow(M) == 0) stop("No valid spectra found while building reference matrix.")
+
+    spectral_variant_library <- NULL
+    spectral_variant_library_file <- NULL
+    if (use_autospectral) {
+        spectral_variant_library <- tryCatch(
+            .learn_spectral_variant_library(
+                M = M,
+                enabled = TRUE,
+                som_nodes = spectral_variant_som_nodes,
+                cosine_threshold = spectral_variant_cosine_threshold,
+                max_variants = spectral_variant_max_variants,
+                min_events = spectral_variant_min_events,
+                seed = seed,
+                warn = TRUE
+            ),
+            error = function(e) {
+                warning(
+                    "Spectral-variant optimization could not build a variant library; using the base reference matrix. Reason: ",
+                    conditionMessage(e),
+                    call. = FALSE
+                )
+                NULL
+            }
+        )
+        if (!is.null(spectral_variant_library)) {
+            attr(M, "spectral_variant_library") <- spectral_variant_library
+            .save_spectral_variant_library(spectral_variant_library, output_paths$spectral_variant_library_rds)
+            spectral_variant_library_file <- output_paths$spectral_variant_library_rds
+        }
+    }
 
     .save_reference_matrix_csv(M, output_paths$reference_matrix_csv)
     .save_detector_noise_csv(attr(M, "detector_noise"), output_paths$detector_noise_csv)
@@ -456,6 +550,8 @@ unmix_controls <- function(
         unmixing_method = unmixing_method,
         rwls_max_iter = rwls_max_iter,
         n_threads = unmix_threads,
+        spectral_variant_library = spectral_variant_library,
+        spectral_variant_top_k = spectral_variant_top_k,
         output_dir = output_paths$unmixed_dir,
         write_fcs = TRUE,
         save_report = FALSE
@@ -515,6 +611,9 @@ unmix_controls <- function(
         unmixed_list = unmixed_list,
         reference_matrix_file = output_paths$reference_matrix_csv,
         detector_noise_file = output_paths$detector_noise_csv,
+        spectral_variant_library = spectral_variant_library,
+        spectral_variant_library_file = spectral_variant_library_file,
+        spectral_variant_info = if (!is.null(spectral_variant_library)) spectral_variant_library$info else NULL,
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
         qc_report_file = if (isTRUE(save_report)) output_file else NULL,
         qc_controls_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
@@ -527,6 +626,7 @@ unmix_controls <- function(
         static_unmixing_matrix_method = static_info$static_unmixing_matrix_method,
         spectra_plot = p_spectra,
         af_spectra_plot = p_af_spectra,
-        unmixing_scatter_plot = p_scatter
+        unmixing_scatter_plot = p_scatter,
+        refine = refine
     ))
 }

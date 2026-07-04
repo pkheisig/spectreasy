@@ -5,7 +5,8 @@
 #' To unmix data manually: Unmixed_Data = Raw_Data %*% t(W)
 #' 
 #' @param M Reference matrix (Markers x Detectors)
-#' @param method Unmixing method ("OLS", "WLS", "RWLS", or "NNLS").
+#' @param method Unmixing method ("OLS", "WLS", "RWLS", "NNLS", or
+#'   "AutoSpectral"). Static `"AutoSpectral"` export uses the OLS solver proxy.
 #' @param background_noise Scalar or detector-length WLS noise floor used for
 #'   the static WLS approximation when `M` does not carry detector-noise metadata;
 #'   the built-in fallback is 125 raw detector units.
@@ -29,15 +30,16 @@ derive_unmixing_matrix <- function(M,
     # M is Markers (m) x Detectors (d)
     Mt <- t(M) # Detectors x Markers
 
-    method_upper <- toupper(trimws(method))
+    method_upper <- .normalize_unmix_method(method)
+    method_solver <- .solver_method_for_unmix(method_upper)
 
-    if (method_upper == "OLS") {
+    if (method_solver == "OLS") {
         # Standard analytical solution: W = (M %*% M^T)^-1 %*% M
         MMt <- M %*% Mt
         if (rcond(MMt) < 1e-10) stop("Reference Matrix is singular (collinear spectra).")
         W <- solve(MMt) %*% M
 
-    } else if (method_upper %in% c("WLS", "RWLS")) {
+    } else if (method_solver %in% c("WLS", "RWLS")) {
         if (identical(method_upper, "RWLS")) {
             warning(
                 "Static RWLS matrix is a WLS proxy and may differ from per-cell RWLS solutions. ",
@@ -57,7 +59,7 @@ derive_unmixing_matrix <- function(M,
         if (rcond(MVMt) < 1e-10) stop("Weighted matrix is singular.")
         W <- solve(MVMt) %*% M %*% V_inv
 
-    } else if (method_upper == "NNLS") {
+    } else if (method_solver == "NNLS") {
         # A single static matrix cannot exactly reproduce per-cell NNLS
         # (piecewise-linear constraint). We export a deterministic linear proxy
         # by solving NNLS for each detector basis vector.
@@ -71,7 +73,7 @@ derive_unmixing_matrix <- function(M,
         )
 
     } else {
-        stop("method must be one of: 'OLS', 'WLS', 'RWLS', 'NNLS'")
+        stop("method must be one of: 'AutoSpectral', 'OLS', 'WLS', 'RWLS', 'NNLS'")
     }
 
     rownames(W) <- rownames(M)

@@ -15,7 +15,8 @@ derive_unmixing_matrix(
 \arguments{
 \item{M}{Reference matrix (Markers x Detectors)}
 
-\item{method}{Unmixing method ("OLS", "WLS", "RWLS", or "NNLS").}
+\item{method}{Unmixing method ("OLS", "WLS", "RWLS", "NNLS", or
+"AutoSpectral"). Static `"AutoSpectral"` export uses the OLS solver proxy.}
 
 \item{background_noise}{Scalar or detector-length WLS noise floor used for
 the static WLS approximation when `M` does not carry detector-noise metadata;

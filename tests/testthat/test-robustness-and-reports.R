@@ -451,6 +451,7 @@ test_that("unmix_samples rejects reference-building arguments", {
 })
 
 test_that("unmix_controls supports fixed AF k-means bands from SCC mapping", {
+    set.seed(503)
     scc_dir <- tempfile("scc_dir_controls_")
     dir.create(scc_dir)
     
@@ -673,7 +674,13 @@ test_that("unmix_samples excludes secondary AF bands from written FCS files", {
     fcs_path <- file.path(tmp_dir, "Sample1_unmixed.fcs")
     expect_true(file.exists(fcs_path))
     ff_written <- flowCore::read.FCS(fcs_path, transformation = FALSE, truncate_max_range = FALSE)
-    written_cols <- colnames(flowCore::exprs(ff_written))
+    written_exprs <- flowCore::exprs(ff_written)
+    written_cols <- colnames(written_exprs)
     expect_true("AF" %in% written_cols)
     expect_false("AF_2" %in% written_cols)
+    expect_equal(
+        as.numeric(written_exprs[, "AF"]),
+        rowSums(as.matrix(unmixed$Sample1$data[, c("AF", "AF_2"), drop = FALSE])),
+        tolerance = 1e-4
+    )
 })

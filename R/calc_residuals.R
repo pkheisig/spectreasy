@@ -36,12 +36,161 @@
     out
 }
 
+.solver_method_for_unmix <- function(method) {
+    if (identical(method, "AutoSpectral")) "OLS" else method
+}
+
+.unmix_with_fixed_reference <- function(Y, M, method, wls_noise, rwls_max_iter) {
+    if (method == "OLS") {
+        matrix_to_invert <- M %*% t(M)
+        if (rcond(matrix_to_invert) < 1e-10) {
+            stop("Reference Matrix is singular. You likely have collinear spectra.", call. = FALSE)
+        }
+        return(Y %*% t(M) %*% solve(matrix_to_invert))
+    }
+    if (method == "NNLS") {
+        return(spectreasy_nnls_unmix_cpp(Y = Y, M = M))
+    }
+    if (method == "WLS") {
+        return(spectreasy_wls_unmix_cpp(
+            Y = Y,
+            M = M,
+            noise_floor = wls_noise$noise_floor,
+            signal_scale = wls_noise$signal_scale,
+            max_weight_ratio = wls_noise$max_weight_ratio
+        ))
+    }
+    if (method == "RWLS") {
+        return(spectreasy_rwls_unmix_cpp(
+            Y = Y,
+            M = M,
+            noise_floor = wls_noise$noise_floor,
+            signal_scale = wls_noise$signal_scale,
+            max_weight_ratio = wls_noise$max_weight_ratio,
+            max_iter = rwls_max_iter
+        ))
+    }
+    stop("method must be one of: AutoSpectral, OLS, NNLS, WLS, RWLS", call. = FALSE)
+}
+
+.autospectral_assign_af_fluorophores <- function(Y, marker_spectra, af_spectra, tol = 1e-10) {
+    Y <- as.matrix(Y)
+    marker_spectra <- as.matrix(marker_spectra)
+    af_spectra <- as.matrix(af_spectra)
+    if (nrow(marker_spectra) == 0L || nrow(af_spectra) == 0L) {
+        return(rep(NA_integer_, nrow(Y)))
+    }
+    if (!identical(colnames(marker_spectra), colnames(af_spectra))) {
+        stop("AutoSpectral marker and AF spectra detector columns do not match.", call. = FALSE)
+    }
+
+    matrix_to_invert <- marker_spectra %*% t(marker_spectra)
+    if (rcond(matrix_to_invert) < tol) {
+        stop("Marker-only reference matrix is singular; AutoSpectral AF assignment cannot proceed.", call. = FALSE)
+    }
+    unmixing_matrix <- solve(matrix_to_invert, marker_spectra)
+    marker_t <- t(marker_spectra)
+    v_library <- unmixing_matrix %*% t(af_spectra)
+    r_library <- t(af_spectra) - marker_t %*% v_library
+    denominator <- colSums(r_library^2)
+    valid <- is.finite(denominator) & denominator > tol
+    if (!any(valid)) {
+        return(rep(1L, nrow(Y)))
+    }
+
+    numerator <- Y %*% r_library
+    k_matrix <- matrix(0, nrow = nrow(Y), ncol = nrow(af_spectra))
+    k_matrix[, valid] <- sweep(numerator[, valid, drop = FALSE], 2, denominator[valid], "/")
+    unmixed_markers <- Y %*% t(unmixing_matrix)
+    error_matrix <- matrix(Inf, nrow = nrow(Y), ncol = nrow(af_spectra))
+    for (i in which(valid)) {
+        adjusted <- unmixed_markers - k_matrix[, i, drop = FALSE] %*% t(v_library[, i, drop = FALSE])
+        error_matrix[, i] <- rowSums(abs(adjusted))
+    }
+    max.col(-error_matrix, ties.method = "first")
+}
+
+.autospectral_unmix_legacy <- function(Y, M, tol = 1e-10) {
+    Y <- as.matrix(Y)
+    M <- .as_reference_matrix(M, "M")
+    af_match <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
+    marker_idx <- which(!af_match)
+    af_idx <- which(af_match)
+    if (length(af_idx) == 0L) {
+        A <- .unmix_with_fixed_reference(
+            Y = Y,
+            M = M,
+            method = "OLS",
+            wls_noise = list(noise_floor = numeric(0), signal_scale = numeric(0), max_weight_ratio = .default_wls_max_weight_ratio()),
+            rwls_max_iter = 1L
+        )
+        return(list(
+            A = A,
+            fitted = A %*% M,
+            af_index = rep(NA_integer_, nrow(Y)),
+            selected_af_row = rep(NA_character_, nrow(Y))
+        ))
+    }
+    if (length(marker_idx) == 0L) {
+        stop("AutoSpectral unmixing requires at least one non-AF reference row.", call. = FALSE)
+    }
+
+    marker_spectra <- M[marker_idx, , drop = FALSE]
+    af_spectra <- M[af_idx, , drop = FALSE]
+    af_assignment_spectra <- af_spectra
+    af_assignment_map <- seq_along(af_idx)
+    if (nrow(af_assignment_spectra) == 1L) {
+        # AutoSpectral expects at least two AF rows. Duplicating one row keeps
+        # one-band AF behavior equivalent to a marker+AF OLS refit.
+        af_assignment_spectra <- rbind(af_assignment_spectra, af_assignment_spectra)
+        rownames(af_assignment_spectra) <- c("AF1", "AF2")
+        af_assignment_map <- c(1L, 1L)
+    }
+
+    assignments_raw <- .autospectral_assign_af_fluorophores(
+        Y = Y,
+        marker_spectra = marker_spectra,
+        af_spectra = af_assignment_spectra,
+        tol = tol
+    )
+    selected_af <- af_assignment_map[assignments_raw]
+    selected_af[!is.finite(selected_af)] <- 1L
+
+    A <- matrix(0, nrow = nrow(Y), ncol = nrow(M), dimnames = list(NULL, rownames(M)))
+    fitted <- matrix(0, nrow = nrow(Y), ncol = ncol(M), dimnames = list(NULL, colnames(M)))
+    for (af_i in unique(selected_af)) {
+        rows <- c(marker_idx, af_idx[[af_i]])
+        event_idx <- which(selected_af == af_i)
+        X <- M[rows, , drop = FALSE]
+        coeff <- .unmix_with_fixed_reference(
+            Y = Y[event_idx, , drop = FALSE],
+            M = X,
+            method = "OLS",
+            wls_noise = list(noise_floor = numeric(0), signal_scale = numeric(0), max_weight_ratio = .default_wls_max_weight_ratio()),
+            rwls_max_iter = 1L
+        )
+        A[event_idx, rows] <- coeff
+        fitted[event_idx, ] <- coeff %*% X
+    }
+
+    list(
+        A = A,
+        fitted = fitted,
+        af_index = selected_af,
+        selected_af_row = rownames(M)[af_idx[selected_af]]
+    )
+}
+
 #' Calculate unmixing residuals
 #'
 #' @param flow_frame A flowFrame object with raw fluorescence data
 #' @param M Reference matrix (fluorophores x detectors)
 #' @param file_name Optional file name to add to output
-#' @param method Unmixing method: "WLS" (default), "RWLS", "OLS", or "NNLS".
+#' @param method Unmixing method: `"WLS"` (default), `"RWLS"`, `"OLS"`,
+#'   `"NNLS"`, or `"AutoSpectral"`. `AutoSpectral` assigns the best AF
+#'   spectrum per event with the AutoSpectral fluorophore-leakage score, refits
+#'   marker + selected-AF OLS, and applies spectral-variant optimization when a
+#'   variant library is supplied.
 #' @param return_residuals Logical. If TRUE, returns a list containing the unmixed
 #'   data and the detector residual matrix.
 #' @param background_noise Scalar or detector-length vector used as the WLS noise
@@ -55,6 +204,17 @@
 #'   historical behavior.
 #' @param n_threads Positive integer; number of threads to use for event-wise
 #'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
+#' @param spectral_variant_library Optional per-fluorophore spectral-variant
+#'   library learned from single-color controls. Used only with
+#'   `method = "AutoSpectral"`.
+#' @param spectral_variant_top_k Number of best variant candidates to test per
+#'   positive fluorophore.
+#' @param spectral_variant_min_abundance Minimum unmixed abundance for a
+#'   fluorophore to be eligible for variant testing.
+#' @param spectral_variant_positive_fraction Additional positivity threshold
+#'   as a fraction of the event's strongest fluorophore abundance.
+#' @param spectral_variant_min_improvement Minimum fractional residual
+#'   improvement required before accepting a cell-specific variant refit.
 #' @return Data frame with unmixed abundances and retained acquisition parameters
 #'   (`Time` plus all `FSC*`/`SSC*` columns, when available).
 #'         If return_residuals=TRUE, returns a list with [[data]] and [[residuals]].
@@ -94,10 +254,19 @@ calc_residuals <- function(flow_frame,
                            wls_signal_scale = .default_wls_signal_scale(),
                            wls_max_weight_ratio = .default_wls_max_weight_ratio(),
                            rwls_max_iter = 1L,
-                           n_threads = 1L) {
+                           n_threads = 1L,
+                           spectral_variant_library = NULL,
+                           spectral_variant_top_k = 3L,
+                           spectral_variant_min_abundance = 1,
+                           spectral_variant_positive_fraction = 0.02,
+                           spectral_variant_min_improvement = 0.01) {
     M <- .as_reference_matrix(M, "M")
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(n_threads)
+    method <- .normalize_unmix_method(method)
+    solver_method <- .solver_method_for_unmix(method)
+    use_spectral_variants <- identical(method, "AutoSpectral") &&
+        .spectral_variant_library_has_variants(spectral_variant_library)
     full_data <- flowCore::exprs(flow_frame)
     detectors <- colnames(M)
     
@@ -110,13 +279,9 @@ calc_residuals <- function(flow_frame,
     Y <- full_data[, detectors, drop = FALSE]
 
     Mt <- t(M)
-    method <- toupper(method)
-    if (!method %in% c("OLS", "NNLS", "WLS", "RWLS")) {
-        stop("method must be 'OLS', 'NNLS', 'WLS', or 'RWLS'")
-    }
 
     af_match <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
-    wls_noise <- if (method %in% c("WLS", "RWLS")) {
+    wls_noise <- if (solver_method %in% c("WLS", "RWLS")) {
         .resolve_wls_noise_parameters(
             M = M,
             background_noise = background_noise,
@@ -127,7 +292,12 @@ calc_residuals <- function(flow_frame,
         list(noise_floor = numeric(0), signal_scale = numeric(0), max_weight_ratio = .default_wls_max_weight_ratio())
     }
 
-    if (sum(af_match) > 1) {
+    autospectral_fit <- NULL
+    if (identical(method, "AutoSpectral")) {
+        autospectral_fit <- .autospectral_unmix_legacy(Y = Y, M = M)
+        A <- autospectral_fit$A
+        Fitted <- autospectral_fit$fitted
+    } else if (sum(af_match) > 1) {
         fluor_idx <- which(!af_match) - 1
         af_idx <- which(af_match) - 1
         A <- spectreasy_unmix_best_af_cpp(
@@ -135,7 +305,7 @@ calc_residuals <- function(flow_frame,
             M = M,
             fluor_idx = fluor_idx,
             af_idx = af_idx,
-            method = method,
+            method = solver_method,
             noise_floor = wls_noise$noise_floor,
             signal_scale = wls_noise$signal_scale,
             max_weight_ratio = wls_noise$max_weight_ratio,
@@ -143,16 +313,16 @@ calc_residuals <- function(flow_frame,
             n_threads = n_threads
         )
     } else {
-        if (method == "OLS") {
+        if (solver_method == "OLS") {
             # Ordinary Least Squares: A = Y * M^T * (M * M^T)^-1
             matrix_to_invert <- M %*% Mt
             if (rcond(matrix_to_invert) < 1e-10) {
                 stop("Reference Matrix is singular. You likely have collinear spectra.")
             }
             A <- Y %*% Mt %*% solve(matrix_to_invert)
-        } else if (method == "NNLS") {
+        } else if (solver_method == "NNLS") {
             A <- spectreasy_nnls_unmix_cpp(Y = Y, M = M)
-        } else if (method == "WLS") {
+        } else if (solver_method == "WLS") {
             A <- spectreasy_wls_unmix_cpp(
                 Y = Y,
                 M = M,
@@ -160,7 +330,7 @@ calc_residuals <- function(flow_frame,
                 signal_scale = wls_noise$signal_scale,
                 max_weight_ratio = wls_noise$max_weight_ratio
             )
-        } else if (method == "RWLS") {
+        } else if (solver_method == "RWLS") {
             A <- spectreasy_rwls_unmix_cpp(
                 Y = Y,
                 M = M,
@@ -172,10 +342,33 @@ calc_residuals <- function(flow_frame,
         }
     }
 
-    Fitted <- A %*% M
+    variant_info <- NULL
+    if (use_spectral_variants) {
+        variant_fit <- .apply_spectral_variant_optimization(
+            Y = Y,
+            M = M,
+            A = A,
+            method = solver_method,
+            wls_noise = wls_noise,
+            rwls_max_iter = rwls_max_iter,
+            spectral_variant_library = spectral_variant_library,
+            top_k = spectral_variant_top_k,
+            min_abundance = spectral_variant_min_abundance,
+            positive_fraction = spectral_variant_positive_fraction,
+            min_improvement_fraction = spectral_variant_min_improvement
+        )
+        A <- variant_fit$A
+        Fitted <- variant_fit$fitted
+        variant_info <- variant_fit$info
+    } else if (is.null(autospectral_fit)) {
+        Fitted <- A %*% M
+    }
     R <- Y - Fitted
     out <- as.data.frame(A)
     colnames(out) <- rownames(M)
+    if (!is.null(autospectral_fit) && any(is.finite(autospectral_fit$af_index))) {
+        out[["AF Index"]] <- autospectral_fit$af_index
+    }
 
     out <- .append_passthrough_parameters(out, full_data, detector_names = detectors)
 
@@ -183,6 +376,7 @@ calc_residuals <- function(flow_frame,
 
     if (return_residuals) {
         res <- list(data = out, residuals = R)
+        if (!is.null(variant_info)) res$spectral_variant_info <- variant_info
         attr(res, "method") <- method
         attr(res, "reference_matrix") <- M
         return(res)

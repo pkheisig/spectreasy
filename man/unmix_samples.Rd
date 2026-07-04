@@ -14,6 +14,12 @@ unmix_samples(
   unmixing_method = "WLS",
   rwls_max_iter = 1L,
   n_threads = 1L,
+  spectral_variant_library = NULL,
+  spectral_variant_library_file = NULL,
+  spectral_variant_top_k = 3L,
+  spectral_variant_min_abundance = 1,
+  spectral_variant_positive_fraction = 0.02,
+  spectral_variant_min_improvement = 0.01,
   estimate_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
@@ -46,7 +52,10 @@ floors, as written by [unmix_controls()] (`"scc_detector_noise.csv"`). If
 omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
 falls back to the built-in scalar noise floor.}
 
-\item{unmixing_method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}
+\item{unmixing_method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`,
+`"NNLS"`, or `"AutoSpectral"`). `AutoSpectral` uses per-event AF
+assignment with marker + selected-AF OLS, plus SCC-derived
+spectral-variant optimization when available.}
 
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
 iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
@@ -54,6 +63,27 @@ historical behavior.}
 
 \item{n_threads}{Positive integer; number of threads to use for event-wise
 multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
+
+\item{spectral_variant_library}{Optional in-memory AutoSpectral
+spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`.}
+
+\item{spectral_variant_library_file}{Optional RDS path to an AutoSpectral
+spectral-variant library. When omitted, `unmix_samples()` looks for
+`scc_spectral_variants.rds` beside `unmixing_matrix_file`.}
+
+\item{spectral_variant_top_k}{Number of best variant candidates to test per
+positive fluorophore for AutoSpectral.}
+
+\item{spectral_variant_min_abundance}{Minimum unmixed abundance for a
+fluorophore to be eligible for AutoSpectral variant testing.}
+
+\item{spectral_variant_positive_fraction}{Additional positivity threshold
+as a fraction of the event's strongest fluorophore abundance for
+AutoSpectral variant testing.}
+
+\item{spectral_variant_min_improvement}{Minimum fractional residual
+improvement required before accepting a cell-specific AutoSpectral
+variant refit.}
 
 \item{estimate_af}{Logical; if `TRUE`, estimate AF signatures directly from
 stained sample event-wise WLS residuals, select the best candidate model by
@@ -90,7 +120,6 @@ unmixed values are returned in assay `"unmixed"`, with detector residuals in
 
 \item{verbose}{Logical; if `TRUE`, print progress messages while unmixing
 each sample.}
-
 }
 \value{
 Either a named list with one element per sample, a `flowSet`, or a

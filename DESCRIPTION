@@ -30,6 +30,8 @@ LinkingTo:
     RcppParallel
 SystemRequirements: GNU make
 Suggests:
+    FNN,
+    FlowSOM,
     jsonlite,
     KernSmooth,
     knitr,

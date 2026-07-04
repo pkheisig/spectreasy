@@ -1,0 +1,261 @@
+make_autospectral_test_exprs <- function(n = 600, dye = c("B1-A" = 0, "YG1-A" = 0, "R1-A" = 0)) {
+    stopifnot(all(c("B1-A", "YG1-A", "R1-A") %in% names(dye)))
+    pos <- seq_len(n) <= (n %/% 2)
+    fsc <- stats::rnorm(n, mean = 100000, sd = 3500)
+    ssc <- stats::rnorm(n, mean = 50000, sd = 2500)
+    af_b1 <- 0.0015 * fsc + stats::rnorm(n, sd = 5)
+    af_yg1 <- 0.0035 * ssc + stats::rnorm(n, sd = 5)
+    af_r1 <- 0.0010 * ssc + stats::rnorm(n, sd = 4)
+    amp <- numeric(n)
+    amp[pos] <- stats::runif(sum(pos), 650, 950)
+    exprs <- cbind(
+        "B1-A" = af_b1 + amp * dye[["B1-A"]],
+        "YG1-A" = af_yg1 + amp * dye[["YG1-A"]],
+        "R1-A" = af_r1 + amp * dye[["R1-A"]],
+        "FSC-A" = fsc,
+        "SSC-A" = ssc
+    )
+    exprs[exprs < 1] <- 1
+    exprs
+}
+
+make_autospectral_test_workflow <- function(n = 600) {
+    scc_dir <- tempfile("spectreasy_as_scc_")
+    dir.create(scc_dir, recursive = TRUE, showWarnings = FALSE)
+
+    flowCore::write.FCS(
+        flowCore::flowFrame(make_autospectral_test_exprs(n = n)),
+        file.path(scc_dir, "Unstained (Cells).fcs")
+    )
+    flowCore::write.FCS(
+        flowCore::flowFrame(make_autospectral_test_exprs(n = n, dye = c("B1-A" = 1.0, "YG1-A" = 0.10, "R1-A" = 0.02))),
+        file.path(scc_dir, "FITC (Cells).fcs")
+    )
+    flowCore::write.FCS(
+        flowCore::flowFrame(make_autospectral_test_exprs(n = n, dye = c("B1-A" = 0.12, "YG1-A" = 1.0, "R1-A" = 0.03))),
+        file.path(scc_dir, "PE (Cells).fcs")
+    )
+
+    control_df <- data.frame(
+        filename = c("Unstained (Cells).fcs", "FITC (Cells).fcs", "PE (Cells).fcs"),
+        fluorophore = c("AF", "FITC", "PE"),
+        marker = c("Autofluorescence", "CD4", "CD8"),
+        channel = c("B1-A", "B1-A", "YG1-A"),
+        control.type = c("cells", "cells", "cells"),
+        universal.negative = c("", "", ""),
+        is.viability = c("", "", ""),
+        stringsAsFactors = FALSE
+    )
+    list(scc_dir = scc_dir, control_df = control_df)
+}
+
+test_that("AutoSpectral calc_residuals uses OLS when no variants are supplied", {
+    M <- matrix(c(
+        1, 0.1,
+        0.2, 1
+    ), nrow = 2, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE")
+    colnames(M) <- c("B1-A", "YG1-A")
+    exprs <- matrix(c(
+        100, 20,
+        30, 90,
+        40, 45
+    ), nrow = 3, byrow = TRUE)
+    colnames(exprs) <- colnames(M)
+    ff <- flowCore::flowFrame(exprs)
+
+    ols <- spectreasy::calc_residuals(ff, M, method = "OLS")
+    autospectral <- spectreasy::calc_residuals(ff, M, method = "AutoSpectral")
+
+    expect_equal(autospectral[, rownames(M)], ols[, rownames(M)], tolerance = 1e-10)
+})
+
+test_that("AutoSpectral calc_residuals records per-cell AF assignment for AF banks", {
+    M <- rbind(
+        FITC = c(1.00, 0.10, 0.05),
+        PE = c(0.10, 1.00, 0.05),
+        AF = c(0.30, 0.20, 1.00),
+        AF_2 = c(0.05, 0.20, 0.35)
+    )
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A")
+    exprs <- rbind(
+        c(FITC = 200, PE = 20, AF = 80, AF_2 = 0) %*% M,
+        c(FITC = 20, PE = 200, AF = 0, AF_2 = 80) %*% M
+    )
+    colnames(exprs) <- colnames(M)
+    ff <- flowCore::flowFrame(exprs)
+
+    res <- spectreasy::calc_residuals(ff, M, method = "AutoSpectral")
+
+    expect_true("AF Index" %in% colnames(res))
+    expect_true(all(res[["AF Index"]] %in% c(1L, 2L)))
+    expect_true(all(rowSums(res[, c("AF", "AF_2")] != 0) <= 1))
+})
+
+test_that("AutoSpectral SCC cleanup is opt-in and stores cleaned positive events", {
+    set.seed(101)
+    wf <- make_autospectral_test_workflow(n = 650)
+
+    regular <- spectreasy::build_reference_matrix(
+        input_folder = wf$scc_dir,
+        control_df = wf$control_df,
+        save_qc_plots = FALSE,
+        seed = 101,
+        subsample_n = 400
+    )
+    autospectral <- spectreasy::build_reference_matrix(
+        input_folder = wf$scc_dir,
+        control_df = wf$control_df,
+        autospectral_scc_cleanup = TRUE,
+        clean_scc_with_unstained = TRUE,
+        save_qc_plots = FALSE,
+        seed = 101,
+        subsample_n = 400
+    )
+
+    expect_null(attr(regular, "scc_positive_events"))
+    positive_events <- attr(autospectral, "scc_positive_events")
+    expect_true(is.list(positive_events))
+    expect_true(all(c("FITC", "PE") %in% names(positive_events)))
+    expect_true(all(vapply(positive_events[c("FITC", "PE")], nrow, integer(1)) > 0))
+
+    qc_summary <- attr(autospectral, "qc_summary")
+    expect_true(all(qc_summary$intensity_gate_type[qc_summary$fluorophore %in% c("FITC", "PE")] == "autospectral_external"))
+    expect_true(all(qc_summary$scc_background_method[qc_summary$fluorophore %in% c("FITC", "PE")] %in% c("scatter_knn", "external_median")))
+})
+
+test_that("unmix_controls learns variants only for AutoSpectral", {
+    set.seed(102)
+    wf <- make_autospectral_test_workflow(n = 650)
+    control_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
+
+    regular_dir <- tempfile("spectreasy_as_regular_")
+    regular <- spectreasy::unmix_controls(
+        scc_dir = wf$scc_dir,
+        control_file = control_csv,
+        output_dir = regular_dir,
+        unmixing_method = "OLS",
+        save_report = FALSE,
+        seed = 102,
+        subsample_n = 400
+    )
+    expect_null(regular$spectral_variant_library)
+    expect_false(file.exists(file.path(regular_dir, "scc_spectral_variants.rds")))
+
+    autospectral_dir <- tempfile("spectreasy_as_enabled_")
+    autospectral <- spectreasy::unmix_controls(
+        scc_dir = wf$scc_dir,
+        control_file = control_csv,
+        output_dir = autospectral_dir,
+        unmixing_method = "AutoSpectral",
+        spectral_variant_min_events = 20,
+        save_report = FALSE,
+        seed = 102,
+        subsample_n = 400
+    )
+    expect_s3_class(autospectral$spectral_variant_library, "spectreasy_spectral_variant_library")
+    expect_true(file.exists(autospectral$spectral_variant_library_file))
+    expect_equal(autospectral$static_unmixing_matrix_method, "AutoSpectral")
+    expect_equal(attr(autospectral$unmixed_list, "method"), "AutoSpectral")
+})
+
+test_that("AF refinement helper returns fixed-size refined k-means bank", {
+    set.seed(103)
+    M <- rbind(
+        FITC = c(1.00, 0.08, 0.02),
+        PE = c(0.08, 1.00, 0.02),
+        AF = c(0.65, 0.25, 1.00),
+        AF_2 = c(0.25, 0.65, 1.00)
+    )
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A")
+    make_events <- function(shape, n) {
+        amp <- stats::runif(n, 400, 1600)
+        noise <- matrix(stats::rnorm(n * length(shape), sd = 8), ncol = length(shape))
+        out <- noise + amp %o% shape
+        colnames(out) <- names(shape)
+        pmax(out, 1)
+    }
+    af_events <- rbind(
+        make_events(c("B1-A" = 0.95, "YG1-A" = 0.18, "R1-A" = 1.00), 500),
+        make_events(c("B1-A" = 0.18, "YG1-A" = 0.95, "R1-A" = 1.00), 500)
+    )
+
+    refined <- spectreasy:::.reference_refine_af_bank(
+        M = M,
+        af_events = af_events,
+        af_n_bands = 2,
+        af_max_cells = 1000,
+        af_min_cluster_events = 20,
+        af_min_cluster_proportion = 0.005,
+        seed = 103,
+        verbose = FALSE
+    )
+
+    expect_false(is.null(refined))
+    expect_equal(nrow(refined$signatures), 2)
+    expect_equal(rownames(refined$signatures), c("AF", "AF_2"))
+    expect_match(refined$selection$method, "refined_fixed")
+    expect_equal(refined$selection$requested_bands, 2)
+    expect_true(all(refined$signatures >= 0))
+    expect_true(all(refined$signatures <= 1))
+})
+
+test_that("unmix_controls accepts refine only for AutoSpectral", {
+    expect_error(
+        spectreasy::unmix_controls(
+            scc_dir = tempfile("missing_scc_"),
+            unmixing_method = "WLS",
+            refine = TRUE,
+            save_report = FALSE
+        ),
+        "unmixing_method = \"AutoSpectral\""
+    )
+})
+
+test_that("AutoSpectral refine rewrites AF bank metadata while preserving fixed band count", {
+    set.seed(104)
+    wf <- make_autospectral_test_workflow(n = 650)
+    control_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
+
+    testthat::local_mocked_bindings(
+        .reference_refine_af_bank = function(M, af_events, af_n_bands, ...) {
+            signatures <- matrix(0.2, nrow = af_n_bands, ncol = ncol(M))
+            signatures[cbind(seq_len(af_n_bands), ((seq_len(af_n_bands) - 1L) %% ncol(M)) + 1L)] <- 1
+            rownames(signatures) <- c("AF", if (af_n_bands > 1L) paste0("AF_", seq.int(2L, af_n_bands)) else NULL)
+            colnames(signatures) <- colnames(M)
+            list(
+                signatures = signatures,
+                selection = list(
+                    method = "kmeans_refined_fixed",
+                    n_bands = af_n_bands,
+                    requested_bands = af_n_bands,
+                    final_bands = af_n_bands
+                )
+            )
+        },
+        .env = asNamespace("spectreasy")
+    )
+
+    ctrl <- spectreasy::unmix_controls(
+        scc_dir = wf$scc_dir,
+        control_file = control_csv,
+        output_dir = tempfile("spectreasy_as_refine_"),
+        unmixing_method = "AutoSpectral",
+        refine = TRUE,
+        af_n_bands = 2,
+        spectral_variant_min_events = 20,
+        save_report = FALSE,
+        seed = 104,
+        subsample_n = 400
+    )
+
+    af_rows <- grepl("^AF($|_)", rownames(ctrl$M), ignore.case = TRUE)
+    af_info <- attr(ctrl$M, "af_bank_info")
+    expect_equal(sum(af_rows), 2)
+    expect_true(isTRUE(af_info$refine))
+    expect_equal(af_info$selection$method, "kmeans_refined_fixed")
+    expect_equal(af_info$selection$requested_bands, 2)
+    expect_true(isTRUE(ctrl$refine))
+})

@@ -22,6 +22,18 @@ unmix_controls(
   save_qc_plots = FALSE,
   save_report = TRUE,
   use_scatter_gating = TRUE,
+  clean_scc_with_unstained = TRUE,
+  scc_background_method = c("scatter_knn", "none"),
+  scc_background_k = 2L,
+  spectral_variant_som_nodes = 16L,
+  spectral_variant_top_k = 3L,
+  spectral_variant_cosine_threshold = 0.98,
+  spectral_variant_max_variants = 8L,
+  spectral_variant_min_events = 50L,
+  autospectral_n_candidates = 1000L,
+  autospectral_n_spectral = 200L,
+  autospectral_min_events = 10L,
+  refine = FALSE,
   ...
 )
 }
@@ -41,7 +53,10 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 
 \item{output_dir}{Output directory for SCC workflow artifacts.}
 
-\item{unmixing_method}{SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).}
+\item{unmixing_method}{SCC unmixing method (`"WLS"`, `"RWLS"`,
+`"OLS"`, `"NNLS"`, or `"AutoSpectral"`). `AutoSpectral` keeps the
+existing k-means AF bank controlled by `af_n_bands`, then uses OLS
+unmixing plus AutoSpectral-style SCC cleanup and spectral variants.}
 
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
 
@@ -72,7 +87,47 @@ automatically after controls are unmixed. Defaults to `TRUE`.}
 
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,
-use the legacy one-dimensional histogram gate.}
+use the legacy one-dimensional histogram gate. Ignored when
+`unmixing_method = "AutoSpectral"`; AutoSpectral uses its own
+post-FSC/SSC SCC spectral selector.}
+
+\item{clean_scc_with_unstained}{Logical; when `unmixing_method =
+"AutoSpectral"`, subtract matching unstained/negative background events
+before calculating SCC spectra.}
+
+\item{scc_background_method}{Background subtraction method for AutoSpectral
+SCC cleanup (`"scatter_knn"` or `"none"`).}
+
+\item{scc_background_k}{Number of nearest unstained/negative events averaged
+for scatter-matched SCC background subtraction.}
+
+\item{spectral_variant_som_nodes}{Number of nodes used per fluorophore when
+learning AutoSpectral spectral variants.}
+
+\item{spectral_variant_top_k}{Number of best variant candidates to test per
+positive fluorophore during AutoSpectral unmixing.}
+
+\item{spectral_variant_cosine_threshold}{Minimum cosine similarity to the
+base fluorophore spectrum required for a variant to be retained.}
+
+\item{spectral_variant_max_variants}{Maximum retained variants per
+fluorophore.}
+
+\item{spectral_variant_min_events}{Minimum cleaned positive SCC events
+required to learn variants for one fluorophore.}
+
+\item{autospectral_n_candidates}{Number of peak-bright SCC candidate events
+considered by the AutoSpectral-style selector.}
+
+\item{autospectral_n_spectral}{Number of least-background-like SCC events
+kept for spectrum calculation by the AutoSpectral-style selector.}
+
+\item{autospectral_min_events}{Minimum event count required by the
+AutoSpectral-style SCC selector.}
+
+\item{refine}{Logical; when `unmixing_method = "AutoSpectral"`, refine the
+fixed-size k-means AF bank with native AutoSpectral-style unstained residual
+modulation. `TRUE` is rejected for all other unmixing methods.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }

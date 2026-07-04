@@ -88,7 +88,6 @@ alongside the PDF report.}
 
 \item{qc_metrics_dir}{Optional directory where plot-ready QC metric
 CSVs are written alongside the PDF report.}
-
 }
 \value{
 Invisibly returns a list with `output_file`, `qc_plot_dir`, and

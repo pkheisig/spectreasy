@@ -1029,13 +1029,17 @@ test_that("mapped SCC AF files are pooled into one AF bank size request", {
                  min_cluster_events, min_cluster_proportion) {
             captured$n_bands <- n_bands
             captured$event_count <- nrow(af_events)
-            signatures <- matrix(c(1, 0.1, 0.1, 1, 0.5, 0.5), nrow = 3, byrow = TRUE)
-            rownames(signatures) <- c("AF", "AF_2", "AF_3")
+            n_bands <- max(1L, as.integer(n_bands))
+            signatures <- matrix(0.1, nrow = n_bands, ncol = length(detector_names))
+            for (i in seq_len(n_bands)) {
+                signatures[i, ((i - 1L) %% length(detector_names)) + 1L] <- 1
+            }
+            rownames(signatures) <- c("AF", if (n_bands > 1L) paste0("AF_", seq.int(2L, n_bands)) else NULL)
             colnames(signatures) <- detector_names
             list(
-                raw_median = c("B1-A" = 2, "YG1-A" = 2),
+                raw_median = stats::setNames(rep(2, length(detector_names)), detector_names),
                 signatures = signatures,
-                selection = list(method = "kmeans_fixed", n_bands = 3L)
+                selection = list(method = "kmeans_fixed", n_bands = n_bands)
             )
         },
         .env = asNamespace("spectreasy")

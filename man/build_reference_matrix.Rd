@@ -28,7 +28,15 @@ build_reference_matrix(
   min_cluster_proportion = 0.03,
   gate_contour_beads = 0.95,
   gate_contour_cells = 0.9,
-  subsample_n = 5000
+  subsample_n = 5000,
+  autospectral_scc_cleanup = FALSE,
+  clean_scc_with_unstained = FALSE,
+  scc_background_method = c("scatter_knn", "none"),
+  scc_background_k = 2L,
+  autospectral_n_candidates = 1000L,
+  autospectral_n_spectral = 200L,
+  autospectral_min_events = 10L,
+  refine = FALSE
 )
 }
 \arguments{
@@ -94,6 +102,34 @@ For example, `0.08` excludes events below 8\% of the per-file high FSC scale.}
 \item{gate_contour_cells}{Contour probability for cell gating ellipse/hull.}
 
 \item{subsample_n}{Maximum number of events used for GMM fitting per file.}
+
+\item{autospectral_scc_cleanup}{Logical; if `TRUE`, use the
+AutoSpectral-style SCC spectral cleanup after the standard FSC/SSC gate.
+This is intended to be enabled by `unmix_controls(unmixing_method =
+"AutoSpectral")`.}
+
+\item{clean_scc_with_unstained}{Logical; when `autospectral_scc_cleanup =
+TRUE`, subtract matching unstained/negative background events before
+calculating SCC spectra.}
+
+\item{scc_background_method}{Background subtraction method for AutoSpectral
+SCC cleanup (`"scatter_knn"` or `"none"`).}
+
+\item{scc_background_k}{Number of nearest unstained/negative events averaged
+for scatter-matched SCC background subtraction.}
+
+\item{autospectral_n_candidates}{Number of peak-bright SCC candidate events
+considered by the AutoSpectral-style selector.}
+
+\item{autospectral_n_spectral}{Number of least-background-like SCC events
+kept for spectrum calculation by the AutoSpectral-style selector.}
+
+\item{autospectral_min_events}{Minimum event count required by the
+AutoSpectral-style SCC selector.}
+
+\item{refine}{Logical; if `TRUE`, refine the fixed-size k-means AF bank with
+native AutoSpectral-style unstained residual modulation. This is only
+supported with `autospectral_scc_cleanup = TRUE`.}
 }
 \value{
 Numeric matrix with rows = fluorophores and columns = detectors
