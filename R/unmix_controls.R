@@ -306,9 +306,12 @@
 #'   when creating controls (`"by_channel"`, `"empty"`, `"filename"`).
 #' @param output_dir Output directory for SCC workflow artifacts.
 #' @param unmixing_method SCC unmixing method (`"WLS"`, `"RWLS"`,
-#'   `"OLS"`, `"NNLS"`, or `"AutoSpectral"`). `AutoSpectral` keeps the
-#'   existing k-means AF bank controlled by `af_n_bands`, then uses OLS
-#'   unmixing plus AutoSpectral-style SCC cleanup and spectral variants.
+#'   `"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
+#'   `AutoSpectral` keeps the existing k-means AF bank controlled by
+#'   `af_n_bands`, then uses OLS unmixing plus AutoSpectral-style SCC cleanup
+#'   and spectral variants. `Spectreasy` uses the same cleanup and variant
+#'   machinery, then blends the AutoSpectral-style marker fit with a marker-only
+#'   OLS anchor using decoder-projected AF impact weights.
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
 #' @param af_n_bands Number of AF basis signatures to extract from pooled
@@ -330,11 +333,11 @@
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
 #'   use the legacy one-dimensional histogram gate. Ignored when
-#'   `unmixing_method = "AutoSpectral"`; AutoSpectral uses its own
+#'   `unmixing_method = "AutoSpectral"` or `"Spectreasy"`; these methods use their own
 #'   post-FSC/SSC SCC spectral selector.
 #' @param clean_scc_with_unstained Logical; when `unmixing_method =
-#'   "AutoSpectral"`, subtract matching unstained/negative background events
-#'   before calculating SCC spectra.
+#'   "AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative
+#'   background events before calculating SCC spectra.
 #' @param scc_background_method Background subtraction method for AutoSpectral
 #'   SCC cleanup (`"scatter_knn"` or `"none"`).
 #' @param scc_background_k Number of nearest unstained/negative events averaged
@@ -349,6 +352,10 @@
 #'   fluorophore.
 #' @param spectral_variant_min_events Minimum cleaned positive SCC events
 #'   required to learn variants for one fluorophore.
+#' @param spectreasy_weight_quantile Numeric in `[0, 1]`; only accepted when
+#'   `unmixing_method = "Spectreasy"`. Controls the quantile of
+#'   decoder-projected AF impacts used as the soft-saturation scale for
+#'   marker-specific AutoSpectral mixing. The default is `0.9`.
 #' @param autospectral_n_candidates Number of peak-bright SCC candidate events
 #'   considered by the AutoSpectral-style selector.
 #' @param autospectral_n_spectral Number of least-background-like SCC events
@@ -400,18 +407,27 @@ unmix_controls <- function(
     spectral_variant_cosine_threshold = 0.98,
     spectral_variant_max_variants = 8L,
     spectral_variant_min_events = 50L,
+    spectreasy_weight_quantile = 0.9,
     autospectral_n_candidates = 1000L,
     autospectral_n_spectral = 200L,
     autospectral_min_events = 10L,
     refine = FALSE,
     ...
 ) {
+    spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
     unmixing_method <- .normalize_unmix_method(unmixing_method)
-    use_autospectral <- identical(unmixing_method, "AutoSpectral")
+    use_autospectral <- .is_autospectral_style_method(unmixing_method)
+    use_refine <- identical(unmixing_method, "AutoSpectral")
     refine <- .validate_reference_refine_arg(refine)
-    if (isTRUE(refine) && !use_autospectral) {
+    if (isTRUE(refine) && !use_refine) {
         stop("refine = TRUE is only accepted when unmixing_method = \"AutoSpectral\".", call. = FALSE)
+    }
+    if (!identical(unmixing_method, "Spectreasy") && !spectreasy_weight_quantile_missing) {
+        stop("spectreasy_weight_quantile is only accepted when unmixing_method = \"Spectreasy\".", call. = FALSE)
+    }
+    if (identical(unmixing_method, "Spectreasy")) {
+        spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
     }
     scc_background_args <- .validate_scc_background_args(
         clean_scc_with_unstained = use_autospectral && isTRUE(clean_scc_with_unstained),
@@ -544,7 +560,7 @@ unmix_controls <- function(
         NULL
     }
 
-    unmixed_list <- unmix_samples(
+    unmix_sample_args <- list(
         sample_dir = scc_dir,
         M = M,
         unmixing_method = unmixing_method,
@@ -556,6 +572,10 @@ unmix_controls <- function(
         write_fcs = TRUE,
         save_report = FALSE
     )
+    if (identical(unmixing_method, "Spectreasy")) {
+        unmix_sample_args$spectreasy_weight_quantile <- spectreasy_weight_quantile
+    }
+    unmixed_list <- do.call(unmix_samples, unmix_sample_args)
 
     static_info <- .derive_unmix_static_matrix(M, fcs_files = meta_info$fcs_files, unmixing_method = unmixing_method)
     W <- static_info$W

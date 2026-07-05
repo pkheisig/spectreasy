@@ -20,6 +20,7 @@ unmix_samples(
   spectral_variant_min_abundance = 1,
   spectral_variant_positive_fraction = 0.02,
   spectral_variant_min_improvement = 0.01,
+  spectreasy_weight_quantile = 0.9,
   estimate_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
@@ -53,9 +54,11 @@ omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
 falls back to the built-in scalar noise floor.}
 
 \item{unmixing_method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`,
-`"NNLS"`, or `"AutoSpectral"`). `AutoSpectral` uses per-event AF
-assignment with marker + selected-AF OLS, plus SCC-derived
-spectral-variant optimization when available.}
+`"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses
+per-event AF assignment with marker + selected-AF OLS, plus SCC-derived
+spectral-variant optimization when available. `Spectreasy` uses the same
+AutoSpectral-style fit, then blends marker abundances with a marker-only
+OLS anchor using decoder-projected AF impact weights.}
 
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
 iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
@@ -65,7 +68,8 @@ historical behavior.}
 multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
 
 \item{spectral_variant_library}{Optional in-memory AutoSpectral
-spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`.}
+spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`
+or `"Spectreasy"`.}
 
 \item{spectral_variant_library_file}{Optional RDS path to an AutoSpectral
 spectral-variant library. When omitted, `unmix_samples()` looks for
@@ -84,6 +88,11 @@ AutoSpectral variant testing.}
 \item{spectral_variant_min_improvement}{Minimum fractional residual
 improvement required before accepting a cell-specific AutoSpectral
 variant refit.}
+
+\item{spectreasy_weight_quantile}{Numeric in `[0, 1]`; only accepted when
+`unmixing_method = "Spectreasy"`. Controls the quantile of
+decoder-projected AF impacts used as the soft-saturation scale for
+marker-specific AutoSpectral mixing. The default is `0.9`.}
 
 \item{estimate_af}{Logical; if `TRUE`, estimate AF signatures directly from
 stained sample event-wise WLS residuals, select the best candidate model by

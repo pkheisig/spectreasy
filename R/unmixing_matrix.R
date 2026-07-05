@@ -5,8 +5,9 @@
 #' To unmix data manually: Unmixed_Data = Raw_Data %*% t(W)
 #' 
 #' @param M Reference matrix (Markers x Detectors)
-#' @param method Unmixing method ("OLS", "WLS", "RWLS", "NNLS", or
-#'   "AutoSpectral"). Static `"AutoSpectral"` export uses the OLS solver proxy.
+#' @param method Unmixing method ("OLS", "WLS", "RWLS", "NNLS",
+#'   "AutoSpectral", or "Spectreasy"). Static `"AutoSpectral"` and
+#'   `"Spectreasy"` exports use the OLS solver proxy.
 #' @param background_noise Scalar or detector-length WLS noise floor used for
 #'   the static WLS approximation when `M` does not carry detector-noise metadata;
 #'   the built-in fallback is 125 raw detector units.
@@ -73,7 +74,7 @@ derive_unmixing_matrix <- function(M,
         )
 
     } else {
-        stop("method must be one of: 'AutoSpectral', 'OLS', 'WLS', 'RWLS', 'NNLS'")
+        stop("method must be one of: 'AutoSpectral', 'Spectreasy', 'OLS', 'WLS', 'RWLS', 'NNLS'")
     }
 
     rownames(W) <- rownames(M)

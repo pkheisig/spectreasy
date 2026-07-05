@@ -30,6 +30,7 @@ unmix_controls(
   spectral_variant_cosine_threshold = 0.98,
   spectral_variant_max_variants = 8L,
   spectral_variant_min_events = 50L,
+  spectreasy_weight_quantile = 0.9,
   autospectral_n_candidates = 1000L,
   autospectral_n_spectral = 200L,
   autospectral_min_events = 10L,
@@ -54,9 +55,12 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 \item{output_dir}{Output directory for SCC workflow artifacts.}
 
 \item{unmixing_method}{SCC unmixing method (`"WLS"`, `"RWLS"`,
-`"OLS"`, `"NNLS"`, or `"AutoSpectral"`). `AutoSpectral` keeps the
-existing k-means AF bank controlled by `af_n_bands`, then uses OLS
-unmixing plus AutoSpectral-style SCC cleanup and spectral variants.}
+`"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
+`AutoSpectral` keeps the existing k-means AF bank controlled by
+`af_n_bands`, then uses OLS unmixing plus AutoSpectral-style SCC cleanup
+and spectral variants. `Spectreasy` uses the same cleanup and variant
+machinery, then blends the AutoSpectral-style marker fit with a marker-only
+OLS anchor using decoder-projected AF impact weights.}
 
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
 
@@ -88,12 +92,12 @@ automatically after controls are unmixed. Defaults to `TRUE`.}
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,
 use the legacy one-dimensional histogram gate. Ignored when
-`unmixing_method = "AutoSpectral"`; AutoSpectral uses its own
+`unmixing_method = "AutoSpectral"` or `"Spectreasy"`; these methods use their own
 post-FSC/SSC SCC spectral selector.}
 
 \item{clean_scc_with_unstained}{Logical; when `unmixing_method =
-"AutoSpectral"`, subtract matching unstained/negative background events
-before calculating SCC spectra.}
+"AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative
+background events before calculating SCC spectra.}
 
 \item{scc_background_method}{Background subtraction method for AutoSpectral
 SCC cleanup (`"scatter_knn"` or `"none"`).}
@@ -115,6 +119,11 @@ fluorophore.}
 
 \item{spectral_variant_min_events}{Minimum cleaned positive SCC events
 required to learn variants for one fluorophore.}
+
+\item{spectreasy_weight_quantile}{Numeric in `[0, 1]`; only accepted when
+`unmixing_method = "Spectreasy"`. Controls the quantile of
+decoder-projected AF impacts used as the soft-saturation scale for
+marker-specific AutoSpectral mixing. The default is `0.9`.}
 
 \item{autospectral_n_candidates}{Number of peak-bright SCC candidate events
 considered by the AutoSpectral-style selector.}

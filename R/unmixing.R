@@ -575,16 +575,19 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
 #'   falls back to the built-in scalar noise floor.
 #' @param unmixing_method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`,
-#'   `"NNLS"`, or `"AutoSpectral"`). `AutoSpectral` uses per-event AF
-#'   assignment with marker + selected-AF OLS, plus SCC-derived
-#'   spectral-variant optimization when available.
+#'   `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses
+#'   per-event AF assignment with marker + selected-AF OLS, plus SCC-derived
+#'   spectral-variant optimization when available. `Spectreasy` uses the same
+#'   AutoSpectral-style fit, then blends marker abundances with a marker-only
+#'   OLS anchor using decoder-projected AF impact weights.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
 #' @param n_threads Positive integer; number of threads to use for event-wise
 #'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
 #' @param spectral_variant_library Optional in-memory AutoSpectral
-#'   spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`.
+#'   spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`
+#'   or `"Spectreasy"`.
 #' @param spectral_variant_library_file Optional RDS path to an AutoSpectral
 #'   spectral-variant library. When omitted, `unmix_samples()` looks for
 #'   `scc_spectral_variants.rds` beside `unmixing_matrix_file`.
@@ -598,6 +601,10 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param spectral_variant_min_improvement Minimum fractional residual
 #'   improvement required before accepting a cell-specific AutoSpectral
 #'   variant refit.
+#' @param spectreasy_weight_quantile Numeric in `[0, 1]`; only accepted when
+#'   `unmixing_method = "Spectreasy"`. Controls the quantile of
+#'   decoder-projected AF impacts used as the soft-saturation scale for
+#'   marker-specific AutoSpectral mixing. The default is `0.9`.
 #' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
 #'   stained sample event-wise WLS residuals, select the best candidate model by
 #'   held-out WLS residual score, and append the selected AF rows to the
@@ -679,6 +686,7 @@ unmix_samples <- function(sample_dir = "samples",
                           spectral_variant_min_abundance = 1,
                           spectral_variant_positive_fraction = 0.02,
                           spectral_variant_min_improvement = 0.01,
+                          spectreasy_weight_quantile = 0.9,
                           estimate_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
@@ -689,6 +697,7 @@ unmix_samples <- function(sample_dir = "samples",
                           seed = NULL,
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
                           verbose = TRUE) {
+    spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
     scc_dir <- NULL
@@ -730,6 +739,12 @@ unmix_samples <- function(sample_dir = "samples",
     method <- .normalize_unmix_method(unmixing_method)
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(n_threads)
+    if (!identical(method, "Spectreasy") && !spectreasy_weight_quantile_missing) {
+        stop("spectreasy_weight_quantile is only accepted when unmixing_method = \"Spectreasy\".", call. = FALSE)
+    }
+    if (identical(method, "Spectreasy")) {
+        spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
+    }
     estimate_af <- isTRUE(estimate_af)
 
     sample_entries <- .prepare_unmix_samples_input(sample_dir)
@@ -750,7 +765,7 @@ unmix_samples <- function(sample_dir = "samples",
         )
     }
 
-    spectral_variant_library_resolved <- if (identical(method, "AutoSpectral")) {
+    spectral_variant_library_resolved <- if (.is_autospectral_style_method(method)) {
         .resolve_spectral_variant_library_for_unmixing(
             M = M,
             spectral_variant_library = spectral_variant_library,
@@ -784,9 +799,9 @@ unmix_samples <- function(sample_dir = "samples",
             flowCore::read.FCS(entry$file_path, transformation = FALSE, truncate_max_range = FALSE)
         }
 
-        res_obj <- calc_residuals(
-            ff,
-            M,
+        calc_args <- list(
+            flow_frame = ff,
+            M = M,
             method = method,
             file_name = sn,
             rwls_max_iter = rwls_max_iter,
@@ -798,13 +813,17 @@ unmix_samples <- function(sample_dir = "samples",
             spectral_variant_min_improvement = spectral_variant_min_improvement,
             return_residuals = TRUE
         )
+        if (identical(method, "Spectreasy")) {
+            calc_args$spectreasy_weight_quantile <- spectreasy_weight_quantile
+        }
+        res_obj <- do.call(calc_residuals, calc_args)
         
         if (isTRUE(write_fcs)) {
             marker_source <- rownames(M)
             write_data <- .aggregate_af_columns_for_output(res_obj$data, marker_source = marker_source)
             marker_source <- marker_source[!grepl("^AF_", marker_source, ignore.case = TRUE)]
             markers_to_keep <- intersect(colnames(write_data), marker_source)
-            autospectral_cols <- if (identical(method, "AutoSpectral") && "AF Index" %in% colnames(write_data)) "AF Index" else character()
+            autospectral_cols <- if (.is_autospectral_style_method(method) && "AF Index" %in% colnames(write_data)) "AF Index" else character()
             passthrough_cols <- .get_passthrough_parameter_names(colnames(write_data))
             cols_to_write <- unique(c(markers_to_keep, autospectral_cols, passthrough_cols))
             unmixed_exprs <- as.matrix(write_data[, cols_to_write, drop = FALSE])

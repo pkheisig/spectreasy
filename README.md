@@ -219,6 +219,8 @@ By default, `spectreasy` uses `unmixing_method = "WLS"` (weighted least squares)
 
 When you choose `unmixing_method = "RWLS"`, `spectreasy` uses WLS under the hood and, in addition, adjusts the weights after calculating the residuals after unmixing. It does that a number of times specified by the `rwls_max_iter = X` parameter where X is an integer >= 1 (default is 1).
 
+When you choose `unmixing_method = "Spectreasy"`, `spectreasy` uses the AutoSpectral-style SCC cleanup, spectral variants, and per-event AF matching, then mixes the AutoSpectral-style marker fit with a marker-only OLS anchor. The blend weight for each marker is calculated from how strongly the AF bank projects through the marker decoder, using a soft-saturation scale controlled by `spectreasy_weight_quantile` (default `0.9`). `Spectreasy` still uses the standard k-means AF bank controlled by `af_n_bands`.
+
 The regular `OLS` and `NNLS` methods remain available as separate methods. They are established algorithms for unmixing and one can find numerous sources on the web for further reading, if desired. 
 
 ## Per-cell Autofluorescence (AF) Extraction

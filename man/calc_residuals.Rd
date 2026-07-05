@@ -19,7 +19,8 @@ calc_residuals(
   spectral_variant_top_k = 3L,
   spectral_variant_min_abundance = 1,
   spectral_variant_positive_fraction = 0.02,
-  spectral_variant_min_improvement = 0.01
+  spectral_variant_min_improvement = 0.01,
+  spectreasy_weight_quantile = 0.9
 )
 }
 \arguments{
@@ -30,10 +31,12 @@ calc_residuals(
 \item{file_name}{Optional file name to add to output}
 
 \item{method}{Unmixing method: `"WLS"` (default), `"RWLS"`, `"OLS"`,
-`"NNLS"`, or `"AutoSpectral"`. `AutoSpectral` assigns the best AF
+`"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`. `AutoSpectral` assigns the best AF
 spectrum per event with the AutoSpectral fluorophore-leakage score, refits
 marker + selected-AF OLS, and applies spectral-variant optimization when a
-variant library is supplied.}
+variant library is supplied. `Spectreasy` uses the same AutoSpectral-style
+fit, then blends marker abundances with a marker-only OLS anchor using
+decoder-projected AF-impact weights derived from the reference matrix.}
 
 \item{return_residuals}{Logical. If TRUE, returns a list containing the unmixed
 data and the detector residual matrix.}
@@ -56,7 +59,7 @@ multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
 
 \item{spectral_variant_library}{Optional per-fluorophore spectral-variant
 library learned from single-color controls. Used only with
-`method = "AutoSpectral"`.}
+`method = "AutoSpectral"` or `"Spectreasy"`.}
 
 \item{spectral_variant_top_k}{Number of best variant candidates to test per
 positive fluorophore.}
@@ -69,6 +72,11 @@ as a fraction of the event's strongest fluorophore abundance.}
 
 \item{spectral_variant_min_improvement}{Minimum fractional residual
 improvement required before accepting a cell-specific variant refit.}
+
+\item{spectreasy_weight_quantile}{Numeric in `[0, 1]`; only accepted when
+`method = "Spectreasy"`. Controls the quantile of decoder-projected AF
+impacts used as the soft-saturation scale for marker-specific AutoSpectral
+mixing. The default, `0.9`, uses the 90th percentile of marker AF impacts.}
 }
 \value{
 Data frame with unmixed abundances and retained acquisition parameters
