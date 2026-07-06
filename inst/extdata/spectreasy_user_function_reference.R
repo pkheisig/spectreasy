@@ -43,7 +43,21 @@
         unmix_threads = 1L,
         save_qc_plots = FALSE,
         save_report = TRUE,
-        use_scatter_gating = TRUE
+        use_scatter_gating = TRUE,
+        clean_scc_with_unstained = TRUE,
+        scc_background_method = c("scatter_knn", "none"),
+        scc_background_k = 2L,
+        spectral_variant_som_nodes = 16L,
+        spectral_variant_top_k = 3L,
+        spectral_variant_cosine_threshold = 0.98,
+        spectral_variant_max_variants = 8L,
+        spectral_variant_min_events = 50L,
+        # Spectreasy only:
+        # spectreasy_weight_quantile = 0.9,
+        autospectral_n_candidates = 1000L,
+        autospectral_n_spectral = 200L,
+        autospectral_min_events = 10L,
+        refine = FALSE
         # Additional build_reference_matrix() arguments can be passed here.
     )
 
@@ -81,6 +95,14 @@
         unmixing_method = "WLS",
         rwls_max_iter = 1L,
         n_threads = 1L,
+        spectral_variant_library = NULL,
+        spectral_variant_library_file = NULL,
+        spectral_variant_top_k = 3L,
+        spectral_variant_min_abundance = 1,
+        spectral_variant_positive_fraction = 0.02,
+        spectral_variant_min_improvement = 0.01,
+        # Spectreasy only:
+        # spectreasy_weight_quantile = 0.9,
         estimate_af = FALSE,
         output_dir = file.path(
             "spectreasy_outputs",
@@ -95,6 +117,33 @@
         seed = NULL,
         return_type = c("list", "flowSet", "SingleCellExperiment"),
         verbose = TRUE
+    )
+
+    # Spectreasy uses the AutoSpectral-style AF-band assignment and spectral
+    # variants, then blends the marker abundances with a marker-only OLS anchor.
+    # Lower spectreasy_weight_quantile values increase the marker blend weights;
+    # higher values make the blend more conservative. This argument is accepted
+    # only when unmixing_method = "Spectreasy".
+    ctrl_spectreasy <- unmix_controls(
+        scc_dir = "scc",
+        control_file = "fcs_mapping.csv",
+        output_dir = "spectreasy_outputs/unmix_controls_spectreasy",
+        unmixing_method = "Spectreasy",
+        af_n_bands = 10,
+        spectreasy_weight_quantile = 0.9
+    )
+
+    unmixed_spectreasy <- unmix_samples(
+        sample_dir = "samples",
+        M = ctrl_spectreasy$M,
+        unmixing_method = "Spectreasy",
+        spectral_variant_library = ctrl_spectreasy$spectral_variant_library,
+        output_dir = file.path(
+            "spectreasy_outputs",
+            "unmix_samples_spectreasy",
+            "unmixed_fcs"
+        ),
+        spectreasy_weight_quantile = 0.9
     )
 
     qc_samples_report <- qc_samples(
@@ -205,6 +254,14 @@
         default_sample_type = "beads",
         cytometer = "auto",
         use_scatter_gating = TRUE,
+        autospectral_scc_cleanup = FALSE,
+        clean_scc_with_unstained = FALSE,
+        scc_background_method = c("scatter_knn", "none"),
+        scc_background_k = 2L,
+        autospectral_n_candidates = 1000L,
+        autospectral_n_spectral = 200L,
+        autospectral_min_events = 10L,
+        refine = FALSE,
         histogram_pct_beads = 0.98,
         histogram_direction_beads = "right",
         histogram_pct_cells = 0.35,
@@ -229,7 +286,14 @@
         wls_signal_scale = 1,
         wls_max_weight_ratio = 1600,
         rwls_max_iter = 1L,
-        n_threads = 1L
+        n_threads = 1L,
+        spectral_variant_library = NULL,
+        spectral_variant_top_k = 3L,
+        spectral_variant_min_abundance = 1,
+        spectral_variant_positive_fraction = 0.02,
+        spectral_variant_min_improvement = 0.01
+        # Spectreasy only:
+        # , spectreasy_weight_quantile = 0.9
     )
 
     W <- derive_unmixing_matrix(
