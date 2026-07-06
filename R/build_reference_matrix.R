@@ -3164,8 +3164,8 @@
 #' @param control_df Optional control mapping as a data.frame or CSV path.
 #'   Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.
 #' @param af_n_bands Number of AF basis signatures to extract from pooled
-#'   unstained/AF control events. The default, `10`, is a conservative fixed
-#'   AF bank size.
+#'   unstained/AF control events. The default, `100`, builds a broad fixed
+#'   AF bank for Spectreasy unmixing.
 #' @param af_max_cells Maximum number of scatter-gated AF events used when
 #'   deriving AF basis signatures.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
@@ -3219,7 +3219,7 @@
 #'
 #' @return Numeric matrix with rows = fluorophores and columns = detectors
 #'   (normalized spectra). The matrix carries SCC-derived detector noise floors
-#'   in `attr(M, "detector_noise")` for default WLS unmixing.
+#'   in `attr(M, "detector_noise")` for WLS/RWLS unmixing.
 #' @export
 #' @examples
 #' if (interactive()) {
@@ -3241,7 +3241,7 @@ build_reference_matrix <- function(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  af_n_bands = 10,
+  af_n_bands = 100,
   af_max_cells = 50000,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,

@@ -215,17 +215,17 @@ The sections below are for understanding, tuning, or reusing pieces of the workf
 
 ## Unmixing in spectreasy
 
-By default, `spectreasy` uses `unmixing_method = "WLS"` (weighted least squares) for unmixing. During unmixing, `spectreasy` matches the optimal AF signature from the unstained control file to each cell in the sample file. Compared to regular `OLS` (ordinary least squares), `WLS` meets the assumption that detector-specific background noise will increase with an event's signal intensity (instead of staying constant). The detector noise floor is estimated from the low-signal tail of the SCC files and written to `scc_detector_noise.csv`; if no estimate is available, `spectreasy` falls back to a scalar floor of 125. Overall, this method aims to decrease the residual error between the unmixed (calculated) event and its theoretical raw signal which we can calculate by applying the reference matrix onto that unmixed event.
+By default, `spectreasy` uses `unmixing_method = "Spectreasy"` for unmixing. This uses AutoSpectral-style SCC cleanup, spectral variants, and per-event AF matching, then blends the AutoSpectral-style marker fit with a marker-only OLS anchor. WLS and RWLS remain available as explicit methods when you want event-wise detector-error weighting.
 
 When you choose `unmixing_method = "RWLS"`, `spectreasy` uses WLS under the hood and, in addition, adjusts the weights after calculating the residuals after unmixing. It does that a number of times specified by the `rwls_max_iter = X` parameter where X is an integer >= 1 (default is 1).
 
-When you choose `unmixing_method = "Spectreasy"`, `spectreasy` uses the AutoSpectral-style SCC cleanup, spectral variants, and per-event AF matching, then mixes the AutoSpectral-style marker fit with a marker-only OLS anchor. The blend weight for each marker is calculated from how strongly the AF bank projects through the marker decoder, using a soft-saturation scale controlled by `spectreasy_weight_quantile` (default `0.9`). `Spectreasy` still uses the standard k-means AF bank controlled by `af_n_bands`.
+The Spectreasy blend weight for each marker is calculated from how strongly the AF bank projects through the marker decoder, using a soft-saturation scale controlled by `spectreasy_weight_quantile` (default `0.9`). `Spectreasy` uses the standard k-means AF bank controlled by `af_n_bands`.
 
 The regular `OLS` and `NNLS` methods remain available as separate methods. They are established algorithms for unmixing and one can find numerous sources on the web for further reading, if desired. 
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `unmix_controls()` uses `af_n_bands = 10` to build a conservative AF bank from pooled unstained/AF control events. With one AF band, the AF row is the median normalized AF shape; with multiple AF bands, k-means-derived AF rows represent common AF shapes seen in the unstained cells. During unmixing, each event chooses one AF profile before the final fit.
+By default, `unmix_controls()` uses `af_n_bands = 100` to build a broad AF bank from pooled unstained/AF control events. With one AF band, the AF row is the median normalized AF shape; with multiple AF bands, k-means-derived AF rows represent common AF shapes seen in the unstained cells. During unmixing, each event chooses one AF profile before the final fit.
 
 Most users should leave the AF settings at their defaults. To use multiple unstained sources, put each unstained cell `.fcs` file in `scc/`. The automapper will identify them as separate AF controls and use one AF row per file in `fcs_mapping.csv`. The events from those files are pooled before AF extraction; `af_n_bands` controls how many AF basis spectra are learned from the pooled events.
 
@@ -235,7 +235,7 @@ ctrl_multi_af <- unmix_controls(
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
   output_dir = "spectreasy_outputs/unmix_controls_multi_af",
-  af_n_bands = 10,
+  af_n_bands = 100,
   seed = 1
 )
 ```

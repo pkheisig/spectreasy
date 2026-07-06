@@ -11,7 +11,7 @@ unmix_samples(
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
   detector_noise_file = NULL,
-  unmixing_method = "WLS",
+  unmixing_method = "Spectreasy",
   rwls_max_iter = 1L,
   n_threads = 1L,
   spectral_variant_library = NULL,

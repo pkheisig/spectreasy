@@ -91,8 +91,8 @@ af_profile_dir <- function(create = TRUE) {
 #' Extract an AF profile from one unstained FCS file
 #'
 #' @param fcs_file Path to an unstained/autofluorescence `.fcs` file.
-#' @param af_n_bands Number of AF bands to extract. The default, `10`, is a
-#'   conservative fixed AF bank size.
+#' @param af_n_bands Number of AF bands to extract. The default, `100`, builds
+#'   a broad fixed AF bank for Spectreasy unmixing.
 #' @param af_max_cells Maximum number of scatter-gated AF events used.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
 #'   k-means AF cluster.
@@ -105,7 +105,7 @@ af_profile_dir <- function(create = TRUE) {
 #' @return A `spectreasy_af_profile` object containing `$profile` and `$plot`.
 #' @export
 extract_af_profile <- function(fcs_file,
-                               af_n_bands = 10,
+                               af_n_bands = 100,
                                af_max_cells = 50000,
                                af_min_cluster_events = 20,
                                af_min_cluster_proportion = 0.005,

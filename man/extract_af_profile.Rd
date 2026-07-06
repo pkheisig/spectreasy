@@ -6,7 +6,7 @@
 \usage{
 extract_af_profile(
   fcs_file,
-  af_n_bands = 10,
+  af_n_bands = 100,
   af_max_cells = 50000,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
@@ -18,8 +18,8 @@ extract_af_profile(
 \arguments{
 \item{fcs_file}{Path to an unstained/autofluorescence `.fcs` file.}
 
-\item{af_n_bands}{Number of AF bands to extract. The default, `10`, is a
-conservative fixed AF bank size.}
+\item{af_n_bands}{Number of AF bands to extract. The default, `100`, builds
+a broad fixed AF bank for Spectreasy unmixing.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used.}
 

@@ -315,8 +315,8 @@
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
 #' @param af_n_bands Number of AF basis signatures to extract from pooled
-#'   unstained/AF control events. The default, `10`, is a conservative fixed
-#'   AF bank size.
+#'   unstained/AF control events. The default, `100`, builds a broad fixed
+#'   AF bank for Spectreasy unmixing.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
 #'   k-means AF cluster. Used together with `af_min_cluster_proportion`.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
@@ -388,10 +388,10 @@ unmix_controls <- function(
     cytometer = "auto",
     auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
     output_dir = "spectreasy_outputs/unmix_controls",
-    unmixing_method = "WLS",
+    unmixing_method = "Spectreasy",
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
-    af_n_bands = 10,
+    af_n_bands = 100,
     af_min_cluster_events = 20,
     af_min_cluster_proportion = 0.005,
     rwls_max_iter = 1L,

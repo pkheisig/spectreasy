@@ -260,7 +260,8 @@ test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_controls)))
     expect_true("estimate_af" %in% names(formals(spectreasy::unmix_samples)))
     expect_false(formals(spectreasy::unmix_samples)$estimate_af)
-    expect_equal(formals(spectreasy::unmix_samples)$unmixing_method, "WLS")
+    expect_equal(formals(spectreasy::calc_residuals)$method, "Spectreasy")
+    expect_equal(formals(spectreasy::unmix_samples)$unmixing_method, "Spectreasy")
 })
 
 test_that("calc_residuals multi-AF RWLS honors rwls_max_iter", {
@@ -908,9 +909,9 @@ test_that("single-band AF uses robust median normalized shape", {
 })
 
 test_that("fixed AF bank size is the default for AF extraction APIs", {
-    expect_equal(formals(spectreasy::build_reference_matrix)$af_n_bands, 10)
-    expect_equal(formals(spectreasy::unmix_controls)$af_n_bands, 10)
-    expect_equal(formals(spectreasy::extract_af_profile)$af_n_bands, 10)
+    expect_equal(formals(spectreasy::build_reference_matrix)$af_n_bands, 100)
+    expect_equal(formals(spectreasy::unmix_controls)$af_n_bands, 100)
+    expect_equal(formals(spectreasy::extract_af_profile)$af_n_bands, 100)
     expect_false("af_n_bands" %in% names(formals(spectreasy::unmix_samples)))
 })
 

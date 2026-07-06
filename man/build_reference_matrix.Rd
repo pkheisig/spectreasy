@@ -9,7 +9,7 @@ build_reference_matrix(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  af_n_bands = 10,
+  af_n_bands = 100,
   af_max_cells = 50000,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
@@ -51,8 +51,8 @@ When `FALSE` (default), the function returns the matrix without writing QC files
 Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.}
 
 \item{af_n_bands}{Number of AF basis signatures to extract from pooled
-unstained/AF control events. The default, `10`, is a conservative fixed
-AF bank size.}
+unstained/AF control events. The default, `100`, builds a broad fixed
+AF bank for Spectreasy unmixing.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used when
 deriving AF basis signatures.}
@@ -134,7 +134,7 @@ supported with `autospectral_scc_cleanup = TRUE`.}
 \value{
 Numeric matrix with rows = fluorophores and columns = detectors
   (normalized spectra). The matrix carries SCC-derived detector noise floors
-  in `attr(M, "detector_noise")` for default WLS unmixing.
+  in `attr(M, "detector_noise")` for WLS/RWLS unmixing.
 }
 \description{
 Reads SCC FCS files, performs FSC/SSC gating and positive-peak intensity gating,
