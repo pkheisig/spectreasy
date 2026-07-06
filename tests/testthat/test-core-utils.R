@@ -1294,3 +1294,22 @@ test_that("calc_residuals multi-AF WLS uses event-wise detector weights", {
 
     expect_equal(as.matrix(res[, rownames(M)]), expected, tolerance = 1e-6)
 })
+
+test_that("SCC QC plot failures warn without aborting unmixing helpers", {
+    bad_plot <- ggplot2::ggplot(data.frame(x = 1, y = 1), ggplot2::aes(x, y)) +
+        ggplot2::annotate("rect", ymin = -Inf, ymax = Inf, alpha = 0.1)
+
+    expect_warning(
+        ok <- spectreasy:::.save_reference_ggsave(
+            tempfile(fileext = ".png"),
+            bad_plot,
+            sn = "bad_control",
+            plot_type = "bad plot",
+            width = 1,
+            height = 1,
+            dpi = 72
+        ),
+        "Continuing unmixing"
+    )
+    expect_false(ok)
+})

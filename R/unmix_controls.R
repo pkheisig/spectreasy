@@ -183,6 +183,21 @@
     )
 }
 
+.run_optional_unmix_artifact <- function(label, expr) {
+    tryCatch(
+        force(expr),
+        error = function(e) {
+            warning(
+                label, " could not be created: ",
+                conditionMessage(e),
+                ". Continuing unmixing.",
+                call. = FALSE
+            )
+            NULL
+        }
+    )
+}
+
 .save_reference_matrix_csv <- function(M, path) {
     M_df <- as.data.frame(M, check.names = FALSE)
     M_df$Marker <- rownames(M)
@@ -549,13 +564,19 @@ unmix_controls <- function(
     M_af <- M[af_rows, , drop = FALSE]
 
     p_spectra <- if (nrow(M_fluor) > 0) {
-        plot_spectra(M_fluor, pd = meta_info$pd, output_file = if (isTRUE(save_qc_plots)) output_paths$spectra_file else NULL)
+        .run_optional_unmix_artifact(
+            "SCC spectra plot",
+            plot_spectra(M_fluor, pd = meta_info$pd, output_file = if (isTRUE(save_qc_plots)) output_paths$spectra_file else NULL)
+        )
     } else {
         NULL
     }
 
     p_af_spectra <- if (nrow(M_af) > 0) {
-        plot_spectra(M_af, pd = meta_info$pd, output_file = if (isTRUE(save_qc_plots)) output_paths$af_spectra_file else NULL)
+        .run_optional_unmix_artifact(
+            "AF spectra plot",
+            plot_spectra(M_af, pd = meta_info$pd, output_file = if (isTRUE(save_qc_plots)) output_paths$af_spectra_file else NULL)
+        )
     } else {
         NULL
     }
@@ -586,42 +607,48 @@ unmix_controls <- function(
     extra_af_rows <- grepl("^AF_", scatter_markers, ignore.case = TRUE)
     scatter_markers <- scatter_markers[!extra_af_rows]
 
-    p_scatter <- plot_unmixing_scatter_matrix(
-        unmixed_list = unmixed_list,
-        sample_to_marker = marker_mapping$sample_to_marker,
-        markers = scatter_markers,
-        marker_display = NULL,
-        output_file = if (isTRUE(save_qc_plots)) output_paths$unmixing_scatter_png else NULL,
-        transform = "none",
-        panel_size_mm = unmix_scatter_panel_size_mm,
-        seed = seed
+    p_scatter <- .run_optional_unmix_artifact(
+        "SCC unmixing scatter plot",
+        plot_unmixing_scatter_matrix(
+            unmixed_list = unmixed_list,
+            sample_to_marker = marker_mapping$sample_to_marker,
+            markers = scatter_markers,
+            marker_display = NULL,
+            output_file = if (isTRUE(save_qc_plots)) output_paths$unmixing_scatter_png else NULL,
+            transform = "none",
+            panel_size_mm = unmix_scatter_panel_size_mm,
+            seed = seed
+        )
     )
 
     qc_report <- NULL
     if (isTRUE(save_report)) {
-        qc_report <- qc_controls(
-            M = M,
-            scc_dir = scc_dir,
-            output_file = output_file,
-            control_file = control_file,
-            cytometer = cytometer,
-            unmixing_method = unmixing_method,
-            qc_plot_dir = qc_controls_dir,
-            save_qc_pngs = save_qc_plots,
-            qc_metrics_dir = qc_controls_dir,
-            unmixed_list = unmixed_list,
-            qc_summary = attr(M, "qc_summary"),
-            report_plot_dir = attr(M, "qc_plot_dir"),
-            pd = meta_info$pd,
-            af_bank_info = attr(M, "af_bank_info"),
-            cleanup_report_plot_dir = !isTRUE(save_qc_plots),
-            use_scatter_gating = use_scatter_gating,
-            unmix_scatter_max_points = 1000,
-            seed = seed,
-            unmixing_matrix_file = output_paths$reference_matrix_csv
+        qc_report <- .run_optional_unmix_artifact(
+            "Automatic SCC QC report",
+            qc_controls(
+                M = M,
+                scc_dir = scc_dir,
+                output_file = output_file,
+                control_file = control_file,
+                cytometer = cytometer,
+                unmixing_method = unmixing_method,
+                qc_plot_dir = qc_controls_dir,
+                save_qc_pngs = save_qc_plots,
+                qc_metrics_dir = qc_controls_dir,
+                unmixed_list = unmixed_list,
+                qc_summary = attr(M, "qc_summary"),
+                report_plot_dir = attr(M, "qc_plot_dir"),
+                pd = meta_info$pd,
+                af_bank_info = attr(M, "af_bank_info"),
+                cleanup_report_plot_dir = !isTRUE(save_qc_plots),
+                use_scatter_gating = use_scatter_gating,
+                unmix_scatter_max_points = 1000,
+                seed = seed,
+                unmixing_matrix_file = output_paths$reference_matrix_csv
+            )
         )
         if (!file.exists(output_file)) {
-            stop("Automatic SCC QC report was requested but was not created at: ", output_file, call. = FALSE)
+            warning("Automatic SCC QC report was requested but was not created at: ", output_file, ". Continuing unmixing.", call. = FALSE)
         }
     }
 
@@ -635,7 +662,7 @@ unmix_controls <- function(
         spectral_variant_library_file = spectral_variant_library_file,
         spectral_variant_info = if (!is.null(spectral_variant_library)) spectral_variant_library$info else NULL,
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
-        qc_report_file = if (isTRUE(save_report)) output_file else NULL,
+        qc_report_file = if (isTRUE(save_report) && !is.null(output_file) && file.exists(output_file)) output_file else NULL,
         qc_controls_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
         qc_metrics_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
         qc_report = qc_report,

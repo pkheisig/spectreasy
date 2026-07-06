@@ -2581,6 +2581,35 @@
     ch_name
 }
 
+.warn_reference_qc_plot_failure <- function(sn, plot_type, condition) {
+    warning(
+        "SCC QC plot skipped for ", sn, " (", plot_type, "): ",
+        conditionMessage(condition),
+        ". Continuing unmixing.",
+        call. = FALSE
+    )
+    invisible(FALSE)
+}
+
+.save_reference_ggsave <- function(filename, plot, sn, plot_type, ...) {
+    tryCatch(
+        {
+            ggplot2::ggsave(filename, plot, ...)
+            invisible(TRUE)
+        },
+        error = function(e) .warn_reference_qc_plot_failure(sn, plot_type, e)
+    )
+}
+
+.save_reference_qc_plots_safely <- function(...) {
+    args <- list(...)
+    sn <- if (!is.null(args$sn)) args$sn else "control"
+    tryCatch(
+        do.call(.save_reference_qc_plots, args),
+        error = function(e) .warn_reference_qc_plot_failure(sn, "plot bundle", e)
+    )
+}
+
 # Generates and saves PDF quality control (QC) plots for a processed sample.
 # Produces three plots: a 2D density plot of FSC-SSC gating, a 1D density histogram of positive/negative
 # peak gating, and a spectral profile plot of the normalized signature.
@@ -2645,13 +2674,21 @@
             plot.subtitle = ggplot2::element_text(size = 10.6)
         ) +
         ggplot2::coord_cartesian(xlim = c(0, max(fsc_max, ssc_max) * 1.05), ylim = c(0, max(fsc_max, ssc_max) * 1.05))
-    ggplot2::ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, width = 5, height = 5, dpi = 300)
+    .save_reference_ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, sn, "FSC/SSC", width = 5, height = 5, dpi = 300)
 
     neg_log_min <- attr(vals_log, "neg_log_min")
     neg_log_max <- attr(vals_log, "neg_log_max")
     gate_method <- attr(vals_log, "gate_method")
     negative_gate_present <- isTRUE(attr(vals_log, "negative_gate_present"))
     positive_gate_present <- isTRUE(attr(vals_log, "positive_gate_present"))
+    negative_gate_valid <- negative_gate_present &&
+        is.finite(neg_log_min) &&
+        is.finite(neg_log_max) &&
+        neg_log_max > neg_log_min
+    positive_gate_valid <- positive_gate_present &&
+        is.finite(gate_min) &&
+        is.finite(gate_max) &&
+        gate_max > gate_min
     comp <- attr(vals_log, "gmm_components")
     comp_means <- if (!is.null(comp) && nrow(comp) > 0) comp$mean else numeric()
 
@@ -2677,12 +2714,12 @@
         ) +
         ggplot2::theme_minimal() +
         ggplot2::theme(legend.position = "none", plot.subtitle = ggplot2::element_text(size = 8.4, lineheight = 1.05))
-    if (negative_gate_present && is.finite(neg_log_min) && is.finite(neg_log_max) && neg_log_max > neg_log_min) {
+    if (negative_gate_valid) {
         p2 <- p2 +
             ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.15, fill = "#2C7BE5") +
             ggplot2::geom_vline(xintercept = c(neg_log_min, neg_log_max), color = "#2C7BE5", linewidth = 0.8)
     }
-    if (positive_gate_present) {
+    if (positive_gate_valid) {
         p2 <- p2 +
             ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.18, fill = "#D62728") +
             ggplot2::geom_vline(xintercept = c(log10(gate_min), log10(gate_max)), color = "#D62728", linewidth = 1)
@@ -2693,10 +2730,10 @@
     if (isTRUE(use_scatter_gating)) {
         scatter_x <- log10(pmax(peak_vals, 1))
         scatter_class <- ifelse(
-            peak_vals >= gate_min & peak_vals <= gate_max,
+            positive_gate_valid & peak_vals >= gate_min & peak_vals <= gate_max,
             "positive",
             ifelse(
-                negative_gate_present &
+                negative_gate_valid &
                     peak_vals >= 10^neg_log_min &
                     peak_vals <= 10^neg_log_max,
                 "negative",
@@ -2708,9 +2745,16 @@
             y = gated_data[, fsc],
             class = factor(scatter_class, levels = c("negative", "other", "positive"))
         )
-        p2_scatter <- ggplot2::ggplot(scatter_dt, ggplot2::aes(x, y, color = class)) +
-            ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#2C7BE5") +
-            ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#D62728") +
+        p2_scatter <- ggplot2::ggplot(scatter_dt, ggplot2::aes(x, y, color = class))
+        if (negative_gate_valid) {
+            p2_scatter <- p2_scatter +
+                ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#2C7BE5")
+        }
+        if (positive_gate_valid) {
+            p2_scatter <- p2_scatter +
+                ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#D62728")
+        }
+        p2_scatter <- p2_scatter +
             ggplot2::geom_point(size = 0.45, alpha = 0.45) +
             ggplot2::scale_color_manual(values = c(negative = "#2C7BE5", other = "grey55", positive = "#D62728"), drop = FALSE) +
             ggplot2::labs(
@@ -2720,9 +2764,9 @@
             ) +
             ggplot2::theme_minimal(base_size = 11) +
             ggplot2::theme(legend.position = "none")
-        ggplot2::ggsave(file.path(out_path, "intensity_scatter", paste0(sn, "_intensity_scatter.png")), p2_scatter, width = 6.5, height = 4, dpi = 300)
+        .save_reference_ggsave(file.path(out_path, "intensity_scatter", paste0(sn, "_intensity_scatter.png")), p2_scatter, sn, "intensity scatter", width = 6.5, height = 4, dpi = 300)
     } else {
-        ggplot2::ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, width = 6.5, height = 4, dpi = 300)
+        .save_reference_ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, sn, "histogram", width = 6.5, height = 4, dpi = 300)
     }
 
     log_mat <- log10(pmax(final_gated_data[, detector_names, drop = FALSE], 1e-3))
@@ -2770,7 +2814,7 @@
         ggplot2::labs(title = paste0(sn, " - Spectrum"), x = NULL, y = "Intensity") +
         ggplot2::theme_minimal() +
         ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6), legend.position = "none", panel.background = ggplot2::element_rect(fill = "white", color = NA))
-    ggplot2::ggsave(file.path(out_path, "spectrum", paste0(sn, "_spectrum.png")), p3, width = 300, height = 120, units = "mm", dpi = 600)
+    .save_reference_ggsave(file.path(out_path, "spectrum", paste0(sn, "_spectrum.png")), p3, sn, "spectrum", width = 300, height = 120, units = "mm", dpi = 600)
 
     invisible(NULL)
 }
@@ -2907,7 +2951,7 @@
         any_sat <- any(raw_data[, metadata$detector_names, drop = FALSE] >= 260000, na.rm = TRUE)
 
         if (isTRUE(config$save_qc_plots)) {
-            .save_reference_qc_plots(
+            .save_reference_qc_plots_safely(
                 sn = sn,
                 raw_data = raw_data,
                 gated_data = scatter_info$gated_data,
@@ -3022,7 +3066,7 @@
     )
 
     if (isTRUE(config$save_qc_plots)) {
-        .save_reference_qc_plots(
+        .save_reference_qc_plots_safely(
             sn = sn,
             raw_data = raw_data,
             gated_data = scatter_info$gated_data,
