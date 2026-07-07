@@ -232,21 +232,73 @@ testthat::test_that("spectral panel cytometer configurations load cleanly", {
         xenith$detectors$label[match("FL16-A", xenith$detectors$detector)],
         "405nm - 420/10-A"
     )
+
+    aurora <- spectreasy:::.spectral_panel_payload(
+        cytometer = "aurora",
+        fluorophores = character()
+    )
+    testthat::expect_equal(
+        aurora$detectors$label[match("V1-A", aurora$detectors$detector)],
+        "V1-A"
+    )
+})
+
+testthat::test_that("supported cytometer detector labels are descriptive and ordered", {
+    dict <- spectreasy:::.read_cytometer_dictionary()
+    ids <- spectreasy::supported_cytometers()
+
+    for (id in ids) {
+        dict_ids <- vapply(
+            dict$cytometer,
+            spectreasy:::.resolve_cytometer_id,
+            character(1),
+            allow_auto = FALSE,
+            unknown_as_auto = FALSE
+        )
+        detectors <- dict$detector[dict_ids == id]
+        testthat::expect_gt(length(detectors), 0)
+        info <- spectreasy:::.detector_metadata_from_dictionary(detectors, cytometer = id)
+        testthat::expect_equal(nrow(info), length(detectors))
+        if (id %in% c("aurora", "northern_lights")) {
+            testthat::expect_equal(info$label, info$detector)
+        } else {
+            testthat::expect_false(any(info$label == sub("-A$", "", info$detector)))
+        }
+
+        laser_order <- c("DeepUV", "UV", "Violet", "Blue", "YellowGreen", "Red", "IR", "Other")
+        ord <- order(match(info$laser, laser_order), info$emission, info$detector, na.last = TRUE)
+        ordered_info <- info[ord, , drop = FALSE]
+        by_laser <- split(ordered_info$emission, ordered_info$laser)
+        testthat::expect_true(all(vapply(by_laser, function(x) all(diff(x) >= 0), logical(1))))
+    }
 })
 
 testthat::test_that("Xenith spectra plots use wavelength detector labels without pData", {
     M <- matrix(
-        c(1, 0.4, 0.1, 0.2, 1, 0.3),
+        c(1, 0.3, 0.1, 0.2, 1, 0.4),
         nrow = 2,
         byrow = TRUE,
         dimnames = list(c("BV421", "BV510"), c("FL16-A", "FL15-A", "FL13-A"))
     )
 
     p <- spectreasy::plot_spectra(M, output_file = NULL, annotate_peaks = "never")
-    built <- ggplot2::ggplot_build(p)
-    labels <- built$layout$panel_params[[1]]$x$get_labels()
+    labels <- ggplot2::ggplot_build(p)$layout$panel_params[[1]]$x$get_labels()
     testthat::expect_true("405nm - 420/10-A" %in% labels)
     testthat::expect_false("FL16-A" %in% labels)
+})
+
+testthat::test_that("Aurora spectra keep Cytek detector labels", {
+    M <- matrix(
+        c(1, 0.3, 0.1, 0.2, 1, 0.4),
+        nrow = 2,
+        byrow = TRUE,
+        dimnames = list(c("BV421", "BV510"), c("V1-A", "V2-A", "V7-A"))
+    )
+
+    p <- spectreasy::plot_spectra(M, output_file = NULL, annotate_peaks = "never")
+    labels <- ggplot2::ggplot_build(p)$layout$panel_params[[1]]$x$get_labels()
+    testthat::expect_true("V1-A" %in% labels)
+    testthat::expect_false(any(grepl("^405nm", labels)))
 })
 
 testthat::test_that("cytometer auto detection recognizes detector naming conventions", {

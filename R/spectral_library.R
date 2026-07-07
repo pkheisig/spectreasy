@@ -535,7 +535,8 @@
             allow_auto = FALSE,
             unknown_as_auto = FALSE
         )
-        candidates <- dict[dict_cytometers == id, , drop = FALSE]
+        candidate_ids <- c(id, if (identical(id, "discover")) c("discover_s8", "discover_a8") else id)
+        candidates <- dict[dict_cytometers %in% candidate_ids, , drop = FALSE]
         if (nrow(candidates) > 0) {
             dict_keys <- vapply(candidates$detector, function(x) .spectral_detector_keys(x)[1], character(1))
             for (i in seq_along(detectors)) {
@@ -544,10 +545,17 @@
             }
         }
     }
-    fallback_labels <- gsub("-A$", "", gsub("\\s*\\([^)]*\\)", "", detectors))
+    labels <- mapply(
+        .format_detector_display_label,
+        cytometer = id,
+        detector = detectors,
+        laser = lasers,
+        description = descriptions,
+        USE.NAMES = FALSE
+    )
     out <- data.frame(
         detector = detectors,
-        label = ifelse(nzchar(descriptions), descriptions, fallback_labels),
+        label = labels,
         laser = lasers,
         emission = emissions,
         color = unname(palette[ifelse(lasers %in% names(palette), lasers, "Other")]),

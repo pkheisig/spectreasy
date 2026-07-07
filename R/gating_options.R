@@ -120,6 +120,13 @@ get_sorted_detectors <- function(pd) {
 
     # Final labels for plotting
     labels <- ifelse(!is.na(desc) & desc != "" & desc != names, desc, names)
+    dictionary_info <- .detector_metadata_from_dictionary(names, cytometer = "auto")
+    if (!is.null(dictionary_info) && nrow(dictionary_info) > 0) {
+        label_hit <- match(names, dictionary_info$detector)
+        dictionary_labels <- dictionary_info$label[label_hit]
+        replace_labels <- !is.na(dictionary_labels) & nzchar(dictionary_labels) & (is.na(desc) | !nzchar(desc) | desc == names)
+        labels[replace_labels] <- dictionary_labels[replace_labels]
+    }
 
     # 3. Parse laser and wavelength for sorting
     # Try to find laser nm (e.g., "405nm" or "405-")

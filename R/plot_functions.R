@@ -115,17 +115,13 @@
     )
     dict <- dict[dict_cytometer == cytometer, , drop = FALSE]
     if (nrow(dict) == 0) return(NULL)
-    key <- .normalize_detector_token(detectors)
-    dict_key <- .normalize_detector_token(dict$detector)
-    hit <- match(key, dict_key)
-    ok <- !is.na(hit)
-    if (!any(ok)) return(NULL)
-    labels <- detectors
-    desc <- trimws(as.character(dict$description[hit[ok]]))
-    labels[ok] <- ifelse(nzchar(desc), desc, detectors[ok])
-    lasers <- rep("Other", length(detectors))
-    if ("laser" %in% colnames(dict)) lasers[ok] <- as.character(dict$laser[hit[ok]])
-    data.frame(detector = detectors, label = labels, laser = lasers, emission = seq_along(detectors), stringsAsFactors = FALSE)
+    info <- .detector_metadata_from_dictionary(detectors, cytometer = cytometer)
+    if (is.null(info) || nrow(info) == 0) return(NULL)
+
+    laser_order_ref <- c("DeepUV", "UV", "Violet", "Blue", "YellowGreen", "Red", "IR", "Other")
+    laser_rank <- match(info$laser, laser_order_ref)
+    laser_rank[is.na(laser_rank)] <- length(laser_order_ref)
+    info[order(laser_rank, info$emission, info$detector, na.last = TRUE), , drop = FALSE]
 }
 
 #' Plot Spectral Overlays

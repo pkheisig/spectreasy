@@ -1,0 +1,63 @@
+## Setup
+
+
+```{r}
+
+    devtools::install_github("pkheisig/spectreasy", ref = "dev")
+
+    library(spectreasy)
+
+    unmix_controls(
+        scc_dir = "scc",
+        unmixing_method = "Spectreasy",
+        af_n_bands = 100,
+        save_report = TRUE,
+        cytometer = "auto"
+    )
+
+    unmix_samples(
+        sample_dir = "samples",
+        unmixing_method = "Spectreasy",
+        save_report = TRUE
+    )
+        
+
+
+```
+
+```{r}
+
+    unmix_controls(
+        scc_dir = "scc",
+        unmixing_method = "WLS",
+    )
+
+    unmix_samples(
+        sample_dir = "samples",
+        unmixing_method = "WLS",
+    )
+
+
+    unmix_controls(
+        scc_dir = "scc",
+        unmixing_method = "RWLS",
+        rwls_max_iter = 5
+    )
+
+    unmix_samples(
+        samples_dir = "samples",
+        unmixing_method = "RWLS",
+        rwls_max_iter = 5
+    )
+
+```
+
+## Other features
+
+```{r}
+
+adjust_matrix()
+
+build_spectral_panel()
+
+```
