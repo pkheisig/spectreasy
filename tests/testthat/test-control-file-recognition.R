@@ -228,6 +228,25 @@ testthat::test_that("spectral panel cytometer configurations load cleanly", {
     )
     by_laser <- split(xenith$detectors$emission, xenith$detectors$laser)
     testthat::expect_true(all(vapply(by_laser, function(x) all(diff(x) >= 0), logical(1))))
+    testthat::expect_equal(
+        xenith$detectors$label[match("FL16-A", xenith$detectors$detector)],
+        "405nm - 420/10-A"
+    )
+})
+
+testthat::test_that("Xenith spectra plots use wavelength detector labels without pData", {
+    M <- matrix(
+        c(1, 0.4, 0.1, 0.2, 1, 0.3),
+        nrow = 2,
+        byrow = TRUE,
+        dimnames = list(c("BV421", "BV510"), c("FL16-A", "FL15-A", "FL13-A"))
+    )
+
+    p <- spectreasy::plot_spectra(M, output_file = NULL, annotate_peaks = "never")
+    built <- ggplot2::ggplot_build(p)
+    labels <- built$layout$panel_params[[1]]$x$get_labels()
+    testthat::expect_true("405nm - 420/10-A" %in% labels)
+    testthat::expect_false("FL16-A" %in% labels)
 })
 
 testthat::test_that("cytometer auto detection recognizes detector naming conventions", {

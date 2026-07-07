@@ -525,9 +525,29 @@
     palette <- .spectral_panel_laser_palette()
     lasers <- vapply(detectors, function(det) .spectral_detector_laser(id, det), character(1))
     emissions <- vapply(detectors, function(det) .spectral_detector_emission(id, det), integer(1))
+    dict <- .read_cytometer_dictionary()
+    descriptions <- rep("", length(detectors))
+    if (is.data.frame(dict) && nrow(dict) > 0 && all(c("cytometer", "detector", "description") %in% colnames(dict))) {
+        dict_cytometers <- vapply(
+            dict$cytometer,
+            .resolve_cytometer_id,
+            character(1),
+            allow_auto = FALSE,
+            unknown_as_auto = FALSE
+        )
+        candidates <- dict[dict_cytometers == id, , drop = FALSE]
+        if (nrow(candidates) > 0) {
+            dict_keys <- vapply(candidates$detector, function(x) .spectral_detector_keys(x)[1], character(1))
+            for (i in seq_along(detectors)) {
+                hit <- match(.spectral_detector_keys(detectors[i])[1], dict_keys)
+                if (!is.na(hit)) descriptions[i] <- trimws(as.character(candidates$description[hit]))
+            }
+        }
+    }
+    fallback_labels <- gsub("-A$", "", gsub("\\s*\\([^)]*\\)", "", detectors))
     out <- data.frame(
         detector = detectors,
-        label = gsub("-A$", "", gsub("\\s*\\([^)]*\\)", "", detectors)),
+        label = ifelse(nzchar(descriptions), descriptions, fallback_labels),
         laser = lasers,
         emission = emissions,
         color = unname(palette[ifelse(lasers %in% names(palette), lasers, "Other")]),
