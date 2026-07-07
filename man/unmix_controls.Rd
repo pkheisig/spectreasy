@@ -7,28 +7,37 @@
 unmix_controls(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",
-  auto_create_control = TRUE,
+  auto_create_mapping = TRUE,
   cytometer = "auto",
-  auto_default_control_type = "beads",
   auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
   output_dir = "spectreasy_outputs/unmix_controls",
-  exclude_af = FALSE,
-  unmix_method = "WLS",
+  unmixing_method = "Spectreasy",
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
-  af_n_bands = "auto",
-  af_bands_per_file = 5,
-  af_auto_max_bands = 20,
+  af_n_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
-  af_n_bands_sensitivity = 1.5,
-  include_multi_af = FALSE,
   rwls_max_iter = 1L,
   unmix_threads = 1L,
   save_qc_plots = FALSE,
   save_report = TRUE,
-  output_file = NULL,
   use_scatter_gating = TRUE,
+  manual_gating = TRUE,
+  manual_gate_file = "ssc_gate_config.csv",
+  gating_file = manual_gate_file,
+  clean_scc_with_unstained = TRUE,
+  scc_background_method = c("scatter_knn", "none"),
+  scc_background_k = 2L,
+  spectral_variant_som_nodes = 16L,
+  spectral_variant_top_k = 3L,
+  spectral_variant_cosine_threshold = 0.98,
+  spectral_variant_max_variants = 8L,
+  spectral_variant_min_events = 50L,
+  spectreasy_weight_quantile = 0.9,
+  autospectral_n_candidates = 1000L,
+  autospectral_n_spectral = 200L,
+  autospectral_min_events = 10L,
+  refine = FALSE,
   ...
 )
 }
@@ -37,37 +46,32 @@ unmix_controls(
 
 \item{control_file}{Path to control mapping CSV.}
 
-\item{auto_create_control}{Logical; auto-generate control file when missing.}
+\item{auto_create_mapping}{Logical; auto-generate the FCS mapping CSV when
+`control_file` is missing.}
 
 \item{cytometer}{Cytometer name used as a channel-mapping hint. The default,
 `"auto"`, infers the cytometer from FCS detector names when possible.}
-
-\item{auto_default_control_type}{Deprecated and ignored.}
 
 \item{auto_unknown_fluor_policy}{Auto-fill policy for unresolved fluorophores
 when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 
 \item{output_dir}{Output directory for SCC workflow artifacts.}
 
-\item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls even when
-they are present in the SCC folder or control mapping.}
-
-\item{unmix_method}{SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).}
+\item{unmixing_method}{SCC unmixing method (`"WLS"`, `"RWLS"`,
+`"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
+`AutoSpectral` keeps the existing k-means AF bank controlled by
+`af_n_bands`, then uses OLS unmixing plus AutoSpectral-style SCC cleanup
+and spectral variants. `Spectreasy` uses the same cleanup and variant
+machinery, then blends the AutoSpectral-style marker fit with a marker-only
+OLS anchor using decoder-projected AF impact weights.}
 
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
 
 \item{seed}{Optional integer seed for deterministic subsampling and plotting.}
 
-\item{af_n_bands}{Number of AF bands to extract from the unstained control
-when only one AF source is available. Use `"auto"` to select the count
-from AF event shapes and prune near-duplicate AF signatures. Default is
-`"auto"`.}
-
-\item{af_bands_per_file}{Number of AF bands requested per AF file when
-multiple AF sources are pooled. Default is 5.}
-
-\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.
-Default is 20.}
+\item{af_n_bands}{Number of AF basis signatures to extract from pooled
+unstained/AF control events. The default, `100`, builds a broad fixed
+AF bank for Spectreasy unmixing.}
 
 \item{af_min_cluster_events}{Minimum number of AF events required to keep a
 k-means AF cluster. Used together with `af_min_cluster_proportion`.}
@@ -75,15 +79,8 @@ k-means AF cluster. Used together with `af_min_cluster_proportion`.}
 \item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
 events required to keep a k-means AF cluster. Default is 0.005.}
 
-\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
-when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-select fewer bands before near-duplicate AF signatures are pruned. Default
-is `1.5`.}
-
-\item{include_multi_af}{Logical; whether to include additional AF files from `af_dir`. Default is FALSE.}
-
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
-iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
+iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
 \item{unmix_threads}{Positive integer; number of threads to use for event-wise
@@ -95,13 +92,67 @@ intensity-gate, and spectrum PNGs under `output_dir`.}
 \item{save_report}{Logical; if `TRUE`, write the SCC QC PDF report
 automatically after controls are unmixed. Defaults to `TRUE`.}
 
-\item{output_file}{Optional output path for the SCC QC PDF report. When this
-is `NULL`, each automatic report is written to a fresh `qc_controls`,
-`qc_controls_2`, ... folder under `output_dir`.}
-
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,
-use the legacy one-dimensional histogram gate.}
+use the legacy one-dimensional histogram gate. Ignored when
+`unmixing_method = "AutoSpectral"` or `"Spectreasy"`; these methods use their own
+post-FSC/SSC SCC spectral selector.}
+
+\item{manual_gating}{Logical; if `TRUE` (default), launch the manual control
+gating GUI before building the SCC reference matrix. If `FALSE`, the GUI is
+skipped; an existing `gating_file`/`manual_gate_file` is still reused when
+supplied.}
+
+\item{manual_gate_file}{Gate CSV written by [gate_controls()]. Relative paths
+are resolved from the current working directory. Kept for backwards
+compatibility; prefer `gating_file` in new code.}
+
+\item{gating_file}{Optional gate CSV to reuse without launching the GUI, for
+example `file.path(getwd(), "ssc_gate_config.csv")`. If supplied explicitly,
+the file must exist. Defaults to `manual_gate_file`.}
+
+\item{clean_scc_with_unstained}{Logical; when `unmixing_method =
+"AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative
+background events before calculating SCC spectra.}
+
+\item{scc_background_method}{Background subtraction method for AutoSpectral
+SCC cleanup (`"scatter_knn"` or `"none"`).}
+
+\item{scc_background_k}{Number of nearest unstained/negative events averaged
+for scatter-matched SCC background subtraction.}
+
+\item{spectral_variant_som_nodes}{Number of nodes used per fluorophore when
+learning AutoSpectral spectral variants.}
+
+\item{spectral_variant_top_k}{Number of best variant candidates to test per
+positive fluorophore during AutoSpectral unmixing.}
+
+\item{spectral_variant_cosine_threshold}{Minimum cosine similarity to the
+base fluorophore spectrum required for a variant to be retained.}
+
+\item{spectral_variant_max_variants}{Maximum retained variants per
+fluorophore.}
+
+\item{spectral_variant_min_events}{Minimum cleaned positive SCC events
+required to learn variants for one fluorophore.}
+
+\item{spectreasy_weight_quantile}{Numeric in `[0, 1]`; only accepted when
+`unmixing_method = "Spectreasy"`. Controls the quantile of
+decoder-projected AF impacts used as the soft-saturation scale for
+marker-specific AutoSpectral mixing. The default is `0.9`.}
+
+\item{autospectral_n_candidates}{Number of peak-bright SCC candidate events
+considered by the AutoSpectral-style selector.}
+
+\item{autospectral_n_spectral}{Number of least-background-like SCC events
+kept for spectrum calculation by the AutoSpectral-style selector.}
+
+\item{autospectral_min_events}{Minimum event count required by the
+AutoSpectral-style SCC selector.}
+
+\item{refine}{Logical; when `unmixing_method = "AutoSpectral"`, refine the
+fixed-size k-means AF bank with native AutoSpectral-style unstained residual
+modulation. `TRUE` is rejected for all other unmixing methods.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }
@@ -127,7 +178,7 @@ if (interactive()) {
   ctrl <- unmix_controls(
     scc_dir = "scc",
     control_file = "fcs_mapping.csv",
-    auto_create_control = TRUE,
+    auto_create_mapping = TRUE,
     cytometer = "auto",
     output_dir = "spectreasy_outputs/unmix_controls"
   )

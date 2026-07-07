@@ -1,7 +1,9 @@
 # Internal helpers for QC report generation.
-.draw_qc_report_plot_page <- function(p, square = FALSE, height_ratio = 1.0, width_ratio = 1.0) {
+.draw_qc_report_plot_page <- function(p, square = FALSE, height_ratio = 1.0, width_ratio = 1.0, newpage = TRUE) {
     if (is.null(p)) return(invisible(NULL))
-    grid::grid.newpage()
+    if (isTRUE(newpage)) {
+        grid::grid.newpage()
+    }
     grob <- ggplot2::ggplotGrob(p)
     if (!isTRUE(square) && height_ratio == 1.0 && width_ratio == 1.0) {
         grid::grid.draw(grob)
@@ -37,7 +39,7 @@
     grob$grobs[[guide_idx[1]]]
 }
 
-.draw_qc_report_spectra_page <- function(p) {
+.draw_qc_report_spectra_page <- function(p, newpage = TRUE) {
     if (is.null(p)) return(invisible(NULL))
 
     n_labels <- 0L
@@ -97,7 +99,9 @@
     )
     legend_grob <- .extract_qc_report_legend(legend_plot)
 
-    grid::grid.newpage()
+    if (isTRUE(newpage)) {
+        grid::grid.newpage()
+    }
     grid::grid.draw(
         grid::editGrob(
             plot_grob,
@@ -140,15 +144,36 @@
     if (is.null(p) || is.null(qc_plot_dir)) {
         return(invisible(NULL))
     }
-    ggplot2::ggsave(
-        filename = file.path(qc_plot_dir, filename),
-        plot = p,
-        width = width,
-        height = height,
-        units = "in",
-        dpi = 200
+    .with_known_qc_plot_warnings_suppressed(
+        ggplot2::ggsave(
+            filename = file.path(qc_plot_dir, filename),
+            plot = p,
+            width = width,
+            height = height,
+            units = "in",
+            dpi = 200
+        )
     )
     invisible(file.path(qc_plot_dir, filename))
+}
+
+.is_known_qc_plot_warning <- function(message) {
+    grepl("Binning grid too coarse for current \\(small\\) bandwidth", message) ||
+        (
+            grepl("Removed [0-9]+ rows? containing missing values or values outside the scale range", message) &&
+                grepl("`geom_(tile|point)\\(\\)`", message)
+        )
+}
+
+.with_known_qc_plot_warnings_suppressed <- function(expr) {
+    withCallingHandlers(
+        expr,
+        warning = function(w) {
+            if (.is_known_qc_plot_warning(conditionMessage(w))) {
+                invokeRestart("muffleWarning")
+            }
+        }
+    )
 }
 
 .write_qc_report_csv <- function(x, path, row_id = NULL) {
@@ -179,16 +204,41 @@
     .write_qc_report_csv(as.data.frame(mat, check.names = FALSE), path, row_id = row_id)
 }
 
-.compute_qc_report_detector_rms <- function(res_list, M = NULL, pd = NULL) {
+.prepare_qc_report_metrics_dir <- function(qc_metrics_dir = NULL) {
+    if (!is.null(qc_metrics_dir) && length(qc_metrics_dir) > 0 &&
+        !is.na(qc_metrics_dir[1]) && nzchar(trimws(as.character(qc_metrics_dir)[1]))) {
+        qc_metrics_dir <- as.character(qc_metrics_dir)[1]
+        dir.create(qc_metrics_dir, showWarnings = FALSE, recursive = TRUE)
+        obsolete_files <- file.path(
+            qc_metrics_dir,
+            c(
+                "sample_qc_summary.csv",
+                "spectral_spread_matrix.csv",
+                "directional_spread_score.csv",
+                "overall_detector_reconstruction_error_per_sample.csv"
+            )
+        )
+        unlink(obsolete_files[file.exists(obsolete_files)], force = TRUE)
+        return(qc_metrics_dir)
+    }
+    NULL
+}
+
+.compute_qc_report_detector_rms <- function(res_list, M = NULL, pd = NULL, unmixing_method = NULL) {
     detector_names <- if (!is.null(M)) colnames(.as_reference_matrix(M, "M")) else NULL
-    residuals <- .collect_report_residual_matrix(res_list, detector_names = detector_names)
+    method <- .resolve_residual_metric_method(res_list, unmixing_method = unmixing_method)
+    metric_name <- if (method %in% c("WLS", "RWLS")) "wls_weighted_rms" else "raw_rms"
+    residuals <- .collect_report_residual_metric_matrix(
+        res_list,
+        M = M,
+        detector_names = detector_names,
+        unmixing_method = unmixing_method
+    )
     if (is.null(residuals) || nrow(residuals) == 0) {
         return(NULL)
     }
     detector_names <- colnames(residuals)
-    label_info <- .resolve_detector_residual_labels(detector_names, pd = pd)
-    levels_sorted <- label_info$levels_sorted
-    levels_sorted <- levels_sorted[levels_sorted %in% detector_names]
+    levels_sorted <- detector_names[.residual_detector_channel_order(detector_names)]
     if (length(levels_sorted) == 0) {
         levels_sorted <- detector_names
     }
@@ -199,29 +249,45 @@
         label = sub("-A$", "", levels_sorted, ignore.case = TRUE),
         laser = laser,
         rms_residual = as.numeric(rms),
+        residual_metric = metric_name,
+        unmixing_method = method,
         stringsAsFactors = FALSE
     )
     out[is.finite(out$rms_residual), , drop = FALSE]
 }
 
-.compute_qc_report_sample_rms <- function(res_list, M = NULL) {
+.compute_qc_report_sample_rms <- function(res_list, M = NULL, unmixing_method = NULL) {
     if (!is.list(res_list) || length(res_list) == 0) {
         return(NULL)
     }
+    M_mat <- .resolve_residual_metric_matrix(res_list, M = M)
+    method <- .resolve_residual_metric_method(res_list, unmixing_method = unmixing_method)
+    metric_name <- if (method %in% c("WLS", "RWLS")) "wls_weighted_rms" else "raw_rms"
     rows <- lapply(names(res_list), function(sn) {
         res_obj <- res_list[[sn]]
         if (!is.list(res_obj) || is.null(res_obj$residuals)) {
             return(NULL)
         }
-        rms <- sqrt(rowMeans(res_obj$residuals^2, na.rm = TRUE))
+        residuals <- as.matrix(res_obj$residuals)
+        weights <- if (method %in% c("WLS", "RWLS")) .residual_metric_weights(res_obj, M = M_mat, unmixing_method = method) else NULL
+        if (!is.null(weights)) {
+            common <- intersect(colnames(residuals), colnames(weights))
+            if (length(common) > 0) {
+                rms <- sqrt(rowMeans(residuals[, common, drop = FALSE]^2 * weights[, common, drop = FALSE], na.rm = TRUE))
+            } else {
+                rms <- sqrt(rowMeans(residuals^2, na.rm = TRUE))
+            }
+        } else {
+            rms <- sqrt(rowMeans(residuals^2, na.rm = TRUE))
+        }
         if (length(rms) == 0 || all(!is.finite(rms))) {
             return(NULL)
         }
-        if (!is.null(M)) {
-            M_mat <- .as_reference_matrix(M, "M")
+        if (!is.null(M_mat)) {
             markers <- intersect(rownames(M_mat), colnames(res_obj$data))
-            Fitted <- as.matrix(res_obj$data[, markers, drop = FALSE]) %*% M_mat[, , drop = FALSE]
-            Y <- Fitted + res_obj$residuals
+            detectors <- intersect(colnames(M_mat), colnames(residuals))
+            Fitted <- as.matrix(res_obj$data[, markers, drop = FALSE]) %*% M_mat[markers, detectors, drop = FALSE]
+            Y <- Fitted + residuals[, detectors, drop = FALSE]
             peak_signal <- stats::quantile(Y, 0.995, na.rm = TRUE, names = FALSE)
         } else {
             expr_cols <- setdiff(colnames(res_obj$data), c("File", "Time"))
@@ -240,6 +306,8 @@
             q95_rms_residual = stats::quantile(rms, 0.95, na.rm = TRUE, names = FALSE),
             q995_peak_signal = peak_signal,
             median_rms_percent_of_peak = error_ratio,
+            residual_metric = metric_name,
+            unmixing_method = method,
             stringsAsFactors = FALSE
         )
     })
@@ -286,13 +354,7 @@
         max_markers_per_page <- 20L
     }
 
-    n_pages <- if (n_markers <= max_markers_per_page) {
-        1L
-    } else if (n_markers <= 2L * max_markers_per_page) {
-        2L
-    } else {
-        3L
-    }
+    n_pages <- max(1L, ceiling(n_markers / max_markers_per_page))
 
     base_size <- n_markers %/% n_pages
     remainder <- n_markers %% n_pages
@@ -306,14 +368,14 @@
     Map(function(start, end) marker_names[seq.int(start, end)], starts, ends)
 }
 
-.build_qc_report_rms_pages <- function(res_list, M = NULL, max_files_per_page = 15) {
+.build_qc_report_rms_pages <- function(res_list, M = NULL, max_files_per_page = 15, unmixing_method = NULL) {
     if (!is.list(res_list) || length(res_list) == 0) {
         return(list())
     }
 
     sample_names <- names(res_list)
     if (is.null(sample_names) || any(sample_names == "")) {
-        p <- plot_sample_rms_residuals(res_list, M = M, output_file = NULL)
+        p <- plot_sample_rms_residuals(res_list, M = M, output_file = NULL, unmixing_method = unmixing_method)
         return(if (is.null(p)) list() else list(p))
     }
 
@@ -321,7 +383,7 @@
     pages <- list()
     k <- 1L
     for (page_idx in seq_along(batches)) {
-        p <- plot_sample_rms_residuals(res_list[batches[[page_idx]]], M = M, output_file = NULL)
+        p <- plot_sample_rms_residuals(res_list[batches[[page_idx]]], M = M, output_file = NULL, unmixing_method = unmixing_method)
         if (is.null(p)) next
         pages[[k]] <- .label_qc_report_batch_page(
             p,
@@ -529,9 +591,9 @@
 }
 
 .add_qc_report_density_colors <- function(plot_df) {
-    plot_df$color <- "#0000FF"
+    plot_df$color <- .scatter_density_base_color()
     groups <- split(seq_len(nrow(plot_df)), interaction(plot_df$panel_row, plot_df$panel_col, drop = TRUE))
-    ramp <- grDevices::colorRampPalette(c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"))
+    ramp <- .scatter_density_color_ramp()
     for (idx in groups) {
         if (length(idx) > 1 && stats::var(plot_df$x[idx]) > 0 && stats::var(plot_df$y[idx]) > 0) {
             plot_df$color[idx] <- grDevices::densCols(plot_df$x[idx], plot_df$y[idx], colramp = ramp)
@@ -675,7 +737,11 @@
                                             page_idx,
                                             page_total,
                                             point_color = "#163B5C",
-                                            axis_color = "#C75000") {
+                                            axis_color = "#C75000",
+                                            title = NULL) {
+    if (is.null(title)) {
+        title <- paste0("Sample NxN Scatter Matrix: ", sample_name)
+    }
     panel_used <- unique(panel_info$lim_df[, c("panel_row", "panel_col"), drop = FALSE])
     panel_grid <- expand.grid(
         panel_row = factor(panel_info$page_rows, levels = panel_info$page_rows),
@@ -721,7 +787,7 @@
             )
         ) +
         ggplot2::labs(
-            title = paste0("Sample NxN Scatter Matrix: ", sample_name),
+            title = title,
             subtitle = paste0("Page ", page_idx, " of ", page_total)
         ) +
         ggplot2::theme_bw(base_size = 6.5) +
@@ -816,11 +882,88 @@
     pages
 }
 
+.build_qc_report_control_scatter_pages <- function(unmixed_list,
+                                                   sample_to_marker = NULL,
+                                                   markers = NULL,
+                                                   marker_display = NULL,
+                                                   rows_per_page = 10,
+                                                   max_points_per_sample = 1000,
+                                                   transform = c("none", "asinh"),
+                                                   asinh_cofactor = 150,
+                                                   axis_limit = NULL,
+                                                   seed = NULL) {
+    transform <- match.arg(transform)
+    .with_optional_seed(seed)
+
+    data_list <- .extract_unmix_scatter_data_list(unmixed_list)
+    sample_stains <- .normalize_unmix_scatter_mapping(names(data_list), sample_to_marker = sample_to_marker)
+    marker_info <- .resolve_unmix_scatter_markers(sample_stains, markers = markers, marker_display = marker_display)
+    markers <- marker_info$markers
+    marker_labels <- marker_info$marker_labels
+    panel_info <- .build_unmix_scatter_panel_data(
+        data_list = data_list,
+        sample_stains = sample_stains,
+        markers = markers,
+        max_points_per_sample = max_points_per_sample,
+        transform = transform,
+        asinh_cofactor = asinh_cofactor,
+        axis_limit = axis_limit
+    )
+
+    page_defs <- .build_qc_report_sample_page_defs(markers, block_size = rows_per_page)
+    page_total <- length(page_defs)
+    if (page_total == 0) {
+        return(list())
+    }
+
+    pages <- list()
+    k <- 1L
+    for (page_idx in seq_along(page_defs)) {
+        def <- page_defs[[page_idx]]
+        row_markers <- markers[def$row_idx]
+        col_markers <- markers[def$col_idx]
+        keep_rows <- as.character(panel_info$plot_df$panel_row) %in% row_markers
+        keep_cols <- as.character(panel_info$plot_df$panel_col) %in% col_markers
+        keep_lim_rows <- as.character(panel_info$lim_df$panel_row) %in% row_markers
+        keep_lim_cols <- as.character(panel_info$lim_df$panel_col) %in% col_markers
+        plot_df <- panel_info$plot_df[keep_rows & keep_cols, , drop = FALSE]
+        lim_df <- panel_info$lim_df[keep_lim_rows & keep_lim_cols, , drop = FALSE]
+        if (nrow(plot_df) == 0 || nrow(lim_df) == 0) {
+            next
+        }
+
+        page_rows <- .pad_qc_report_page_levels(row_markers, block_size = rows_per_page, prefix = "row")
+        page_cols <- .pad_qc_report_page_levels(col_markers, block_size = rows_per_page, prefix = "col")
+        plot_df$panel_row <- factor(as.character(plot_df$panel_row), levels = page_rows)
+        plot_df$panel_col <- factor(as.character(plot_df$panel_col), levels = page_cols)
+        lim_df$panel_row <- factor(as.character(lim_df$panel_row), levels = page_rows)
+        lim_df$panel_col <- factor(as.character(lim_df$panel_col), levels = page_cols)
+
+        page_labels <- marker_labels
+        missing_rows <- setdiff(page_rows, names(page_labels))
+        missing_cols <- setdiff(page_cols, names(page_labels))
+        if (length(missing_rows) > 0) page_labels[missing_rows] <- ""
+        if (length(missing_cols) > 0) page_labels[missing_cols] <- ""
+
+        pages[[k]] <- .build_sample_scatter_page_plot(
+            panel_info = list(plot_df = plot_df, lim_df = lim_df, page_cols = page_cols, page_rows = page_rows),
+            marker_labels = page_labels,
+            sample_name = "Controls",
+            page_idx = page_idx,
+            page_total = page_total,
+            title = "Control NxN Scatter Matrix"
+        )
+        k <- k + 1L
+    }
+
+    pages
+}
+
 #' Generate a Full Sample PDF Report
 #'
 #' Creates a multi-page report summarizing unmixing quality, including spectra,
 #' RMS residuals per detector, matrix diagnostics, NPS, per-sample NxN marker
-#' scatter pages, and the overall detector reconstruction error per sample.
+#' scatter pages, and detector reconstruction error.
 #'
 #' `qc_samples()` expects a combined data frame or the raw list returned
 #' by [unmix_samples()]. In the usual workflow, pass the unmixed results object
@@ -843,11 +986,10 @@
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param output_file Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.
-#' @param method Unmixing method used to create `results` (`"AutoSpectral"`,
-#'   `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
+#' @param unmixing_method Unmixing method used to create `results` (`"AutoSpectral"`,
+#'   `"Spectreasy"`, `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
 #'   because constrained NNLS results are non-negative by construction.
 #' @param res_list Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.
-#' @param png_dir Deprecated and ignored (kept for backward compatibility).
 #' @param pd Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
 #'   If omitted, `attr(M, "detector_pd")` is used when available.
 #' @param max_events_per_sample Maximum events per sample used for report-wide
@@ -873,7 +1015,7 @@
 #'   `save_qc_pngs = TRUE`.
 #' @param save_qc_pngs Logical; if `TRUE`, save report plot pages as PNG files
 #'   alongside the PDF report.
-#' @param qc_metrics_dir Optional directory where plot-ready sample QC metric
+#' @param qc_metrics_dir Optional directory where plot-ready QC metric
 #'   CSVs are written alongside the PDF report.
 #'
 #' @return Invisibly returns a list with `output_file`, `qc_plot_dir`, and
@@ -907,9 +1049,8 @@ qc_samples <- function(results,
                        M = NULL,
                        unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
                        output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
-                       method = NULL,
+                       unmixing_method = NULL,
                        res_list = NULL,
-                       png_dir = NULL,
                        pd = NULL,
                        max_events_per_sample = 1000,
                        overview_files_per_page = 15,
@@ -928,15 +1069,12 @@ qc_samples <- function(results,
     }
     sample_nxn_transform <- match.arg(sample_nxn_transform)
     method_attr <- attr(results, "method")
-    if (is.null(method)) {
-        method <- if (!is.null(method_attr)) method_attr else "AutoSpectral"
+    if (is.null(unmixing_method)) {
+        unmixing_method <- if (!is.null(method_attr)) method_attr else "AutoSpectral"
     }
-    method <- .normalize_unmix_method(method)
+    unmixing_method <- .normalize_unmix_method(unmixing_method)
 
     message("Generating spectreasy Summary Report...")
-    if (!is.null(png_dir)) {
-        warning("png_dir is deprecated and ignored; report output is PDF-only.")
-    }
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")
@@ -989,15 +1127,30 @@ qc_samples <- function(results,
         save_qc_pngs = save_qc_pngs,
         output_file = output_file
     )
-    if (!is.null(qc_metrics_dir) && length(qc_metrics_dir) > 0 &&
-        !is.na(qc_metrics_dir[1]) && nzchar(trimws(as.character(qc_metrics_dir)[1]))) {
-        qc_metrics_dir <- as.character(qc_metrics_dir)[1]
-        dir.create(qc_metrics_dir, showWarnings = FALSE, recursive = TRUE)
-    } else {
-        qc_metrics_dir <- NULL
-    }
+    qc_metrics_dir <- .prepare_qc_report_metrics_dir(qc_metrics_dir)
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
+    report_page_started <- FALSE
+    draw_report_plot_page <- function(p, square = FALSE, height_ratio = 1.0, width_ratio = 1.0) {
+        .with_known_qc_plot_warnings_suppressed(
+            .draw_qc_report_plot_page(
+                p,
+                square = square,
+                height_ratio = height_ratio,
+                width_ratio = width_ratio,
+                newpage = report_page_started
+            )
+        )
+        report_page_started <<- TRUE
+        invisible(NULL)
+    }
+    draw_report_spectra_page <- function(p) {
+        .with_known_qc_plot_warnings_suppressed(
+            .draw_qc_report_spectra_page(p, newpage = report_page_started)
+        )
+        report_page_started <<- TRUE
+        invisible(NULL)
+    }
 
     if (!is.null(max_events_per_sample) && any(as.numeric(file_counts) > as.numeric(max_events_per_sample)[1], na.rm = TRUE)) {
         message(
@@ -1011,12 +1164,6 @@ qc_samples <- function(results,
     M_no_af <- M[keep_non_af, , drop = FALSE]
     M_af <- M[!keep_non_af, , drop = FALSE]
     if (!is.null(qc_metrics_dir)) {
-        sample_summary <- data.frame(
-            sample = names(file_counts),
-            n_events = as.integer(file_counts),
-            stringsAsFactors = FALSE
-        )
-        .write_qc_report_csv(sample_summary, file.path(qc_metrics_dir, "sample_qc_summary.csv"))
         if (nrow(M_no_af) > 0) {
             .write_qc_report_matrix_metric(
                 M_no_af,
@@ -1037,7 +1184,7 @@ qc_samples <- function(results,
     if (nrow(M_no_af) > 0) {
         spectra_plot <- plot_spectra(M_no_af, pd = pd, output_file = NULL)
         .save_qc_report_png(spectra_plot, retained_qc_plot_dir, "spectra_overlay.png")
-        .draw_qc_report_spectra_page(spectra_plot)
+        draw_report_spectra_page(spectra_plot)
     }
 
     if (nrow(M_no_af) > 1) {
@@ -1057,32 +1204,11 @@ qc_samples <- function(results,
         for (i in seq_along(sim_pages)) {
             p <- sim_pages[[i]]
             .save_qc_report_png(p, retained_qc_plot_dir, sprintf("similarity_matrix_%02d.png", i))
-            .draw_qc_report_plot_page(p)
+            draw_report_plot_page(p)
         }
     }
 
-    message("  - Writing Spread Matrix metrics...")
-    if (nrow(M_no_af) > 1) {
-        ssm_method <- if (method %in% c("NNLS", "RWLS", "AutoSpectral")) {
-            if (identical(method, "RWLS")) "WLS" else "OLS"
-        } else {
-            method
-        }
-        ssm <- calculate_ssm(M_no_af, method = ssm_method)
-        spread_score <- calculate_directional_spread_score(ssm)
-        .write_qc_report_matrix_metric(
-            ssm,
-            file.path(qc_metrics_dir, "spectral_spread_matrix.csv"),
-            row_id = "spilling_marker"
-        )
-        .write_qc_report_matrix_metric(
-            spread_score,
-            file.path(qc_metrics_dir, "directional_spread_score.csv"),
-            row_id = "spilling_marker"
-        )
-    }
-
-    if (identical(method, "NNLS")) {
+    if (identical(unmixing_method, "NNLS")) {
         message("  - Skipping NPS diagnostics for NNLS...")
     } else {
         message("  - Adding NPS diagnostics...")
@@ -1100,7 +1226,7 @@ qc_samples <- function(results,
             for (i in seq_along(nps_pages)) {
                 p <- nps_pages[[i]]
                 .save_qc_report_png(p, retained_qc_plot_dir, sprintf("negative_population_spread_%02d.png", i))
-                .draw_qc_report_plot_page(p)
+                draw_report_plot_page(p)
             }
         }
     }
@@ -1121,45 +1247,46 @@ qc_samples <- function(results,
     for (i in seq_along(scatter_pages)) {
         p <- scatter_pages[[i]]
         .save_qc_report_png(p, retained_qc_plot_dir, sprintf("sample_nxn_scatter_%02d.png", i))
-        .draw_qc_report_plot_page(p, square = TRUE)
+        draw_report_plot_page(p, square = TRUE)
     }
 
     if (!is.null(res_list)) {
         message("  - Adding RMS residual per detector page...")
-        detector_rms <- .compute_qc_report_detector_rms(res_list, M = M, pd = pd)
+        detector_rms <- .compute_qc_report_detector_rms(res_list, M = M, pd = pd, unmixing_method = unmixing_method)
         if (!is.null(detector_rms) && !is.null(qc_metrics_dir)) {
             .write_qc_report_csv(
                 detector_rms,
                 file.path(qc_metrics_dir, "rms_residual_per_detector.csv")
             )
         }
-        detector_rms_plot <- plot_detector_rms_residuals(res_list, M = M, pd = pd, output_file = NULL)
+        detector_rms_plot <- plot_detector_rms_residuals(res_list, M = M, pd = pd, output_file = NULL, unmixing_method = unmixing_method)
         if (!is.null(detector_rms_plot)) {
             .save_qc_report_png(detector_rms_plot, retained_qc_plot_dir, "rms_residual_per_detector.png")
-            .draw_qc_report_plot_page(
+            draw_report_plot_page(
                 detector_rms_plot,
                 height_ratio = 0.74,
                 width_ratio = 0.90
             )
         }
 
-        message("  - Adding overall detector reconstruction error per sample...")
-        sample_rms <- .compute_qc_report_sample_rms(res_list, M = M)
+        message("  - Adding detector reconstruction error...")
+        sample_rms <- .compute_qc_report_sample_rms(res_list, M = M, unmixing_method = unmixing_method)
         if (!is.null(sample_rms) && !is.null(qc_metrics_dir)) {
             .write_qc_report_csv(
                 sample_rms,
-                file.path(qc_metrics_dir, "overall_detector_reconstruction_error_per_sample.csv")
+                file.path(qc_metrics_dir, "detector_reconstruction_error.csv")
             )
         }
         rms_pages <- .build_qc_report_rms_pages(
             res_list,
             M = M,
-            max_files_per_page = overview_files_per_page
+            max_files_per_page = overview_files_per_page,
+            unmixing_method = unmixing_method
         )
         for (i in seq_along(rms_pages)) {
             p <- rms_pages[[i]]
-            .save_qc_report_png(p, retained_qc_plot_dir, sprintf("overall_detector_reconstruction_error_%02d.png", i))
-            .draw_qc_report_plot_page(
+            .save_qc_report_png(p, retained_qc_plot_dir, sprintf("detector_reconstruction_error_%02d.png", i))
+            draw_report_plot_page(
                 p,
                 height_ratio = 0.72,
                 width_ratio = 0.72

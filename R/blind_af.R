@@ -7,11 +7,6 @@
     rows <- as.logical(rows)
     out <- M[rows, , drop = FALSE]
 
-    variances <- attr(M, "variances")
-    if (!is.null(variances)) {
-        attr(out, "variances") <- variances[rownames(out), colnames(out), drop = FALSE]
-    }
-
     detector_noise <- attr(M, "detector_noise")
     if (!is.null(detector_noise)) {
         attr(out, "detector_noise") <- detector_noise
@@ -158,7 +153,14 @@
     }
 
     if (!is.null(seed)) set.seed(seed)
-    km <- stats::kmeans(shape_mat, centers = n_eff, nstart = 8, iter.max = 100)
+    km <- withCallingHandlers(
+        stats::kmeans(shape_mat, centers = n_eff, nstart = 8, iter.max = 100),
+        warning = function(w) {
+            if (grepl("Quick-TRANSfer stage steps exceeded maximum", conditionMessage(w), fixed = TRUE)) {
+                invokeRestart("muffleWarning")
+            }
+        }
+    )
     cluster_sizes <- as.numeric(table(factor(km$cluster, levels = seq_len(n_eff))))
     min_cluster_size <- .reference_min_af_cluster_size(
         n_events = nrow(shape_mat),
@@ -187,17 +189,6 @@
     rownames(af_centers) <- c("AF", if (nrow(af_centers) > 1L) paste0("AF_", seq.int(2L, nrow(af_centers))) else NULL)
     colnames(af_centers) <- colnames(marker_M)
     out <- rbind(marker_M, af_centers)
-
-    variances <- attr(marker_M, "variances")
-    if (!is.null(variances)) {
-        af_variances <- matrix(
-            0,
-            nrow = nrow(af_centers),
-            ncol = ncol(marker_M),
-            dimnames = list(rownames(af_centers), colnames(marker_M))
-        )
-        attr(out, "variances") <- rbind(variances[rownames(marker_M), colnames(marker_M), drop = FALSE], af_variances)
-    }
 
     detector_noise <- attr(marker_M, "detector_noise")
     if (!is.null(detector_noise)) {

@@ -2,14 +2,12 @@
 % Please edit documentation in R/control_interface.R
 \name{get_control_spectra}
 \alias{get_control_spectra}
-\title{Get Spectra via Internal Backend (Robust Multi-AF)}
+\title{Get Spectra via Internal Backend}
 \usage{
 get_control_spectra(
   flow_frame,
   control_file = "fcs_mapping.csv",
   control_dir = "scc",
-  af_dir = "af",
-  method = "WLS",
   cytometer = "auto"
 )
 }
@@ -20,10 +18,6 @@ get_control_spectra(
 
 \item{control_dir}{Directory containing SCC FCS files.}
 
-\item{af_dir}{Directory containing optional AF FCS files.}
-
-\item{method}{Reserved for future method selection.}
-
 \item{cytometer}{Cytometer name used as a channel-mapping hint. The default,
 `"auto"`, infers the cytometer from FCS detector names when possible.}
 }
@@ -31,8 +25,8 @@ get_control_spectra(
 Expanded reference matrix aligned to the detectors in `flow_frame`.
 }
 \description{
-Extracts SCC signatures using internal logic and optional AF signatures from
-the `af/` folder, then combines them for downstream unmixing.
+Extracts SCC signatures using internal logic. AF/unstained controls should be
+mapped as files inside `control_dir`.
 }
 \examples{
 if (interactive()) {

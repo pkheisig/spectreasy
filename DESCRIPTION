@@ -30,9 +30,13 @@ LinkingTo:
     RcppParallel
 SystemRequirements: GNU make
 Suggests:
+    FNN,
+    FlowSOM,
+    httpuv,
     jsonlite,
     KernSmooth,
     knitr,
+    later,
     pdftools,
     plumber,
     rmarkdown,

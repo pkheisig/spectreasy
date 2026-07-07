@@ -2,14 +2,15 @@
 % Please edit documentation in R/diagnostic_plots.R
 \name{plot_sample_rms_residuals}
 \alias{plot_sample_rms_residuals}
-\title{Plot RMS Residual Distribution Across Samples}
+\title{Plot Overall Detector Reconstruction Error Across Samples}
 \usage{
 plot_sample_rms_residuals(
   results,
   M = NULL,
   output_file = NULL,
   width = 225,
-  height = 125
+  height = 125,
+  unmixing_method = NULL
 )
 }
 \arguments{
@@ -22,10 +23,14 @@ plot_sample_rms_residuals(
 \item{width}{Width of plot in mm}
 
 \item{height}{Height of plot in mm}
+
+\item{unmixing_method}{Optional unmixing method used to score residuals.
+When `"WLS"` or `"RWLS"`, residual RMS values use the WLS detector-noise
+weights; otherwise raw detector residuals are used.}
 }
 \value{
 A `ggplot` object.
 }
 \description{
-Plot RMS Residual Distribution Across Samples
+Plot Overall Detector Reconstruction Error Across Samples
 }

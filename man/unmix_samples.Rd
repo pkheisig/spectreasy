@@ -6,30 +6,25 @@
 \usage{
 unmix_samples(
   sample_dir = "samples",
+  samples_dir = NULL,
   M = NULL,
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
-  variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
   detector_noise_file = NULL,
-  method = "WLS",
+  unmixing_method = "Spectreasy",
   rwls_max_iter = 1L,
   n_threads = 1L,
-  cytometer = "auto",
-  scc_dir = NULL,
-  control_file = NULL,
-  af_n_bands = "auto",
-  af_bands_per_file = 5,
-  af_auto_max_bands = 20,
-  af_min_cluster_events = 20,
-  af_min_cluster_proportion = 0.005,
-  af_n_bands_sensitivity = 1.5,
-  exclude_af = FALSE,
-  include_multi_af = FALSE,
+  spectral_variant_library = NULL,
+  spectral_variant_library_file = NULL,
+  spectral_variant_top_k = 3L,
+  spectral_variant_min_abundance = 1,
+  spectral_variant_positive_fraction = 0.02,
+  spectral_variant_min_improvement = 0.01,
+  spectreasy_weight_quantile = 0.9,
   estimate_af = FALSE,
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
   save_report = TRUE,
-  output_file = NULL,
   save_qc_plots = FALSE,
   qc_plot_dir = NULL,
   subsample_n = NULL,
@@ -42,6 +37,9 @@ unmix_samples(
 \item{sample_dir}{Directory containing experimental FCS files, a
 `flowCore::flowSet`, or a `SingleCellExperiment` for in-memory workflows.}
 
+\item{samples_dir}{Alias for `sample_dir`, accepted for workflows and scripts
+that use the plural directory name.}
+
 \item{M}{Optional reference matrix (Markers x Detectors). If supplied,
 unmixing is computed dynamically using this matrix. If not supplied,
 it is loaded from the CSV path provided in `unmixing_matrix_file`.}
@@ -50,59 +48,51 @@ it is loaded from the CSV path provided in `unmixing_matrix_file`.}
 Used when `M` is not supplied. By default this points to the reference matrix
 produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
-\item{variances_file}{Optional CSV path to a saved variances matrix. SCC
-variances are loaded as reference QC metadata when available, but the
-default WLS model does not use them as detector weights.}
-
 \item{detector_noise_file}{Optional CSV path to detector-specific WLS noise
 floors, as written by [unmix_controls()] (`"scc_detector_noise.csv"`). If
 omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
-estimates the floors from `scc_dir` when available, and otherwise falls
-back to the built-in scalar noise floor.}
+falls back to the built-in scalar noise floor.}
 
-\item{method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}
+\item{unmixing_method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`,
+`"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses
+per-event AF assignment with marker + selected-AF OLS, plus SCC-derived
+spectral-variant optimization when available. `Spectreasy` uses the same
+AutoSpectral-style fit, then blends marker abundances with a marker-only
+OLS anchor using decoder-projected AF impact weights.}
 
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
-iterations used when `method = "RWLS"`. The default, 1, preserves the
+iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
 \item{n_threads}{Positive integer; number of threads to use for event-wise
 multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
 
-\item{cytometer}{Cytometer name used only when `unmix_samples()` must build a
-reference matrix dynamically. The default, `"auto"`, infers the cytometer
-from FCS detector names when possible.}
+\item{spectral_variant_library}{Optional in-memory AutoSpectral
+spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`
+or `"Spectreasy"`.}
 
-\item{scc_dir}{Directory containing single-color control files. Used to
-dynamically build the reference matrix if `M` and `unmixing_matrix_file`
-are missing.}
+\item{spectral_variant_library_file}{Optional RDS path to an AutoSpectral
+spectral-variant library. When omitted, `unmix_samples()` looks for
+`scc_spectral_variants.rds` beside `unmixing_matrix_file`.}
 
-\item{control_file}{Path to the control mapping CSV.
-Used when dynamically building the reference matrix.}
+\item{spectral_variant_top_k}{Number of best variant candidates to test per
+positive fluorophore for AutoSpectral.}
 
-\item{af_n_bands}{Number of AF bands to extract from the unstained control
-when only one AF source is available. Use `"auto"` to select the count
-from AF event shapes and prune near-duplicate AF signatures.}
+\item{spectral_variant_min_abundance}{Minimum unmixed abundance for a
+fluorophore to be eligible for AutoSpectral variant testing.}
 
-\item{af_bands_per_file}{Number of AF bands requested per AF file when
-multiple AF sources are pooled.}
+\item{spectral_variant_positive_fraction}{Additional positivity threshold
+as a fraction of the event's strongest fluorophore abundance for
+AutoSpectral variant testing.}
 
-\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.}
+\item{spectral_variant_min_improvement}{Minimum fractional residual
+improvement required before accepting a cell-specific AutoSpectral
+variant refit.}
 
-\item{af_min_cluster_events}{Minimum number of AF events required to keep a
-k-means AF cluster.}
-
-\item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
-events required to keep a k-means AF cluster.}
-
-\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
-when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-select fewer bands before near-duplicate AF signatures are pruned. Default
-is `1.5`.}
-
-\item{exclude_af}{Logical; whether to exclude AF from unmixing.}
-
-\item{include_multi_af}{Logical; whether to include multi-AF controls.}
+\item{spectreasy_weight_quantile}{Numeric in `[0, 1]`; only accepted when
+`unmixing_method = "Spectreasy"`. Controls the quantile of
+decoder-projected AF impacts used as the soft-saturation scale for
+marker-specific AutoSpectral mixing. The default is `0.9`.}
 
 \item{estimate_af}{Logical; if `TRUE`, estimate AF signatures directly from
 stained sample event-wise WLS residuals, select the best candidate model by
@@ -118,10 +108,6 @@ Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
 \item{save_report}{Logical; if `TRUE`, write a sample QC PDF report and
 sample QC metric CSVs from the in-memory unmixing results without rerunning
 unmixing. Defaults to `TRUE`.}
-
-\item{output_file}{Optional output path for the sample QC PDF report. When
-this is `NULL`, each `unmix_samples()` report run is written to a fresh
-`qc_samples`, `qc_samples_2`, ... folder beside the unmixed FCS output.}
 
 \item{save_qc_plots}{Logical; if `TRUE`, save QC report plots as PNG files
 in `qc_plot_dir` while creating the PDF report.}
@@ -187,6 +173,6 @@ toy_fs <- flowCore::flowSet(list(
   APC_sample = simulate_sample("APC", M_demo)
 ))
 
-unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", output_dir = tempdir())
+unmixed <- unmix_samples(toy_fs, M = M_demo, unmixing_method = "OLS", output_dir = tempdir())
 names(unmixed)
 }

@@ -63,7 +63,6 @@ from the project directory created above.
 control_file <- file.path(project_dir, "fcs_mapping.csv")
 auto_control_df <- create_control_file(
   input_folder = file.path(project_dir, "scc"),
-  include_af_folder = FALSE,
   cytometer = "Aurora",
   output_file = file.path(project_dir, "fcs_mapping_auto.csv")
 )
@@ -117,7 +116,8 @@ ctrl <- unmix_controls(
   control_file = control_file,
   cytometer = "Aurora",
   output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls"),
-  unmix_method = "WLS",
+  unmixing_method = "Spectreasy",
+  manual_gating = FALSE,
   unmix_scatter_panel_size_mm = 30,
   save_qc_plots = TRUE,
   seed = 1
@@ -138,7 +138,7 @@ unmixed <- unmix_samples(
 ## 2. Start the control-stage workflow
 
 Run `unmix_controls()` first. If `fcs_mapping.csv` is missing,
-`auto_create_control = TRUE` creates it automatically and then pauses for
+`auto_create_mapping = TRUE` creates it automatically and then pauses for
 review.
 
 ```{r, eval = FALSE}
@@ -146,10 +146,10 @@ setwd(project_dir)
 
 unmix_controls(
   scc_dir = "scc",
-  auto_create_control = TRUE,
+  auto_create_mapping = TRUE,
   cytometer = "Aurora",
   auto_unknown_fluor_policy = "by_channel",
-  unmix_method = "WLS",
+  unmixing_method = "Spectreasy",
   unmix_scatter_panel_size_mm = 30,
   save_qc_plots = TRUE
 )
@@ -201,7 +201,6 @@ Key outputs from this step include:
 - `fcs_mapping.csv`
 - `spectreasy_outputs/unmix_controls/scc_detector_noise.csv`
 - `spectreasy_outputs/unmix_controls/scc_reference_matrix.csv`
-- `spectreasy_outputs/unmix_controls/scc_variances.csv`
 - `spectreasy_outputs/unmix_controls/scc_spectra.png`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_matrix.csv`
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
@@ -239,13 +238,11 @@ knitr::include_graphics(ctrl$unmixing_scatter_file)
 
 ### What WLS uses
 
-When `method = "WLS"`, `spectreasy` uses an event-wise detector-error model:
+When `unmixing_method = "WLS"`, `spectreasy` uses an event-wise detector-error model:
 detectors with higher non-negative signal in an event get lower weight for that
 event. The detector noise floor is estimated from the low-signal tail of the SCC
 files and written to `scc_detector_noise.csv`; if no estimate is available,
-`spectreasy` falls back to a scalar floor of 125. The SCC population variances
-in `scc_variances.csv` are still written as reference QC metadata, but they are
-not used as default WLS detector weights.
+`spectreasy` falls back to a scalar floor of 125.
 
 The `control.type` column in `fcs_mapping.csv` also matters here. It tells
 `spectreasy` whether each control should be gated as `beads` or `cells`. If
@@ -331,16 +328,15 @@ core `unmix_controls()` -> `unmix_samples()` workflow shown above.
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `unmix_controls()` and dynamic `unmix_samples()` reference-matrix
-builds use `af_n_bands = "auto"` to choose autofluorescence signatures from
-the unstained control. If your cells have different AF shapes from cell to
-cell, auto can split AF into several basis signatures.
+By default, `unmix_controls()` uses `af_n_bands = 100` to choose a
+broad fixed AF bank from the unstained control. If your cells have
+different AF shapes from cell to cell, multiple AF bands can model several
+common AF signatures.
 
 Use the multi-AF settings in the control-stage call. `af_n_bands` controls
-how many AF basis signatures are extracted from the unstained control. Set it
-to `"auto"` to let `spectreasy` choose the count, and tune that choice with
-`af_n_bands_sensitivity`. `include_multi_af` tells `spectreasy` to include
-additional AF controls from the `af/` directory when those files are available.
+how many AF basis signatures are extracted from the unstained control. The
+default `100` is a practical starting point. Additional unstained controls in
+`scc/` are pooled before AF extraction.
 
 ```{r, eval = FALSE}
 ctrl_multi_af <- unmix_controls(
@@ -348,37 +344,27 @@ ctrl_multi_af <- unmix_controls(
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
   output_dir = "spectreasy_outputs/unmix_controls_multi_af",
-  unmix_method = "WLS",
-  include_multi_af = TRUE,
-  af_n_bands = "auto",
-  af_n_bands_sensitivity = 1.5,
+  unmixing_method = "Spectreasy",
+  af_n_bands = 100,
   seed = 1
 )
 ```
 
-If you want `unmix_samples()` to rebuild the reference matrix dynamically from
-the SCC files, pass the same two AF settings there as well:
+Then unmix samples with the control-stage matrix. AF settings stay in
+`unmix_controls()`; `unmix_samples()` just consumes the resulting matrix.
 
 ```{r, eval = FALSE}
 unmixed_multi_af <- unmix_samples(
   sample_dir = "sample",
-  unmixing_matrix_file = NULL,
-  scc_dir = "scc",
-  control_file = "fcs_mapping.csv",
-  method = "WLS",
-  include_multi_af = TRUE,
-  af_n_bands = "auto",
-  af_n_bands_sensitivity = 1.5,
+  unmixing_matrix_file = ctrl_multi_af$reference_matrix_file,
+  unmixing_method = "Spectreasy",
   output_dir = "spectreasy_outputs/unmix_samples_multi_af"
 )
 ```
 
 `af_n_bands` is like choosing how many AF "flavors" to model. More bands can
-fit complex AF better, but too many similar bands can make the matrix
-unstable. With `af_n_bands = "auto"`, `af_n_bands_sensitivity` controls how
-easily auto adds another band, and near-duplicate AF signatures are pruned
-before unmixing. The default `1.5` is balanced; lower values such as `1` allow
-more bands, while higher values such as `2.5` or `5` select fewer bands.
+fit complex AF better, but too many similar bands can make the matrix unstable
+and slow down unmixing.
 
 ## Use a reviewed control CSV in non-interactive workflows
 
@@ -390,7 +376,7 @@ ctrl_noninteractive <- unmix_controls(
   control_file = control_file,
   cytometer = "Aurora",
   output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls_noninteractive"),
-  unmix_method = "WLS",
+  unmixing_method = "WLS",
   seed = 1
 )
 
@@ -402,8 +388,7 @@ dim(ctrl_noninteractive$M)
 You can pass the in-memory reference matrix returned by `unmix_controls()`
 directly to `unmix_samples()` instead of loading it from the saved CSV file.
 For WLS, `unmix_samples()` will also load `scc_detector_noise.csv` beside the
-saved reference matrix when it is available. The optional `scc_variances.csv`
-remains useful as control-spread QC metadata.
+saved reference matrix when it is available.
 
 ```{r}
 fluor_reference_matrix <- ctrl$M
@@ -414,30 +399,25 @@ na_idx <- is.na(mapped_names)
 mapped_names[na_idx] <- rownames(reference_matrix)[na_idx]
 rownames(reference_matrix) <- unname(mapped_names)
 
-unmixed_dynamic <- unmix_samples(
+unmixed_direct <- unmix_samples(
   sample_dir = file.path(project_dir, "sample"),
   M = reference_matrix,
-  method = "WLS",
-  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples_dynamic")
+  unmixing_method = "WLS",
+  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples_direct")
 )
 
-names(unmixed_dynamic)
+names(unmixed_direct)
 ```
 
 ## Inspect quick QC plots
 
-Reference spectra and spectral spread plots should be interpreted in
-fluorophore space, so the original fluorophore-labeled control matrix is used
-here.
+Reference spectra should be interpreted in fluorophore space, so the original
+fluorophore-labeled control matrix is used here.
 
 ```{r}
 reference_matrix_no_af <- fluor_reference_matrix[!grepl("^AF($|_)", rownames(fluor_reference_matrix), ignore.case = TRUE), , drop = FALSE]
 
 plot_spectra(reference_matrix_no_af, output_file = NULL)
-```
-
-```{r}
-plot_ssm(calculate_ssm(reference_matrix_no_af), output_file = NULL)
 ```
 
 ```{r}

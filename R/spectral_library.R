@@ -13,6 +13,7 @@
         cytekaurora = "aurora",
         discover = "discover",
         facsdiscover = "discover",
+        bdfacsdiscover = "discover",
         discover_s8 = "discover",
         discovers8 = "discover",
         discover_a8 = "discover",
@@ -20,7 +21,11 @@
         id7000 = "id7000",
         sonyid7000 = "id7000",
         xenith = "xenith",
-        attunexenith = "xenith"
+        attunexenith = "xenith",
+        thermofisherxenith = "xenith",
+        thermofisherattunexenith = "xenith",
+        thermoscientificxenith = "xenith",
+        thermoscientificattunexenith = "xenith"
     )
 }
 
@@ -66,6 +71,36 @@
             stringsAsFactors = FALSE
         ))
     }
+    if (identical(id, "discover")) {
+        return(data.frame(
+            id = c("discover_s8", "discover_a8"),
+            label = c(
+                "FACSDiscover S8: UV/V/B/YG/R",
+                "FACSDiscover A8: UV/V/B/YG/R"
+            ),
+            description = c(
+                "22UV-20V-16B-12YG-8R",
+                "22UV-20V-16B-12YG-8R"
+            ),
+            stringsAsFactors = FALSE
+        ))
+    }
+    if (identical(id, "id7000")) {
+        return(data.frame(
+            id = c("id7000_5l", "id7000_4l", "id7000_3l"),
+            label = c(
+                "ID7000 5L: UV/V/B/YG/R",
+                "ID7000 4L: V/B/YG/R",
+                "ID7000 3L: V/B/R"
+            ),
+            description = c(
+                "147 fluorescence detectors",
+                "112 fluorescence detectors",
+                "86 fluorescence detectors"
+            ),
+            stringsAsFactors = FALSE
+        ))
+    }
 
     libs <- .spectral_panel_libraries()
     label <- libs$label[match(id, libs$id)]
@@ -89,6 +124,22 @@
     key <- .normalize_cytometer_token(configuration[1])
     aliases <- c(
         full = "full",
+        discovers8 = "discover_s8",
+        discover_s8 = "discover_s8",
+        facsdiscovers8 = "discover_s8",
+        bdfacsdiscovers8 = "discover_s8",
+        discovera8 = "discover_a8",
+        discover_a8 = "discover_a8",
+        facsdiscovera8 = "discover_a8",
+        bdfacsdiscovera8 = "discover_a8",
+        id7000 = "id7000_5l",
+        id70005l = "id7000_5l",
+        id70005laser = "id7000_5l",
+        id70005lcompact = "id7000_5l",
+        id70004l = "id7000_4l",
+        id70004laser = "id7000_4l",
+        id70003l = "id7000_3l",
+        id70003laser = "id7000_3l",
         aurora5l = "5l_uv_v_b_yg_r",
         aurora5laser = "5l_uv_v_b_yg_r",
         `5l` = "5l_uv_v_b_yg_r",
@@ -123,11 +174,15 @@
 .spectral_panel_configuration_lasers <- function(cytometer = "aurora", configuration = NULL) {
     id <- .resolve_spectral_panel_cytometer(cytometer)
     config <- .resolve_spectral_panel_configuration(id, configuration)
-    if (!identical(id, "aurora")) return(NULL)
     switch(config,
         `5l_uv_v_b_yg_r` = c("UV", "Violet", "Blue", "YellowGreen", "Red"),
         `4l_uv_v_b_r` = c("UV", "Violet", "Blue", "Red"),
         `4l_v_b_yg_r` = c("Violet", "Blue", "YellowGreen", "Red"),
+        `discover_s8` = c("UV", "Violet", "Blue", "YellowGreen", "Red"),
+        `discover_a8` = c("UV", "Violet", "Blue", "YellowGreen", "Red"),
+        `id7000_5l` = c("UV", "Violet", "Blue", "YellowGreen", "Red"),
+        `id7000_4l` = c("Violet", "Blue", "YellowGreen", "Red"),
+        `id7000_3l` = c("Violet", "Blue", "Red"),
         `3l_v_b_r` = c("Violet", "Blue", "Red"),
         NULL
     )
@@ -405,12 +460,59 @@
     if (length(paren) > 0 && nzchar(paren)) return(as.integer(paren))
     embedded <- regmatches(detector, regexpr("(?<!^)[0-9]{3}(?=-A$)", detector, perl = TRUE))
     if (length(embedded) > 0 && nzchar(embedded)) return(as.integer(embedded))
+    if (identical(id, "aurora")) {
+        emission <- .aurora_detector_emission(detector)
+        if (is.finite(emission) && emission > 0) return(as.integer(emission))
+    }
+    if (identical(id, "id7000")) {
+        emission <- .id7000_detector_emission(detector)
+        if (is.finite(emission) && emission > 0) return(as.integer(emission))
+    }
     laser <- .spectral_detector_laser(id, detector)
     offset <- suppressWarnings(as.integer(regmatches(detector, regexpr("[0-9]+(?=(?:-A)?$)", detector, perl = TRUE))))
     if (!is.finite(offset)) offset <- 1L
     starts <- c(DeepUV = 350L, UV = 370L, Violet = 420L, Blue = 500L, YellowGreen = 570L, Red = 660L, IR = 810L, Other = 400L)
     start <- if (laser %in% names(starts)) starts[[laser]] else starts[["Other"]]
     as.integer(start + (offset - 1L) * 15L)
+}
+
+.aurora_detector_emission <- function(detector) {
+    clean <- toupper(gsub("-A$", "", trimws(as.character(detector))))
+    prefix <- sub("[0-9]+$", "", clean)
+    channel <- suppressWarnings(as.integer(regmatches(clean, regexpr("[0-9]+$", clean))))
+    if (!is.finite(channel)) return(NA_integer_)
+    maps <- list(
+        UV = c(370, 395, 420, 440, 450, 480, 480, 500, 520, 550, 570, 580, 600, 660, 750, 800),
+        V = c(420, 440, 450, 480, 480, 500, 550, 570, 580, 600, 660, 680, 690, 700, 730, 780),
+        B = c(500, 520, 550, 550, 570, 580, 600, 600, 660, 680, 690, 700, 750, 780),
+        YG = c(570, 580, 600, 600, 660, 680, 700, 730, 750, 780),
+        R = c(660, 680, 700, 730, 730, 750, 780, 800)
+    )
+    values <- maps[[prefix]]
+    if (is.null(values) || channel < 1L || channel > length(values)) return(NA_integer_)
+    values[[channel]]
+}
+
+.id7000_detector_emission <- function(detector) {
+    clean <- toupper(gsub("-A$", "", trimws(as.character(detector))))
+    prefix <- regmatches(clean, regexpr("^[0-9]{3}", clean, perl = TRUE))
+    channel <- suppressWarnings(as.integer(regmatches(clean, regexpr("(?<=CH)[0-9]+$", clean, perl = TRUE))))
+    if (length(prefix) == 0 || !nzchar(prefix) || !is.finite(channel)) return(NA_integer_)
+    start_channel <- c(`320` = 1L, `355` = 1L, `405` = 1L, `488` = 4L, `561` = 10L, `637` = 17L, `808` = 36L)
+    start_emission <- c(`320` = 350L, `355` = 370L, `405` = 420L, `488` = 500L, `561` = 570L, `637` = 660L, `808` = 810L)
+    if (!(prefix %in% names(start_channel))) return(NA_integer_)
+    as.integer(start_emission[[prefix]] + (channel - start_channel[[prefix]]) * 15L)
+}
+
+.spectral_detector_channel_index <- function(detector) {
+    clean <- toupper(trimws(gsub("-A$", "", gsub("\\s*\\([^)]*\\)", "", as.character(detector)))))
+    hit <- regmatches(clean, regexpr("(?<=CH)[0-9]+$", clean, perl = TRUE))
+    if (length(hit) == 0 || !nzchar(hit)) {
+        hit <- regmatches(clean, regexpr("[0-9]+$", clean, perl = TRUE))
+    }
+    if (length(hit) == 0 || !nzchar(hit)) return(0L)
+    out <- suppressWarnings(as.integer(hit))
+    if (is.finite(out)) out else 0L
 }
 
 .spectral_detector_metadata <- function(cytometer, detectors) {
@@ -423,9 +525,29 @@
     palette <- .spectral_panel_laser_palette()
     lasers <- vapply(detectors, function(det) .spectral_detector_laser(id, det), character(1))
     emissions <- vapply(detectors, function(det) .spectral_detector_emission(id, det), integer(1))
+    dict <- .read_cytometer_dictionary()
+    descriptions <- rep("", length(detectors))
+    if (is.data.frame(dict) && nrow(dict) > 0 && all(c("cytometer", "detector", "description") %in% colnames(dict))) {
+        dict_cytometers <- vapply(
+            dict$cytometer,
+            .resolve_cytometer_id,
+            character(1),
+            allow_auto = FALSE,
+            unknown_as_auto = FALSE
+        )
+        candidates <- dict[dict_cytometers == id, , drop = FALSE]
+        if (nrow(candidates) > 0) {
+            dict_keys <- vapply(candidates$detector, function(x) .spectral_detector_keys(x)[1], character(1))
+            for (i in seq_along(detectors)) {
+                hit <- match(.spectral_detector_keys(detectors[i])[1], dict_keys)
+                if (!is.na(hit)) descriptions[i] <- trimws(as.character(candidates$description[hit]))
+            }
+        }
+    }
+    fallback_labels <- gsub("-A$", "", gsub("\\s*\\([^)]*\\)", "", detectors))
     out <- data.frame(
         detector = detectors,
-        label = gsub("-A$", "", gsub("\\s*\\([^)]*\\)", "", detectors)),
+        label = ifelse(nzchar(descriptions), descriptions, fallback_labels),
         laser = lasers,
         emission = emissions,
         color = unname(palette[ifelse(lasers %in% names(palette), lasers, "Other")]),
@@ -436,11 +558,9 @@
     laser_rank <- match(out$laser, laser_order_ref)
     laser_rank[is.na(laser_rank)] <- length(laser_order_ref)
 
-    det_base <- gsub("-A$", "", out$detector)
-    channel_num <- suppressWarnings(as.integer(regmatches(det_base, regexpr("[0-9]+$", det_base))))
-    channel_num[is.na(channel_num)] <- 0L
+    channel_num <- vapply(out$detector, .spectral_detector_channel_index, integer(1))
 
-    out <- out[order(laser_rank, channel_num), , drop = FALSE]
+    out <- out[order(laser_rank, out$emission, channel_num, out$detector), , drop = FALSE]
     rownames(out) <- NULL
 
     assign(cache_key, out, envir = .spectreasy_cache)
@@ -455,8 +575,8 @@
         detectors <- colnames(.load_spectral_library(id, renormalize = FALSE))
     }
     lasers <- .spectral_panel_configuration_lasers(id, configuration)
-    if (is.null(lasers)) return(detectors)
     detector_info <- .spectral_detector_metadata(id, detectors)
+    if (is.null(lasers)) return(detector_info$detector)
     detector_info$detector[detector_info$laser %in% lasers]
 }
 
@@ -564,14 +684,14 @@
                                            detector_labels,
                                            y_power = 1.5,
                                            max_log_intensity = 6,
-                                           n_bins = 13L) {
+                                           n_bins = 37L) {
     signature <- as.numeric(signature)
     signature[!is.finite(signature)] <- 0
     signature <- pmax(0, pmin(1, signature))
 
-    offsets <- seq(-0.36, 0.36, length.out = n_bins)
-    center_weight <- 1 - abs(seq(-1, 1, length.out = n_bins))
-    center_weight <- pmax(0.05, center_weight)
+    offsets <- seq(-0.42, 0.42, length.out = n_bins)
+    center_weight <- 1 - abs(seq(-1, 1, length.out = n_bins))^1.6
+    center_weight <- pmax(0.08, center_weight)
 
     rows <- lapply(seq_along(signature), function(i) {
         center_log <- 0.35 + (signature[i]^0.72) * (max_log_intensity - 0.35)
@@ -581,7 +701,7 @@
             Detector = detector_labels[i],
             y_orig = y_orig,
             y = y_orig^y_power,
-            fill = center_weight * pmax(0.08, signature[i]),
+            fill = pmin(1, center_weight * pmax(0.12, sqrt(signature[i])) * 1.35),
             stringsAsFactors = FALSE
         )
     })
@@ -606,7 +726,7 @@
     y_labels <- vapply(y_breaks_orig, function(x) paste0("10^", x), character(1))
 
     ggplot2::ggplot(dt_c, ggplot2::aes(ch_idx, y, fill = fill)) +
-        ggplot2::geom_tile(width = 0.7, height = 0.10) +
+        ggplot2::geom_tile(width = 0.76, height = 0.055) +
         ggplot2::scale_fill_gradientn(
             colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"),
             limits = c(0, 1),
@@ -682,8 +802,15 @@
 
 .draw_spectral_panel_similarity_pages <- function(similarity_matrix,
                                                   complexity_index,
-                                                  max_markers_per_page = 20L) {
+                                                  cytometer_label = "",
+                                                  configuration_label = "",
+                                                  fluorophore_count = NULL,
+                                                  max_markers_per_page = NULL) {
     if (is.null(similarity_matrix) || nrow(similarity_matrix) < 2L) return(invisible(NULL))
+    n_markers <- nrow(similarity_matrix)
+    if (is.null(max_markers_per_page)) {
+        max_markers_per_page <- if (n_markers <= 15L) 15L else 8L
+    }
     pages <- .build_qc_report_matrix_pages(
         similarity_matrix,
         plot_fun = plot_similarity_matrix,
@@ -692,10 +819,17 @@
     )
     if (length(pages) == 0) return(invisible(NULL))
 
+    panel_label_parts <- c(
+        cytometer_label,
+        configuration_label,
+        if (!is.null(fluorophore_count)) paste0(fluorophore_count, " fluorophore(s)") else NULL
+    )
+    panel_label <- paste(panel_label_parts[nzchar(panel_label_parts)], collapse = " | ")
+
     for (p in pages) {
         p <- p +
             ggplot2::theme(
-                plot.title = ggplot2::element_text(size = 14, face = "bold"),
+                plot.title = ggplot2::element_blank(),
                 plot.subtitle = ggplot2::element_blank(),
                 axis.text.x = ggplot2::element_text(size = 8, angle = 45, hjust = 1),
                 axis.text.y = ggplot2::element_text(size = 8),
@@ -703,6 +837,22 @@
                 plot.margin = ggplot2::margin(8, 8, 8, 8)
             )
         grid::grid.newpage()
+        grid::grid.text(
+            "Fluorophore Spectral Similarity",
+            x = 0.04,
+            y = 0.965,
+            just = c("left", "top"),
+            gp = grid::gpar(fontsize = 18, fontface = "bold")
+        )
+        if (nzchar(panel_label)) {
+            grid::grid.text(
+                panel_label,
+                x = 0.04,
+                y = 0.925,
+                just = c("left", "top"),
+                gp = grid::gpar(fontsize = 10, col = "#475569")
+            )
+        }
         grid::grid.text(
             paste0("Complexity Index: ", format(round(complexity_index, 2), nsmall = 2)),
             x = 0.965,
@@ -712,7 +862,7 @@
         )
         grid::grid.draw(grid::editGrob(
             ggplot2::ggplotGrob(p),
-            vp = grid::viewport(x = 0.50, y = 0.48, width = 0.94, height = 0.84)
+            vp = grid::viewport(x = 0.50, y = 0.46, width = 0.94, height = 0.78)
         ))
     }
     invisible(NULL)
@@ -764,42 +914,14 @@
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(grDevices::dev.off(), add = TRUE)
 
-    grid::grid.newpage()
-    grid::grid.text(
-        "Spectral Panel Overview",
-        x = 0.04,
-        y = 0.955,
-        just = c("left", "top"),
-        gp = grid::gpar(fontsize = 18, fontface = "bold")
-    )
-    grid::grid.text(
-        paste0(cyt_label, " | ", config_label, " | ", nrow(spectra), " fluorophore(s)"),
-        x = 0.04,
-        y = 0.915,
-        just = c("left", "top"),
-        gp = grid::gpar(fontsize = 10, col = "#475569")
-    )
-    grid::grid.roundrect(
-        x = 0.84,
-        y = 0.925,
-        width = 0.25,
-        height = 0.07,
-        r = grid::unit(0.03, "npc"),
-        gp = grid::gpar(fill = "#050505", col = NA)
-    )
-    grid::grid.text(
-        paste0("Complexity Index: ", format(round(panel$complexity_index, 2), nsmall = 2)),
-        x = 0.84,
-        y = 0.925,
-        gp = grid::gpar(fontsize = 11, fontface = "bold", col = "white")
-    )
-
-    .draw_spectral_panel_signature_pages(signature_pages, plots_per_page = 2L)
     .draw_spectral_panel_similarity_pages(
         similarity_matrix = sim,
         complexity_index = panel$complexity_index,
-        max_markers_per_page = 20L
+        cytometer_label = cyt_label,
+        configuration_label = config_label,
+        fluorophore_count = nrow(spectra)
     )
+    .draw_spectral_panel_signature_pages(signature_pages, plots_per_page = 2L)
 
     invisible(output_file)
 }

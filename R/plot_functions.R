@@ -77,6 +77,57 @@
     out
 }
 
+.infer_plot_cytometer_from_detectors <- function(detectors) {
+    dict <- .read_cytometer_dictionary()
+    if (!is.data.frame(dict) || nrow(dict) == 0 || !all(c("cytometer", "detector") %in% colnames(dict))) {
+        return("auto")
+    }
+    actual <- unique(.normalize_detector_token(detectors))
+    actual <- actual[nzchar(actual)]
+    if (length(actual) == 0) return("auto")
+    scores <- vapply(split(dict$detector, dict$cytometer), function(expected_detectors) {
+        expected <- unique(.normalize_detector_token(expected_detectors))
+        length(intersect(actual, expected)) / max(1, length(actual))
+    }, numeric(1))
+    if (length(scores) == 0 || all(!is.finite(scores))) return("auto")
+    best <- names(which.max(scores))
+    best_score <- unname(max(scores, na.rm = TRUE))
+    if (!is.finite(best_score) || best_score < 0.35) "auto" else .resolve_cytometer_id(best, allow_auto = TRUE, unknown_as_auto = TRUE)
+}
+
+.reference_plot_detector_metadata <- function(detectors) {
+    cytometer <- .infer_plot_cytometer_from_detectors(detectors)
+    if (identical(cytometer, "auto")) return(NULL)
+    if (cytometer %in% names(.spectral_library_file_map())) {
+        info <- tryCatch(.spectral_detector_metadata(cytometer, detectors), error = function(e) NULL)
+        if (!is.null(info) && nrow(info) > 0) return(info)
+    }
+    dict <- .read_cytometer_dictionary()
+    if (!is.data.frame(dict) || nrow(dict) == 0 || !all(c("cytometer", "detector") %in% colnames(dict))) {
+        return(NULL)
+    }
+    dict_cytometer <- vapply(
+        dict$cytometer,
+        .resolve_cytometer_id,
+        character(1),
+        allow_auto = FALSE,
+        unknown_as_auto = FALSE
+    )
+    dict <- dict[dict_cytometer == cytometer, , drop = FALSE]
+    if (nrow(dict) == 0) return(NULL)
+    key <- .normalize_detector_token(detectors)
+    dict_key <- .normalize_detector_token(dict$detector)
+    hit <- match(key, dict_key)
+    ok <- !is.na(hit)
+    if (!any(ok)) return(NULL)
+    labels <- detectors
+    desc <- trimws(as.character(dict$description[hit[ok]]))
+    labels[ok] <- ifelse(nzchar(desc), desc, detectors[ok])
+    lasers <- rep("Other", length(detectors))
+    if ("laser" %in% colnames(dict)) lasers[ok] <- as.character(dict$laser[hit[ok]])
+    data.frame(detector = detectors, label = labels, laser = lasers, emission = seq_along(detectors), stringsAsFactors = FALSE)
+}
+
 #' Plot Spectral Overlays
 #' 
 #' @param ref_matrix Reference matrix (Markers x Detectors)
@@ -113,6 +164,10 @@ plot_spectra <- function(ref_matrix,
                          peak_label_size = 2.6) {
     ref_matrix <- .as_reference_matrix(ref_matrix, "ref_matrix")
     detectors <- colnames(ref_matrix)
+    if (is.null(pd)) {
+        pd_attr <- attr(ref_matrix, "detector_pd")
+        if (is.data.frame(pd_attr)) pd <- pd_attr
+    }
     
     # 1. Get Sorted Detectors and Labels
     if (!is.null(pd)) {
@@ -138,25 +193,33 @@ plot_spectra <- function(ref_matrix,
             labels <- det_info$labels[match(common, det_info$names)]
         }
     } else {
-        # Fallback: sort by laser group first, then detector number.
-        # Desired order: UV, V, B, YG, R.
-        detector_key <- toupper(gsub("\\s+", "", gsub("-A$", "", detectors)))
-        laser_group <- vapply(detector_key, function(k) {
-            if (grepl("^UV", k)) return(1L)
-            if (grepl("^V", k)) return(2L)
-            if (grepl("^B", k)) return(3L)
-            if (grepl("^YG", k) || grepl("^Y", k) || grepl("^G", k)) return(4L)
-            if (grepl("^R", k)) return(5L)
-            return(99L)
-        }, integer(1))
+        detector_info <- .reference_plot_detector_metadata(detectors)
+        if (!is.null(detector_info) && nrow(detector_info) > 0) {
+            common <- intersect(detector_info$detector, detectors)
+            ref_matrix <- ref_matrix[, common, drop = FALSE]
+            detectors <- common
+            labels <- detector_info$label[match(common, detector_info$detector)]
+        } else {
+            # Fallback: sort by laser group first, then detector number.
+            # Desired order: UV, V, B, YG, R.
+            detector_key <- toupper(gsub("\\s+", "", gsub("-A$", "", detectors)))
+            laser_group <- vapply(detector_key, function(k) {
+                if (grepl("^UV", k)) return(1L)
+                if (grepl("^V", k)) return(2L)
+                if (grepl("^B", k)) return(3L)
+                if (grepl("^YG", k) || grepl("^Y", k) || grepl("^G", k)) return(4L)
+                if (grepl("^R", k)) return(5L)
+                return(99L)
+            }, integer(1))
 
-        det_num <- suppressWarnings(as.integer(sub("^[A-Z]+([0-9]+).*$", "\\1", detector_key)))
-        det_num[!is.finite(det_num)] <- 999L
+            det_num <- suppressWarnings(as.integer(sub("^[A-Z]+([0-9]+).*$", "\\1", detector_key)))
+            det_num[!is.finite(det_num)] <- 999L
 
-        ord <- order(laser_group, det_num, detectors)
-        ref_matrix <- ref_matrix[, ord, drop = FALSE]
-        detectors <- colnames(ref_matrix)
-        labels <- detectors
+            ord <- order(laser_group, det_num, detectors)
+            ref_matrix <- ref_matrix[, ord, drop = FALSE]
+            detectors <- colnames(ref_matrix)
+            labels <- detectors
+        }
     }
 
     long <- data.frame(
@@ -328,10 +391,18 @@ plot_spectra <- function(ref_matrix,
     c(lo, hi)
 }
 
+.scatter_density_base_color <- function() {
+    "#0037B8"
+}
+
+.scatter_density_color_ramp <- function() {
+    grDevices::colorRampPalette(c("#0037B8", "#006E9F", "#008C55", "#B87500", "#A60022"))
+}
+
 .add_unmix_scatter_density_colors <- function(plot_df) {
-    plot_df$color <- "#0000FF"
+    plot_df$color <- .scatter_density_base_color()
     groups <- split(seq_len(nrow(plot_df)), interaction(plot_df$panel_row, plot_df$panel_col, drop = TRUE))
-    ramp <- grDevices::colorRampPalette(c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"))
+    ramp <- .scatter_density_color_ramp()
     for (idx in groups) {
         if (length(idx) > 1 && stats::var(plot_df$x[idx]) > 0 && stats::var(plot_df$y[idx]) > 0) {
             plot_df$color[idx] <- grDevices::densCols(plot_df$x[idx], plot_df$y[idx], colramp = ramp)
@@ -494,7 +565,6 @@ plot_spectra <- function(ref_matrix,
         ) +
         ggplot2::labs(
             title = "Unmixing Scatter Matrix",
-            subtitle = "Good: row-stain events are high on Y and near zero on X (other markers).\nBad: large off-axis clouds indicate cross-talk, control mislabeling, or unstable unmixing."
         ) +
         ggplot2::theme_bw(base_size = 8.75) +
         ggplot2::theme(
@@ -581,7 +651,7 @@ plot_spectra <- function(ref_matrix,
 #'   PE_sample = simulate_sample("PE", M_demo),
 #'   APC_sample = simulate_sample("APC", M_demo)
 #' ))
-#' toy_unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", write_fcs = FALSE)
+#' toy_unmixed <- unmix_samples(toy_fs, M = M_demo, unmixing_method = "OLS", write_fcs = FALSE)
 #'
 #' p <- plot_unmixing_scatter_matrix(
 #'   unmixed_list = toy_unmixed,

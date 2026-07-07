@@ -10,9 +10,8 @@ qc_samples(
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
   output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
-  method = NULL,
+  unmixing_method = NULL,
   res_list = NULL,
-  png_dir = NULL,
   pd = NULL,
   max_events_per_sample = 1000,
   overview_files_per_page = 15,
@@ -44,13 +43,11 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{output_file}{Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.}
 
-\item{method}{Unmixing method used to create `results` (`"AutoSpectral"`,
-`"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
+\item{unmixing_method}{Unmixing method used to create `results` (`"AutoSpectral"`,
+`"Spectreasy"`, `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
 because constrained NNLS results are non-negative by construction.}
 
 \item{res_list}{Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.}
-
-\item{png_dir}{Deprecated and ignored (kept for backward compatibility).}
 
 \item{pd}{Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
 If omitted, `attr(M, "detector_pd")` is used when available.}
@@ -89,7 +86,7 @@ If `FALSE` (default), only include NxN pages for the first sample in `results`.}
 \item{save_qc_pngs}{Logical; if `TRUE`, save report plot pages as PNG files
 alongside the PDF report.}
 
-\item{qc_metrics_dir}{Optional directory where plot-ready sample QC metric
+\item{qc_metrics_dir}{Optional directory where plot-ready QC metric
 CSVs are written alongside the PDF report.}
 }
 \value{
@@ -99,7 +96,7 @@ Invisibly returns a list with `output_file`, `qc_plot_dir`, and
 \description{
 Creates a multi-page report summarizing unmixing quality, including spectra,
 RMS residuals per detector, matrix diagnostics, NPS, per-sample NxN marker
-scatter pages, and the overall detector reconstruction error per sample.
+scatter pages, and detector reconstruction error.
 }
 \details{
 `qc_samples()` expects a combined data frame or the raw list returned

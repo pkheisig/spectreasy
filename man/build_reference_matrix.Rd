@@ -9,20 +9,15 @@ build_reference_matrix(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  include_multi_af = FALSE,
-  exclude_af = FALSE,
-  af_dir = "af",
-  af_n_bands = "auto",
-  af_bands_per_file = 5,
+  af_n_bands = 100,
   af_max_cells = 50000,
-  af_auto_max_bands = 20,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
-  af_n_bands_sensitivity = 1.5,
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
   use_scatter_gating = TRUE,
+  manual_gate_file = NULL,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
@@ -34,7 +29,15 @@ build_reference_matrix(
   min_cluster_proportion = 0.03,
   gate_contour_beads = 0.95,
   gate_contour_cells = 0.9,
-  subsample_n = 5000
+  subsample_n = 5000,
+  autospectral_scc_cleanup = FALSE,
+  clean_scc_with_unstained = FALSE,
+  scc_background_method = c("scatter_knn", "none"),
+  scc_background_k = 2L,
+  autospectral_n_candidates = 1000L,
+  autospectral_n_spectral = 200L,
+  autospectral_min_events = 10L,
+  refine = FALSE
 )
 }
 \arguments{
@@ -48,28 +51,12 @@ When `FALSE` (default), the function returns the matrix without writing QC files
 \item{control_df}{Optional control mapping as a data.frame or CSV path.
 Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.}
 
-\item{include_multi_af}{Logical; if `TRUE`, include additional AF controls from `af_dir`.}
-
-\item{exclude_af}{Logical; if `TRUE`, ignore AF/unstained controls entirely,
-even when they are present in `control_df`, the SCC folder, or `af_dir`.}
-
-\item{af_dir}{Directory with extra AF controls when `include_multi_af = TRUE`.}
-
-\item{af_n_bands}{Number of AF basis signatures to extract from the pooled
-unstained/AF control when only one AF source is available (`1` = classic
-single AF signature). The default, `"auto"`, chooses the number from AF
-event shapes and prunes near-duplicate AF signatures.}
-
-\item{af_bands_per_file}{Number of AF basis signatures requested per AF file
-when multiple AF sources are pooled (`5` files with the default `5` yields
-up to `25` shared AF bank signatures).}
+\item{af_n_bands}{Number of AF basis signatures to extract from pooled
+unstained/AF control events. The default, `100`, builds a broad fixed
+AF bank for Spectreasy unmixing.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used when
 deriving AF basis signatures.}
-
-\item{af_auto_max_bands}{Maximum AF bands that `"auto"` may test/select.
-If auto selection repeatedly reaches this value, inspect QC and consider
-increasing it.}
 
 \item{af_min_cluster_events}{Minimum number of AF events required to keep a
 k-means AF cluster. Used together with `af_min_cluster_proportion`; the
@@ -78,12 +65,6 @@ larger threshold is applied.}
 \item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
 events required to keep a k-means AF cluster. The default `0.005` means
 0.5\% of the AF events used for extraction.}
-
-\item{af_n_bands_sensitivity}{Normalized sensitivity for adding AF bands
-when `af_n_bands = "auto"`. Lower values allow richer AF models; higher
-values select fewer bands before near-duplicate AF signatures are pruned.
-Values must be between `0.1` and `5`; the default `1.5` corresponds to a
-0.75\% minimum k-means fit improvement.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 
@@ -95,6 +76,10 @@ Values must be between `0.1` and `5`; the default `1.5` corresponds to a
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,
 use the legacy one-dimensional histogram gate.}
+
+\item{manual_gate_file}{Optional gate CSV from [gate_controls()]. When
+provided, manual cell/singlet gates are used before automatic SCC spectrum
+extraction, and manual positive gates are used for standard SCC extraction.}
 
 \item{histogram_pct_beads}{Quantile width for the bead histogram gate.}
 
@@ -122,11 +107,39 @@ For example, `0.08` excludes events below 8\% of the per-file high FSC scale.}
 \item{gate_contour_cells}{Contour probability for cell gating ellipse/hull.}
 
 \item{subsample_n}{Maximum number of events used for GMM fitting per file.}
+
+\item{autospectral_scc_cleanup}{Logical; if `TRUE`, use the
+AutoSpectral-style SCC spectral cleanup after the standard FSC/SSC gate.
+This is intended to be enabled by `unmix_controls(unmixing_method =
+"AutoSpectral")`.}
+
+\item{clean_scc_with_unstained}{Logical; when `autospectral_scc_cleanup =
+TRUE`, subtract matching unstained/negative background events before
+calculating SCC spectra.}
+
+\item{scc_background_method}{Background subtraction method for AutoSpectral
+SCC cleanup (`"scatter_knn"` or `"none"`).}
+
+\item{scc_background_k}{Number of nearest unstained/negative events averaged
+for scatter-matched SCC background subtraction.}
+
+\item{autospectral_n_candidates}{Number of peak-bright SCC candidate events
+considered by the AutoSpectral-style selector.}
+
+\item{autospectral_n_spectral}{Number of least-background-like SCC events
+kept for spectrum calculation by the AutoSpectral-style selector.}
+
+\item{autospectral_min_events}{Minimum event count required by the
+AutoSpectral-style SCC selector.}
+
+\item{refine}{Logical; if `TRUE`, refine the fixed-size k-means AF bank with
+native AutoSpectral-style unstained residual modulation. This is only
+supported with `autospectral_scc_cleanup = TRUE`.}
 }
 \value{
 Numeric matrix with rows = fluorophores and columns = detectors
   (normalized spectra). The matrix carries SCC-derived detector noise floors
-  in `attr(M, "detector_noise")` for default WLS unmixing.
+  in `attr(M, "detector_noise")` for WLS/RWLS unmixing.
 }
 \description{
 Reads SCC FCS files, performs FSC/SSC gating and positive-peak intensity gating,

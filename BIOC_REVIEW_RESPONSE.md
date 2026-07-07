@@ -10,7 +10,7 @@ This file maps each major reviewer comment to the implemented fix in the package
   - Dynamic NNLS and WLS are implemented via internal Rcpp kernels in `src/unmix_kernels.cpp`.
   - Relevant files: `R/calc_residuals.R`, `R/unmixing_matrix.R`, `src/unmix_kernels.cpp`.
 - `plumber` in Suggests but used unguarded
-  - Added explicit `requireNamespace("plumber", quietly = TRUE)` check in `R/launch_gui.R`.
+  - Added explicit `requireNamespace("plumber", quietly = TRUE)` check in `R/adjust_matrix.R`.
 - Funding role
   - Not addressed here.
 
@@ -29,20 +29,19 @@ This file maps each major reviewer comment to the implemented fix in the package
     - `plot_unmixing_scatter_matrix()` → `R/plot_functions.R`
     - `qc_controls()` → `R/scc_check.R`
     - `unmix_samples()` → `R/unmixing.R`
-    - `plot_detector_residuals()` → `R/diagnostic_plots.R`
 - Cyclomatic complexity hotspots
   - Substantially reduced by extracting internal helpers in the files above.
 - Use of `<<-`
   - Removed; no remaining `<<-` in `R/`.
-- `launch_gui()` should use installed-package paths
-  - Uses `system.file()` in `R/launch_gui.R`.
+- `adjust_matrix()` should use installed-package paths
+  - Uses `system.file()` in `R/adjust_matrix.R`.
 - Check for npm before dev-mode GUI launch
-  - Implemented in `R/launch_gui.R`.
+  - Implemented in `R/adjust_matrix.R`.
 - Avoid saving files without consent
   - Plot/report helpers now save only when explicit output paths are supplied.
   - `qc_controls()` no longer retains intermediate QC PNGs by default.
 - GUI host security
-  - `launch_gui()` runs on `127.0.0.1`.
+  - `adjust_matrix()` runs on `127.0.0.1`.
 - `unmix_samples()` overwriting FCS outputs
   - Default is `write_fcs = FALSE`.
   - Safe collision-avoiding filenames are used when writing output.

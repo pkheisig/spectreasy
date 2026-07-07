@@ -82,7 +82,7 @@ toy_fs <- flowCore::flowSet(list(
   PE_sample = simulate_sample("PE", M_demo),
   APC_sample = simulate_sample("APC", M_demo)
 ))
-toy_unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", write_fcs = FALSE)
+toy_unmixed <- unmix_samples(toy_fs, M = M_demo, unmixing_method = "OLS", write_fcs = FALSE)
 
 p <- plot_unmixing_scatter_matrix(
   unmixed_list = toy_unmixed,

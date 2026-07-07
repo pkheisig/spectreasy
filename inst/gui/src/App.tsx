@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Settings2, Activity, Save, RefreshCw, FileText, Check, Sliders, Palette, Circle, Sun, Moon, Maximize2 } from 'lucide-react';
+import { Settings2, Activity, Save, RefreshCw, Check, Sliders, Palette, Circle, Sun, Moon, Maximize2, Info } from 'lucide-react';
 import axios from 'axios';
 import ResidualPlot from './ResidualPlot';
 
@@ -21,17 +21,15 @@ interface MatrixRow {
 type DataRow = Record<string, string | number | null | undefined>;
 type MatrixPayload = Record<string, Record<string, string | number | null | undefined>>;
 type ViewConfig = {
-    lineWidth?: number;
-    lineOpacity?: number;
     colorPalette?: string;
     showControls?: boolean;
-    signatureHeight?: number;
-    signatureDetWidth?: number;
     residualCellSize?: number;
     pointSize?: number;
     pointOpacity?: number;
     pointColor?: string;
     dragSensitivity?: number;
+    theme?: 'dark' | 'light';
+    pageScroll?: boolean;
 };
 
 const COLOR_PALETTES = {
@@ -81,6 +79,20 @@ const asScalarString = (value: unknown, fallback = '') => {
     return String(value);
 };
 
+const alignDetectorLabels = (detNames: string[], payload: Record<string, unknown>) => {
+    const rawNames = Array.isArray(payload.detector_names) ? payload.detector_names.map(v => String(v)) : [];
+    const rawLabels = Array.isArray(payload.detector_labels) ? payload.detector_labels.map(v => String(v)) : [];
+    if (rawNames.length === 0 || rawLabels.length === 0) return detNames;
+
+    const labelByName = new Map<string, string>();
+    rawNames.forEach((name, idx) => {
+        const label = rawLabels[idx];
+        if (label && label !== 'NA') labelByName.set(name, label);
+    });
+
+    return detNames.map(det => labelByName.get(det) || det);
+};
+
 const App = () => {
     const [matrices, setMatrices] = useState<string[]>([]);
     const [currentFile, setCurrentFile] = useState('');
@@ -101,14 +113,11 @@ const App = () => {
     const [isUnmixingMatrix, setIsUnmixingMatrix] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'loading'>('idle');
+    const [guiStateLoaded, setGuiStateLoaded] = useState(false);
 
-    const [lineWidth, setLineWidth] = useState(0.8);
-    const [lineOpacity, setLineOpacity] = useState(0.85);
     const [colorPalette, setColorPalette] = useState<keyof typeof COLOR_PALETTES>('default');
     const [showControls, setShowControls] = useState(true);
 
-    const [signatureHeight, setSignatureHeight] = useState(300);
-    const [signatureDetWidth, setSignatureDetWidth] = useState(26);
     const [residualCellSize, setResidualCellSize] = useState(130);
     const [pointSize, setPointSize] = useState(1.5);
     const [pointOpacity, setPointOpacity] = useState(0.5);
@@ -117,6 +126,7 @@ const App = () => {
 
     const [theme, setTheme] = useState<'dark' | 'light'>('light');
     const [pageScroll, setPageScroll] = useState(true);
+    const [hoveredSignature, setHoveredSignature] = useState<string | null>(null);
     const sampleFileInputRef = useRef<HTMLInputElement>(null);
 
     const fetchMatrices = async () => {
@@ -143,6 +153,14 @@ const App = () => {
         return list;
     };
 
+    const fetchUserGuiState = async () => {
+        const result = await axios.get(`${API_BASE}/gui_state?module=matrix_tuner`).catch(() => null);
+        if (result?.data?.config) {
+            applyConfig(result.data.config);
+        }
+        setGuiStateLoaded(true);
+    };
+
     const fetchSampleData = async (sampleName: string, matrixData: MatrixRow[], filenameForType: string, detNames: string[]) => {
         const q = sampleName && sampleName.length > 0
             ? `?sample_name=${encodeURIComponent(sampleName)}`
@@ -157,7 +175,7 @@ const App = () => {
         }
         const raw = Array.isArray(resData.data.raw_data) ? resData.data.raw_data as DataRow[] : [];
         setRawData(raw);
-        setDetectorLabels(resData.data.detector_labels || detNames);
+        setDetectorLabels(alignDetectorLabels(detNames, resData.data || {}));
         if (resData.data.sample_name) setCurrentSample(asScalarString(resData.data.sample_name));
         await runUnmix(matrixData, raw, filenameForType);
     };
@@ -174,6 +192,7 @@ const App = () => {
             if (matrixData.length === 0) {
                 setMatrix([]);
                 setDetectors([]);
+                setDetectorLabels([]);
                 setSelectedMarkers([]);
                 setUnmixedData([]);
                 setCurrentFile(filename);
@@ -184,6 +203,7 @@ const App = () => {
             setIsUnmixingMatrix(isUnmixingFilename(filename));
             const detNames = Object.keys(matrixData[0]).filter(k => k !== 'Marker');
             setDetectors(detNames);
+            setDetectorLabels(detNames);
             const allMarkers = matrixData.map((r: MatrixRow) => r.Marker).filter((m: string) => !!m);
             setSelectedMarkers(allMarkers);
             const activeSample = sampleName && sampleName.length > 0 ? sampleName : (sampleFiles[0] || '');
@@ -196,7 +216,7 @@ const App = () => {
     useEffect(() => {
         const init = async () => {
             const [mats, samples] = await Promise.all([fetchMatrices(), fetchSamples()]);
-            await fetchConfigs();
+            await Promise.all([fetchConfigs(), fetchUserGuiState()]);
             const firstMatrix = pickPreferredMatrix(mats, currentFile);
             const firstSample = samples[0] || '';
             if (firstSample) setCurrentSample(firstSample);
@@ -296,14 +316,10 @@ const App = () => {
     const applyConfig = (cfg: unknown) => {
         if (!cfg || typeof cfg !== 'object') return;
         const viewConfig = cfg as ViewConfig;
-        if (typeof viewConfig.lineWidth === 'number') setLineWidth(viewConfig.lineWidth);
-        if (typeof viewConfig.lineOpacity === 'number') setLineOpacity(viewConfig.lineOpacity);
         if (typeof viewConfig.colorPalette === 'string' && viewConfig.colorPalette in COLOR_PALETTES) {
             setColorPalette(viewConfig.colorPalette as keyof typeof COLOR_PALETTES);
         }
         if (typeof viewConfig.showControls === 'boolean') setShowControls(viewConfig.showControls);
-        if (typeof viewConfig.signatureHeight === 'number') setSignatureHeight(viewConfig.signatureHeight);
-        if (typeof viewConfig.signatureDetWidth === 'number') setSignatureDetWidth(viewConfig.signatureDetWidth);
         if (typeof viewConfig.residualCellSize === 'number') setResidualCellSize(viewConfig.residualCellSize);
         if (typeof viewConfig.pointSize === 'number') setPointSize(viewConfig.pointSize);
         if (typeof viewConfig.pointOpacity === 'number') setPointOpacity(viewConfig.pointOpacity);
@@ -311,21 +327,33 @@ const App = () => {
         if (typeof viewConfig.dragSensitivity === 'number') {
             setDragSensitivity(Math.max(0, Math.min(0.3, viewConfig.dragSensitivity)));
         }
+        if (viewConfig.theme === 'dark' || viewConfig.theme === 'light') setTheme(viewConfig.theme);
+        if (typeof viewConfig.pageScroll === 'boolean') setPageScroll(viewConfig.pageScroll);
     };
 
     const buildConfig = () => ({
-        lineWidth,
-        lineOpacity,
         colorPalette,
         showControls,
-        signatureHeight,
-        signatureDetWidth,
         residualCellSize,
         pointSize,
         pointOpacity,
         pointColor,
-        dragSensitivity
+        dragSensitivity,
+        theme,
+        pageScroll
     });
+
+    useEffect(() => {
+        if (!guiStateLoaded) return;
+        const timer = window.setTimeout(() => {
+            void axios.post(`${API_BASE}/gui_state`, {
+                module: 'matrix_tuner',
+                config_json: buildConfig()
+            }).catch(() => null);
+        }, 500);
+        return () => window.clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [colorPalette, showControls, residualCellSize, pointSize, pointOpacity, pointColor, dragSensitivity, theme, pageScroll, guiStateLoaded]);
 
     const saveViewConfig = async () => {
         const name = currentConfig.trim().length > 0 ? currentConfig.trim() : 'gui_config.json';
@@ -430,13 +458,17 @@ const App = () => {
         const marker = selectedMarkers[0];
         const svg = svgRef.current;
         if (!svg) return;
-        const rect = svg.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const detIdx = Math.round((x / rect.width) * (detectors.length - 1));
+        const point = svg.createSVGPoint();
+        point.x = e.clientX;
+        point.y = e.clientY;
+        const screenMatrix = svg.getScreenCTM();
+        if (!screenMatrix) return;
+        const transformed = point.matrixTransform(screenMatrix.inverse());
+        const x = transformed.x;
+        const y = transformed.y;
+        const detIdx = Math.max(0, Math.min(detectors.length - 1, Math.round(((x - spectrumLeft) / spectrumPlotWidth) * (detectors.length - 1))));
         const detName = detectors[detIdx];
-        const yNorm = y / rect.height;
-        const newVal = Math.max(0, Math.min(1, 1 - (yNorm - 0.05) / 0.9));
+        const newVal = Math.max(0, Math.min(1, (chartHeight - 24 - y) / (chartHeight - 32)));
         const nextMatrix = matrix.map(row => {
             if (row.Marker === marker) return { ...row, [detName]: newVal };
             return row;
@@ -447,7 +479,29 @@ const App = () => {
 
     const colors = COLOR_PALETTES[colorPalette];
     const markerNames = matrix.map(m => m.Marker);
-    const chartWidth = detectors.length * signatureDetWidth;
+    const signatureDetectorLabels = detectorLabels.length === detectors.length ? detectorLabels : detectors;
+    const chartWidth = Math.max(1040, detectors.length * 22);
+    const chartHeight = 230;
+    const spectrumLeft = 42;
+    const spectrumRight = chartWidth - 8;
+    const spectrumPlotWidth = spectrumRight - spectrumLeft;
+    const detectorX = (idx: number) => {
+        if (detectors.length <= 1) return spectrumLeft + spectrumPlotWidth / 2;
+        return spectrumLeft + (idx / (detectors.length - 1)) * spectrumPlotWidth;
+    };
+    const signaturePath = (row: MatrixRow) => detectors.map((det, idx) => {
+        const x = detectorX(idx);
+        const y = chartHeight - Number(row[det]) * (chartHeight - 32) - 24;
+        return `${idx === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    const residualRenderKey = [
+        residualCellSize,
+        pointSize,
+        pointOpacity,
+        pointColor,
+        dragSensitivity,
+        unmixedData.length
+    ].join(':');
     const canAdjustResiduals = sampleHasDetectorChannels();
     const residualAdjustmentText = canAdjustResiduals
         ? 'Drag on plots to adjust crosstalk'
@@ -535,14 +589,15 @@ const App = () => {
         <div style={{
             minHeight: '100vh',
             height: pageScroll ? 'auto' : '100vh',
-            width: '100%',
-            maxWidth: '100%',
+            width: '100vw',
+            maxWidth: '100vw',
             display: 'flex',
             flexDirection: 'column',
             background: g.bgGradient,
             color: g.text,
             fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif',
-            overflow: pageScroll ? 'auto' : 'hidden'
+            overflowX: 'hidden',
+            overflowY: pageScroll ? 'auto' : 'hidden'
         }}>
             {/* Navbar */}
             <header style={{
@@ -609,7 +664,7 @@ const App = () => {
                 </div>
             </header>
 
-            <div style={{ flex: 1, display: 'flex', overflow: pageScroll ? 'visible' : 'hidden' }}>
+            <div style={{ flex: 1, display: 'flex', minWidth: 0, overflowX: 'hidden', overflowY: pageScroll ? 'visible' : 'hidden' }}>
                 {/* Left Sidebar */}
                 <aside style={{
                     width: 320,
@@ -626,38 +681,40 @@ const App = () => {
                     height: 'calc(100vh - 64px)'
                 }}>
                     <div style={{ padding: 16 }}>
-                        <h3 style={{ fontSize: 10, fontWeight: 700, color: g.textMuted, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 10 }}>Matrices</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            {matrices.map(m => (
-                                <button key={m} onClick={() => fetchData(m, currentSample)} style={{
-                                    ...glassButton,
-                                    width: '100%',
-                                    display: 'flex',
-                                    alignItems: 'flex-start',
-                                    gap: 10,
-                                    padding: '10px 14px',
-                                    fontSize: 12,
-                                    color: currentFile === m ? g.accent : g.textDim,
-                                    background: currentFile === m ? g.accentGlow : g.glassBg,
-                                    cursor: 'pointer',
-                                    textAlign: 'left'
-                                }}>
-                                    <FileText size={14} />
-                                    <span
-                                        title={m}
-                                        style={{
-                                            flex: 1,
-                                            whiteSpace: 'normal',
-                                            overflowWrap: 'anywhere',
-                                            wordBreak: 'break-word',
-                                            lineHeight: 1.25
-                                        }}
-                                    >
-                                        {m}
-                                    </span>
-                                </button>
-                            ))}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                            <h3 style={{ fontSize: 10, fontWeight: 700, color: g.textMuted, letterSpacing: '0.15em', textTransform: 'uppercase', margin: 0 }}>Matrices</h3>
+                            <span
+                                title="Only CSV files with 'matrix' in the filename are displayed."
+                                aria-label="Only CSV files with matrix in the filename are displayed."
+                                style={{
+                                    color: g.textMuted,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    cursor: 'help'
+                                }}
+                            >
+                                <Info size={13} strokeWidth={2} />
+                            </span>
                         </div>
+                        <select
+                            value={currentFile}
+                            onChange={e => void fetchData(e.target.value, currentSample)}
+                            title={currentFile}
+                            style={{
+                                width: '100%',
+                                background: g.inputBg,
+                                color: g.text,
+                                border: `1px solid ${g.glassBorder}`,
+                                borderRadius: 8,
+                                padding: '8px 10px',
+                                fontSize: 12
+                            }}
+                        >
+                            {matrices.length === 0 && <option value="">(no matrices found)</option>}
+                            {matrices.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                            ))}
+                        </select>
 
                         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                             <h3 style={{ fontSize: 10, fontWeight: 700, color: g.textMuted, letterSpacing: '0.15em', textTransform: 'uppercase', margin: 0 }}>Sample File</h3>
@@ -781,7 +838,7 @@ const App = () => {
                             </span>
                         </div>
                     </div>
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }}>
+                    <div style={{ flex: '1 1 360px', minHeight: 260, overflowY: 'auto', padding: '0 16px 16px' }}>
                         <h3 style={{ fontSize: 10, fontWeight: 700, color: g.textMuted, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 10 }}>Signatures</h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             {matrix.map((m, idx) => (
@@ -819,19 +876,13 @@ const App = () => {
                 </aside>
 
                 {/* Main Content */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 16, gap: 16, overflow: pageScroll ? 'visible' : 'auto' }}>
+                <div style={{ flex: 1, minWidth: 0, maxWidth: '100%', display: 'flex', flexDirection: 'column', padding: 16, gap: 16, overflowX: 'hidden', overflowY: pageScroll ? 'visible' : 'auto' }}>
                     {/* Controls */}
                     {showControls && (
                         <div style={{ ...glassCard, padding: 16, flexShrink: 0 }}>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 32px', fontSize: 12 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 22px', fontSize: 12, maxWidth: '100%' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
                                     <span style={{ fontWeight: 700, color: g.textMuted, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Sig:</span>
-                                    <span style={{ color: g.textMuted }}>W</span>
-                                    <input type="range" min="0.2" max="2" step="0.1" value={lineWidth} onChange={e => setLineWidth(Number(e.target.value))} style={{ width: 50 }} />
-                                    <span style={{ color: g.textMuted, width: 20 }}>{lineWidth}</span>
-                                    <span style={{ color: g.textMuted }}>Op</span>
-                                    <input type="range" min="0.1" max="1" step="0.05" value={lineOpacity} onChange={e => setLineOpacity(Number(e.target.value))} style={{ width: 50 }} />
-                                    <span style={{ color: g.textMuted, width: 30 }}>{Math.round(lineOpacity * 100)}%</span>
                                     <Palette size={14} color={g.textMuted} />
                                     <select value={colorPalette} onChange={e => setColorPalette(e.target.value as keyof typeof COLOR_PALETTES)} style={{
                                         background: g.inputBg,
@@ -847,14 +898,8 @@ const App = () => {
                                         <option value="warm">Warm</option>
                                         <option value="cool">Cool</option>
                                     </select>
-                                    <span style={{ color: g.textMuted }}>H</span>
-                                    <input type="range" min="200" max="500" step="25" value={signatureHeight} onChange={e => setSignatureHeight(Number(e.target.value))} style={{ width: 50 }} />
-                                    <span style={{ color: g.textMuted, width: 30 }}>{signatureHeight}</span>
-                                    <span style={{ color: g.textMuted }}>DetW</span>
-                                    <input type="range" min="10" max="30" step="2" value={signatureDetWidth} onChange={e => setSignatureDetWidth(Number(e.target.value))} style={{ width: 40 }} />
-                                    <span style={{ color: g.textMuted, width: 20 }}>{signatureDetWidth}</span>
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
                                     <span style={{ fontWeight: 700, color: g.textMuted, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Res:</span>
                                     <span style={{ color: g.textMuted }}>Pt</span>
                                     <input type="range" min="0.5" max="4" step="0.25" value={pointSize} onChange={e => setPointSize(Number(e.target.value))} style={{ width: 40 }} />
@@ -897,59 +942,77 @@ const App = () => {
                             <h2 style={{ fontWeight: 700, fontSize: 15, margin: 0 }}>Signature Editor</h2>
                             <span style={{ fontSize: 12, color: g.textMuted }}>({selectedMarkers.length} / {detectors.length})</span>
                         </div>
-                        <div style={{ ...glassCard, overflow: 'auto', maxHeight: signatureHeight + 80 }}>
-                            <div style={{ width: chartWidth }}>
+                        <div style={{ ...glassCard, overflow: 'hidden', maxWidth: '100%' }}>
+                            <div style={{ width: '100%', minWidth: 0 }}>
                                 <svg
                                     ref={svgRef}
-                                    style={{ cursor: 'crosshair', display: 'block' }}
-                                    width={chartWidth}
-                                    height={signatureHeight}
-                                    viewBox={`0 0 ${chartWidth} 100`}
-                                    preserveAspectRatio="none"
+                                    style={{ cursor: 'crosshair', display: 'block', width: '100%', maxWidth: '100%' }}
+                                    width="100%"
+                                    height={chartHeight + 56}
+                                    viewBox={`0 0 ${chartWidth} ${chartHeight + 56}`}
                                     onMouseDown={() => setIsDragging(true)}
                                     onMouseUp={() => setIsDragging(false)}
                                     onMouseLeave={() => setIsDragging(false)}
                                     onMouseMove={handleMouseMove}
                                 >
-                                    {[0, 0.25, 0.5, 0.75, 1].map(tick => (
-                                        <line key={tick} x1="0" y1={5 + (1 - tick) * 90} x2={chartWidth} y2={5 + (1 - tick) * 90} stroke={g.gridLine} strokeWidth="0.3" strokeDasharray="3 3" />
-                                    ))}
+                                    {[0, 25, 50, 75, 100].map(tick => {
+                                        const y = chartHeight - (tick / 100) * (chartHeight - 32) - 24;
+                                        return (
+                                            <g key={tick}>
+                                                <line x1={spectrumLeft} y1={y} x2={spectrumRight} y2={y} stroke={g.gridLine} strokeWidth={1} />
+                                            </g>
+                                        );
+                                    })}
+                                    {signatureDetectorLabels.map((label, idx) => {
+                                        const x = detectorX(idx);
+                                        return (
+                                            <g key={`${label}-${idx}`}>
+                                                <line x1={x} y1={6} x2={x} y2={chartHeight - 24} stroke={g.gridLine} strokeWidth={1} />
+                                                <text x={x} y={chartHeight + 4} fontSize={11} textAnchor="end" transform={`rotate(-90 ${x} ${chartHeight + 4})`} fill={g.textMuted}>
+                                                    {label}
+                                                </text>
+                                            </g>
+                                        );
+                                    })}
+                                    <line x1={spectrumLeft} y1={chartHeight - 24} x2={spectrumRight} y2={chartHeight - 24} stroke={g.glassBorder} strokeWidth={3} />
                                     {selectedMarkers.map((m, mIdx) => {
                                         const row = matrix.find(r => r.Marker === m);
                                         if (!row) return null;
-                                        const points = detectors.map((det, dIdx) => {
-                                            const px = dIdx * signatureDetWidth + signatureDetWidth / 2;
-                                            const py = 5 + (1 - Number(row[det])) * 90;
-                                            return `${px},${py}`;
-                                        }).join(' ');
+                                        const pathData = signaturePath(row);
+                                        const color = colors[mIdx % colors.length];
+                                        const isHovered = hoveredSignature === m;
+                                        const hasHoverActive = hoveredSignature !== null;
                                         return (
-                                            <polyline key={m} points={points} fill="none" stroke={colors[mIdx % colors.length]} strokeWidth={lineWidth} strokeLinejoin="round" strokeLinecap="round" style={{ opacity: lineOpacity }} />
+                                            <g key={m}>
+                                                <path
+                                                    d={pathData}
+                                                    fill="none"
+                                                    stroke={color}
+                                                    strokeWidth={isHovered ? 4.2 : 2.4}
+                                                    strokeLinejoin="round"
+                                                    strokeLinecap="round"
+                                                    opacity={hasHoverActive ? (isHovered ? 1.0 : 0.15) : 0.92}
+                                                    style={{
+                                                        transition: 'all 0.15s ease-in-out',
+                                                        pointerEvents: 'none',
+                                                        filter: isHovered ? `drop-shadow(0 0 5px ${color})` : 'none'
+                                                    }}
+                                                />
+                                                <path
+                                                    d={pathData}
+                                                    fill="none"
+                                                    stroke="transparent"
+                                                    strokeWidth={22}
+                                                    strokeLinejoin="round"
+                                                    strokeLinecap="round"
+                                                    onMouseEnter={() => setHoveredSignature(m)}
+                                                    onMouseLeave={() => setHoveredSignature(null)}
+                                                    style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
+                                                />
+                                            </g>
                                         );
                                     })}
                                 </svg>
-                                <div style={{
-                                    display: 'flex',
-                                    borderTop: `1px solid ${g.glassBorder}`,
-                                    background: g.inputBg,
-                                    width: chartWidth
-                                }}>
-                                    {detectorLabels.map((label, idx) => (
-                                        <div key={idx} style={{ position: 'relative', width: signatureDetWidth, height: 60 }}>
-                                            <span style={{
-                                                position: 'absolute',
-                                                fontSize: 8,
-                                                color: g.textMuted,
-                                                whiteSpace: 'nowrap',
-                                                left: signatureDetWidth / 2,
-                                                top: 4,
-                                                transform: 'rotate(90deg) translateX(0) translateY(-50%)',
-                                                transformOrigin: 'top left'
-                                            }}>
-                                                {label}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -1033,6 +1096,7 @@ const App = () => {
                                                         margin: 1
                                                     }}>
                                                         <ResidualPlot
+                                                            key={`${rowName}-${colName}-${residualRenderKey}`}
                                                             xKey={colName}
                                                             yKey={rowName}
                                                             data={unmixedData}

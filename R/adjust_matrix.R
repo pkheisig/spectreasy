@@ -81,6 +81,38 @@
     NULL
 }
 
+.default_gate_controls_scc_dir <- function() {
+    file.path(getwd(), "scc")
+}
+
+.normalize_gate_controls_paths <- function(scc_dir = "scc",
+                                           control_file = "fcs_mapping.csv",
+                                           gate_file = "ssc_gate_config.csv") {
+    scc_dir <- normalizePath(scc_dir, mustWork = TRUE)
+    control_file <- as.character(control_file)[1]
+    if (!is.na(control_file) && nzchar(trimws(control_file)) && !file.exists(control_file)) {
+        candidate <- file.path(dirname(scc_dir), basename(control_file))
+        if (file.exists(candidate)) {
+            control_file <- candidate
+        }
+    }
+    control_file <- normalizePath(control_file, mustWork = FALSE)
+
+    gate_file <- as.character(gate_file)[1]
+    if (is.na(gate_file) || !nzchar(trimws(gate_file))) {
+        gate_file <- "ssc_gate_config.csv"
+    }
+    if (!grepl("\\.csv$", gate_file, ignore.case = TRUE)) {
+        gate_file <- paste0(gate_file, ".csv")
+    }
+    if (!grepl("^(/|[A-Za-z]:)", gate_file)) {
+        gate_file <- file.path(getwd(), gate_file)
+    }
+    gate_file <- normalizePath(gate_file, mustWork = FALSE)
+
+    list(scc_dir = scc_dir, control_file = control_file, gate_file = gate_file)
+}
+
 .resolve_gui_frontend <- function(gui_path, dist_path, port, dev_mode = FALSE, npm_bin = Sys.which("npm")) {
     frontend_url <- paste0("http://127.0.0.1:", port)
 
@@ -134,11 +166,60 @@
     invisible(NULL)
 }
 
-.prepare_launch_gui_paths <- .prepare_gui_paths
-.default_launch_gui_matrix_dir <- .default_adjust_matrix_matrix_dir
-.default_launch_gui_samples_dir <- .default_adjust_matrix_samples_dir
-.resolve_launch_gui_frontend <- .resolve_gui_frontend
-.start_launch_gui_dev_server <- .start_gui_dev_server
+.spectreasy_gui_mode_label <- function(mode) {
+    if (identical(mode, "control-gating")) return("Control gating GUI")
+    if (identical(mode, "panel-builder")) return("Spectral panel builder GUI")
+    "Matrix adjustment GUI"
+}
+
+.spectreasy_gui_display_path <- function(path) {
+    if (is.null(path) || length(path) == 0 || is.na(path[1]) || !nzchar(path[1])) return("")
+    path <- as.character(path[1])
+    path <- normalizePath(path, mustWork = FALSE)
+    wd <- normalizePath(getwd(), mustWork = FALSE)
+    if (identical(dirname(path), wd)) basename(path) else path
+}
+
+.message_spectreasy_gui_startup <- function(mode,
+                                            port,
+                                            frontend_url,
+                                            asset_mode = "bundled",
+                                            gate_file = NULL) {
+    line <- strrep("-", 58)
+    message("\n", line)
+    message("Spectreasy ", .spectreasy_gui_mode_label(mode))
+    message(line)
+    message("Frontend : ", frontend_url)
+    message("API port : ", port)
+    message("Assets   : ", asset_mode)
+    gate_file_display <- .spectreasy_gui_display_path(gate_file)
+    if (nzchar(gate_file_display)) {
+        message("Gate CSV : ", gate_file_display)
+    }
+    message("INFO     : Press Ctrl + C in this R console to terminate the GUI app.")
+    message(line, "\n")
+}
+
+.run_gui_until_shutdown <- function(pr, port, host = "127.0.0.1", quiet = FALSE, announce = TRUE) {
+    options(spectreasy.gui_shutdown_requested = FALSE)
+    server <- httpuv::startServer(host = host, port = port, app = pr, quiet = quiet)
+    options(spectreasy.gui_server = server)
+    on.exit({
+        try(httpuv::stopServer(server), silent = TRUE)
+        options(
+            spectreasy.gui_server = NULL,
+            spectreasy.gui_shutdown_requested = NULL
+        )
+    }, add = TRUE)
+
+    if (isTRUE(announce)) {
+        message("Running spectreasy GUI API at http://", host, ":", port)
+    }
+    while (!isTRUE(getOption("spectreasy.gui_shutdown_requested", FALSE))) {
+        httpuv::service(timeout = 250)
+    }
+    invisible(NULL)
+}
 
 .launch_spectreasy_gui <- function(matrix_dir = NULL,
                                    samples_dir = NULL,
@@ -146,7 +227,10 @@
                                    open_browser = TRUE,
                                    dev_mode = FALSE,
                                    mode = "tuner",
-                                   panel_cytometer = NULL) {
+                                   panel_cytometer = NULL,
+                                   gating_scc_dir = NULL,
+                                   gating_control_file = NULL,
+                                   gating_gate_file = NULL) {
     if (!requireNamespace("plumber", quietly = TRUE)) {
         stop(
             "Package 'plumber' is required for the spectreasy GUI. ",
@@ -154,12 +238,28 @@
             call. = FALSE
         )
     }
+    if (!requireNamespace("httpuv", quietly = TRUE) || !requireNamespace("later", quietly = TRUE)) {
+        stop(
+            "Packages 'httpuv' and 'later' are required for the spectreasy GUI. ",
+            "Please install the suggested GUI dependencies.",
+            call. = FALSE
+        )
+    }
 
     paths <- .prepare_gui_paths()
-    if (is.null(matrix_dir)) {
+    if (identical(mode, "control-gating")) {
+        gate_paths <- .normalize_gate_controls_paths(
+            scc_dir = if (is.null(gating_scc_dir)) .default_gate_controls_scc_dir() else gating_scc_dir,
+            control_file = if (is.null(gating_control_file)) "fcs_mapping.csv" else gating_control_file,
+            gate_file = if (is.null(gating_gate_file)) "ssc_gate_config.csv" else gating_gate_file
+        )
+        dirs <- list(matrix_dir = getwd(), samples_dir = gate_paths$scc_dir)
+    } else if (is.null(matrix_dir)) {
         matrix_dir <- .default_adjust_matrix_matrix_dir()
+        dirs <- .normalize_gui_dirs(matrix_dir = matrix_dir, samples_dir = samples_dir)
+    } else {
+        dirs <- .normalize_gui_dirs(matrix_dir = matrix_dir, samples_dir = samples_dir)
     }
-    dirs <- .normalize_gui_dirs(matrix_dir = matrix_dir, samples_dir = samples_dir)
 
     options(
         spectreasy.matrix_dir = dirs$matrix_dir,
@@ -167,6 +267,13 @@
         spectreasy.gui_mode = mode,
         spectreasy.panel_cytometer = panel_cytometer
     )
+    if (identical(mode, "control-gating")) {
+        options(
+            spectreasy.gating_scc_dir = gate_paths$scc_dir,
+            spectreasy.gating_control_file = gate_paths$control_file,
+            spectreasy.gating_gate_file = gate_paths$gate_file
+        )
+    }
 
     frontend <- .resolve_gui_frontend(
         gui_path = paths$gui_path,
@@ -181,16 +288,16 @@
             port = port,
             npm_bin = frontend$npm_bin
         )
-    } else {
-        message("Using bundled GUI assets from: ", paths$dist_path)
     }
-
-    message("Starting spectreasy API on port ", port)
-    message("Matrix directory: ", dirs$matrix_dir)
-    message("Samples directory: ", dirs$samples_dir)
     frontend_url <- paste0(frontend$frontend_url, "?mode=", utils::URLencode(mode, reserved = TRUE))
 
-    message("Frontend: ", frontend_url)
+    .message_spectreasy_gui_startup(
+        mode = mode,
+        port = port,
+        frontend_url = frontend_url,
+        asset_mode = if (identical(frontend$mode, "dev")) "Vite dev server" else "bundled package assets",
+        gate_file = if (identical(mode, "control-gating")) gate_paths$gate_file else NULL
+    )
 
     if (isTRUE(open_browser)) utils::browseURL(frontend_url)
 
@@ -204,7 +311,11 @@
     if (!isTRUE(dev_mode)) {
         plumber::pr_static(pr, "/", paths$dist_path)
     }
-    pr$run(port = port, host = "127.0.0.1")
+    if (identical(mode, "control-gating")) {
+        .run_gui_until_shutdown(pr, port = port, host = "127.0.0.1", announce = FALSE)
+    } else {
+        pr$run(port = port, host = "127.0.0.1")
+    }
 
     invisible(NULL)
 }
@@ -247,12 +358,3 @@ adjust_matrix <- function(matrix_dir = NULL, samples_dir = NULL, port = 8000, op
     )
     invisible(NULL)
 }
-
-#' Launch spectreasy Interactive Adjustment GUI
-#'
-#' `launch_gui()` is kept as a backward-compatible alias for [adjust_matrix()].
-#'
-#' @inheritParams adjust_matrix
-#' @return Invisibly returns NULL. This function blocks while the API is running.
-#' @export
-launch_gui <- adjust_matrix

@@ -42,15 +42,12 @@
 .unmix_generate_control_file <- function(scc_dir,
                                          control_file,
                                          cytometer,
-                                         auto_default_control_type,
                                          auto_unknown_fluor_policy) {
     message("Control file not found: ", control_file)
     message("Auto-generating control file from SCC filenames and peak channels...")
     create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         cytometer = cytometer,
-        default_control_type = auto_default_control_type,
         unknown_fluor_policy = auto_unknown_fluor_policy,
         output_file = control_file
     )
@@ -60,24 +57,22 @@
 
 .prepare_unmix_control_df <- function(control_file,
                                       scc_dir,
-                                      auto_create_control,
+                                      auto_create_mapping,
                                       cytometer,
-                                      auto_default_control_type,
                                       auto_unknown_fluor_policy) {
     created_control_file <- FALSE
 
     if (!file.exists(control_file)) {
-        if (!isTRUE(auto_create_control)) {
+        if (!isTRUE(auto_create_mapping)) {
             stop(
                 "Control file not found: ", control_file, "\n",
-                "Set auto_create_control = TRUE to auto-generate it from SCC files."
+                "Set auto_create_mapping = TRUE to auto-generate it from SCC files."
             )
         }
         .unmix_generate_control_file(
             scc_dir = scc_dir,
             control_file = control_file,
             cytometer = cytometer,
-            auto_default_control_type = auto_default_control_type,
             auto_unknown_fluor_policy = auto_unknown_fluor_policy
         )
         created_control_file <- TRUE
@@ -103,28 +98,6 @@
         control_df$universal.negative <- ""
     }
     control_df
-}
-
-.filter_unmix_af_rows <- function(control_df, exclude_af = FALSE, emit_message = TRUE) {
-    excluded_af_filenames <- character()
-    if (!isTRUE(exclude_af)) {
-        return(list(control_df = control_df, excluded_af_filenames = excluded_af_filenames))
-    }
-
-    af_rows <- .is_af_control_row(
-        fluorophore = control_df$fluorophore,
-        marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
-        filename = control_df$filename
-    )
-    if (any(af_rows)) {
-        excluded_af_filenames <- unique(as.character(control_df$filename[af_rows]))
-        if (isTRUE(emit_message)) {
-            message("exclude_af = TRUE: ignoring ", sum(af_rows), " AF/unstained control row(s) from control mapping.")
-        }
-        control_df <- control_df[!af_rows, , drop = FALSE]
-    }
-
-    list(control_df = control_df, excluded_af_filenames = excluded_af_filenames)
 }
 
 .drop_missing_unmix_af_rows <- function(control_df, scc_dir, emit_message = TRUE) {
@@ -157,37 +130,14 @@
     control_df[!missing_af, , drop = FALSE]
 }
 
-.run_unmix_preflight <- function(control_df, scc_dir, exclude_af = FALSE, include_multi_af = FALSE) {
+.run_unmix_preflight <- function(control_df, scc_dir) {
     validate_control_file_mapping(
         control_df = control_df,
         scc_dir = scc_dir,
-        include_multi_af = include_multi_af,
-        exclude_af = exclude_af,
-        af_dir = "af",
         require_all_scc_mapped = TRUE,
         require_channels = TRUE,
         stop_on_error = FALSE
     )
-}
-
-.unmix_regenerate_control_df <- function(control_file,
-                                         scc_dir,
-                                         cytometer,
-                                         auto_default_control_type,
-                                         auto_unknown_fluor_policy,
-                                         exclude_af = FALSE) {
-    message("Control preflight failed; attempting automatic control-file regeneration...")
-    create_control_file(
-        input_folder = scc_dir,
-        include_af_folder = FALSE,
-        cytometer = cytometer,
-        default_control_type = auto_default_control_type,
-        unknown_fluor_policy = auto_unknown_fluor_policy,
-        output_file = control_file
-    )
-    control_df <- utils::read.csv(control_file, stringsAsFactors = FALSE, check.names = FALSE)
-    filtered <- .filter_unmix_af_rows(control_df, exclude_af = exclude_af, emit_message = FALSE)
-    list(control_df = filtered$control_df, excluded_af_filenames = filtered$excluded_af_filenames)
 }
 
 .stop_unmix_preflight <- function(preflight, auto_unknown_fluor_policy) {
@@ -209,7 +159,16 @@
     )
 }
 
+.normalize_unmix_controls_output_dir <- function(output_dir) {
+    output_dir <- as.character(output_dir)[1]
+    if (identical(basename(normalizePath(output_dir, mustWork = FALSE)), "unmixed_fcs")) {
+        return(dirname(output_dir))
+    }
+    output_dir
+}
+
 .unmix_output_paths <- function(output_dir) {
+    output_dir <- .normalize_unmix_controls_output_dir(output_dir)
     list(
         unmixed_dir = file.path(output_dir, "unmixed_fcs"),
         qc_controls_dir = file.path(output_dir, "qc_controls"),
@@ -218,9 +177,24 @@
         reference_matrix_csv = file.path(output_dir, "scc_reference_matrix.csv"),
         detector_noise_csv = file.path(output_dir, "scc_detector_noise.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
+        spectral_variant_library_rds = file.path(output_dir, "scc_spectral_variants.rds"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
-        variances_csv = file.path(output_dir, "scc_variances.csv"),
         qc_report_pdf = file.path(output_dir, "qc_controls", "qc_controls_report.pdf")
+    )
+}
+
+.run_optional_unmix_artifact <- function(label, expr) {
+    tryCatch(
+        force(expr),
+        error = function(e) {
+            warning(
+                label, " could not be created: ",
+                conditionMessage(e),
+                ". Continuing unmixing.",
+                call. = FALSE
+            )
+            NULL
+        }
     )
 }
 
@@ -241,39 +215,13 @@
     list(fcs_files = fcs_files, pd = flowCore::pData(flowCore::parameters(ff_meta)))
 }
 
-.filter_unmix_excluded_af_outputs <- function(unmixed_list, scc_dir, excluded_af_filenames, unmixed_dir, exclude_af = FALSE) {
-    if (!isTRUE(exclude_af)) {
-        return(unmixed_list)
-    }
-
-    scc_basenames <- list.files(scc_dir, pattern = "\\.fcs$", full.names = FALSE, ignore.case = TRUE)
-    excluded_af_filenames <- unique(c(excluded_af_filenames, scc_basenames[.is_af_filename(scc_basenames)]))
-    excluded_af_keys <- tools::file_path_sans_ext(basename(excluded_af_filenames))
-    excluded_af_keys <- excluded_af_keys[!is.na(excluded_af_keys) & excluded_af_keys != ""]
-    if (length(excluded_af_keys) == 0) {
-        return(unmixed_list)
-    }
-
-    unmixed_list <- unmixed_list[!(names(unmixed_list) %in% excluded_af_keys)]
-    for (sample_key in excluded_af_keys) {
-        out_file <- file.path(unmixed_dir, paste0(sample_key, "_unmixed.fcs"))
-        if (file.exists(out_file)) file.remove(out_file)
-    }
-
-    unmixed_list
-}
-
-.derive_unmix_static_matrix <- function(M, fcs_files, unmix_method) {
-    # If M has multiple AF bands, only use the base "AF" band (and non-AF markers) for the static unmixing matrix
-    # to avoid singularity (since we cannot statically unmix more markers than detectors).
+.derive_unmix_static_matrix <- function(M, fcs_files, unmixing_method) {
+    # Static exported matrices cannot represent per-event AF selection reliably.
+    # Drop all AF rows and keep AF modeling in dynamic unmixing results.
     marker_names <- rownames(M)
-    extra_af_rows <- grepl("^AF_", marker_names, ignore.case = TRUE)
-    if (any(extra_af_rows)) {
-        M_static <- M[!extra_af_rows, , drop = FALSE]
-        vars <- attr(M, "variances")
-        if (!is.null(vars)) {
-            attr(M_static, "variances") <- vars[!extra_af_rows, , drop = FALSE]
-        }
+    af_rows <- grepl("^AF($|_)", marker_names, ignore.case = TRUE)
+    if (any(af_rows)) {
+        M_static <- M[!af_rows, , drop = FALSE]
         detector_noise <- attr(M, "detector_noise")
         if (!is.null(detector_noise)) {
             attr(M_static, "detector_noise") <- detector_noise
@@ -282,14 +230,40 @@
         M_static <- M
     }
 
-    static_unmixing_matrix_method <- toupper(unmix_method)
-    if (static_unmixing_matrix_method %in% c("WLS", "RWLS")) {
-        W <- derive_unmixing_matrix(M_static, method = "WLS")
+    static_unmixing_matrix_method <- .normalize_unmix_method(unmixing_method)
+    static_solver_method <- .solver_method_for_unmix(static_unmixing_matrix_method)
+    if (static_solver_method %in% c("WLS", "RWLS")) {
+        W <- tryCatch(
+            derive_unmixing_matrix(M_static, method = "WLS"),
+            error = function(e) {
+                if (!grepl("singular", conditionMessage(e), ignore.case = TRUE)) {
+                    stop(e)
+                }
+                .derive_regularized_static_wls_matrix(M_static)
+            }
+        )
     } else {
-        W <- derive_unmixing_matrix(M_static, method = static_unmixing_matrix_method)
+        W <- derive_unmixing_matrix(M_static, method = static_solver_method)
     }
 
     list(W = W, static_unmixing_matrix_method = static_unmixing_matrix_method)
+}
+
+.derive_regularized_static_wls_matrix <- function(M) {
+    detector_weights <- .wls_static_detector_weights(
+        M = M,
+        background_noise = .default_wls_background_noise(),
+        signal_scale = .default_wls_signal_scale(),
+        max_weight_ratio = .default_wls_max_weight_ratio()
+    )
+    V_inv <- diag(detector_weights)
+    Mt <- t(M)
+    MVMt <- M %*% V_inv %*% Mt
+    ridge <- max(c(diag(MVMt), 1), na.rm = TRUE) * 1e-8
+    W <- solve(MVMt + diag(ridge, nrow(MVMt)), M %*% V_inv)
+    rownames(W) <- rownames(M)
+    colnames(W) <- colnames(M)
+    W
 }
 
 .resolve_unmix_marker_mappings <- function(control_df) {
@@ -339,37 +313,31 @@
 #'
 #' @param scc_dir Directory containing SCC FCS files.
 #' @param control_file Path to control mapping CSV.
-#' @param auto_create_control Logical; auto-generate control file when missing.
+#' @param auto_create_mapping Logical; auto-generate the FCS mapping CSV when
+#'   `control_file` is missing.
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
-#' @param auto_default_control_type Deprecated and ignored.
 #' @param auto_unknown_fluor_policy Auto-fill policy for unresolved fluorophores
 #'   when creating controls (`"by_channel"`, `"empty"`, `"filename"`).
 #' @param output_dir Output directory for SCC workflow artifacts.
-#' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls even when
-#'   they are present in the SCC folder or control mapping.
-#' @param unmix_method SCC unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, `"NNLS"`).
+#' @param unmixing_method SCC unmixing method (`"WLS"`, `"RWLS"`,
+#'   `"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
+#'   `AutoSpectral` keeps the existing k-means AF bank controlled by
+#'   `af_n_bands`, then uses OLS unmixing plus AutoSpectral-style SCC cleanup
+#'   and spectral variants. `Spectreasy` uses the same cleanup and variant
+#'   machinery, then blends the AutoSpectral-style marker fit with a marker-only
+#'   OLS anchor using decoder-projected AF impact weights.
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
-#' @param af_n_bands Number of AF bands to extract from the unstained control
-#'   when only one AF source is available. Use `"auto"` to select the count
-#'   from AF event shapes and prune near-duplicate AF signatures. Default is
-#'   `"auto"`.
-#' @param af_bands_per_file Number of AF bands requested per AF file when
-#'   multiple AF sources are pooled. Default is 5.
-#' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
-#'   Default is 20.
+#' @param af_n_bands Number of AF basis signatures to extract from pooled
+#'   unstained/AF control events. The default, `100`, builds a broad fixed
+#'   AF bank for Spectreasy unmixing.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
 #'   k-means AF cluster. Used together with `af_min_cluster_proportion`.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
 #'   events required to keep a k-means AF cluster. Default is 0.005.
-#' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
-#'   when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-#'   select fewer bands before near-duplicate AF signatures are pruned. Default
-#'   is `1.5`.
-#' @param include_multi_af Logical; whether to include additional AF files from `af_dir`. Default is FALSE.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
-#'   iterations used when `unmix_method = "RWLS"`. The default, 1, preserves the
+#'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
 #' @param unmix_threads Positive integer; number of threads to use for event-wise
 #'   multi-AF WLS/RWLS SCC unmixing. The default, 1, keeps execution single-threaded.
@@ -377,12 +345,51 @@
 #'   intensity-gate, and spectrum PNGs under `output_dir`.
 #' @param save_report Logical; if `TRUE`, write the SCC QC PDF report
 #'   automatically after controls are unmixed. Defaults to `TRUE`.
-#' @param output_file Optional output path for the SCC QC PDF report. When this
-#'   is `NULL`, each automatic report is written to a fresh `qc_controls`,
-#'   `qc_controls_2`, ... folder under `output_dir`.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
-#'   use the legacy one-dimensional histogram gate.
+#'   use the legacy one-dimensional histogram gate. Ignored when
+#'   `unmixing_method = "AutoSpectral"` or `"Spectreasy"`; these methods use their own
+#'   post-FSC/SSC SCC spectral selector.
+#' @param manual_gating Logical; if `TRUE` (default), launch the manual control
+#'   gating GUI before building the SCC reference matrix. If `FALSE`, the GUI is
+#'   skipped; an existing `gating_file`/`manual_gate_file` is still reused when
+#'   supplied.
+#' @param manual_gate_file Gate CSV written by [gate_controls()]. Relative paths
+#'   are resolved from the current working directory. Kept for backwards
+#'   compatibility; prefer `gating_file` in new code.
+#' @param gating_file Optional gate CSV to reuse without launching the GUI, for
+#'   example `file.path(getwd(), "ssc_gate_config.csv")`. If supplied explicitly,
+#'   the file must exist. Defaults to `manual_gate_file`.
+#' @param clean_scc_with_unstained Logical; when `unmixing_method =
+#'   "AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative
+#'   background events before calculating SCC spectra.
+#' @param scc_background_method Background subtraction method for AutoSpectral
+#'   SCC cleanup (`"scatter_knn"` or `"none"`).
+#' @param scc_background_k Number of nearest unstained/negative events averaged
+#'   for scatter-matched SCC background subtraction.
+#' @param spectral_variant_som_nodes Number of nodes used per fluorophore when
+#'   learning AutoSpectral spectral variants.
+#' @param spectral_variant_top_k Number of best variant candidates to test per
+#'   positive fluorophore during AutoSpectral unmixing.
+#' @param spectral_variant_cosine_threshold Minimum cosine similarity to the
+#'   base fluorophore spectrum required for a variant to be retained.
+#' @param spectral_variant_max_variants Maximum retained variants per
+#'   fluorophore.
+#' @param spectral_variant_min_events Minimum cleaned positive SCC events
+#'   required to learn variants for one fluorophore.
+#' @param spectreasy_weight_quantile Numeric in `[0, 1]`; only accepted when
+#'   `unmixing_method = "Spectreasy"`. Controls the quantile of
+#'   decoder-projected AF impacts used as the soft-saturation scale for
+#'   marker-specific AutoSpectral mixing. The default is `0.9`.
+#' @param autospectral_n_candidates Number of peak-bright SCC candidate events
+#'   considered by the AutoSpectral-style selector.
+#' @param autospectral_n_spectral Number of least-background-like SCC events
+#'   kept for spectrum calculation by the AutoSpectral-style selector.
+#' @param autospectral_min_events Minimum event count required by the
+#'   AutoSpectral-style SCC selector.
+#' @param refine Logical; when `unmixing_method = "AutoSpectral"`, refine the
+#'   fixed-size k-means AF bank with native AutoSpectral-style unstained residual
+#'   modulation. `TRUE` is rejected for all other unmixing methods.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #'
 #' @return List with `M`, `W`, `unmixed_list`, and key output file paths,
@@ -393,7 +400,7 @@
 #'   ctrl <- unmix_controls(
 #'     scc_dir = "scc",
 #'     control_file = "fcs_mapping.csv",
-#'     auto_create_control = TRUE,
+#'     auto_create_mapping = TRUE,
 #'     cytometer = "auto",
 #'     output_dir = "spectreasy_outputs/unmix_controls"
 #'   )
@@ -402,34 +409,70 @@
 unmix_controls <- function(
     scc_dir = "scc",
     control_file = "fcs_mapping.csv",
-    auto_create_control = TRUE,
+    auto_create_mapping = TRUE,
     cytometer = "auto",
-    auto_default_control_type = "beads",
     auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
     output_dir = "spectreasy_outputs/unmix_controls",
-    exclude_af = FALSE,
-    unmix_method = "WLS",
+    unmixing_method = "Spectreasy",
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
-    af_n_bands = "auto",
-    af_bands_per_file = 5,
-    af_auto_max_bands = 20,
+    af_n_bands = 100,
     af_min_cluster_events = 20,
     af_min_cluster_proportion = 0.005,
-    af_n_bands_sensitivity = 1.5,
-    include_multi_af = FALSE,
     rwls_max_iter = 1L,
     unmix_threads = 1L,
     save_qc_plots = FALSE,
     save_report = TRUE,
-    output_file = NULL,
     use_scatter_gating = TRUE,
+    manual_gating = TRUE,
+    manual_gate_file = "ssc_gate_config.csv",
+    gating_file = manual_gate_file,
+    clean_scc_with_unstained = TRUE,
+    scc_background_method = c("scatter_knn", "none"),
+    scc_background_k = 2L,
+    spectral_variant_som_nodes = 16L,
+    spectral_variant_top_k = 3L,
+    spectral_variant_cosine_threshold = 0.98,
+    spectral_variant_max_variants = 8L,
+    spectral_variant_min_events = 50L,
+    spectreasy_weight_quantile = 0.9,
+    autospectral_n_candidates = 1000L,
+    autospectral_n_spectral = 200L,
+    autospectral_min_events = 10L,
+    refine = FALSE,
     ...
 ) {
+    spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
+    manual_gate_file_missing <- missing(manual_gate_file)
+    gating_file_missing <- missing(gating_file)
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
+    unmixing_method <- .normalize_unmix_method(unmixing_method)
+    use_autospectral <- .is_autospectral_style_method(unmixing_method)
+    use_refine <- identical(unmixing_method, "AutoSpectral")
+    refine <- .validate_reference_refine_arg(refine)
+    if (isTRUE(refine) && !use_refine) {
+        stop("refine = TRUE is only accepted when unmixing_method = \"AutoSpectral\".", call. = FALSE)
+    }
+    if (!identical(unmixing_method, "Spectreasy") && !spectreasy_weight_quantile_missing) {
+        stop("spectreasy_weight_quantile is only accepted when unmixing_method = \"Spectreasy\".", call. = FALSE)
+    }
+    if (identical(unmixing_method, "Spectreasy")) {
+        spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
+    }
+    scc_background_args <- .validate_scc_background_args(
+        clean_scc_with_unstained = use_autospectral && isTRUE(clean_scc_with_unstained),
+        scc_background_method = scc_background_method,
+        scc_background_k = scc_background_k
+    )
     .with_optional_seed(seed)
+    extra_args <- list(...)
 
     control_file <- .resolve_control_file_path(control_file)
+    output_dir <- .normalize_unmix_controls_output_dir(output_dir)
+    if (!gating_file_missing) {
+        manual_gate_file <- gating_file
+    }
+    manual_gate_file_explicit <- !gating_file_missing || !manual_gate_file_missing
 
     if (!dir.exists(output_dir)) {
         dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
@@ -443,63 +486,131 @@ unmix_controls <- function(
     control_info <- .prepare_unmix_control_df(
         control_file = control_file,
         scc_dir = scc_dir,
-        auto_create_control = auto_create_control,
+        auto_create_mapping = auto_create_mapping,
         cytometer = cytometer,
-        auto_default_control_type = auto_default_control_type,
         auto_unknown_fluor_policy = auto_unknown_fluor_policy
     )
     control_df <- .normalize_unmix_control_df(control_info$control_df)
     control_file <- control_info$control_file
 
     control_df <- .drop_missing_unmix_af_rows(control_df, scc_dir = scc_dir)
-    filtered <- .filter_unmix_af_rows(control_df, exclude_af = exclude_af)
-    control_df <- filtered$control_df
-    excluded_af_filenames <- filtered$excluded_af_filenames
 
     if (isTRUE(control_info$created_control_file)) {
         .unmix_confirm_created_control_file(control_file)
     }
 
-    preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir, exclude_af = exclude_af, include_multi_af = include_multi_af)
+    preflight <- .run_unmix_preflight(control_df, scc_dir = scc_dir)
     if (!preflight$ok) {
         .stop_unmix_preflight(preflight, auto_unknown_fluor_policy = auto_unknown_fluor_policy)
     }
 
+    if (isTRUE(manual_gating)) {
+        if (!interactive()) {
+            if (manual_gate_file_explicit && length(manual_gate_file) > 0 && !is.na(manual_gate_file[1]) && nzchar(trimws(as.character(manual_gate_file)[1]))) {
+                manual_gate_file <- normalizePath(as.character(manual_gate_file)[1], mustWork = FALSE)
+                if (!file.exists(manual_gate_file)) {
+                    stop("manual_gating = TRUE requires an interactive R session and the supplied gating_file does not exist: ", manual_gate_file, call. = FALSE)
+                }
+                warning("manual_gating = TRUE requires an interactive R session; reusing supplied gating_file instead.", call. = FALSE)
+            } else {
+                warning("manual_gating = TRUE requires an interactive R session; continuing with automatic gating.", call. = FALSE)
+                manual_gate_file <- NULL
+            }
+        } else {
+            manual_gate_file <- gate_controls(
+                scc_dir = scc_dir,
+                control_file = control_file,
+                gate_file = manual_gate_file,
+                open_browser = TRUE
+            )
+        }
+    } else {
+        if (length(manual_gate_file) == 0 || is.na(manual_gate_file[1]) || !nzchar(trimws(as.character(manual_gate_file)[1]))) {
+            manual_gate_file <- NULL
+        } else {
+            manual_gate_file <- normalizePath(as.character(manual_gate_file)[1], mustWork = FALSE)
+            if (!file.exists(manual_gate_file)) {
+                if (manual_gate_file_explicit) {
+                    stop("gating_file not found: ", manual_gate_file, call. = FALSE)
+                }
+                manual_gate_file <- NULL
+            } else {
+                message("Using manual gate CSV: ", manual_gate_file)
+            }
+        }
+    }
+
     output_paths <- .unmix_output_paths(output_dir)
     qc_controls_dir <- NULL
+    output_file <- NULL
     if (isTRUE(save_report)) {
-        if (is.null(output_file)) {
-            qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
-            output_file <- file.path(qc_controls_dir, "qc_controls_report.pdf")
-        } else {
-            qc_controls_dir <- dirname(output_file)
-        }
+        qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
+        output_file <- file.path(qc_controls_dir, "qc_controls_report.pdf")
         message("Automatic SCC QC report enabled: ", output_file)
     }
-    M <- build_reference_matrix(
+    build_qc_plots <- isTRUE(save_qc_plots) || isTRUE(save_report)
+    build_output_folder <- if (isTRUE(save_qc_plots)) {
+        output_dir
+    } else if (isTRUE(save_report)) {
+        tempfile("scc_report_plots_")
+    } else {
+        output_dir
+    }
+    build_args <- c(list(
         input_folder = scc_dir,
-        output_folder = output_dir,
-        save_qc_plots = save_qc_plots,
+        output_folder = build_output_folder,
+        save_qc_plots = build_qc_plots,
         control_df = control_df,
         cytometer = cytometer,
-        exclude_af = exclude_af,
         af_n_bands = af_n_bands,
-        af_bands_per_file = af_bands_per_file,
-        af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity,
-        include_multi_af = include_multi_af,
         use_scatter_gating = use_scatter_gating,
-        seed = seed,
-        ...
-    )
+        manual_gate_file = manual_gate_file,
+        autospectral_scc_cleanup = use_autospectral,
+        clean_scc_with_unstained = scc_background_args$enabled,
+        scc_background_method = scc_background_args$method,
+        scc_background_k = scc_background_args$k,
+        autospectral_n_candidates = autospectral_n_candidates,
+        autospectral_n_spectral = autospectral_n_spectral,
+        autospectral_min_events = autospectral_min_events,
+        refine = refine,
+        seed = seed
+    ), extra_args)
+    M <- do.call(build_reference_matrix, build_args)
     if (is.null(M) || nrow(M) == 0) stop("No valid spectra found while building reference matrix.")
 
-    .save_reference_matrix_csv(M, output_paths$reference_matrix_csv)
-    if (!is.null(attr(M, "variances"))) {
-        .save_reference_matrix_csv(attr(M, "variances"), output_paths$variances_csv)
+    spectral_variant_library <- NULL
+    spectral_variant_library_file <- NULL
+    if (use_autospectral) {
+        spectral_variant_library <- tryCatch(
+            .learn_spectral_variant_library(
+                M = M,
+                enabled = TRUE,
+                som_nodes = spectral_variant_som_nodes,
+                cosine_threshold = spectral_variant_cosine_threshold,
+                max_variants = spectral_variant_max_variants,
+                min_events = spectral_variant_min_events,
+                seed = seed,
+                warn = TRUE
+            ),
+            error = function(e) {
+                warning(
+                    "Spectral-variant optimization could not build a variant library; using the base reference matrix. Reason: ",
+                    conditionMessage(e),
+                    call. = FALSE
+                )
+                NULL
+            }
+        )
+        if (!is.null(spectral_variant_library)) {
+            attr(M, "spectral_variant_library") <- spectral_variant_library
+            .save_spectral_variant_library(spectral_variant_library, output_paths$spectral_variant_library_rds)
+            spectral_variant_library_file <- output_paths$spectral_variant_library_rds
+        }
     }
+
+    .save_reference_matrix_csv(M, output_paths$reference_matrix_csv)
     .save_detector_noise_csv(attr(M, "detector_noise"), output_paths$detector_noise_csv)
     meta_info <- .read_unmix_metadata_pd(scc_dir)
 
@@ -509,37 +620,41 @@ unmix_controls <- function(
     M_af <- M[af_rows, , drop = FALSE]
 
     p_spectra <- if (nrow(M_fluor) > 0) {
-        plot_spectra(M_fluor, pd = meta_info$pd, output_file = if (isTRUE(save_qc_plots)) output_paths$spectra_file else NULL)
+        .run_optional_unmix_artifact(
+            "SCC spectra plot",
+            plot_spectra(M_fluor, pd = meta_info$pd, output_file = if (isTRUE(save_qc_plots)) output_paths$spectra_file else NULL)
+        )
     } else {
         NULL
     }
 
     p_af_spectra <- if (nrow(M_af) > 0) {
-        plot_spectra(M_af, pd = meta_info$pd, output_file = if (isTRUE(save_qc_plots)) output_paths$af_spectra_file else NULL)
+        .run_optional_unmix_artifact(
+            "AF spectra plot",
+            plot_spectra(M_af, pd = meta_info$pd, output_file = if (isTRUE(save_qc_plots)) output_paths$af_spectra_file else NULL)
+        )
     } else {
         NULL
     }
 
-    unmixed_list <- unmix_samples(
+    unmix_sample_args <- list(
         sample_dir = scc_dir,
         M = M,
-        method = unmix_method,
+        unmixing_method = unmixing_method,
         rwls_max_iter = rwls_max_iter,
         n_threads = unmix_threads,
-        cytometer = cytometer,
+        spectral_variant_library = spectral_variant_library,
+        spectral_variant_top_k = spectral_variant_top_k,
         output_dir = output_paths$unmixed_dir,
         write_fcs = TRUE,
         save_report = FALSE
     )
-    unmixed_list <- .filter_unmix_excluded_af_outputs(
-        unmixed_list = unmixed_list,
-        scc_dir = scc_dir,
-        excluded_af_filenames = excluded_af_filenames,
-        unmixed_dir = output_paths$unmixed_dir,
-        exclude_af = exclude_af
-    )
+    if (identical(unmixing_method, "Spectreasy")) {
+        unmix_sample_args$spectreasy_weight_quantile <- spectreasy_weight_quantile
+    }
+    unmixed_list <- do.call(unmix_samples, unmix_sample_args)
 
-    static_info <- .derive_unmix_static_matrix(M, fcs_files = meta_info$fcs_files, unmix_method = unmix_method)
+    static_info <- .derive_unmix_static_matrix(M, fcs_files = meta_info$fcs_files, unmixing_method = unmixing_method)
     W <- static_info$W
     save_unmixing_matrix(W, output_paths$unmixing_matrix_csv)
 
@@ -548,38 +663,48 @@ unmix_controls <- function(
     extra_af_rows <- grepl("^AF_", scatter_markers, ignore.case = TRUE)
     scatter_markers <- scatter_markers[!extra_af_rows]
 
-    p_scatter <- plot_unmixing_scatter_matrix(
-        unmixed_list = unmixed_list,
-        sample_to_marker = marker_mapping$sample_to_marker,
-        markers = scatter_markers,
-        marker_display = NULL,
-        output_file = if (isTRUE(save_qc_plots)) output_paths$unmixing_scatter_png else NULL,
-        transform = "none",
-        panel_size_mm = unmix_scatter_panel_size_mm,
-        seed = seed
+    p_scatter <- .run_optional_unmix_artifact(
+        "SCC unmixing scatter plot",
+        plot_unmixing_scatter_matrix(
+            unmixed_list = unmixed_list,
+            sample_to_marker = marker_mapping$sample_to_marker,
+            markers = scatter_markers,
+            marker_display = NULL,
+            output_file = if (isTRUE(save_qc_plots)) output_paths$unmixing_scatter_png else NULL,
+            transform = "none",
+            panel_size_mm = unmix_scatter_panel_size_mm,
+            seed = seed
+        )
     )
 
     qc_report <- NULL
     if (isTRUE(save_report)) {
-        qc_report <- qc_controls(
-            M = M,
-            scc_dir = scc_dir,
-            output_file = output_file,
-            control_file = control_file,
-            cytometer = cytometer,
-            method = unmix_method,
-            qc_plot_dir = qc_controls_dir,
-            save_qc_pngs = save_qc_plots,
-            use_scatter_gating = use_scatter_gating,
-            include_multi_af = include_multi_af,
-            exclude_af = exclude_af,
-            af_bands_per_file = af_bands_per_file,
-            unmix_scatter_max_points = 1000,
-            seed = seed,
-            unmixing_matrix_file = output_paths$reference_matrix_csv
+        qc_report <- .run_optional_unmix_artifact(
+            "Automatic SCC QC report",
+            qc_controls(
+                M = M,
+                scc_dir = scc_dir,
+                output_file = output_file,
+                control_file = control_file,
+                cytometer = cytometer,
+                unmixing_method = unmixing_method,
+                qc_plot_dir = qc_controls_dir,
+                save_qc_pngs = save_qc_plots,
+                qc_metrics_dir = qc_controls_dir,
+                unmixed_list = unmixed_list,
+                qc_summary = attr(M, "qc_summary"),
+                report_plot_dir = attr(M, "qc_plot_dir"),
+                pd = meta_info$pd,
+                af_bank_info = attr(M, "af_bank_info"),
+                cleanup_report_plot_dir = !isTRUE(save_qc_plots),
+                use_scatter_gating = use_scatter_gating,
+                unmix_scatter_max_points = 1000,
+                seed = seed,
+                unmixing_matrix_file = output_paths$reference_matrix_csv
+            )
         )
         if (!file.exists(output_file)) {
-            stop("Automatic SCC QC report was requested but was not created at: ", output_file, call. = FALSE)
+            warning("Automatic SCC QC report was requested but was not created at: ", output_file, ". Continuing unmixing.", call. = FALSE)
         }
     }
 
@@ -589,9 +714,11 @@ unmix_controls <- function(
         unmixed_list = unmixed_list,
         reference_matrix_file = output_paths$reference_matrix_csv,
         detector_noise_file = output_paths$detector_noise_csv,
+        spectral_variant_library = spectral_variant_library,
+        spectral_variant_library_file = spectral_variant_library_file,
+        spectral_variant_info = if (!is.null(spectral_variant_library)) spectral_variant_library$info else NULL,
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
-        variances_file = output_paths$variances_csv,
-        qc_report_file = if (isTRUE(save_report)) output_file else NULL,
+        qc_report_file = if (isTRUE(save_report) && !is.null(output_file) && file.exists(output_file)) output_file else NULL,
         qc_controls_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
         qc_metrics_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
         qc_report = qc_report,
@@ -602,6 +729,7 @@ unmix_controls <- function(
         static_unmixing_matrix_method = static_info$static_unmixing_matrix_method,
         spectra_plot = p_spectra,
         af_spectra_plot = p_af_spectra,
-        unmixing_scatter_plot = p_scatter
+        unmixing_scatter_plot = p_scatter,
+        refine = refine
     ))
 }

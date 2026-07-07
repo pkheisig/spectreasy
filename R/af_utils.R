@@ -4,6 +4,18 @@
     grepl("^AF($|_)", out, ignore.case = TRUE)
 }
 
+.is_primary_af_fluorophore <- function(x) {
+    out <- trimws(as.character(x))
+    out[is.na(out)] <- ""
+    grepl("^AF($|_[0-9]+$)", out, ignore.case = TRUE)
+}
+
+.is_dead_af_fluorophore <- function(x) {
+    out <- trimws(as.character(x))
+    out[is.na(out)] <- ""
+    grepl("^AF_DEAD$", out, ignore.case = TRUE)
+}
+
 .is_af_marker <- function(x) {
     out <- trimws(as.character(x))
     out[is.na(out)] <- ""
@@ -22,6 +34,17 @@
     )
 }
 
+.is_dead_af_filename <- function(x) {
+    stem <- tools::file_path_sans_ext(basename(trimws(as.character(x))))
+    stem[is.na(stem)] <- ""
+    stem_norm <- gsub("[^[:alnum:]]+", "", tolower(stem))
+    has_af_context <- grepl("unstained|autofluorescence|(^|[^[:alnum:]])af([^[:alnum:]]|$)", stem, ignore.case = TRUE) |
+        grepl("unstained|autofluorescence", stem_norm, ignore.case = TRUE)
+    has_dead_context <- grepl("dead|viability|livedead|liveanddead", stem_norm, ignore.case = TRUE)
+
+    has_af_context & has_dead_context
+}
+
 .is_af_control_row <- function(fluorophore = NULL, marker = NULL, filename = NULL) {
     n <- max(length(fluorophore), length(marker), length(filename), 1L)
 
@@ -30,4 +53,48 @@
     file_flag <- if (length(filename) > 0) rep_len(.is_af_filename(filename), n) else rep(FALSE, n)
 
     fluor_flag | marker_flag | file_flag
+}
+
+.is_primary_af_control_row <- function(fluorophore = NULL, marker = NULL, filename = NULL) {
+    n <- max(length(fluorophore), length(marker), length(filename), 1L)
+
+    fluor_text <- if (length(fluorophore) > 0) {
+        out <- trimws(as.character(rep_len(fluorophore, n)))
+        out[is.na(out)] <- ""
+        out
+    } else {
+        rep("", n)
+    }
+    fluor_known <- nzchar(fluor_text)
+    primary_fluor_flag <- .is_primary_af_fluorophore(fluor_text)
+    marker_flag <- if (length(marker) > 0) rep_len(.is_af_marker(marker), n) else rep(FALSE, n)
+    file_flag <- if (length(filename) > 0) rep_len(.is_af_filename(filename), n) else rep(FALSE, n)
+
+    primary_fluor_flag | (!fluor_known & (marker_flag | file_flag))
+}
+
+.is_dead_af_control_row <- function(fluorophore = NULL, marker = NULL, filename = NULL, control_type = NULL) {
+    n <- max(length(fluorophore), length(marker), length(filename), length(control_type), 1L)
+
+    fluor_text <- if (length(fluorophore) > 0) {
+        out <- trimws(as.character(rep_len(fluorophore, n)))
+        out[is.na(out)] <- ""
+        out
+    } else {
+        rep("", n)
+    }
+    fluor_flag <- .is_dead_af_fluorophore(fluor_text)
+    legacy_internal_flag <- grepl("^AF_INTERNAL$", fluor_text, ignore.case = TRUE)
+    marker_flag <- if (length(marker) > 0) rep_len(.is_af_marker(marker), n) else rep(FALSE, n)
+    file_flag <- if (length(filename) > 0) rep_len(.is_dead_af_filename(filename), n) else rep(FALSE, n)
+    type_text <- if (length(control_type) > 0) {
+        out <- tolower(trimws(as.character(rep_len(control_type, n))))
+        out[is.na(out)] <- ""
+        out
+    } else {
+        rep("", n)
+    }
+    is_bead <- type_text == "beads"
+
+    (fluor_flag | (legacy_internal_flag & file_flag) | (marker_flag & file_flag) | file_flag) & !is_bead
 }

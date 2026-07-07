@@ -18,14 +18,61 @@
         if (!("channel" %in% colnames(control_df))) control_df$channel <- ""
         if (!("control.type" %in% colnames(control_df))) control_df$control.type <- ""
         if (!("universal.negative" %in% colnames(control_df))) control_df$universal.negative <- ""
+        if (!("is.viability" %in% colnames(control_df))) control_df$is.viability <- ""
 
         control_df$filename <- trimws(as.character(control_df$filename))
         control_df$fluorophore <- trimws(as.character(control_df$fluorophore))
         control_df$channel <- trimws(as.character(control_df$channel))
         control_df$control.type <- tolower(trimws(as.character(control_df$control.type)))
         control_df$universal.negative <- trimws(as.character(control_df$universal.negative))
+        control_df$is.viability <- trimws(as.character(control_df$is.viability))
+        if ("marker" %in% colnames(control_df)) {
+            control_df$marker <- trimws(as.character(control_df$marker))
+        }
+        for (col in c("filename", "fluorophore", "channel", "control.type", "universal.negative", "is.viability")) {
+            control_df[[col]][is.na(control_df[[col]])] <- ""
+        }
+        if ("marker" %in% colnames(control_df)) {
+            control_df$marker[is.na(control_df$marker)] <- ""
+        }
+        control_df <- .assign_reference_automatic_negatives(control_df)
     }
 
+    control_df
+}
+
+.assign_reference_automatic_negatives <- function(control_df) {
+    if (is.null(control_df) || !is.data.frame(control_df) || nrow(control_df) == 0) {
+        return(control_df)
+    }
+    if (!("universal.negative" %in% colnames(control_df))) control_df$universal.negative <- ""
+    if (!("is.viability" %in% colnames(control_df))) control_df$is.viability <- ""
+
+    dead_rows <- .is_dead_af_control_row(
+        fluorophore = if ("fluorophore" %in% colnames(control_df)) control_df$fluorophore else NULL,
+        marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
+        filename = control_df$filename,
+        control_type = if ("control.type" %in% colnames(control_df)) control_df$control.type else NULL
+    )
+    dead_files <- control_df$filename[dead_rows]
+    dead_files <- dead_files[nzchar(dead_files)]
+    if (length(dead_files) == 0) {
+        return(control_df)
+    }
+    control_df$fluorophore[dead_rows] <- "AF_dead"
+    if ("marker" %in% colnames(control_df)) {
+        control_df$marker[dead_rows] <- "Dead cell background"
+    }
+
+    viability_rows <- toupper(trimws(as.character(control_df$is.viability))) %in% c("TRUE", "T", "1", "YES", "Y")
+    control_type <- if ("control.type" %in% colnames(control_df)) {
+        tolower(trimws(as.character(control_df$control.type)))
+    } else {
+        rep("", nrow(control_df))
+    }
+    empty_negative <- !nzchar(trimws(as.character(control_df$universal.negative)))
+    target_rows <- viability_rows & !dead_rows & control_type != "beads" & empty_negative
+    control_df$universal.negative[target_rows] <- dead_files[1]
     control_df
 }
 
@@ -35,34 +82,16 @@
 # Returns a validated list containing these parameters.
 .validate_build_reference_af_args <- function(af_n_bands,
                                               af_max_cells,
-                                              af_bands_per_file = 5,
-                                              af_auto_max_bands = 20,
                                               af_min_cluster_events = 20,
-                                              af_min_cluster_proportion = 0.005,
-                                              af_n_bands_sensitivity = 1.5) {
-    af_n_bands_raw <- af_n_bands[1]
-    af_n_bands <- if (is.character(af_n_bands_raw) && identical(tolower(trimws(af_n_bands_raw)), "auto")) {
-        "auto"
-    } else {
-        as.integer(af_n_bands_raw)
-    }
-    if (!identical(af_n_bands, "auto") && (!is.finite(af_n_bands) || is.na(af_n_bands) || af_n_bands < 1)) {
-        stop("af_n_bands must be an integer >= 1 or \"auto\".")
-    }
-
-    af_bands_per_file <- as.integer(af_bands_per_file[1])
-    if (!is.finite(af_bands_per_file) || is.na(af_bands_per_file) || af_bands_per_file < 1) {
-        stop("af_bands_per_file must be an integer >= 1.")
+                                              af_min_cluster_proportion = 0.005) {
+    af_n_bands <- suppressWarnings(as.integer(af_n_bands[1]))
+    if (!is.finite(af_n_bands) || is.na(af_n_bands) || af_n_bands < 1) {
+        stop("af_n_bands must be an integer >= 1.")
     }
 
     af_max_cells <- as.integer(af_max_cells[1])
     if (!is.finite(af_max_cells) || is.na(af_max_cells) || af_max_cells < 100) {
         stop("af_max_cells must be an integer >= 100.")
-    }
-
-    af_auto_max_bands <- as.integer(af_auto_max_bands[1])
-    if (!is.finite(af_auto_max_bands) || is.na(af_auto_max_bands) || af_auto_max_bands < 1) {
-        stop("af_auto_max_bands must be an integer >= 1.")
     }
 
     af_min_cluster_events <- as.integer(af_min_cluster_events[1])
@@ -76,24 +105,19 @@
         stop("af_min_cluster_proportion must be a number between 0 and 1.")
     }
 
-    if (is.null(af_n_bands_sensitivity)) {
-        stop("af_n_bands_sensitivity must be a number between 0.1 and 5.")
-    }
-    af_n_bands_sensitivity <- as.numeric(af_n_bands_sensitivity[1])
-    if (!is.finite(af_n_bands_sensitivity) || is.na(af_n_bands_sensitivity) ||
-        af_n_bands_sensitivity < 0.1 || af_n_bands_sensitivity > 5) {
-        stop("af_n_bands_sensitivity must be a number between 0.1 and 5.")
-    }
-
     list(
         af_n_bands = af_n_bands,
-        af_bands_per_file = af_bands_per_file,
         af_max_cells = af_max_cells,
-        af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity
+        af_min_cluster_proportion = af_min_cluster_proportion
     )
+}
+
+.validate_reference_refine_arg <- function(refine) {
+    if (!is.logical(refine) || length(refine) != 1L || is.na(refine)) {
+        stop("refine must be TRUE or FALSE.", call. = FALSE)
+    }
+    isTRUE(refine)
 }
 
 .reference_min_af_cluster_size <- function(n_events,
@@ -105,240 +129,329 @@
     )
 }
 
-.reference_af_sensitivity_to_min_improvement <- function(sensitivity) {
-    as.numeric(sensitivity) / 200
-}
-
-.reference_af_max_cosine_similarity <- function() {
-    0.995
-}
-
-.prune_reference_similar_af_centers <- function(centers,
-                                                max_cosine = .reference_af_max_cosine_similarity()) {
+.reference_normalize_af_centers <- function(centers) {
     centers <- as.matrix(centers)
-    n_centers <- nrow(centers)
-    if (n_centers <= 1) {
-        return(list(centers = centers, kept = seq_len(n_centers), pruned = integer(0), max_cosine = max_cosine))
+    centers[!is.finite(centers)] <- 0
+    centers <- pmax(centers, 0)
+    center_scale <- apply(centers, 1, max, na.rm = TRUE)
+    ok <- is.finite(center_scale) & center_scale > 0
+    if (any(ok)) {
+        centers[ok, ] <- sweep(centers[ok, , drop = FALSE], 1, center_scale[ok], "/")
     }
-
-    norms <- sqrt(rowSums(centers^2))
-    usable <- is.finite(norms) & norms > 0
-    if (!any(usable)) {
-        return(list(centers = centers[1, , drop = FALSE], kept = 1L, pruned = seq.int(2L, n_centers), max_cosine = max_cosine))
+    if (any(!ok)) {
+        centers[!ok, ] <- 0
     }
-
-    keep <- integer()
-    for (i in seq_len(n_centers)) {
-        if (!usable[i]) {
-            next
-        }
-        if (length(keep) == 0) {
-            keep <- i
-            next
-        }
-        denom <- norms[i] * norms[keep]
-        cosine <- as.numeric((centers[i, , drop = FALSE] %*% t(centers[keep, , drop = FALSE])) / denom)
-        if (!any(is.finite(cosine) & cosine >= max_cosine)) {
-            keep <- c(keep, i)
-        }
-    }
-
-    if (length(keep) == 0) {
-        keep <- which(usable)[1]
-    }
-    pruned <- setdiff(seq_len(n_centers), keep)
-    list(
-        centers = centers[keep, , drop = FALSE],
-        kept = keep,
-        pruned = pruned,
-        max_cosine = max_cosine
-    )
+    centers
 }
 
-.select_reference_kmeans_improvement_af_band_count <- function(scores,
-                                                               max_bands,
-                                                               min_cluster_size,
-                                                               min_improvement,
-                                                               nstart = 20,
-                                                               iter.max = 200) {
-    scores <- as.matrix(scores)
-    n_events <- nrow(scores)
-    max_bands <- min(as.integer(max_bands), n_events)
-    if (!is.finite(max_bands) || is.na(max_bands) || max_bands < 2 || n_events < 2) {
+.reference_af_row_mask <- function(M) {
+    grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
+}
+
+.reference_cosine_matrix <- function(A, B) {
+    A <- as.matrix(A)
+    B <- as.matrix(B)
+    if (nrow(A) == 0 || nrow(B) == 0) {
+        return(matrix(numeric(), nrow = nrow(A), ncol = nrow(B)))
+    }
+    A_norm <- sqrt(rowSums(A^2)) + 1e-9
+    B_norm <- sqrt(rowSums(B^2)) + 1e-9
+    (A %*% t(B)) / (A_norm %o% B_norm)
+}
+
+.reference_af_candidate_qc <- function(af_spectra,
+                                       marker_spectra,
+                                       contaminant_threshold = 0.99) {
+    af_spectra <- as.matrix(af_spectra)
+    marker_spectra <- as.matrix(marker_spectra)
+    if (nrow(af_spectra) == 0L || nrow(marker_spectra) == 0L) {
+        return(af_spectra)
+    }
+    sims <- .reference_cosine_matrix(af_spectra, marker_spectra)
+    max_sim <- apply(sims, 1, max, na.rm = TRUE)
+    keep <- !is.finite(max_sim) | max_sim < contaminant_threshold
+    af_spectra[keep, , drop = FALSE]
+}
+
+.reference_filter_af_contaminant_events <- function(af_events,
+                                                   marker_spectra,
+                                                   contaminant_threshold = 0.99) {
+    af_events <- as.matrix(af_events)
+    marker_spectra <- as.matrix(marker_spectra)
+    if (nrow(af_events) == 0L || nrow(marker_spectra) == 0L) {
+        return(af_events)
+    }
+    centered <- sweep(af_events, 2, colMeans(af_events, na.rm = TRUE), "-")
+    sims <- .reference_cosine_matrix(centered, marker_spectra)
+    max_sim <- apply(sims, 1, max, na.rm = TRUE)
+    keep <- !is.finite(max_sim) | max_sim < contaminant_threshold
+    af_events[keep, , drop = FALSE]
+}
+
+.reference_cluster_error_ratios <- function(spill_ratios,
+                                            n_centers,
+                                            seed = NULL) {
+    spill_ratios <- as.matrix(spill_ratios)
+    spill_ratios[!is.finite(spill_ratios)] <- 0
+    unique_count <- nrow(unique(as.data.frame(round(spill_ratios, digits = 8))))
+    n_eff <- min(as.integer(n_centers), nrow(spill_ratios), unique_count)
+    if (!is.finite(n_eff) || is.na(n_eff) || n_eff < 1L) {
+        n_eff <- 1L
+    }
+    if (n_eff == 1L) {
+        cluster <- rep(1L, nrow(spill_ratios))
+        centers <- matrix(apply(spill_ratios, 2, stats::median, na.rm = TRUE), nrow = 1L)
+        colnames(centers) <- colnames(spill_ratios)
+        return(list(cluster = cluster, centers = centers))
+    }
+    if (!is.null(seed)) set.seed(seed)
+    km <- withCallingHandlers(
+        stats::kmeans(spill_ratios, centers = n_eff, nstart = 8, iter.max = 100),
+        warning = function(w) {
+            if (grepl("Quick-TRANSfer stage steps exceeded maximum", conditionMessage(w), fixed = TRUE)) {
+                invokeRestart("muffleWarning")
+            }
+        }
+    )
+    list(cluster = km$cluster, centers = as.matrix(km$centers))
+}
+
+.reference_refine_af_bank <- function(M,
+                                      af_events,
+                                      af_n_bands,
+                                      af_max_cells,
+                                      af_min_cluster_events,
+                                      af_min_cluster_proportion,
+                                      seed = NULL,
+                                      problem_quantile = 0.99,
+                                      contaminant_threshold = 0.99,
+                                      verbose = TRUE) {
+    M <- .as_reference_matrix(M, "M")
+    af_rows <- .reference_af_row_mask(M)
+    marker_rows <- !af_rows
+    if (!any(af_rows) || !any(marker_rows) || is.null(af_events)) {
         return(NULL)
     }
 
-    wss <- rep(NA_real_, max_bands)
-    min_sizes <- rep(NA_integer_, max_bands)
-    center <- matrix(colMeans(scores, na.rm = TRUE), nrow = 1)
-    wss[1] <- sum(rowSums(sweep(scores, 2, center[1, ], FUN = "-")^2))
-    min_sizes[1] <- n_events
+    detector_names <- colnames(M)
+    af_events <- as.matrix(af_events)
+    if (!all(detector_names %in% colnames(af_events))) {
+        return(NULL)
+    }
+    af_events <- af_events[, detector_names, drop = FALSE]
+    af_events <- af_events[stats::complete.cases(af_events), , drop = FALSE]
+    if (nrow(af_events) < 100L) {
+        return(NULL)
+    }
+    if (nrow(af_events) > af_max_cells) {
+        af_events <- af_events[sample.int(nrow(af_events), af_max_cells), , drop = FALSE]
+    }
 
-    for (k in seq.int(2L, max_bands)) {
-        fit <- tryCatch(
-            stats::kmeans(scores, centers = k, nstart = nstart, iter.max = iter.max),
-            error = function(e) NULL
+    marker_spectra <- M[marker_rows, , drop = FALSE]
+    base_af <- M[af_rows, , drop = FALSE]
+    af_events <- .reference_filter_af_contaminant_events(
+        af_events = af_events,
+        marker_spectra = marker_spectra,
+        contaminant_threshold = contaminant_threshold
+    )
+    if (nrow(af_events) < 100L) {
+        return(NULL)
+    }
+
+    if (isTRUE(verbose)) {
+        message("Refining AF basis signatures with AutoSpectral-style unstained residual modulation.")
+    }
+    assignments <- .autospectral_assign_af_fluorophores(
+        Y = af_events,
+        marker_spectra = marker_spectra,
+        af_spectra = base_af
+    )
+    assignments[!is.finite(assignments) | assignments < 1L | assignments > nrow(base_af)] <- 1L
+
+    marker_idx <- seq_len(nrow(marker_spectra)) + 1L
+    unmixed_markers <- .unmix_with_fixed_reference(
+        Y = af_events,
+        M = marker_spectra,
+        method = "OLS",
+        wls_noise = list(noise_floor = numeric(0), signal_scale = numeric(0), max_weight_ratio = .default_wls_max_weight_ratio()),
+        rwls_max_iter = 1L
+    )
+    unmixed <- cbind(AF = rep(0, nrow(af_events)), unmixed_markers)
+    residuals <- matrix(0, nrow = nrow(af_events), ncol = ncol(M), dimnames = list(NULL, detector_names))
+    projected_markers <- matrix(0, nrow = nrow(af_events), ncol = ncol(M), dimnames = list(NULL, detector_names))
+
+    for (af_i in unique(assignments)) {
+        event_idx <- which(assignments == af_i)
+        X <- rbind(AF = base_af[af_i, ], marker_spectra)
+        coeff <- .unmix_with_fixed_reference(
+            Y = af_events[event_idx, , drop = FALSE],
+            M = X,
+            method = "OLS",
+            wls_noise = list(noise_floor = numeric(0), signal_scale = numeric(0), max_weight_ratio = .default_wls_max_weight_ratio()),
+            rwls_max_iter = 1L
         )
-        if (!is.null(fit)) {
-            wss[k] <- fit$tot.withinss
-            min_sizes[k] <- min(tabulate(fit$cluster, nbins = k))
-        }
+        unmixed[event_idx, ] <- coeff
+        residuals[event_idx, ] <- af_events[event_idx, , drop = FALSE] - (coeff %*% X)
+        projected_markers[event_idx, ] <- coeff[, marker_idx, drop = FALSE] %*% marker_spectra
     }
 
-    improvement <- rep(NA_real_, max_bands)
-    prev_idx <- seq_len(max_bands - 1L)
-    next_idx <- seq.int(2L, max_bands)
-    valid_pairs <- is.finite(wss[next_idx]) & is.finite(wss[prev_idx]) & wss[prev_idx] > 0
-    improvement[next_idx[valid_pairs]] <- (wss[prev_idx[valid_pairs]] - wss[next_idx[valid_pairs]]) / wss[prev_idx[valid_pairs]]
+    error <- residuals + projected_markers
+    marker_abundance <- unmixed[, marker_idx, drop = FALSE]
+    if (ncol(marker_abundance) > 1L) {
+        error_magnitude <- sqrt(rowSums(marker_abundance^2))
+    } else {
+        error_magnitude <- abs(marker_abundance[, 1])
+    }
+    error_magnitude[!is.finite(error_magnitude)] <- 0
 
-    n_bands <- 1L
-    if (max_bands >= 2) {
-        for (k in seq.int(2L, max_bands)) {
-            if (!is.finite(improvement[k]) || improvement[k] < min_improvement || min_sizes[k] < min_cluster_size) {
-                break
+    q <- as.numeric(problem_quantile[1])
+    if (!is.finite(q) || is.na(q) || q <= 0 || q >= 1) q <- 0.99
+    repeat {
+        threshold <- stats::quantile(error_magnitude, q, na.rm = TRUE, names = FALSE)
+        problem_idx <- which(error_magnitude > threshold)
+        if (length(problem_idx) >= 500L || q < 0.5) break
+        q <- q - 0.05
+    }
+    if (length(problem_idx) <= 10L) {
+        return(NULL)
+    }
+
+    af_abundance <- unmixed[problem_idx, 1]
+    af_abundance[!is.finite(af_abundance) | af_abundance == 0] <- 1e-6
+    spill_ratios <- sweep(error[problem_idx, , drop = FALSE], 1, af_abundance, "/")
+    clusters <- .reference_cluster_error_ratios(
+        spill_ratios = spill_ratios,
+        n_centers = af_n_bands,
+        seed = seed
+    )
+
+    modulated <- list()
+    for (cl in sort(unique(clusters$cluster))) {
+        local_idx <- which(clusters$cluster == cl)
+        global_idx <- problem_idx[local_idx]
+        median_ratio <- apply(spill_ratios[local_idx, , drop = FALSE], 2, stats::median, na.rm = TRUE)
+        median_ratio[!is.finite(median_ratio)] <- 0
+        contributing_af <- unique(assignments[global_idx])
+        for (af_i in contributing_af) {
+            updated <- base_af[af_i, ] * (1 + median_ratio)
+            updated <- pmax(updated, 0)
+            peak <- max(updated, na.rm = TRUE)
+            if (is.finite(peak) && peak > 1e-12) {
+                updated <- updated / peak
+                modulated[[length(modulated) + 1L]] <- updated
             }
-            n_bands <- k
         }
     }
+    if (!length(modulated)) {
+        return(NULL)
+    }
+
+    candidates <- rbind(base_af, do.call(rbind, modulated))
+    colnames(candidates) <- detector_names
+    candidates <- .reference_normalize_af_centers(candidates)
+    candidates <- .reference_af_candidate_qc(
+        af_spectra = candidates,
+        marker_spectra = marker_spectra,
+        contaminant_threshold = contaminant_threshold
+    )
+    if (nrow(candidates) == 0L) {
+        candidates <- base_af
+    }
+
+    km <- .reference_kmeans_af_centers(
+        af_shape = candidates,
+        n_centers = af_n_bands,
+        min_cluster_events = 1L,
+        min_cluster_proportion = 0
+    )
+    refined <- .reference_normalize_af_centers(km$centers)
+    rownames(refined) <- c("AF", if (nrow(refined) > 1L) paste0("AF_", seq.int(2L, nrow(refined))) else NULL)
+    colnames(refined) <- detector_names
 
     list(
-        n_bands = as.integer(n_bands),
-        method = "kmeans_sensitivity_on_pcs",
-        min_improvement = min_improvement,
-        max_bands = max_bands,
-        min_cluster_size = min_cluster_size,
-        hit_max_bands = as.integer(n_bands) >= as.integer(max_bands),
-        wss = wss,
-        improvement = improvement,
-        min_cluster_sizes = min_sizes
+        signatures = refined,
+        selection = list(
+            method = if (identical(km$center_method, "median")) "median_refined_fixed" else "kmeans_refined_fixed",
+            n_bands = nrow(refined),
+            requested_bands = as.integer(af_n_bands),
+            raw_center_count = nrow(km$centers),
+            final_bands = nrow(refined),
+            cluster_sizes = km$cluster_sizes,
+            min_cluster_size = km$min_cluster_size,
+            base_bands = nrow(base_af),
+            candidate_bands = nrow(candidates),
+            modulated_candidates = length(modulated),
+            problem_cells = length(problem_idx),
+            problem_quantile = q,
+            problem_threshold = threshold
+        )
     )
 }
 
-.select_reference_auto_af_band_count <- function(af_shape,
-                                                max_bands = 20,
-                                                pca_variance = 0.98,
-                                                min_cluster_size = 20,
-                                                min_cluster_proportion = 0.005,
-                                                sensitivity = 1.5) {
+.replace_reference_af_rows <- function(M, af_signatures_norm, af_bank_info = NULL) {
+    attrs <- attributes(M)
+    af_rows <- .reference_af_row_mask(M)
+    marker_M <- M[!af_rows, , drop = FALSE]
+    out <- rbind(marker_M, af_signatures_norm)
+    colnames(out) <- colnames(M)
+    for (nm in setdiff(names(attrs), c("dim", "dimnames", "names"))) {
+        attr(out, nm) <- attrs[[nm]]
+    }
+    if (!is.null(af_bank_info)) {
+        attr(out, "af_bank_info") <- af_bank_info
+    }
+    out
+}
+
+.reference_kmeans_af_centers <- function(af_shape,
+                                         n_centers,
+                                         min_cluster_events = 20,
+                                         min_cluster_proportion = 0.005,
+                                         nstart = 10,
+                                         iter.max = 100) {
     af_shape <- as.matrix(af_shape)
-    n_events <- nrow(af_shape)
-    if (n_events < 2 || ncol(af_shape) < 2) {
-        return(list(n_bands = 1L, method = "fallback", reason = "too_few_events_or_detectors"))
+    if (nrow(af_shape) == 0) {
+        return(list(centers = af_shape, cluster_sizes = integer(), requested_centers = as.integer(n_centers)))
+    }
+    unique_count <- nrow(unique(as.data.frame(round(af_shape, digits = 8))))
+    n_eff <- min(as.integer(n_centers), nrow(af_shape), unique_count)
+    if (!is.finite(n_eff) || is.na(n_eff) || n_eff < 1L) {
+        n_eff <- 1L
+    }
+
+    if (n_eff == 1L) {
+        centers <- matrix(apply(af_shape, 2, stats::median, na.rm = TRUE), nrow = 1L)
+        colnames(centers) <- colnames(af_shape)
+        cluster_sizes <- nrow(af_shape)
+    } else {
+        km <- withCallingHandlers(
+            stats::kmeans(af_shape, centers = n_eff, nstart = nstart, iter.max = iter.max),
+            warning = function(w) {
+                if (grepl("Quick-TRANSfer stage steps exceeded maximum", conditionMessage(w), fixed = TRUE)) {
+                    invokeRestart("muffleWarning")
+                }
+            }
+        )
+        centers <- as.matrix(km$centers)
+        cluster_sizes <- tabulate(km$cluster, nbins = nrow(centers))
     }
 
     min_cluster_size <- .reference_min_af_cluster_size(
-        n_events = n_events,
-        min_cluster_events = min_cluster_size,
+        n_events = nrow(af_shape),
+        min_cluster_events = min_cluster_events,
         min_cluster_proportion = min_cluster_proportion
     )
-    rounded_shape <- as.data.frame(round(af_shape, digits = 6))
-    distinct_n <- nrow(unique(rounded_shape))
-    max_bands <- min(as.integer(max_bands), n_events, distinct_n)
-    if (!is.finite(max_bands) || is.na(max_bands) || max_bands < 2) {
-        return(list(n_bands = 1L, method = "fallback", reason = "one_distinct_shape"))
-    }
-    if (distinct_n <= max_bands) {
-        shape_counts <- table(do.call(paste, c(rounded_shape, sep = "\r")))
-        if (all(shape_counts >= min_cluster_size)) {
-            return(list(
-                n_bands = as.integer(distinct_n),
-                method = "distinct_shape_count",
-                max_bands = max_bands,
-                min_cluster_size = min_cluster_size,
-                min_cluster_proportion = min_cluster_proportion,
-                hit_max_bands = identical(as.integer(distinct_n), as.integer(max_bands)),
-                reason = "small_exact_shape_set"
-            ))
-        }
-    }
-
-    pc <- tryCatch(
-        stats::prcomp(af_shape, center = TRUE, scale. = FALSE, rank. = min(max_bands, ncol(af_shape), n_events - 1L)),
-        error = function(e) NULL
-    )
-    if (is.null(pc) || length(pc$sdev) == 0 || !any(is.finite(pc$sdev) & pc$sdev > 0)) {
-        return(list(n_bands = 1L, method = "fallback", reason = "pca_failed"))
-    }
-
-    eig <- pc$sdev^2
-    eig <- eig[is.finite(eig) & eig > 0]
-    cum_var <- cumsum(eig) / sum(eig)
-    pca_n <- which(cum_var >= pca_variance)[1]
-    if (is.na(pca_n)) pca_n <- length(eig)
-    pca_n <- min(max(1L, as.integer(pca_n)), max_bands)
-
-    if (!is.null(sensitivity)) {
-        improvement_n <- min(10L, pca_n, ncol(pc$x))
-        improvement_scores <- pc$x[, seq_len(improvement_n), drop = FALSE]
-        improvement_selection <- .select_reference_kmeans_improvement_af_band_count(
-            scores = improvement_scores,
-            max_bands = max_bands,
-            min_cluster_size = min_cluster_size,
-            min_improvement = .reference_af_sensitivity_to_min_improvement(sensitivity)
-        )
-        if (!is.null(improvement_selection)) {
-            improvement_selection$sensitivity <- sensitivity
-            improvement_selection$pca_components <- improvement_n
-            improvement_selection$cumulative_variance <- cum_var[improvement_n]
-            return(improvement_selection)
-        }
-    }
-
-    scores <- pc$x[, seq_len(min(pca_n, ncol(pc$x))), drop = FALSE]
-    if (ncol(scores) == 0 || nrow(scores) <= ncol(scores)) {
-        return(list(
-            n_bands = pca_n,
-            method = "pca_variance",
-            pca_components = pca_n,
-            cumulative_variance = cum_var[pca_n],
-            max_bands = max_bands,
-            min_cluster_size = min_cluster_size,
-            min_cluster_proportion = min_cluster_proportion,
-            hit_max_bands = identical(as.integer(pca_n), as.integer(max_bands)),
-            reason = "not_enough_events_for_gmm"
-        ))
-    }
-
-    fit <- tryCatch(
-        suppressWarnings(mclust::Mclust(scores, G = seq_len(max_bands), verbose = FALSE)),
-        error = function(e) NULL
-    )
-    if (is.null(fit) || is.null(fit$G) || !is.finite(fit$G)) {
-        return(list(
-            n_bands = pca_n,
-            method = "pca_variance",
-            pca_components = pca_n,
-            cumulative_variance = cum_var[pca_n],
-            max_bands = max_bands,
-            min_cluster_size = min_cluster_size,
-            min_cluster_proportion = min_cluster_proportion,
-            hit_max_bands = identical(as.integer(pca_n), as.integer(max_bands)),
-            reason = "gmm_failed"
-        ))
-    }
-
-    n_bands <- as.integer(fit$G)
-    raw_n_bands <- n_bands
-    if (!is.null(fit$classification)) {
-        cluster_sizes <- table(factor(fit$classification, levels = seq_len(n_bands)))
-        tiny_clusters <- sum(cluster_sizes < min_cluster_size)
-        if (tiny_clusters > 0 && n_bands > 1) {
-            n_bands <- max(1L, n_bands - tiny_clusters)
-        }
-    }
+    ord <- order(cluster_sizes, decreasing = TRUE)
+    centers <- centers[ord, , drop = FALSE]
+    cluster_sizes <- cluster_sizes[ord]
 
     list(
-        n_bands = min(max(1L, n_bands), max_bands),
-        method = "gmm_bic_on_pcs",
-        pca_components = pca_n,
-        cumulative_variance = cum_var[pca_n],
-        max_bands = max_bands,
-        raw_selected_bands = raw_n_bands,
+        centers = centers,
+        cluster_sizes = cluster_sizes,
         min_cluster_size = min_cluster_size,
-        min_cluster_proportion = min_cluster_proportion,
-        hit_max_bands = raw_n_bands >= max_bands,
-        bic = if (!is.null(fit$bic)) fit$bic else NA_real_,
-        model_name = if (!is.null(fit$modelName)) fit$modelName else NA_character_
+        requested_centers = as.integer(n_centers),
+        effective_centers = as.integer(n_eff),
+        center_method = if (n_eff == 1L) "median" else "kmeans"
     )
 }
 
@@ -357,46 +470,14 @@
     df[fn %in% filenames, ]
 }
 
-# Filters out Autofluorescence (AF) or unstained control files from the main FCS files set.
-# Used when exclude_af is TRUE to ensure only single-color controls (and not unstained files)
-# are processed during reference matrix construction.
-# Returns the filtered FCS file list, stopping if no non-AF files remain.
-.filter_reference_af_files <- function(fcs_files, input_folder, exclude_af = FALSE) {
-    if (!isTRUE(exclude_af)) {
-        return(fcs_files)
-    }
-
-    keep_non_af_files <- !.is_af_filename(fcs_files)
-    n_excluded_files <- sum(!keep_non_af_files)
-    if (n_excluded_files > 0) {
-        message("Excluding ", n_excluded_files, " AF/unstained SCC file(s) from reference-matrix construction.")
-    }
-    fcs_files <- fcs_files[keep_non_af_files]
-    if (length(fcs_files) == 0) {
-        stop("No non-AF FCS files found in ", input_folder, " after exclude_af filtering.")
-    }
-
-    fcs_files
-}
-
 # Prepares the complete list of FCS files to be processed.
-# Locates FCS files in the input folder and applies AF filtering,
-# and optionally appends additional AF files from an external directory (af_dir).
-# Returns a list containing 'fcs_files' (standard controls) and 'fcs_files_all' (all controls including AF).
-.prepare_reference_file_set <- function(input_folder, include_multi_af = FALSE, af_dir = "af", exclude_af = FALSE) {
-    fcs_files <- list.files(input_folder, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-    if (length(fcs_files) == 0) stop("No FCS files found in ", input_folder)
+# Locates FCS files in the input folder.
+# Returns a list containing 'fcs_files' and 'fcs_files_all'.
+.prepare_reference_file_set <- function(input_folder) {
+    fcs_files_all <- list.files(input_folder, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+    if (length(fcs_files_all) == 0) stop("No FCS files found in ", input_folder)
 
-    fcs_files <- .filter_reference_af_files(fcs_files, input_folder = input_folder, exclude_af = exclude_af)
-
-    fcs_files_all <- fcs_files
-    if (!isTRUE(exclude_af) && isTRUE(include_multi_af) && dir.exists(af_dir)) {
-        af_files <- list.files(af_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-        message("Found ", length(af_files), " extra AF files in '", af_dir, "'")
-        fcs_files_all <- c(af_files, fcs_files)
-    }
-
-    list(fcs_files = fcs_files, fcs_files_all = fcs_files_all)
+    list(fcs_files = fcs_files_all, fcs_files_all = fcs_files_all)
 }
 
 # Prepares and returns the normalized path of the output directory.
@@ -407,6 +488,7 @@
     out_path <- normalizePath(output_folder, mustWork = FALSE)
     if (isTRUE(save_qc_plots)) {
         dir.create(file.path(out_path, "fsc_ssc"), showWarnings = FALSE, recursive = TRUE)
+        dir.create(file.path(out_path, "singlet"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "histogram"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "intensity_scatter"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "spectrum"), showWarnings = FALSE, recursive = TRUE)
@@ -478,14 +560,248 @@
     primary
 }
 
+.read_reference_manual_gates <- function(manual_gate_file = NULL) {
+    if (is.null(manual_gate_file) || length(manual_gate_file) == 0 || is.na(manual_gate_file[1])) return(NULL)
+    path <- normalizePath(as.character(manual_gate_file)[1], mustWork = FALSE)
+    if (!file.exists(path)) return(NULL)
+    df <- tryCatch(utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE), error = function(e) NULL)
+    required <- c("gate_type", "scope", "filename", "x_channel", "y_channel", "plot_mode", "vertex_index", "x", "y")
+    if (is.null(df) || nrow(df) == 0) {
+        stop("Could not read a valid manual gate CSV: ", path, call. = FALSE)
+    }
+    missing_cols <- setdiff(required, colnames(df))
+    if (length(missing_cols) > 0) {
+        stop("Manual gate CSV is missing required columns: ", paste(missing_cols, collapse = ", "), call. = FALSE)
+    }
+    settings <- list()
+    setting_rows <- df[df$gate_type == "setting", , drop = FALSE]
+    if (nrow(setting_rows) > 0) {
+        for (i in seq_len(nrow(setting_rows))) {
+            key <- trimws(as.character(setting_rows$x_channel[i]))
+            value <- trimws(as.character(setting_rows$x[i]))
+            if (!nzchar(key)) next
+            if (identical(key, "point_size")) {
+                settings$point_size <- suppressWarnings(as.numeric(value))
+            } else if (identical(key, "max_points")) {
+                settings$max_points <- suppressWarnings(as.integer(value))
+            } else if (identical(key, "histogram_bins")) {
+                settings$histogram_bins <- suppressWarnings(as.integer(value))
+            } else if (identical(key, "histogram_transform")) {
+                settings$histogram_transform <- tolower(value)
+            }
+        }
+    }
+    keep <- df$gate_type != "setting" &
+        (df$plot_mode == "blocked" | (df$plot_mode != "missing" & suppressWarnings(as.integer(df$vertex_index)) > 0))
+    df <- df[keep, , drop = FALSE]
+    if (nrow(df) == 0) {
+        out <- list()
+    } else {
+        out <- split(df, paste(df$gate_type, df$scope, df$filename, sep = "\r"))
+    }
+    attr(out, "settings") <- settings
+    out
+}
+
+.reference_manual_gate_settings <- function(manual_gates) {
+    settings <- if (!is.null(manual_gates)) attr(manual_gates, "settings") else NULL
+    if (is.null(settings)) settings <- list()
+    bins_value <- if (is.null(settings$histogram_bins)) 100L else settings$histogram_bins
+    bins <- suppressWarnings(as.integer(bins_value))
+    if (!is.finite(bins) || is.na(bins)) bins <- 100L
+    bins <- min(max(bins, 5L), 500L)
+    transform_value <- if (is.null(settings$histogram_transform)) "asinh" else settings$histogram_transform
+    transform <- tolower(trimws(as.character(transform_value)))
+    if (!transform %in% c("asinh", "linear", "log10", "biexponential")) transform <- "asinh"
+    max_points_value <- if (is.null(settings$max_points)) 50000L else settings$max_points
+    max_points <- suppressWarnings(as.integer(max_points_value))
+    if (!is.finite(max_points) || is.na(max_points) || max_points <= 0L) max_points <- 50000L
+    point_size_value <- if (is.null(settings$point_size)) 1.5 else settings$point_size
+    point_size <- suppressWarnings(as.numeric(point_size_value))
+    if (!is.finite(point_size) || is.na(point_size) || point_size <= 0) point_size <- 1.5
+    list(
+        histogram_bins = bins,
+        histogram_transform = transform,
+        max_points = max_points,
+        point_size = point_size
+    )
+}
+
+.reference_manual_gate_key <- function(gate_type, scope, filename = "") {
+    paste(gate_type, scope, filename, sep = "\r")
+}
+
+.reference_manual_gate <- function(manual_gates, gate_type, filename, sample_type) {
+    if (is.null(manual_gates)) return(NULL)
+    keys <- c(
+        .reference_manual_gate_key(gate_type, "file", filename),
+        .reference_manual_gate_key(gate_type, sample_type, ""),
+        .reference_manual_gate_key(gate_type, "cells", "")
+    )
+    hit <- keys[keys %in% names(manual_gates)][1]
+    if (is.na(hit) || !nzchar(hit)) return(NULL)
+    gate <- manual_gates[[hit]]
+    gate[order(suppressWarnings(as.integer(gate$vertex_index))), , drop = FALSE]
+}
+
+.reference_gate_vertices <- function(gate) {
+    if (is.null(gate) || nrow(gate) == 0) return(NULL)
+    out <- data.frame(
+        x = suppressWarnings(as.numeric(gate$x)),
+        y = suppressWarnings(as.numeric(gate$y))
+    )
+    out <- out[stats::complete.cases(out), , drop = FALSE]
+    if (nrow(out) == 0) return(NULL)
+    out
+}
+
+.reference_gate_channel <- function(gate, column, fallback, raw_data) {
+    channel <- if (!is.null(gate) && column %in% colnames(gate)) as.character(gate[[column]][1]) else fallback
+    if (is.na(channel) || !nzchar(channel) || !channel %in% colnames(raw_data)) fallback else channel
+}
+
+.apply_reference_manual_scatter_gates <- function(raw_data, sample_type, filename, manual_gates) {
+    scatter <- .resolve_reference_scatter_channels(raw_data)
+    if (is.null(scatter)) return(NULL)
+    fsc <- scatter$fsc
+    ssc <- scatter$ssc
+    fsc_h <- sub("-A$", "-H", fsc, ignore.case = TRUE)
+    if (!fsc_h %in% colnames(raw_data)) {
+        fsc_h <- grep("^FSC.*-H$", colnames(raw_data), value = TRUE, ignore.case = TRUE)[1]
+    }
+
+    keep <- rep(TRUE, nrow(raw_data))
+    final_gate <- NULL
+    cell_gate <- .reference_manual_gate(manual_gates, "cell", filename, sample_type)
+    cell_vertices <- .reference_gate_vertices(cell_gate)
+    cell_x <- fsc
+    cell_y <- ssc
+    if (!is.null(cell_vertices) && nrow(cell_vertices) >= 3) {
+        cell_x <- .reference_gate_channel(cell_gate, "x_channel", fsc, raw_data)
+        cell_y <- .reference_gate_channel(cell_gate, "y_channel", ssc, raw_data)
+        keep <- keep & sp::point.in.polygon(raw_data[, cell_x], raw_data[, cell_y], cell_vertices$x, cell_vertices$y) > 0
+        if (identical(cell_x, fsc) && identical(cell_y, ssc)) {
+            final_gate <- cell_vertices
+        }
+    }
+    singlet_gate <- .reference_manual_gate(manual_gates, "singlet", filename, sample_type)
+    singlet_vertices <- .reference_gate_vertices(singlet_gate)
+    manual_attempted <- !is.null(cell_gate) || !is.null(singlet_gate)
+    singlet_x <- fsc_h
+    singlet_y <- fsc
+    if (!is.null(singlet_vertices) && nrow(singlet_vertices) >= 3 && !is.na(fsc_h) && fsc_h %in% colnames(raw_data)) {
+        singlet_x <- .reference_gate_channel(singlet_gate, "x_channel", fsc_h, raw_data)
+        singlet_y <- .reference_gate_channel(singlet_gate, "y_channel", fsc, raw_data)
+        keep <- keep & sp::point.in.polygon(raw_data[, singlet_x], raw_data[, singlet_y], singlet_vertices$x, singlet_vertices$y) > 0
+    }
+    if (sum(keep, na.rm = TRUE) < 10) return(NULL)
+    if (all(keep) && !manual_attempted) return(NULL)
+    gated_data <- raw_data[keep, , drop = FALSE]
+    if (is.null(final_gate)) {
+        x_min <- min(gated_data[, fsc], na.rm = TRUE)
+        x_max <- max(gated_data[, fsc], na.rm = TRUE)
+        y_min <- min(gated_data[, ssc], na.rm = TRUE)
+        y_max <- max(gated_data[, ssc], na.rm = TRUE)
+        final_gate <- data.frame(
+            x = c(x_min, x_max, x_max, x_min, x_min),
+            y = c(y_min, y_min, y_max, y_max, y_min)
+        )
+    }
+    list(
+        gated_data = gated_data,
+        final_gate = final_gate,
+        fsc = fsc,
+        ssc = ssc,
+        fsc_max = stats::quantile(raw_data[, fsc], 0.98, na.rm = TRUE),
+        ssc_max = stats::quantile(raw_data[, ssc], 0.98, na.rm = TRUE),
+        manual = TRUE,
+        manual_gate_info = list(
+            cell = list(vertices = cell_vertices, x_channel = cell_x, y_channel = cell_y),
+            singlet = list(vertices = singlet_vertices, x_channel = singlet_x, y_channel = singlet_y),
+            settings = .reference_manual_gate_settings(manual_gates)
+        )
+    )
+}
+
+.apply_reference_manual_positive_gate <- function(gated_data, peak_channel, filename, sample_type, manual_gates) {
+    gate <- .reference_manual_gate(manual_gates, "positive", filename, sample_type)
+    verts <- .reference_gate_vertices(gate)
+    if (is.null(gate) || is.null(verts) || nrow(verts) == 0) return(NULL)
+    mode <- as.character(gate$plot_mode[1])
+    peak_vals <- gated_data[, peak_channel]
+    keep <- NULL
+    if (identical(mode, "separator")) {
+        keep <- peak_vals >= verts$x[1]
+    } else if (identical(mode, "positive_1d") && nrow(verts) >= 2) {
+        lim <- range(verts$x, na.rm = TRUE)
+        keep <- peak_vals >= lim[1] & peak_vals <= lim[2]
+    } else if (nrow(verts) >= 3) {
+        x_channel <- as.character(gate$x_channel[1])
+        y_channel <- as.character(gate$y_channel[1])
+        if (!x_channel %in% colnames(gated_data)) x_channel <- peak_channel
+        if (!y_channel %in% colnames(gated_data)) {
+            scatter <- .resolve_reference_scatter_channels(gated_data)
+            y_channel <- if (!is.null(scatter)) scatter$fsc else peak_channel
+        }
+        keep <- sp::point.in.polygon(gated_data[, x_channel], gated_data[, y_channel], verts$x, verts$y) > 0
+    }
+    if (is.null(keep) || sum(keep, na.rm = TRUE) < 10) return(NULL)
+    vals_log <- log10(pmax(peak_vals, 1))
+    attr(vals_log, "gate_type") <- paste0("manual_", mode)
+    attr(vals_log, "gate_method") <- paste0("manual_", mode)
+    attr(vals_log, "positive_gate_present") <- TRUE
+    if (identical(mode, "positive_1d") && nrow(verts) >= 2) {
+        positive_lim <- range(verts$x, na.rm = TRUE)
+        if (all(is.finite(positive_lim)) && positive_lim[2] > positive_lim[1]) {
+            attr(vals_log, "pos_raw_min") <- positive_lim[1]
+            attr(vals_log, "pos_raw_max") <- positive_lim[2]
+        }
+    }
+    negative_gate <- .reference_manual_gate(manual_gates, "negative", filename, sample_type)
+    negative_verts <- .reference_gate_vertices(negative_gate)
+    if (!is.null(negative_gate) && !is.null(negative_verts) && nrow(negative_verts) >= 2) {
+        negative_mode <- as.character(negative_gate$plot_mode[1])
+        if (identical(negative_mode, "negative_1d")) {
+            negative_lim <- range(negative_verts$x, na.rm = TRUE)
+            if (all(is.finite(negative_lim)) && negative_lim[2] > negative_lim[1]) {
+                attr(vals_log, "negative_gate_present") <- TRUE
+                attr(vals_log, "neg_log_min") <- log10(max(negative_lim[1], 1))
+                attr(vals_log, "neg_log_max") <- log10(max(negative_lim[2], 1))
+                attr(vals_log, "neg_raw_min") <- negative_lim[1]
+                attr(vals_log, "neg_raw_max") <- negative_lim[2]
+            }
+        }
+    }
+    list(
+        final_gated_data = gated_data[keep, , drop = FALSE],
+        hist_info = list(
+            vals_log = vals_log,
+            gate_min = min(peak_vals[keep], na.rm = TRUE),
+            gate_max = max(peak_vals[keep], na.rm = TRUE),
+            positive_raw_min = attr(vals_log, "pos_raw_min"),
+            positive_raw_max = attr(vals_log, "pos_raw_max"),
+            negative_raw_min = attr(vals_log, "neg_raw_min"),
+            negative_raw_max = attr(vals_log, "neg_raw_max")
+        )
+    )
+}
+
 # Computes the 2D ellipse coordinates at a given confidence level.
 # Used for gating populations in FSC/SSC scatter plots based on GMM component mean and variance.
 # Returns a data.table containing the ellipse points.
 .get_reference_ellipse <- function(mean, sigma, level = 0.95, n = 100, scale = 1.0) {
+    if (length(mean) < 2 || any(!is.finite(mean)) ||
+        !is.matrix(sigma) || any(dim(sigma) < 2) || any(!is.finite(sigma))) {
+        return(NULL)
+    }
     chi2_val <- qchisq(level, df = 2)
     eig <- eigen(sigma)
-    a <- sqrt(eig$values[1] * chi2_val) * scale
-    b <- sqrt(eig$values[2] * chi2_val) * scale
+    eig_values <- pmax(Re(eig$values), 0)
+    if (length(eig_values) < 2 || any(!is.finite(eig_values)) || sum(eig_values > 0) == 0) {
+        return(NULL)
+    }
+    a <- sqrt(eig_values[1] * chi2_val) * scale
+    b <- sqrt(eig_values[2] * chi2_val) * scale
     angle <- atan2(eig$vectors[2, 1], eig$vectors[1, 1])
     theta <- seq(0, 2 * pi, length.out = n)
     ellipse_x <- a * cos(theta)
@@ -623,13 +939,21 @@
     if (length(populations) == 1) {
         ell <- .get_reference_ellipse(gmm_result$means[, populations], gmm_result$sigmas[[populations]], level, scale = scale)
     } else {
+        ellipses <- lapply(populations, function(k) {
+            .get_reference_ellipse(gmm_result$means[, k], gmm_result$sigmas[[k]], level, scale = scale)
+        })
+        ellipses <- ellipses[!vapply(ellipses, is.null, logical(1))]
+        if (length(ellipses) == 0) {
+            return(NULL)
+        }
         all_pts <- data.table::rbindlist(
-            lapply(populations, function(k) {
-                .get_reference_ellipse(gmm_result$means[, k], gmm_result$sigmas[[k]], level, scale = scale)
-            })
+            ellipses
         )
         hull_idx <- grDevices::chull(all_pts$x, all_pts$y)
         ell <- all_pts[hull_idx, ]
+    }
+    if (is.null(ell) || nrow(ell) == 0) {
+        return(NULL)
     }
     ell$x <- pmax(0, pmin(ell$x, clip_x))
     ell$y <- pmax(0, pmin(ell$y, clip_y))
@@ -670,19 +994,18 @@
     peak_vals
 }
 
-# Extracts normalized Autofluorescence (AF) median profiles from gated unstained events.
-# Uses K-means clustering on the scale-free spectral shapes to partition AF signatures.
-# Each centroid is normalized by its peak detector to yield a relative signature from 0 to 1.
+# Extracts normalized Autofluorescence (AF) profiles from gated unstained events.
+# Uses the median normalized shape for one AF band and k-means on scale-free
+# spectral shapes for multi-band AF banks.
+# Each center is normalized by its peak detector to yield a relative signature from 0 to 1.
 # Returns a list with the raw median spectrum and a matrix of normalized AF basis signatures.
 .extract_reference_af_profiles <- function(ff_af = NULL,
                                            detector_names,
-                                           n_bands = "auto",
+                                           n_bands = 10,
                                            max_cells = 50000,
                                            af_events = NULL,
-                                           auto_max_bands = 20,
                                            min_cluster_events = 20,
-                                           min_cluster_proportion = 0.005,
-                                           n_bands_sensitivity = 1.5) {
+                                           min_cluster_proportion = 0.005) {
     if (is.null(af_events)) {
         if (is.null(ff_af)) {
             stop("Either ff_af or af_events must be provided.")
@@ -721,66 +1044,39 @@
     }
 
     af_shape <- af_pos[keep, , drop = FALSE] / row_scale[keep]
-    selection <- NULL
-    if (is.character(n_bands) && identical(tolower(trimws(n_bands[1])), "auto")) {
-        selection <- .select_reference_auto_af_band_count(
-            af_shape,
-            max_bands = auto_max_bands,
-            min_cluster_size = min_cluster_events,
-            min_cluster_proportion = min_cluster_proportion,
-            sensitivity = n_bands_sensitivity
+    n_bands <- suppressWarnings(as.integer(n_bands[1]))
+    if (!is.finite(n_bands) || is.na(n_bands) || n_bands < 1) {
+        stop("n_bands must be an integer >= 1.")
+    }
+    km <- .reference_kmeans_af_centers(
+        af_shape = af_shape,
+        n_centers = n_bands,
+        min_cluster_events = min_cluster_events,
+        min_cluster_proportion = min_cluster_proportion
+    )
+    centers <- .reference_normalize_af_centers(km$centers)
+    if (ncol(centers) != length(detector_names) && nrow(centers) == length(detector_names)) {
+        centers <- t(centers)
+    }
+    if (ncol(centers) != length(detector_names)) {
+        stop(
+            "AF center detector count mismatch: expected ",
+            length(detector_names),
+            " detector(s), got ",
+            ncol(centers),
+            ".",
+            call. = FALSE
         )
-        n_bands <- selection$n_bands
     }
-    n_eff <- min(as.integer(n_bands), nrow(af_shape))
-    if (n_eff < 1) n_eff <- 1
-    distinct_n <- nrow(unique(as.data.frame(round(af_shape, digits = 6))))
-    n_eff <- min(n_eff, max(distinct_n, 1L))
-
-    if (n_eff == 1) {
-        centers <- matrix(colMeans(af_shape, na.rm = TRUE), nrow = 1)
-    } else {
-        km <- stats::kmeans(af_shape, centers = n_eff, nstart = 10, iter.max = 100)
-        centers <- km$centers
-        cluster_sizes <- as.numeric(table(factor(km$cluster, levels = seq_len(n_eff))))
-        min_cluster_size <- .reference_min_af_cluster_size(
-            n_events = nrow(af_shape),
-            min_cluster_events = min_cluster_events,
-            min_cluster_proportion = min_cluster_proportion
-        )
-        keep_idx <- which(cluster_sizes >= min_cluster_size)
-        if (length(keep_idx) == 0) keep_idx <- which.max(cluster_sizes)
-        centers <- centers[keep_idx, , drop = FALSE]
-        cluster_sizes <- cluster_sizes[keep_idx]
-        ord <- order(cluster_sizes, decreasing = TRUE)
-        centers <- centers[ord, , drop = FALSE]
-    }
-
-    centers <- t(apply(centers, 1, function(v) {
-        v <- pmax(v, 0)
-        vmax <- max(v, na.rm = TRUE)
-        if (!is.finite(vmax) || vmax <= 0) {
-            return(rep(0, length(v)))
-        }
-        v / vmax
-    }))
-
-    if (is.null(dim(centers))) {
-        centers <- matrix(centers, nrow = 1)
-    }
-
-    if (!is.null(selection) && nrow(centers) > 1) {
-        raw_center_count <- nrow(centers)
-        pruned <- .prune_reference_similar_af_centers(centers)
-        centers <- pruned$centers
-        selection$raw_selected_bands <- selection$n_bands
-        selection$n_bands <- nrow(centers)
-        selection$final_bands <- nrow(centers)
-        selection$pruned_similar_bands <- length(pruned$pruned)
-        selection$similarity_prune_max_cosine <- pruned$max_cosine
-        selection$raw_center_count <- raw_center_count
-        selection$kept_center_indices <- pruned$kept
-    }
+    selection <- list(
+        method = if (identical(km$center_method, "median")) "median_fixed" else "kmeans_fixed",
+        n_bands = nrow(centers),
+        requested_bands = n_bands,
+        raw_center_count = nrow(km$centers),
+        final_bands = nrow(centers),
+        cluster_sizes = km$cluster_sizes,
+        min_cluster_size = km$min_cluster_size
+    )
     rownames(centers) <- c("AF", if (nrow(centers) > 1) paste0("AF_", seq.int(2, nrow(centers))) else NULL)
     colnames(centers) <- detector_names
 
@@ -790,15 +1086,11 @@
 # Determines the name of the autofluorescence (unstained) control file.
 # Looks it up in the control mapping or falls back to identifying files matching AF file naming heuristics.
 # Returns the AF file basename (without extension) or NULL.
-.resolve_reference_af_name <- function(control_df, fcs_files, exclude_af = FALSE) {
-    if (isTRUE(exclude_af)) {
-        return(NULL)
-    }
-
+.resolve_reference_af_name <- function(control_df, fcs_files) {
     af_fn <- NULL
     if (!is.null(control_df)) {
         af_rows <- if ("fluorophore" %in% colnames(control_df)) {
-            control_df[.is_af_control_row(
+            control_df[.is_primary_af_control_row(
                 fluorophore = control_df$fluorophore,
                 marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
                 filename = control_df$filename
@@ -832,6 +1124,54 @@
         return(config[[name]])
     }
     default
+}
+
+.reference_external_negative_summary <- function(detector_names,
+                                                 af_data_raw = NULL,
+                                                 scc_background = NULL) {
+    bg <- if (!is.null(scc_background) && !is.null(scc_background$spectra)) {
+        as.matrix(scc_background$spectra[, detector_names, drop = FALSE])
+    } else {
+        NULL
+    }
+    if (!is.null(bg) && nrow(bg) > 0L) {
+        bg <- bg[stats::complete.cases(bg), , drop = FALSE]
+        bg <- pmax(bg, 0)
+        bg <- bg[rowSums(bg, na.rm = TRUE) > 0, , drop = FALSE]
+        if (nrow(bg) > 0L) {
+            return(list(
+                mean = apply(bg, 2, mean, na.rm = TRUE),
+                median = apply(bg, 2, stats::median, na.rm = TRUE),
+                spectra = bg
+            ))
+        }
+    }
+
+    if (!is.null(af_data_raw) && all(detector_names %in% names(af_data_raw))) {
+        af_vec <- pmax(as.numeric(af_data_raw[detector_names]), 0)
+        names(af_vec) <- detector_names
+        if (sum(af_vec^2, na.rm = TRUE) > 0) {
+            return(list(
+                mean = af_vec,
+                median = af_vec,
+                spectra = matrix(af_vec, nrow = 1L, dimnames = list(NULL, detector_names))
+            ))
+        }
+    }
+
+    NULL
+}
+
+.reference_cosine_to_vector <- function(mat, vec) {
+    mat <- pmax(as.matrix(mat), 0)
+    vec <- pmax(as.numeric(vec), 0)
+    denom <- sqrt(rowSums(mat^2, na.rm = TRUE)) * sqrt(sum(vec^2, na.rm = TRUE))
+    out <- rep(NA_real_, nrow(mat))
+    ok <- is.finite(denom) & denom > 0
+    if (any(ok)) {
+        out[ok] <- as.numeric(mat[ok, , drop = FALSE] %*% vec) / denom[ok]
+    }
+    out
 }
 
 # Reads and gates an AF / unstained control FCS file.
@@ -874,6 +1214,8 @@
 
     list(
         events = scatter_info$gated_data[, detector_names, drop = FALSE],
+        scatter = scatter_info$gated_data[, c(scatter_info$fsc, scatter_info$ssc), drop = FALSE],
+        scatter_names = c(scatter_info$fsc, scatter_info$ssc),
         source = data.table::data.table(
             file = basename(fcs_file),
             path = normalizePath(fcs_file, mustWork = FALSE),
@@ -894,42 +1236,55 @@
                                            fcs_files,
                                            detector_names,
                                            af_n_bands,
-                                           af_bands_per_file,
                                            af_max_cells,
-                                           af_auto_max_bands,
                                            af_min_cluster_events,
                                            af_min_cluster_proportion,
-                                           af_n_bands_sensitivity,
-                                           exclude_af = FALSE,
                                            fcs_files_all = fcs_files,
                                            config = NULL) {
     af_data_raw <- NULL
     af_signatures_norm <- NULL
     af_bank_info <- NULL
-    af_fn <- .resolve_reference_af_name(control_df = control_df, fcs_files = fcs_files, exclude_af = exclude_af)
-
-    if (isTRUE(exclude_af)) {
-        return(list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info))
-    }
+    scc_background <- NULL
+    af_events <- NULL
+    af_fn <- .resolve_reference_af_name(control_df = control_df, fcs_files = fcs_files)
 
     af_paths <- character()
     af_source_types <- character()
-    if (!is.null(af_fn)) {
-        af_path <- fcs_files[grep(af_fn, fcs_files, fixed = TRUE)]
+    fcs_keys <- tools::file_path_sans_ext(basename(fcs_files_all))
+    if (!is.null(control_df) && nrow(control_df) > 0) {
+        af_rows <- .is_primary_af_control_row(
+            fluorophore = if ("fluorophore" %in% colnames(control_df)) control_df$fluorophore else NULL,
+            marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
+            filename = control_df$filename
+        )
+        if (any(af_rows)) {
+            af_df <- control_df[af_rows, , drop = FALSE]
+            control_type <- if ("control.type" %in% colnames(af_df)) {
+                tolower(trimws(as.character(af_df$control.type)))
+            } else {
+                rep("", nrow(af_df))
+            }
+            bead_negative <- vapply(af_df$filename, .reference_is_bead_negative_file, logical(1))
+            af_df <- af_df[control_type != "beads" & !bead_negative, , drop = FALSE]
+            if (nrow(af_df) > 0) {
+                af_file_keys <- tools::file_path_sans_ext(basename(as.character(af_df$filename)))
+                hits <- match(af_file_keys, fcs_keys)
+                hits <- hits[!is.na(hits)]
+                if (length(hits) > 0) {
+                    af_paths <- c(af_paths, fcs_files_all[hits])
+                    af_source_types <- c(af_source_types, rep("mapped_unstained", length(hits)))
+                }
+            }
+        }
+    }
+    if (length(af_paths) == 0 && !is.null(af_fn)) {
+        af_path <- fcs_files_all[match(af_fn, fcs_keys)]
+        af_path <- af_path[!is.na(af_path)]
         if (length(af_path) > 0) {
             af_paths <- c(af_paths, af_path[1])
             af_source_types <- c(af_source_types, "primary_unstained")
         }
     }
-    extra_af_paths <- fcs_files_all[vapply(
-        fcs_files_all,
-        .is_reference_extra_af_file,
-        logical(1),
-        include_multi_af = .get_reference_config_value(config, "include_multi_af", FALSE),
-        af_dir = .get_reference_config_value(config, "af_dir", "af")
-    )]
-    af_paths <- c(af_paths, extra_af_paths)
-    af_source_types <- c(af_source_types, rep("extra_af", length(extra_af_paths)))
     keep_unique <- !duplicated(normalizePath(af_paths, mustWork = FALSE))
     af_paths <- af_paths[keep_unique]
     af_source_types <- af_source_types[keep_unique]
@@ -940,25 +1295,29 @@
         af_gated_list <- af_gated_list[keep_gated]
         af_source_types <- af_source_types[keep_gated]
         if (length(af_gated_list) == 0) {
-            return(list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info))
+            return(list(
+                af_data_raw = af_data_raw,
+                af_signatures_norm = af_signatures_norm,
+                af_bank_info = af_bank_info,
+                scc_background = scc_background,
+                af_events = af_events
+            ))
         }
 
         af_events <- do.call(rbind, lapply(af_gated_list, `[[`, "events"))
+        scc_background <- .scc_background_from_gated_af_list(
+            af_gated_list = af_gated_list,
+            detector_names = detector_names
+        )
         n_af_sources <- length(af_gated_list)
-        requested_bands <- if (n_af_sources > 1) {
-            n_af_sources * af_bands_per_file
-        } else {
-            af_n_bands
-        }
+        requested_bands <- af_n_bands
         af_profiles <- .extract_reference_af_profiles(
             detector_names = detector_names,
             n_bands = requested_bands,
             max_cells = af_max_cells,
             af_events = af_events,
-            auto_max_bands = af_auto_max_bands,
             min_cluster_events = af_min_cluster_events,
-            min_cluster_proportion = af_min_cluster_proportion,
-            n_bands_sensitivity = af_n_bands_sensitivity
+            min_cluster_proportion = af_min_cluster_proportion
         )
         af_data_raw <- af_profiles$raw_median
         af_signatures_norm <- af_profiles$signatures
@@ -970,14 +1329,11 @@
             sources = af_sources,
             pooled_events = nrow(af_events),
             requested_bands = requested_bands,
-            af_bands_per_file = if (n_af_sources > 1) af_bands_per_file else NA_integer_,
             derived_bands = if (!is.null(af_signatures_norm)) nrow(af_signatures_norm) else 0L,
-            af_auto_max_bands = if (identical(requested_bands, "auto")) af_auto_max_bands else NA_integer_,
             af_min_cluster_events = af_min_cluster_events,
             af_min_cluster_proportion = af_min_cluster_proportion,
-            af_n_bands_sensitivity = if (identical(requested_bands, "auto")) af_n_bands_sensitivity else NA_real_,
-            auto_selection = af_profiles$selection,
-            mode = if (n_af_sources > 1) "pooled_multi_af_per_file_scaled" else "single_af"
+            selection = af_profiles$selection,
+            mode = if (n_af_sources > 1) "pooled_af_sources" else "single_af"
         )
         if (!is.null(af_signatures_norm)) {
             msg <- if (n_af_sources == 1) {
@@ -985,36 +1341,21 @@
             } else {
                 paste0(n_af_sources, " pooled AF control files")
             }
-            auto_msg <- if (!is.null(af_profiles$selection)) {
-                paste0(" (auto-selected from ", af_profiles$selection$method, ")")
+            selection_msg <- if (!is.null(af_profiles$selection)) {
+                paste0(" (selected by ", af_profiles$selection$method, ")")
             } else {
                 ""
             }
-            message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from ", msg, auto_msg, ".")
-            if (!is.null(af_profiles$selection) && isTRUE(af_profiles$selection$hit_max_bands)) {
-                message(
-                    "  Auto AF selection reached af_auto_max_bands = ",
-                    af_profiles$selection$max_bands,
-                    "; consider increasing it if QC improves with more AF bands."
-                )
-            }
+            message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from ", msg, selection_msg, ".")
         }
     }
 
-    list(af_data_raw = af_data_raw, af_signatures_norm = af_signatures_norm, af_bank_info = af_bank_info)
-}
-
-# Checks if a file path points to an extra autofluorescence file.
-# Specifically checks if the file resides in the designated AF directory and include_multi_af is enabled.
-# Returns TRUE if it is an extra AF file, otherwise FALSE.
-.is_reference_extra_af_file <- function(fcs_file, include_multi_af = FALSE, af_dir = "af") {
-    if (!isTRUE(include_multi_af)) {
-        return(FALSE)
-    }
-    grepl(
-        normalizePath(af_dir, mustWork = FALSE),
-        normalizePath(fcs_file, mustWork = FALSE),
-        fixed = TRUE
+    list(
+        af_data_raw = af_data_raw,
+        af_signatures_norm = af_signatures_norm,
+        af_bank_info = af_bank_info,
+        scc_background = scc_background,
+        af_events = af_events
     )
 }
 
@@ -1093,7 +1434,7 @@
     invisible(TRUE)
 }
 
-.active_reference_control_rows <- function(control_df, fcs_files_all, exclude_af = FALSE) {
+.active_reference_control_rows <- function(control_df, fcs_files_all) {
     if (is.null(control_df) || !is.data.frame(control_df) || nrow(control_df) == 0 ||
         !all(c("filename", "fluorophore") %in% colnames(control_df))) {
         return(data.frame())
@@ -1108,20 +1449,15 @@
         marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
         filename = control_df$filename
     )
-    if (isTRUE(exclude_af)) {
-        active <- active & !is_af
-    } else {
-        active <- active & !is_af
-    }
+    active <- active & !is_af
 
     control_df[active, , drop = FALSE]
 }
 
-.validate_reference_complete_controls <- function(control_df, fcs_files_all, processed_results, exclude_af = FALSE) {
+.validate_reference_complete_controls <- function(control_df, fcs_files_all, processed_results) {
     active_rows <- .active_reference_control_rows(
         control_df = control_df,
-        fcs_files_all = fcs_files_all,
-        exclude_af = exclude_af
+        fcs_files_all = fcs_files_all
     )
     if (nrow(active_rows) == 0) {
         return(invisible(TRUE))
@@ -1268,7 +1604,7 @@
 # infers the channel via the 99.9% quantile across all detectors, and cross-references/validates
 # it against the target channel in metadata.
 # Returns a list containing the resolved peak channel and 99.9% quantiles for all channels.
-.select_reference_peak_channel <- function(gated_data, detector_names, row_info, channel_alias_map, sn_ext, sn) {
+.select_reference_peak_channel <- function(gated_data, detector_names, row_info, channel_alias_map, sn_ext, sn, cytometer = "auto") {
     is_unstained <- grepl("unstained|autofluorescence|\\bAF\\b", paste(sn_ext, sn), ignore.case = TRUE)
     if (nrow(row_info) > 0) {
         is_unstained <- is_unstained || .is_af_control_row(
@@ -1290,6 +1626,20 @@
 
     inferred_peak_channel <- detector_names[which.max(q999_by_channel)]
     peak_channel <- inferred_peak_channel
+
+    expected_channel <- ""
+    cytometer_id <- .resolve_cytometer_id(cytometer, allow_auto = TRUE, unknown_as_auto = TRUE)
+    if (!identical(cytometer_id, "auto") && nrow(row_info) > 0 && "fluorophore" %in% colnames(row_info)) {
+        expected_ref <- tryCatch(.load_control_file_shipped_reference(cytometer_id), error = function(e) NULL)
+        if (!is.null(expected_ref)) {
+            expected_raw <- .control_file_expected_channel_for_fluor(row_info$fluorophore[1], expected_ref$fluor_peak_channel_map)
+            expected_channel <- .resolve_reference_control_channel(expected_raw, detector_names, channel_alias_map = channel_alias_map)
+        }
+    }
+    if (nzchar(expected_channel)) {
+        peak_channel <- expected_channel
+        return(list(peak_channel = peak_channel, q999_by_channel = q999_by_channel))
+    }
 
     if (nrow(row_info) > 0 && !is.na(row_info$channel[1]) && row_info$channel[1] != "") {
         resolved_channel <- .resolve_reference_control_channel(row_info$channel[1], detector_names, channel_alias_map = channel_alias_map)
@@ -2026,11 +2376,221 @@
     list(vals_log = vals_log, gate_min = 10^gate$pos_lower, gate_max = 10^gate$pos_upper)
 }
 
+.compute_reference_autospectral_scc <- function(clean_data,
+                                                detector_names,
+                                                peak_channel,
+                                                sample_type,
+                                                af_data_raw = NULL,
+                                                scc_background = NULL,
+                                                n_candidates = 1000L,
+                                                n_spectral = 200L,
+                                                min_events = 10L,
+                                                scc_background_k = 2L) {
+    if (!all(c(detector_names, peak_channel) %in% colnames(clean_data))) {
+        return(NULL)
+    }
+    event_mat <- as.matrix(clean_data[, detector_names, drop = FALSE])
+    complete <- stats::complete.cases(event_mat)
+    peak_vals <- clean_data[, peak_channel]
+    valid <- complete & is.finite(peak_vals) & peak_vals > 0 & rowSums(event_mat, na.rm = TRUE) > 0
+    if (sum(valid, na.rm = TRUE) < min_events) {
+        return(NULL)
+    }
+
+    n_candidates <- suppressWarnings(as.integer(n_candidates[1]))
+    if (!is.finite(n_candidates) || is.na(n_candidates) || n_candidates < 1L) {
+        n_candidates <- 1000L
+    }
+    n_spectral <- suppressWarnings(as.integer(n_spectral[1]))
+    if (!is.finite(n_spectral) || is.na(n_spectral) || n_spectral < 1L) {
+        n_spectral <- 200L
+    }
+    scc_background_k <- suppressWarnings(as.integer(scc_background_k[1]))
+    if (!is.finite(scc_background_k) || is.na(scc_background_k) || scc_background_k < 1L) {
+        scc_background_k <- 2L
+    }
+
+    vals_log <- log10(pmax(peak_vals, 1))
+    attr(vals_log, "positive_gate_present") <- TRUE
+    attr(vals_log, "negative_gate_present") <- FALSE
+    attr(vals_log, "mapped_peak_channel") <- peak_channel
+
+    af_summary <- .reference_external_negative_summary(
+        detector_names = detector_names,
+        af_data_raw = af_data_raw,
+        scc_background = scc_background
+    )
+    valid_idx <- which(valid)
+    candidate_n <- min(n_candidates, length(valid_idx))
+    candidate_idx <- valid_idx[order(peak_vals[valid_idx], decreasing = TRUE)[seq_len(candidate_n)]]
+
+    if (!is.null(af_summary)) {
+        af_mean <- af_summary$mean[detector_names]
+        af_median <- af_summary$median[detector_names]
+        af_norm <- sqrt(sum(af_mean^2, na.rm = TRUE))
+        if (!is.finite(af_norm) || af_norm <= 0) {
+            return(NULL)
+        }
+        event_complete <- pmax(event_mat[complete, , drop = FALSE], 0)
+        af_unit <- af_mean / (af_norm + 1e-9)
+        projection <- as.numeric(event_complete %*% af_unit)
+        residual <- pmax(event_complete - projection %o% af_unit, 0)
+        colnames(residual) <- detector_names
+        empirical_peak <- names(which.max(colMeans(residual, na.rm = TRUE)))
+
+        af_cosine_candidates <- .reference_cosine_to_vector(
+            pmax(event_mat[candidate_idx, , drop = FALSE], 0),
+            af_median
+        )
+        cosine_ok <- is.finite(af_cosine_candidates)
+        if (sum(cosine_ok) < min_events) {
+            return(NULL)
+        }
+        candidate_idx <- candidate_idx[cosine_ok]
+        af_cosine_candidates <- af_cosine_candidates[cosine_ok]
+        selected_n <- min(n_spectral, length(candidate_idx))
+        selected_local <- order(af_cosine_candidates, decreasing = FALSE)[seq_len(selected_n)]
+        selected_idx <- candidate_idx[selected_local]
+        if (length(selected_idx) < min_events) {
+            return(NULL)
+        }
+
+        selected_events <- clean_data[selected_idx, , drop = FALSE]
+        matched_background <- .scc_background_match(
+            events = selected_events,
+            background = scc_background,
+            k = scc_background_k
+        )
+        if (is.null(matched_background)) {
+            matched_background <- matrix(
+                af_median,
+                nrow = nrow(selected_events),
+                ncol = length(detector_names),
+                byrow = TRUE,
+                dimnames = list(NULL, detector_names)
+            )
+            background_method <- "external_median"
+        } else {
+            background_method <- "scatter_knn"
+        }
+        corrected_events <- as.matrix(selected_events[, detector_names, drop = FALSE]) - matched_background
+        colnames(corrected_events) <- detector_names
+        positive_events <- pmax(corrected_events, 0)
+        pos_spectrum_raw <- apply(positive_events, 2, stats::median, na.rm = TRUE)
+        sig_pure <- pmax(pos_spectrum_raw, 0)
+        max_val <- max(sig_pure, na.rm = TRUE)
+        if (!is.finite(max_val) || max_val <= 0) {
+            return(NULL)
+        }
+        spectrum_norm <- sig_pure / max_val
+
+        selected_cos <- af_cosine_candidates[selected_local]
+        attr(vals_log, "gate_type") <- "autospectral_external"
+        attr(vals_log, "gate_method") <- paste0(
+            "AutoSpectral-style external-negative selector after FSC/SSC gate: top ",
+            length(candidate_idx),
+            " peak-bright candidate event(s), kept ",
+            length(selected_idx),
+            " least-AF-like event(s)"
+        )
+        attr(vals_log, "af_cosine_max_selected") <- max(selected_cos, na.rm = TRUE)
+        attr(vals_log, "af_cosine_median_selected") <- stats::median(selected_cos, na.rm = TRUE)
+        attr(vals_log, "af_score_valid_events") <- length(valid_idx)
+        attr(vals_log, "empirical_peak_channel") <- empirical_peak
+        attr(vals_log, "scc_background_method") <- background_method
+
+        positive_idx <- rep(FALSE, nrow(clean_data))
+        positive_idx[selected_idx] <- TRUE
+        af_cosine_full <- rep(NA_real_, nrow(clean_data))
+        af_cosine_full[candidate_idx] <- af_cosine_candidates
+        attr(spectrum_norm, "variance") <- apply(positive_events, 2, stats::var, na.rm = TRUE) / (max_val^2)
+        attr(spectrum_norm, "scc_background") <- list(
+            method = background_method,
+            k = if (identical(background_method, "scatter_knn")) scc_background_k else NA_integer_,
+            matched_events = nrow(positive_events)
+        )
+        attr(spectrum_norm, "scc_positive_events") <- positive_events
+
+        return(list(
+            spectrum = spectrum_norm,
+            final_gated_data = selected_events,
+            positive_events = positive_events,
+            positive_idx = positive_idx,
+            vals_log = vals_log,
+            gate_min = min(peak_vals[selected_idx], na.rm = TRUE),
+            gate_max = max(peak_vals[selected_idx], na.rm = TRUE),
+            peak_vals = peak_vals,
+            spectral_gate_info = list(
+                af_basis = af_summary$spectra,
+                af_cosine = af_cosine_full
+            ),
+            extraction_method = "autospectral_external",
+            n_candidates = length(candidate_idx),
+            n_selected = length(selected_idx)
+        ))
+    }
+
+    top_n <- min(100L, length(candidate_idx))
+    selected_idx <- candidate_idx[seq_len(top_n)]
+    bottom_n <- max(10L, floor(0.10 * length(valid_idx)))
+    bottom_n <- min(bottom_n, length(valid_idx) - length(selected_idx))
+    if (bottom_n < min_events || length(selected_idx) < min_events) {
+        return(NULL)
+    }
+    negative_pool <- setdiff(valid_idx[order(peak_vals[valid_idx], decreasing = FALSE)], selected_idx)
+    negative_idx <- head(negative_pool, bottom_n)
+    neg_spectrum <- apply(event_mat[negative_idx, , drop = FALSE], 2, mean, na.rm = TRUE)
+    corrected_events <- sweep(as.matrix(clean_data[selected_idx, detector_names, drop = FALSE]), 2, neg_spectrum, "-")
+    colnames(corrected_events) <- detector_names
+    positive_events <- pmax(corrected_events, 0)
+    sig_pure <- pmax(colMeans(positive_events, na.rm = TRUE), 0)
+    max_val <- max(sig_pure, na.rm = TRUE)
+    if (!is.finite(max_val) || max_val <= 0) {
+        return(NULL)
+    }
+    spectrum_norm <- sig_pure / max_val
+    positive_idx <- rep(FALSE, nrow(clean_data))
+    positive_idx[selected_idx] <- TRUE
+    negative_bool <- rep(FALSE, nrow(clean_data))
+    negative_bool[negative_idx] <- TRUE
+    attr(vals_log, "gate_type") <- "autospectral_internal"
+    attr(vals_log, "gate_method") <- paste0(
+        "AutoSpectral-style internal-negative fallback after FSC/SSC gate: top ",
+        length(selected_idx),
+        " peak-bright event(s) minus bottom ",
+        length(negative_idx),
+        " event(s)"
+    )
+    attr(vals_log, "negative_idx") <- negative_bool
+    attr(vals_log, "scc_background_method") <- "internal_negative"
+    attr(spectrum_norm, "variance") <- apply(positive_events, 2, stats::var, na.rm = TRUE) / (max_val^2)
+    attr(spectrum_norm, "scc_background") <- list(
+        method = "internal_negative",
+        k = NA_integer_,
+        matched_events = 0L
+    )
+    attr(spectrum_norm, "scc_positive_events") <- positive_events
+
+    list(
+        spectrum = spectrum_norm,
+        final_gated_data = clean_data[selected_idx, , drop = FALSE],
+        positive_events = positive_events,
+        positive_idx = positive_idx,
+        vals_log = vals_log,
+        gate_min = min(peak_vals[selected_idx], na.rm = TRUE),
+        gate_max = max(peak_vals[selected_idx], na.rm = TRUE),
+        peak_vals = peak_vals,
+        spectral_gate_info = NULL,
+        extraction_method = "autospectral_internal",
+        n_candidates = length(candidate_idx),
+        n_selected = length(selected_idx)
+    )
+}
+
 # Computes the normalized spectral signature for a stained control sample.
 # Calculates the median intensity in each detector for the positive and negative gates,
-# subtracts the negative/background control, normalizes the spectrum by the peak signal,
-# and estimates the per-channel variance.
-# Returns a list with the normalized spectrum vector, raw positive/negative medians, and variance vector.
+# subtracts the negative/background control, and normalizes the spectrum by the peak signal.
+# Returns the normalized spectrum vector.
 .compute_reference_spectrum <- function(final_gated_data,
                                         gated_data,
                                         peak_vals,
@@ -2091,17 +2651,6 @@
     max_val <- max(sig_pure, na.rm = TRUE)
     if (max_val <= 0) max_val <- max(pos_spectrum_raw, na.rm = TRUE)
     res <- sig_pure / max_val
-
-    # Keep positive/negative population spread as reference QC metadata. These
-    # values are not used as default WLS detector-error weights.
-    pos_var <- apply(final_gated_data[, detector_names, drop = FALSE], 2, stats::var, na.rm = TRUE)
-    neg_var <- apply(neg_events, 2, stats::var, na.rm = TRUE)
-    tot_var <- pos_var + neg_var
-    tot_var[is.na(tot_var) | tot_var <= 0] <- 0
-    if (max_val > 0) {
-        tot_var <- tot_var / (max_val^2)
-    }
-    attr(res, "variance") <- tot_var
 
     res
 }
@@ -2173,6 +2722,7 @@
     }
 
     bead_events <- list()
+    bead_gated_list <- list()
     for (key in bead_keys) {
         fcs_file <- unname(fcs_files[[key]])
 
@@ -2204,6 +2754,13 @@
         neg_data <- if (!is.null(scatter_info)) scatter_info$gated_data else raw_data
         if (nrow(neg_data) > 0) {
             bead_events[[length(bead_events) + 1L]] <- neg_data[, detector_names, drop = FALSE]
+            if (!is.null(scatter_info)) {
+                bead_gated_list[[length(bead_gated_list) + 1L]] <- list(
+                    events = neg_data[, detector_names, drop = FALSE],
+                    scatter = neg_data[, c(scatter_info$fsc, scatter_info$ssc), drop = FALSE],
+                    scatter_names = c(scatter_info$fsc, scatter_info$ssc)
+                )
+            }
             message("Using unstained bead control for bead SCC subtraction: ", basename(fcs_file))
         }
     }
@@ -2213,7 +2770,15 @@
     }
 
     bead_mat <- do.call(rbind, bead_events)
-    apply(bead_mat[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
+    bead_negative <- apply(bead_mat[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
+    bead_background <- .scc_background_from_gated_af_list(
+        af_gated_list = bead_gated_list,
+        detector_names = detector_names
+    )
+    if (!is.null(bead_background)) {
+        attr(bead_negative, "scc_background") <- bead_background
+    }
+    bead_negative
 }
 
 # Identifies and loads the universal/marker-specific negative control profiles.
@@ -2304,6 +2869,245 @@
     ch_name
 }
 
+.warn_reference_qc_plot_failure <- function(sn, plot_type, condition) {
+    warning(
+        "SCC QC plot skipped for ", sn, " (", plot_type, "): ",
+        conditionMessage(condition),
+        ". Continuing unmixing.",
+        call. = FALSE
+    )
+    invisible(FALSE)
+}
+
+.save_reference_ggsave <- function(filename, plot, sn, plot_type, ...) {
+    tryCatch(
+        {
+            ggplot2::ggsave(filename, plot, ...)
+            invisible(TRUE)
+        },
+        error = function(e) .warn_reference_qc_plot_failure(sn, plot_type, e)
+    )
+}
+
+.save_reference_qc_plots_safely <- function(...) {
+    args <- list(...)
+    sn <- if (!is.null(args$sn)) args$sn else "control"
+    tryCatch(
+        do.call(.save_reference_qc_plots, args),
+        error = function(e) .warn_reference_qc_plot_failure(sn, "plot bundle", e)
+    )
+}
+
+.reference_even_indices <- function(n, max_points = 50000L) {
+    n <- as.integer(n)
+    max_points <- suppressWarnings(as.integer(max_points))
+    if (!is.finite(max_points) || is.na(max_points) || max_points <= 0L) max_points <- 50000L
+    if (n <= max_points) return(seq_len(n))
+    unique(pmax(1L, pmin(n, floor(seq(1, n, length.out = max_points)))))
+}
+
+.reference_density_palette <- function(size = 64L) {
+    vapply(seq_len(size), function(i) {
+        v <- (i - 1) / max(size - 1, 1)
+        r <- max(0, min(1, min(4 * v - 1.5, -4 * v + 4.5)))
+        g <- max(0, min(1, min(4 * v - 0.5, -4 * v + 3.5)))
+        b <- max(0, min(1, min(4 * v + 0.5, -4 * v + 2.5)))
+        grDevices::rgb(r, g, b, alpha = 0.70)
+    }, character(1))
+}
+
+.reference_point_density <- function(x, y) {
+    n <- length(x)
+    if (n == 0) return(numeric())
+    min_x <- min(x, na.rm = TRUE)
+    max_x <- max(x, na.rm = TRUE)
+    min_y <- min(y, na.rm = TRUE)
+    max_y <- max(y, na.rm = TRUE)
+    rx <- max(max_x - min_x, 1)
+    ry <- max(max_y - min_y, 1)
+    num_bins <- 160L
+    grid_side <- num_bins + 1L
+    bx <- pmax(0L, pmin(num_bins, floor(((x - min_x) / rx) * num_bins)))
+    by <- pmax(0L, pmin(num_bins, floor(((y - min_y) / ry) * num_bins)))
+    grid <- tabulate(by * grid_side + bx + 1L, nbins = grid_side * grid_side)
+    dim(grid) <- c(grid_side, grid_side)
+    radius <- 5L
+    sigma <- 2
+    offsets <- expand.grid(dx = -radius:radius, dy = -radius:radius)
+    offsets$weight <- exp(-(offsets$dx^2 + offsets$dy^2) / (2 * sigma^2))
+    densities <- numeric(n)
+    for (i in seq_len(n)) {
+        nx <- bx[i] + offsets$dx + 1L
+        ny <- by[i] + offsets$dy + 1L
+        ok <- nx >= 1L & nx <= grid_side & ny >= 1L & ny <= grid_side
+        densities[i] <- sum(grid[cbind(ny[ok], nx[ok])] * offsets$weight[ok])
+    }
+    densities
+}
+
+.reference_pretty_k_label <- function(x) {
+    ifelse(abs(x) >= 1000, paste0(round(x / 1000), "K"), as.character(round(x)))
+}
+
+.reference_qc_scatter_density_plot <- function(data,
+                                               x_channel,
+                                               y_channel,
+                                               pd,
+                                               gate_vertices = NULL,
+                                               title,
+                                               subtitle = NULL,
+                                               max_points = 50000L,
+                                               point_size = 1.5) {
+    x_desc <- .get_reference_axis_label(x_channel, pd)
+    y_desc <- .get_reference_axis_label(y_channel, pd)
+    x_vals <- data[, x_channel]
+    y_vals <- data[, y_channel]
+    keep <- is.finite(x_vals) & is.finite(y_vals)
+    x_vals <- x_vals[keep]
+    y_vals <- y_vals[keep]
+    idx <- .reference_even_indices(length(x_vals), max_points = max_points)
+    plot_df <- data.frame(x = x_vals[idx], y = y_vals[idx])
+    density <- .reference_point_density(plot_df$x, plot_df$y)
+    palette <- .reference_density_palette()
+    bucket <- if (length(density) > 0 && max(density, na.rm = TRUE) > 0) {
+        pmax(1L, pmin(length(palette), floor((density / max(density, na.rm = TRUE)) * (length(palette) - 1L)) + 1L))
+    } else {
+        rep(1L, nrow(plot_df))
+    }
+    plot_df$color <- palette[bucket]
+    x_lim <- range(c(0, stats::quantile(x_vals, 0.998, na.rm = TRUE), if (!is.null(gate_vertices)) gate_vertices$x), na.rm = TRUE)
+    y_lim <- range(c(0, stats::quantile(y_vals, 0.998, na.rm = TRUE), if (!is.null(gate_vertices)) gate_vertices$y), na.rm = TRUE)
+    x_lim[2] <- max(x_lim[2] * 1.04, 1)
+    y_lim[2] <- max(y_lim[2] * 1.04, 1)
+    point_size <- max(0.15, min(1.2, as.numeric(point_size) * 0.28))
+    p <- ggplot2::ggplot(plot_df, ggplot2::aes(x, y)) +
+        ggplot2::geom_point(color = plot_df$color, size = point_size, alpha = 0.95, stroke = 0) +
+        ggplot2::labs(title = title, subtitle = subtitle, x = x_desc, y = y_desc) +
+        ggplot2::scale_x_continuous(labels = .reference_pretty_k_label) +
+        ggplot2::scale_y_continuous(labels = .reference_pretty_k_label) +
+        ggplot2::theme_minimal(base_size = 12) +
+        ggplot2::theme(
+            legend.position = "none",
+            panel.grid = ggplot2::element_blank(),
+            panel.background = ggplot2::element_rect(fill = "#fbfaf6", color = "#ded9cf", linewidth = 0.35),
+            axis.line = ggplot2::element_line(color = "#6c746f", linewidth = 0.35),
+            axis.ticks = ggplot2::element_line(color = "#6c746f", linewidth = 0.3),
+            axis.title = ggplot2::element_text(color = "#626a65", face = "bold"),
+            axis.text = ggplot2::element_text(color = "#626a65", face = "bold"),
+            plot.title = ggplot2::element_text(color = "#17201c", face = "plain", size = 14),
+            plot.subtitle = ggplot2::element_text(color = "#69716b", size = 10.6)
+        ) +
+        ggplot2::coord_cartesian(xlim = x_lim, ylim = y_lim, expand = FALSE)
+    if (!is.null(gate_vertices) && nrow(gate_vertices) >= 3) {
+        gate_closed <- rbind(gate_vertices, gate_vertices[1, , drop = FALSE])
+        p <- p +
+            ggplot2::geom_polygon(data = gate_vertices, ggplot2::aes(x, y), inherit.aes = FALSE, fill = "#d65238", alpha = 0.12) +
+            ggplot2::geom_path(data = gate_closed, ggplot2::aes(x, y), inherit.aes = FALSE, color = "#d65238", linewidth = 1.05) +
+            ggplot2::geom_point(data = gate_vertices, ggplot2::aes(x, y), inherit.aes = FALSE, shape = 21, size = 2.4, stroke = 0.9, color = "#d65238", fill = "#fbfaf6")
+    }
+    p
+}
+
+.reference_histogram_transform_values <- function(values, transform = "asinh") {
+    transform <- tolower(trimws(as.character(transform)[1]))
+    values <- as.numeric(values)
+    if (identical(transform, "log10")) {
+        return(log10(pmax(values, 1)))
+    }
+    if (identical(transform, "asinh")) {
+        return(asinh(values / 150))
+    }
+    if (identical(transform, "biexponential")) {
+        return(sign(values) * log10(1 + abs(values) / 50))
+    }
+    values
+}
+
+.reference_histogram_density_curve <- function(values, domain, bins = 100L) {
+    bins <- suppressWarnings(as.integer(bins))
+    if (!is.finite(bins) || is.na(bins)) bins <- 100L
+    bins <- min(max(bins, 5L), 500L)
+    values <- values[is.finite(values)]
+    if (length(values) == 0 || !all(is.finite(domain)) || domain[2] <= domain[1]) {
+        return(data.frame(x = numeric(), y = numeric()))
+    }
+    idx <- pmax(0L, pmin(bins, floor(((values - domain[1]) / (domain[2] - domain[1])) * bins)))
+    counts <- tabulate(idx + 1L, nbins = bins + 1L)
+    smooth_radius <- max(1L, min(3L, floor(bins / 40L)))
+    y <- numeric(bins + 1L)
+    for (i in 0:bins) {
+        js <- (-smooth_radius):smooth_radius
+        bin_idx <- i + js
+        ok <- bin_idx >= 0L & bin_idx <= bins
+        weights <- exp(-(js[ok] * js[ok]) / 4)
+        y[i + 1L] <- sum(counts[bin_idx[ok] + 1L] * weights) / max(sum(weights), 1)
+    }
+    data.frame(x = seq(domain[1], domain[2], length.out = bins + 1L), y = y)
+}
+
+.reference_qc_histogram_gui_plot <- function(peak_vals,
+                                             pd,
+                                             peak_channel,
+                                             vals_log,
+                                             gate_min,
+                                             gate_max,
+                                             settings,
+                                             hist_info = NULL) {
+    transform <- settings$histogram_transform
+    bins <- settings$histogram_bins
+    values_t <- .reference_histogram_transform_values(peak_vals, transform = transform)
+    pos_min <- if (!is.null(hist_info) && !is.null(hist_info$positive_raw_min)) hist_info$positive_raw_min else attr(vals_log, "pos_raw_min")
+    pos_max <- if (!is.null(hist_info) && !is.null(hist_info$positive_raw_max)) hist_info$positive_raw_max else attr(vals_log, "pos_raw_max")
+    scalar_finite <- function(x) length(x) == 1L && is.finite(x)
+    if (!scalar_finite(pos_min)) pos_min <- gate_min
+    if (!scalar_finite(pos_max)) pos_max <- gate_max
+    neg_min <- if (!is.null(hist_info) && !is.null(hist_info$negative_raw_min)) hist_info$negative_raw_min else attr(vals_log, "neg_raw_min")
+    neg_max <- if (!is.null(hist_info) && !is.null(hist_info$negative_raw_max)) hist_info$negative_raw_max else attr(vals_log, "neg_raw_max")
+    neg_log_min <- attr(vals_log, "neg_log_min")
+    neg_log_max <- attr(vals_log, "neg_log_max")
+    if (!scalar_finite(neg_min) && scalar_finite(neg_log_min)) neg_min <- 10^neg_log_min
+    if (!scalar_finite(neg_max) && scalar_finite(neg_log_max)) neg_max <- 10^neg_log_max
+    gate_raw <- c(pos_min, pos_max, neg_min, neg_max)
+    gate_t <- .reference_histogram_transform_values(gate_raw[is.finite(gate_raw)], transform = transform)
+    domain <- range(c(values_t, gate_t), na.rm = TRUE)
+    if (!all(is.finite(domain)) || domain[2] <= domain[1]) domain <- c(0, 1)
+    pad <- max((domain[2] - domain[1]) * 0.025, 1e-6)
+    domain <- c(domain[1] - pad, domain[2] + pad)
+    curve <- .reference_histogram_density_curve(values_t, domain, bins = bins)
+    ymax <- max(curve$y, 1, na.rm = TRUE)
+    x_desc <- .get_reference_axis_label(peak_channel, pd)
+    p <- ggplot2::ggplot(curve, ggplot2::aes(x, y)) +
+        ggplot2::geom_ribbon(ggplot2::aes(ymin = 0, ymax = y), fill = "#263f73", alpha = 0.28) +
+        ggplot2::geom_line(color = "#263f73", linewidth = 0.85) +
+        ggplot2::labs(title = "Histogram", x = x_desc, y = "Events per bin") +
+        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.08))) +
+        ggplot2::theme_minimal(base_size = 12) +
+        ggplot2::theme(
+            legend.position = "none",
+            panel.grid = ggplot2::element_blank(),
+            panel.background = ggplot2::element_rect(fill = "#fbfaf6", color = "#ded9cf", linewidth = 0.35),
+            axis.line = ggplot2::element_line(color = "#6c746f", linewidth = 0.35),
+            axis.ticks = ggplot2::element_line(color = "#6c746f", linewidth = 0.3),
+            axis.title = ggplot2::element_text(color = "#626a65", face = "bold"),
+            axis.text = ggplot2::element_text(color = "#626a65", face = "bold"),
+            plot.title = ggplot2::element_text(color = "#17201c", face = "plain", size = 14)
+        ) +
+        ggplot2::coord_cartesian(xlim = domain, ylim = c(0, ymax * 1.08), expand = FALSE)
+    if (isTRUE(attr(vals_log, "negative_gate_present")) && scalar_finite(neg_min) && scalar_finite(neg_max) && neg_max > neg_min) {
+        neg_t <- .reference_histogram_transform_values(c(neg_min, neg_max), transform = transform)
+        p <- p +
+            ggplot2::annotate("rect", xmin = min(neg_t), xmax = max(neg_t), ymin = -Inf, ymax = Inf, alpha = 0.13, fill = "#263f73") +
+            ggplot2::geom_vline(xintercept = neg_t, color = "#263f73", linewidth = 1)
+    }
+    if (isTRUE(attr(vals_log, "positive_gate_present")) && scalar_finite(pos_min) && scalar_finite(pos_max) && pos_max > pos_min) {
+        pos_t <- .reference_histogram_transform_values(c(pos_min, pos_max), transform = transform)
+        p <- p +
+            ggplot2::annotate("rect", xmin = min(pos_t), xmax = max(pos_t), ymin = -Inf, ymax = Inf, alpha = 0.13, fill = "#d65238") +
+            ggplot2::geom_vline(xintercept = pos_t, color = "#d65238", linewidth = 1)
+    }
+    p
+}
+
 # Generates and saves PDF quality control (QC) plots for a processed sample.
 # Produces three plots: a 2D density plot of FSC-SSC gating, a 1D density histogram of positive/negative
 # peak gating, and a spectral profile plot of the normalized signature.
@@ -2327,90 +3131,87 @@
                                      detector_labels,
                                      det_info,
                                      out_path,
-                                     use_scatter_gating = TRUE) {
+                                     use_scatter_gating = TRUE,
+                                     manual_gate_info = NULL,
+                                     hist_info = NULL) {
+    gate_settings <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$settings)) {
+        manual_gate_info$settings
+    } else {
+        .reference_manual_gate_settings(NULL)
+    }
+    cell_info <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$cell)) manual_gate_info$cell else NULL
+    cell_x <- if (!is.null(cell_info) && !is.null(cell_info$x_channel) && cell_info$x_channel %in% colnames(raw_data)) cell_info$x_channel else fsc
+    cell_y <- if (!is.null(cell_info) && !is.null(cell_info$y_channel) && cell_info$y_channel %in% colnames(raw_data)) cell_info$y_channel else ssc
+    cell_vertices <- if (!is.null(cell_info) && !is.null(cell_info$vertices)) cell_info$vertices else final_gate
+    p1 <- .reference_qc_scatter_density_plot(
+        data = raw_data,
+        x_channel = cell_x,
+        y_channel = cell_y,
+        pd = pd,
+        gate_vertices = cell_vertices,
+        title = paste0(sn, " - Cell Gate"),
+        subtitle = paste0(round(100 * nrow(gated_data) / nrow(raw_data), 1), "% gated"),
+        max_points = gate_settings$max_points,
+        point_size = gate_settings$point_size
+    )
+    .save_reference_ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, sn, "FSC/SSC", width = 5, height = 5, dpi = 300)
     fsc_desc <- .get_reference_axis_label(fsc, pd)
-    ssc_desc <- .get_reference_axis_label(ssc, pd)
-    dt_plot_gating <- data.table::data.table(x = raw_data[, fsc], y = raw_data[, ssc])
-    x_breaks <- seq(0, max(fsc_max, ssc_max) * 1.05, length.out = 201)
-    y_breaks <- x_breaks
-    x_bin <- findInterval(dt_plot_gating$x, x_breaks)
-    y_bin <- findInterval(dt_plot_gating$y, y_breaks)
-    keep_bin <- x_bin >= 1 & x_bin <= 200 & y_bin >= 1 & y_bin <= 200
-    dt2d <- data.table::as.data.table(as.data.frame(table(
-        x_bin = x_bin[keep_bin],
-        y_bin = y_bin[keep_bin]
-    )))
-    data.table::setnames(dt2d, c("x_bin", "y_bin", "count"))
-    dt2d$x_bin <- as.integer(as.character(dt2d$x_bin))
-    dt2d$y_bin <- as.integer(as.character(dt2d$y_bin))
-    dt2d$count <- as.integer(as.character(dt2d$count))
-    dt2d <- dt2d[dt2d$count > 0, ]
-    dt2d$x <- x_breaks[dt2d$x_bin]
-    dt2d$y <- y_breaks[dt2d$y_bin]
-    dt2d$fill <- log10(dt2d$count + 1)
-    p1 <- ggplot2::ggplot(dt2d, ggplot2::aes(x, y, fill = fill)) +
-        ggplot2::geom_tile(width = diff(x_breaks)[1], height = diff(y_breaks)[1]) +
-        ggplot2::scale_fill_gradientn(colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"), guide = "none") +
-        ggplot2::geom_path(data = final_gate, ggplot2::aes(x, y), inherit.aes = FALSE, color = "red", linewidth = 1) +
-        ggplot2::labs(title = paste0(sn, " - FSC/SSC"), subtitle = paste0(round(100 * nrow(gated_data) / nrow(raw_data), 1), "% gated"), x = fsc_desc, y = ssc_desc) +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(legend.position = "none", panel.grid = ggplot2::element_blank(), panel.background = ggplot2::element_rect(fill = "white", color = NA), plot.subtitle = ggplot2::element_text(size = 10.6)) +
-        ggplot2::coord_cartesian(xlim = c(0, max(fsc_max, ssc_max) * 1.05), ylim = c(0, max(fsc_max, ssc_max) * 1.05))
-    ggplot2::ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, width = 5, height = 5, dpi = 300)
+
+    singlet_info <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$singlet)) manual_gate_info$singlet else NULL
+    singlet_vertices <- if (!is.null(singlet_info) && !is.null(singlet_info$vertices)) singlet_info$vertices else NULL
+    singlet_x <- if (!is.null(singlet_info) && !is.null(singlet_info$x_channel) && singlet_info$x_channel %in% colnames(raw_data)) singlet_info$x_channel else NA_character_
+    singlet_y <- if (!is.null(singlet_info) && !is.null(singlet_info$y_channel) && singlet_info$y_channel %in% colnames(raw_data)) singlet_info$y_channel else NA_character_
+    if (!is.null(singlet_vertices) && nrow(singlet_vertices) >= 3 && !is.na(singlet_x) && !is.na(singlet_y)) {
+        cell_keep <- if (!is.null(cell_vertices) && nrow(cell_vertices) >= 3 && cell_x %in% colnames(raw_data) && cell_y %in% colnames(raw_data)) {
+            sp::point.in.polygon(raw_data[, cell_x], raw_data[, cell_y], cell_vertices$x, cell_vertices$y) > 0
+        } else {
+            rep(TRUE, nrow(raw_data))
+        }
+        singlet_source <- raw_data[cell_keep, , drop = FALSE]
+        p_singlet <- .reference_qc_scatter_density_plot(
+            data = singlet_source,
+            x_channel = singlet_x,
+            y_channel = singlet_y,
+            pd = pd,
+            gate_vertices = singlet_vertices,
+            title = paste0(sn, " - Singlet Gate"),
+            subtitle = paste0(round(100 * nrow(gated_data) / max(nrow(singlet_source), 1), 1), "% gated"),
+            max_points = gate_settings$max_points,
+            point_size = gate_settings$point_size
+        )
+        .save_reference_ggsave(file.path(out_path, "singlet", paste0(sn, "_singlet.png")), p_singlet, sn, "singlet", width = 5, height = 5, dpi = 300)
+    }
 
     neg_log_min <- attr(vals_log, "neg_log_min")
     neg_log_max <- attr(vals_log, "neg_log_max")
-    gate_method <- attr(vals_log, "gate_method")
     negative_gate_present <- isTRUE(attr(vals_log, "negative_gate_present"))
     positive_gate_present <- isTRUE(attr(vals_log, "positive_gate_present"))
-    comp <- attr(vals_log, "gmm_components")
-    comp_means <- if (!is.null(comp) && nrow(comp) > 0) comp$mean else numeric()
-
-    hist_subtitle_lines <- if (positive_gate_present) {
-        c(
-            paste0(
-                round(100 * nrow(final_gated_data) / nrow(gated_data), 1),
-                "% positive gated | blue = negative gate | red = bright gate"
-            ),
-            gate_method
-        )
-    } else {
-        c("AF/unstained control: scatter-gated only; no positive histogram gate", gate_method)
-    }
-    hist_subtitle <- paste(
-        unlist(lapply(hist_subtitle_lines, strwrap, width = 95), use.names = FALSE),
-        collapse = "\n"
+    negative_gate_valid <- negative_gate_present &&
+        is.finite(neg_log_min) &&
+        is.finite(neg_log_max) &&
+        neg_log_max > neg_log_min
+    positive_gate_valid <- positive_gate_present &&
+        is.finite(gate_min) &&
+        is.finite(gate_max) &&
+        gate_max > gate_min
+    p2 <- .reference_qc_histogram_gui_plot(
+        peak_vals = peak_vals,
+        pd = pd,
+        peak_channel = peak_channel,
+        vals_log = vals_log,
+        gate_min = gate_min,
+        gate_max = gate_max,
+        settings = gate_settings,
+        hist_info = hist_info
     )
-
-    p2 <- ggplot2::ggplot(data.table::data.table(x = vals_log), ggplot2::aes(x)) +
-        ggplot2::geom_density(fill = "grey80", color = "grey40") +
-        ggplot2::labs(
-            title = paste0(sn, " - ", peak_channel),
-            subtitle = hist_subtitle,
-            x = paste0("log10(", peak_channel, ")")
-        ) +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(legend.position = "none", plot.subtitle = ggplot2::element_text(size = 8.4, lineheight = 1.05))
-    if (negative_gate_present && is.finite(neg_log_min) && is.finite(neg_log_max) && neg_log_max > neg_log_min) {
-        p2 <- p2 +
-            ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.15, fill = "#2C7BE5") +
-            ggplot2::geom_vline(xintercept = c(neg_log_min, neg_log_max), color = "#2C7BE5", linewidth = 0.8)
-    }
-    if (positive_gate_present) {
-        p2 <- p2 +
-            ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.18, fill = "#D62728") +
-            ggplot2::geom_vline(xintercept = c(log10(gate_min), log10(gate_max)), color = "#D62728", linewidth = 1)
-    }
-    if (length(comp_means) > 0) {
-        p2 <- p2 + ggplot2::geom_vline(xintercept = comp_means, color = "black", linetype = "dashed", alpha = 0.35, linewidth = 0.5)
-    }
+    .save_reference_ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, sn, "histogram", width = 6.5, height = 4, dpi = 300)
     if (isTRUE(use_scatter_gating)) {
         scatter_x <- log10(pmax(peak_vals, 1))
         scatter_class <- ifelse(
-            peak_vals >= gate_min & peak_vals <= gate_max,
+            positive_gate_valid & peak_vals >= gate_min & peak_vals <= gate_max,
             "positive",
             ifelse(
-                negative_gate_present &
+                negative_gate_valid &
                     peak_vals >= 10^neg_log_min &
                     peak_vals <= 10^neg_log_max,
                 "negative",
@@ -2422,23 +3223,26 @@
             y = gated_data[, fsc],
             class = factor(scatter_class, levels = c("negative", "other", "positive"))
         )
-        p2_scatter <- ggplot2::ggplot(scatter_dt, ggplot2::aes(x, y, color = class)) +
-            ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#2C7BE5") +
-            ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#D62728") +
+        p2_scatter <- ggplot2::ggplot(scatter_dt, ggplot2::aes(x, y, color = class))
+        if (negative_gate_valid) {
+            p2_scatter <- p2_scatter +
+                ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#2C7BE5")
+        }
+        if (positive_gate_valid) {
+            p2_scatter <- p2_scatter +
+                ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#D62728")
+        }
+        p2_scatter <- p2_scatter +
             ggplot2::geom_point(size = 0.45, alpha = 0.45) +
             ggplot2::scale_color_manual(values = c(negative = "#2C7BE5", other = "grey55", positive = "#D62728"), drop = FALSE) +
             ggplot2::labs(
-                title = paste0(sn, " - ", peak_channel, " corrected scatter gate"),
-                subtitle = paste(unlist(lapply(c(attr(vals_log, "gate_method"), paste0(round(100 * nrow(final_gated_data) / nrow(gated_data), 1), "% positive gated | blue = negative gate | red = bright gate")), strwrap, width = 95), use.names = FALSE), collapse = "\n"),
+                title = paste0(sn, " - ", peak_channel),
                 x = paste0("log10(", peak_channel, ")"),
-                y = fsc_desc,
-                color = "class"
+                y = fsc_desc
             ) +
             ggplot2::theme_minimal(base_size = 11) +
-            ggplot2::theme(legend.position = "bottom", plot.subtitle = ggplot2::element_text(size = 8.4, lineheight = 1.05))
-        ggplot2::ggsave(file.path(out_path, "intensity_scatter", paste0(sn, "_intensity_scatter.png")), p2_scatter, width = 6.5, height = 4, dpi = 300)
-    } else {
-        ggplot2::ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, width = 6.5, height = 4, dpi = 300)
+            ggplot2::theme(legend.position = "none")
+        .save_reference_ggsave(file.path(out_path, "intensity_scatter", paste0(sn, "_intensity_scatter.png")), p2_scatter, sn, "intensity scatter", width = 6.5, height = 4, dpi = 300)
     }
 
     log_mat <- log10(pmax(final_gated_data[, detector_names, drop = FALSE], 1e-3))
@@ -2486,7 +3290,7 @@
         ggplot2::labs(title = paste0(sn, " - Spectrum"), x = NULL, y = "Intensity") +
         ggplot2::theme_minimal() +
         ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6), legend.position = "none", panel.background = ggplot2::element_rect(fill = "white", color = NA))
-    ggplot2::ggsave(file.path(out_path, "spectrum", paste0(sn, "_spectrum.png")), p3, width = 300, height = 120, units = "mm", dpi = 600)
+    .save_reference_ggsave(file.path(out_path, "spectrum", paste0(sn, "_spectrum.png")), p3, sn, "spectrum", width = 300, height = 120, units = "mm", dpi = 600)
 
     invisible(NULL)
 }
@@ -2495,15 +3299,19 @@
 # Reads the file, performs scatter gating, identifies the peak channel, runs histogram gating
 # to separate positive and negative events, calculates the normalized spectrum, and saves QC plots.
 # Returns a list containing the processed spectrum, QC summary row, and sample name metadata.
-.process_reference_file <- function(fcs_file, control_df, sample_patterns, metadata, config, af_data_raw = NULL, universal_negatives = NULL, bead_negative = NULL) {
+.process_reference_file <- function(fcs_file,
+                                    control_df,
+                                    sample_patterns,
+                                    metadata,
+                                    config,
+                                    af_data_raw = NULL,
+                                    universal_negatives = NULL,
+                                    bead_negative = NULL,
+                                    scc_background = NULL) {
     sn_ext <- basename(fcs_file)
     sn <- tools::file_path_sans_ext(sn_ext)
 
-    is_extra_af <- .is_reference_extra_af_file(
-        fcs_file = fcs_file,
-        include_multi_af = config$include_multi_af,
-        af_dir = config$af_dir
-    )
+    is_extra_af <- FALSE
 
     row_info <- .get_control_rows_for_reference(control_df, c(sn_ext, sn))
     sample_info <- .resolve_reference_sample_type(
@@ -2520,9 +3328,6 @@
         ""
     }
 
-    if (isTRUE(config$exclude_af) && (.is_af_control_row(fluorophore = fluor_name, marker = marker_name, filename = sn_ext) || is_extra_af)) {
-        return(NULL)
-    }
     if (is_extra_af) {
         return(NULL)
     }
@@ -2539,19 +3344,27 @@
         return(NULL)
     }
 
-    scatter_info <- .compute_reference_scatter_gate(
+    scatter_info <- .apply_reference_manual_scatter_gates(
         raw_data = raw_data,
-        pd = pd,
         sample_type = sample_info$type,
-        outlier_percentile = config$outlier_percentile,
-        debris_percentile = config$debris_percentile,
-        subsample_n = config$subsample_n,
-        max_clusters = config$max_clusters,
-        min_cluster_proportion = config$min_cluster_proportion,
-        gate_contour_beads = config$gate_contour_beads,
-        gate_contour_cells = config$gate_contour_cells,
-        bead_gate_scale = config$bead_gate_scale
+        filename = sn_ext,
+        manual_gates = config$manual_gates
     )
+    if (is.null(scatter_info)) {
+        scatter_info <- .compute_reference_scatter_gate(
+            raw_data = raw_data,
+            pd = pd,
+            sample_type = sample_info$type,
+            outlier_percentile = config$outlier_percentile,
+            debris_percentile = config$debris_percentile,
+            subsample_n = config$subsample_n,
+            max_clusters = config$max_clusters,
+            min_cluster_proportion = config$min_cluster_proportion,
+            gate_contour_beads = config$gate_contour_beads,
+            gate_contour_cells = config$gate_contour_cells,
+            bead_gate_scale = config$bead_gate_scale
+        )
+    }
     if (is.null(scatter_info)) {
         return(NULL)
     }
@@ -2562,30 +3375,169 @@
         row_info = row_info,
         channel_alias_map = metadata$channel_alias_map,
         sn_ext = sn_ext,
-        sn = sn
+        sn = sn,
+        cytometer = config$cytometer
     )
     peak_channel <- peak_info$peak_channel
     message("  Peak channel: ", peak_channel)
 
     peak_vals <- scatter_info$gated_data[, peak_channel]
-    gate_fun <- if (isTRUE(config$use_scatter_gating)) {
-        .compute_reference_scatter_intensity_gate
-    } else {
-        .compute_reference_histogram_gate
-    }
-    hist_info <- gate_fun(
-        peak_vals = peak_vals,
-        sample_type = sample_info$type,
-        histogram_pct_beads = config$histogram_pct_beads,
-        histogram_direction_beads = config$histogram_direction_beads,
-        histogram_pct_cells = config$histogram_pct_cells,
-        histogram_direction_cells = config$histogram_direction_cells,
-        is_viability = nrow(row_info) > 0 &&
-            "is.viability" %in% colnames(row_info) &&
-            toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
-    )
+    if (isTRUE(.get_reference_config_value(config, "autospectral_scc_cleanup", FALSE))) {
+        autospectral_clean_data <- scatter_info$gated_data
+        autospectral_positive <- .apply_reference_manual_positive_gate(
+            gated_data = autospectral_clean_data,
+            peak_channel = peak_channel,
+            filename = sn_ext,
+            sample_type = sample_info$type,
+            manual_gates = config$manual_gates
+        )
+        if (!is.null(autospectral_positive)) {
+            autospectral_clean_data <- autospectral_positive$final_gated_data
+        }
+        autospectral_peak_vals <- autospectral_clean_data[, peak_channel]
+        use_external_background <- isTRUE(.get_reference_config_value(config, "clean_scc_with_unstained", FALSE))
+        bead_background <- attr(bead_negative, "scc_background", exact = TRUE)
+        selected_background <- if (!isTRUE(use_external_background)) {
+            NULL
+        } else if (identical(sample_info$type, "beads") && !is.null(bead_background)) {
+            bead_background
+        } else if (identical(sample_info$type, "cells")) {
+            scc_background
+        } else {
+            NULL
+        }
+        selected_negative <- if (isTRUE(use_external_background) && identical(sample_info$type, "beads") && !is.null(bead_negative)) {
+            bead_negative
+        } else if (isTRUE(use_external_background) && identical(sample_info$type, "cells")) {
+            af_data_raw
+        } else {
+            NULL
+        }
+        extraction <- .compute_reference_autospectral_scc(
+            clean_data = autospectral_clean_data,
+            detector_names = metadata$detector_names,
+            peak_channel = peak_channel,
+            sample_type = sample_info$type,
+            af_data_raw = selected_negative,
+            scc_background = selected_background,
+            n_candidates = .get_reference_config_value(config, "autospectral_n_candidates", 1000L),
+            n_spectral = .get_reference_config_value(config, "autospectral_n_spectral", 200L),
+            min_events = .get_reference_config_value(config, "autospectral_min_events", 10L),
+            scc_background_k = .get_reference_config_value(config, "scc_background_k", 2L)
+        )
+        if (is.null(extraction)) {
+            return(NULL)
+        }
 
-    final_gated_data <- scatter_info$gated_data[peak_vals >= hist_info$gate_min & peak_vals <= hist_info$gate_max, ]
+        spectrum_norm <- extraction$spectrum
+        final_gated_data <- extraction$final_gated_data
+        hist_info <- list(
+            vals_log = extraction$vals_log,
+            gate_min = extraction$gate_min,
+            gate_max = extraction$gate_max
+        )
+
+        selected_peak <- autospectral_peak_vals[extraction$positive_idx]
+        neg_vals <- autospectral_peak_vals[order(autospectral_peak_vals, decreasing = FALSE)[seq_len(max(1L, floor(0.10 * length(autospectral_peak_vals))))]]
+        mfi_pos <- stats::median(selected_peak, na.rm = TRUE)
+        mfi_neg <- stats::median(neg_vals, na.rm = TRUE)
+        sd_neg <- stats::mad(neg_vals, na.rm = TRUE)
+        if (is.na(sd_neg) || sd_neg == 0) sd_neg <- stats::sd(neg_vals, na.rm = TRUE)
+        if (is.na(sd_neg) || sd_neg == 0) sd_neg <- 1e-6
+        stain_index <- (mfi_pos - mfi_neg) / (2 * sd_neg)
+        any_sat <- any(raw_data[, metadata$detector_names, drop = FALSE] >= 260000, na.rm = TRUE)
+
+        if (isTRUE(config$save_qc_plots)) {
+            .save_reference_qc_plots_safely(
+                sn = sn,
+                raw_data = raw_data,
+                gated_data = scatter_info$gated_data,
+                final_gated_data = final_gated_data,
+                pd = pd,
+                fsc = scatter_info$fsc,
+                ssc = scatter_info$ssc,
+                fsc_max = scatter_info$fsc_max,
+                ssc_max = scatter_info$ssc_max,
+                final_gate = scatter_info$final_gate,
+                vals_log = hist_info$vals_log,
+                peak_vals = peak_vals,
+                gate_min = hist_info$gate_min,
+                gate_max = hist_info$gate_max,
+                peak_channel = peak_channel,
+                detector_names = metadata$detector_names,
+                detector_labels = metadata$detector_labels,
+                det_info = metadata$det_info,
+                out_path = config$out_path,
+                use_scatter_gating = TRUE,
+                manual_gate_info = scatter_info$manual_gate_info,
+                hist_info = hist_info
+            )
+        }
+
+        return(list(
+            sample_name = sn,
+            result = data.table::data.table(
+                sample = sn,
+                fluorophore = fluor_name,
+                type = sample_info$type,
+                n_total = nrow(raw_data),
+                n_final = extraction$n_selected,
+                spectrum = list(spectrum_norm)
+            ),
+            qc_summary = data.table::data.table(
+                sample = sn,
+                fluorophore = fluor_name,
+                marker = marker_name,
+                type = sample_info$type,
+                peak_channel = peak_channel,
+                fsc_channel = scatter_info$fsc,
+                ssc_channel = scatter_info$ssc,
+                n_total = nrow(raw_data),
+                n_scatter_gated = nrow(scatter_info$gated_data),
+                n_final = extraction$n_selected,
+                scatter_gate_pct = round(100 * nrow(scatter_info$gated_data) / max(nrow(raw_data), 1), 1),
+                histogram_gate_pct = round(100 * extraction$n_selected / max(nrow(scatter_info$gated_data), 1), 1),
+                intensity_gate_type = extraction$extraction_method,
+                scc_background_method = {
+                    bg_info <- attr(spectrum_norm, "scc_background")
+                    if (!is.null(bg_info) && !is.null(bg_info$method)) bg_info$method else "none"
+                },
+                stain_index = round(stain_index, 1),
+                saturated = ifelse(any_sat, "YES", "OK")
+            )
+        ))
+    }
+
+    manual_positive <- .apply_reference_manual_positive_gate(
+        gated_data = scatter_info$gated_data,
+        peak_channel = peak_channel,
+        filename = sn_ext,
+        sample_type = sample_info$type,
+        manual_gates = config$manual_gates
+    )
+    if (!is.null(manual_positive)) {
+        hist_info <- manual_positive$hist_info
+        final_gated_data <- manual_positive$final_gated_data
+    } else {
+        gate_fun <- if (isTRUE(config$use_scatter_gating)) {
+            .compute_reference_scatter_intensity_gate
+        } else {
+            .compute_reference_histogram_gate
+        }
+        hist_info <- gate_fun(
+            peak_vals = peak_vals,
+            sample_type = sample_info$type,
+            histogram_pct_beads = config$histogram_pct_beads,
+            histogram_direction_beads = config$histogram_direction_beads,
+            histogram_pct_cells = config$histogram_pct_cells,
+            histogram_direction_cells = config$histogram_direction_cells,
+            is_viability = nrow(row_info) > 0 &&
+                "is.viability" %in% colnames(row_info) &&
+                toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
+        )
+
+        final_gated_data <- scatter_info$gated_data[peak_vals >= hist_info$gate_min & peak_vals <= hist_info$gate_max, ]
+    }
     if (nrow(final_gated_data) < 10) {
         return(NULL)
     }
@@ -2625,7 +3577,7 @@
     )
 
     if (isTRUE(config$save_qc_plots)) {
-        .save_reference_qc_plots(
+        .save_reference_qc_plots_safely(
             sn = sn,
             raw_data = raw_data,
             gated_data = scatter_info$gated_data,
@@ -2645,7 +3597,9 @@
             detector_labels = metadata$detector_labels,
             det_info = metadata$det_info,
             out_path = config$out_path,
-            use_scatter_gating = config$use_scatter_gating
+            use_scatter_gating = config$use_scatter_gating,
+            manual_gate_info = scatter_info$manual_gate_info,
+            hist_info = hist_info
         )
     }
 
@@ -2683,8 +3637,8 @@
 }
 
 # Combines individual sample spectra and AF signatures into a single spillover matrix.
-# Extracts spectra and variances, cleans up row/column names, structures the metadata attributes
-# (such as variances, QC summary, and parameter info), and performs basic sanity checks.
+# Extracts spectra, cleans up row/column names, structures the metadata attributes
+# (such as QC summary and parameter info), and performs basic sanity checks.
 # Returns the finalized reference matrix.
 .finalize_reference_matrix <- function(results_list,
                                        qc_summary_list,
@@ -2698,6 +3652,12 @@
     results_dt <- if (length(results_list) > 0) data.table::rbindlist(results_list) else data.table::data.table()
     spectra_list <- if (nrow(results_dt) > 0) results_dt$spectrum else list()
     if (nrow(results_dt) > 0) names(spectra_list) <- results_dt$fluorophore
+    scc_positive_events <- lapply(spectra_list, function(x) attr(x, "scc_positive_events"))
+    has_scc_positive_events <- vapply(
+        scc_positive_events,
+        function(x) is.matrix(x) && nrow(x) > 0L && ncol(x) == length(detector_names),
+        logical(1)
+    )
 
     if (is.null(af_signatures_norm) && !is.null(af_data_raw)) {
         af_vec <- pmax(af_data_raw, 0)
@@ -2730,13 +3690,6 @@
 
     M <- do.call(rbind, spectra_list)
     colnames(M) <- detector_names
-    V <- do.call(rbind, lapply(spectra_list, function(x) {
-        v <- attr(x, "variance")
-        if (is.null(v)) rep(0, ncol(M)) else v
-    }))
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-    attr(M, "variances") <- V
 
     if (length(qc_summary_list) > 0) {
         attr(M, "qc_summary") <- data.table::rbindlist(qc_summary_list)
@@ -2746,6 +3699,9 @@
     }
     if (!is.null(af_bank_info)) {
         attr(M, "af_bank_info") <- af_bank_info
+    }
+    if (length(scc_positive_events) > 0L && any(has_scc_positive_events)) {
+        attr(M, "scc_positive_events") <- scc_positive_events[has_scc_positive_events]
     }
     attr(M, "detector_pd") <- pd_meta
     M
@@ -2764,33 +3720,17 @@
 #'   When `FALSE` (default), the function returns the matrix without writing QC files.
 #' @param control_df Optional control mapping as a data.frame or CSV path.
 #'   Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.
-#' @param include_multi_af Logical; if `TRUE`, include additional AF controls from `af_dir`.
-#' @param exclude_af Logical; if `TRUE`, ignore AF/unstained controls entirely,
-#'   even when they are present in `control_df`, the SCC folder, or `af_dir`.
-#' @param af_dir Directory with extra AF controls when `include_multi_af = TRUE`.
-#' @param af_n_bands Number of AF basis signatures to extract from the pooled
-#'   unstained/AF control when only one AF source is available (`1` = classic
-#'   single AF signature). The default, `"auto"`, chooses the number from AF
-#'   event shapes and prunes near-duplicate AF signatures.
-#' @param af_bands_per_file Number of AF basis signatures requested per AF file
-#'   when multiple AF sources are pooled (`5` files with the default `5` yields
-#'   up to `25` shared AF bank signatures).
+#' @param af_n_bands Number of AF basis signatures to extract from pooled
+#'   unstained/AF control events. The default, `100`, builds a broad fixed
+#'   AF bank for Spectreasy unmixing.
 #' @param af_max_cells Maximum number of scatter-gated AF events used when
 #'   deriving AF basis signatures.
-#' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
-#'   If auto selection repeatedly reaches this value, inspect QC and consider
-#'   increasing it.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
 #'   k-means AF cluster. Used together with `af_min_cluster_proportion`; the
 #'   larger threshold is applied.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
 #'   events required to keep a k-means AF cluster. The default `0.005` means
 #'   0.5\% of the AF events used for extraction.
-#' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
-#'   when `af_n_bands = "auto"`. Lower values allow richer AF models; higher
-#'   values select fewer bands before near-duplicate AF signatures are pruned.
-#'   Values must be between `0.1` and `5`; the default `1.5` corresponds to a
-#'   0.75\% minimum k-means fit improvement.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
@@ -2798,6 +3738,9 @@
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
 #'   use the legacy one-dimensional histogram gate.
+#' @param manual_gate_file Optional gate CSV from [gate_controls()]. When
+#'   provided, manual cell/singlet gates are used before automatic SCC spectrum
+#'   extraction, and manual positive gates are used for standard SCC extraction.
 #' @param histogram_pct_beads Quantile width for the bead histogram gate.
 #' @param histogram_direction_beads Histogram gate direction for beads: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.
@@ -2813,10 +3756,30 @@
 #' @param gate_contour_beads Contour probability for bead gating ellipse/hull.
 #' @param gate_contour_cells Contour probability for cell gating ellipse/hull.
 #' @param subsample_n Maximum number of events used for GMM fitting per file.
+#' @param autospectral_scc_cleanup Logical; if `TRUE`, use the
+#'   AutoSpectral-style SCC spectral cleanup after the standard FSC/SSC gate.
+#'   This is intended to be enabled by `unmix_controls(unmixing_method =
+#'   "AutoSpectral")`.
+#' @param clean_scc_with_unstained Logical; when `autospectral_scc_cleanup =
+#'   TRUE`, subtract matching unstained/negative background events before
+#'   calculating SCC spectra.
+#' @param scc_background_method Background subtraction method for AutoSpectral
+#'   SCC cleanup (`"scatter_knn"` or `"none"`).
+#' @param scc_background_k Number of nearest unstained/negative events averaged
+#'   for scatter-matched SCC background subtraction.
+#' @param autospectral_n_candidates Number of peak-bright SCC candidate events
+#'   considered by the AutoSpectral-style selector.
+#' @param autospectral_n_spectral Number of least-background-like SCC events
+#'   kept for spectrum calculation by the AutoSpectral-style selector.
+#' @param autospectral_min_events Minimum event count required by the
+#'   AutoSpectral-style SCC selector.
+#' @param refine Logical; if `TRUE`, refine the fixed-size k-means AF bank with
+#'   native AutoSpectral-style unstained residual modulation. This is only
+#'   supported with `autospectral_scc_cleanup = TRUE`.
 #'
 #' @return Numeric matrix with rows = fluorophores and columns = detectors
 #'   (normalized spectra). The matrix carries SCC-derived detector noise floors
-#'   in `attr(M, "detector_noise")` for default WLS unmixing.
+#'   in `attr(M, "detector_noise")` for WLS/RWLS unmixing.
 #' @export
 #' @examples
 #' if (interactive()) {
@@ -2838,20 +3801,15 @@ build_reference_matrix <- function(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
-  include_multi_af = FALSE,
-  exclude_af = FALSE,
-  af_dir = "af",
-  af_n_bands = "auto",
-  af_bands_per_file = 5,
+  af_n_bands = 100,
   af_max_cells = 50000,
-  af_auto_max_bands = 20,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
-  af_n_bands_sensitivity = 1.5,
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
   use_scatter_gating = TRUE,
+  manual_gate_file = NULL,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
@@ -2863,43 +3821,59 @@ build_reference_matrix <- function(
   min_cluster_proportion = 0.03,
   gate_contour_beads = 0.95,
   gate_contour_cells = 0.90,
-  subsample_n = 5000
+  subsample_n = 5000,
+  autospectral_scc_cleanup = FALSE,
+  clean_scc_with_unstained = FALSE,
+  scc_background_method = c("scatter_knn", "none"),
+  scc_background_k = 2L,
+  autospectral_n_candidates = 1000L,
+  autospectral_n_spectral = 200L,
+  autospectral_min_events = 10L,
+  refine = FALSE
 ) {
     control_df <- .normalize_build_reference_control_df(control_df)
+    refine <- .validate_reference_refine_arg(refine)
+    if (isTRUE(refine) && !isTRUE(autospectral_scc_cleanup)) {
+        stop("refine = TRUE is only supported with autospectral_scc_cleanup = TRUE.", call. = FALSE)
+    }
     af_args <- .validate_build_reference_af_args(
         af_n_bands = af_n_bands,
         af_max_cells = af_max_cells,
-        af_bands_per_file = af_bands_per_file,
-        af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity
+        af_min_cluster_proportion = af_min_cluster_proportion
     )
     af_n_bands <- af_args$af_n_bands
-    af_bands_per_file <- af_args$af_bands_per_file
     af_max_cells <- af_args$af_max_cells
-    af_auto_max_bands <- af_args$af_auto_max_bands
     af_min_cluster_events <- af_args$af_min_cluster_events
     af_min_cluster_proportion <- af_args$af_min_cluster_proportion
-    af_n_bands_sensitivity <- af_args$af_n_bands_sensitivity
+    scc_background_args <- .validate_scc_background_args(
+        clean_scc_with_unstained = isTRUE(autospectral_scc_cleanup) && isTRUE(clean_scc_with_unstained),
+        scc_background_method = scc_background_method,
+        scc_background_k = scc_background_k
+    )
+    autospectral_n_candidates <- suppressWarnings(as.integer(autospectral_n_candidates[1]))
+    if (!is.finite(autospectral_n_candidates) || is.na(autospectral_n_candidates) || autospectral_n_candidates < 1L) {
+        stop("autospectral_n_candidates must be an integer >= 1.", call. = FALSE)
+    }
+    autospectral_n_spectral <- suppressWarnings(as.integer(autospectral_n_spectral[1]))
+    if (!is.finite(autospectral_n_spectral) || is.na(autospectral_n_spectral) || autospectral_n_spectral < 1L) {
+        stop("autospectral_n_spectral must be an integer >= 1.", call. = FALSE)
+    }
+    autospectral_min_events <- suppressWarnings(as.integer(autospectral_min_events[1]))
+    if (!is.finite(autospectral_min_events) || is.na(autospectral_min_events) || autospectral_min_events < 1L) {
+        stop("autospectral_min_events must be an integer >= 1.", call. = FALSE)
+    }
 
     .with_optional_seed(seed)
+    manual_gates <- .read_reference_manual_gates(manual_gate_file)
 
     sample_patterns <- get_fluorophore_patterns()
-    file_info <- .prepare_reference_file_set(
-        input_folder = input_folder,
-        include_multi_af = include_multi_af,
-        af_dir = af_dir,
-        exclude_af = exclude_af
-    )
+    file_info <- .prepare_reference_file_set(input_folder = input_folder)
     out_path <- .prepare_reference_output_path(output_folder = output_folder, save_qc_plots = save_qc_plots)
     metadata <- .prepare_reference_detector_info(file_info$fcs_files[1])
     cytometer <- .resolve_cytometer_from_pd(cytometer, metadata$pd_meta)
 
     config <- list(
-        include_multi_af = include_multi_af,
-        af_dir = af_dir,
-        exclude_af = exclude_af,
         default_sample_type = default_sample_type,
         outlier_percentile = outlier_percentile,
         debris_percentile = debris_percentile,
@@ -2910,6 +3884,7 @@ build_reference_matrix <- function(
         gate_contour_cells = gate_contour_cells,
         bead_gate_scale = bead_gate_scale,
         use_scatter_gating = use_scatter_gating,
+        manual_gates = manual_gates,
         histogram_pct_beads = histogram_pct_beads,
         histogram_direction_beads = histogram_direction_beads,
         histogram_pct_cells = histogram_pct_cells,
@@ -2917,10 +3892,16 @@ build_reference_matrix <- function(
         save_qc_plots = save_qc_plots,
         out_path = out_path,
         cytometer = cytometer,
-        af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity
+        autospectral_scc_cleanup = isTRUE(autospectral_scc_cleanup),
+        clean_scc_with_unstained = scc_background_args$enabled,
+        scc_background_method = scc_background_args$method,
+        scc_background_k = scc_background_args$k,
+        autospectral_n_candidates = autospectral_n_candidates,
+        autospectral_n_spectral = autospectral_n_spectral,
+        autospectral_min_events = autospectral_min_events,
+        refine = refine
     )
 
     message("Found ", length(metadata$detector_names), " spectral detectors. Sorting by laser...")
@@ -2935,13 +3916,9 @@ build_reference_matrix <- function(
         fcs_files_all = file_info$fcs_files_all,
         detector_names = metadata$detector_names,
         af_n_bands = af_n_bands,
-        af_bands_per_file = af_bands_per_file,
         af_max_cells = af_max_cells,
-        af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity,
-        exclude_af = exclude_af,
         config = config
     )
 
@@ -2970,7 +3947,12 @@ build_reference_matrix <- function(
             config = config,
             af_data_raw = af_profiles$af_data_raw,
             universal_negatives = universal_negatives,
-            bead_negative = bead_negative
+            bead_negative = bead_negative,
+            scc_background = if (isTRUE(config$autospectral_scc_cleanup) && isTRUE(config$clean_scc_with_unstained)) {
+                af_profiles$scc_background
+            } else {
+                NULL
+            }
         )
         if (is.null(processed)) {
             next
@@ -2981,8 +3963,7 @@ build_reference_matrix <- function(
     .validate_reference_complete_controls(
         control_df = control_df,
         fcs_files_all = file_info$fcs_files_all,
-        processed_results = results_list,
-        exclude_af = exclude_af
+        processed_results = results_list
     )
 
     M <- .finalize_reference_matrix(
@@ -2998,6 +3979,40 @@ build_reference_matrix <- function(
     )
     if (is.null(M)) {
         return(M)
+    }
+    if (isTRUE(refine)) {
+        refined_af <- .reference_refine_af_bank(
+            M = M,
+            af_events = af_profiles$af_events,
+            af_n_bands = af_n_bands,
+            af_max_cells = af_max_cells,
+            af_min_cluster_events = af_min_cluster_events,
+            af_min_cluster_proportion = af_min_cluster_proportion,
+            seed = seed,
+            verbose = TRUE
+        )
+        if (!is.null(refined_af) && !is.null(refined_af$signatures) && nrow(refined_af$signatures) > 0L) {
+            af_bank_info <- attr(M, "af_bank_info")
+            if (is.null(af_bank_info)) af_bank_info <- list()
+            af_bank_info$requested_bands <- af_n_bands
+            af_bank_info$derived_bands <- nrow(refined_af$signatures)
+            af_bank_info$selection <- refined_af$selection
+            af_bank_info$refine <- TRUE
+            M <- .replace_reference_af_rows(
+                M = M,
+                af_signatures_norm = refined_af$signatures,
+                af_bank_info = af_bank_info
+            )
+            message("Refined ", nrow(refined_af$signatures), " fixed AF basis signature(s).")
+        } else {
+            af_bank_info <- attr(M, "af_bank_info")
+            if (!is.null(af_bank_info)) {
+                af_bank_info$refine <- FALSE
+                af_bank_info$refine_reason <- "no_refined_af_candidates"
+                attr(M, "af_bank_info") <- af_bank_info
+            }
+            message("AF refinement did not produce usable refined signatures; keeping the base AF bank.")
+        }
     }
     .attach_estimated_wls_detector_noise(
         M = M,

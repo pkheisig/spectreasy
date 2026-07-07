@@ -107,6 +107,15 @@
     .prepare_unmix_samples_input_from_directory(sample_input)
 }
 
+.aggregate_af_columns_for_output <- function(data, marker_source) {
+    af_source <- marker_source[grepl("^AF($|_)", marker_source, ignore.case = TRUE)]
+    af_source <- intersect(af_source, colnames(data))
+    if ("AF" %in% marker_source && length(af_source) > 1L) {
+        data[["AF"]] <- rowSums(as.matrix(data[, af_source, drop = FALSE]))
+    }
+    data
+}
+
 .read_unmixing_matrix_csv <- function(path) {
     if (!file.exists(path)) stop("unmixing_matrix_file not found: ", path)
     df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
@@ -132,32 +141,60 @@
     W_mat
 }
 
-.attach_matching_variances <- function(M, V, source = "variances") {
-    M <- .as_reference_matrix(M, "M")
-    V <- .as_reference_matrix(V, source)
-
-    missing_rows <- setdiff(rownames(M), rownames(V))
-    missing_cols <- setdiff(colnames(M), colnames(V))
-    if (length(missing_rows) > 0 || length(missing_cols) > 0) {
-        stop(
-            "WLS variances from ", source, " do not match the reference matrix.\n",
-            if (length(missing_rows) > 0) paste0("Missing marker rows: ", paste(missing_rows, collapse = ", "), "\n") else "",
-            if (length(missing_cols) > 0) paste0("Missing detector columns: ", paste(missing_cols, collapse = ", ")) else ""
-        )
-    }
-
-    V <- V[rownames(M), colnames(M), drop = FALSE]
-    attr(M, "variances") <- V
-    M
+.default_unmixing_matrix_file <- function() {
+    file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv")
 }
 
-.load_variances_for_unmixing <- function(M, variances_file = NULL) {
-    if (is.null(variances_file) || !file.exists(variances_file)) {
-        return(M)
+.candidate_unmixing_matrix_files <- function(unmixing_matrix_file, output_dir = NULL) {
+    candidates <- character()
+
+    if (!is.null(unmixing_matrix_file) && length(unmixing_matrix_file) > 0) {
+        matrix_file <- as.character(unmixing_matrix_file)[1]
+        if (!is.na(matrix_file) && nzchar(trimws(matrix_file))) {
+            candidates <- c(candidates, matrix_file)
+            if (identical(basename(matrix_file), "scc_reference_matrix.csv")) {
+                matrix_dir <- dirname(matrix_file)
+                candidates <- c(candidates, file.path(matrix_dir, "unmixed_fcs", "scc_reference_matrix.csv"))
+                if (identical(basename(normalizePath(matrix_dir, mustWork = FALSE)), "unmixed_fcs")) {
+                    candidates <- c(candidates, file.path(dirname(matrix_dir), "scc_reference_matrix.csv"))
+                }
+            }
+        }
     }
 
-    V <- .read_unmixing_matrix_csv(variances_file)
-    .attach_matching_variances(M, V, source = variances_file)
+    if (!is.null(output_dir) && length(output_dir) > 0) {
+        sample_output_dir <- as.character(output_dir)[1]
+        if (!is.na(sample_output_dir) && nzchar(trimws(sample_output_dir))) {
+            sample_output_dir <- normalizePath(sample_output_dir, mustWork = FALSE)
+            unmix_samples_dir <- if (identical(basename(sample_output_dir), "unmixed_fcs")) {
+                dirname(sample_output_dir)
+            } else {
+                sample_output_dir
+            }
+            if (identical(basename(unmix_samples_dir), "unmix_samples")) {
+                project_dir <- dirname(unmix_samples_dir)
+                candidates <- c(
+                    candidates,
+                    file.path(project_dir, "unmix_controls", "scc_reference_matrix.csv"),
+                    file.path(project_dir, "unmix_controls", "unmixed_fcs", "scc_reference_matrix.csv")
+                )
+            }
+        }
+    }
+
+    unique(candidates[!is.na(candidates) & nzchar(trimws(candidates))])
+}
+
+.resolve_unmixing_matrix_file_for_samples <- function(unmixing_matrix_file, output_dir = NULL) {
+    candidates <- .candidate_unmixing_matrix_files(
+        unmixing_matrix_file = unmixing_matrix_file,
+        output_dir = output_dir
+    )
+    existing <- candidates[file.exists(candidates)]
+    if (length(existing) > 0) {
+        return(existing[[1]])
+    }
+    unmixing_matrix_file
 }
 
 .resolve_detector_noise_file_for_unmixing <- function(unmixing_matrix_file,
@@ -202,63 +239,6 @@
     }
 
     M
-}
-
-.resolve_variances_file_for_unmixing <- function(unmixing_matrix_file,
-                                                variances_file = NULL,
-                                                prefer_sibling = FALSE) {
-    if (is.null(variances_file)) {
-        return(variances_file)
-    }
-
-    if (!is.null(unmixing_matrix_file) && file.exists(unmixing_matrix_file)) {
-        sibling_variances_file <- file.path(dirname(unmixing_matrix_file), "scc_variances.csv")
-        if (isTRUE(prefer_sibling) && file.exists(sibling_variances_file)) {
-            return(sibling_variances_file)
-        }
-    }
-
-    if (file.exists(variances_file)) {
-        return(variances_file)
-    }
-
-    default_variances_file <- file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv")
-    if (!identical(normalizePath(variances_file, mustWork = FALSE), normalizePath(default_variances_file, mustWork = FALSE))) {
-        return(variances_file)
-    }
-
-    if (is.null(unmixing_matrix_file) || !file.exists(unmixing_matrix_file)) {
-        return(variances_file)
-    }
-
-    sibling_variances_file <- file.path(dirname(unmixing_matrix_file), "scc_variances.csv")
-    if (file.exists(sibling_variances_file)) {
-        return(sibling_variances_file)
-    }
-
-    variances_file
-}
-
-.ensure_wls_variances <- function(M,
-                                  method,
-                                  variances_file = NULL,
-                                  scc_dir = NULL,
-                                  control_file = NULL,
-                                  af_n_bands = "auto",
-                                  af_bands_per_file = 5,
-                                  af_auto_max_bands = 20,
-                                  af_min_cluster_events = 20,
-                                  af_min_cluster_proportion = 0.005,
-                                  af_n_bands_sensitivity = 1.5,
-                                  exclude_af = FALSE,
-                                  include_multi_af = FALSE,
-                                  cytometer = "auto",
-                                  seed = NULL) {
-    if (!(toupper(method) %in% c("WLS", "RWLS"))) {
-        return(M)
-    }
-
-    .load_variances_for_unmixing(M, variances_file = variances_file)
 }
 
 .resolve_secondary_label_map <- function(primary_names, sample_dir) {
@@ -582,50 +562,49 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' 
 #' @param sample_dir Directory containing experimental FCS files, a
 #'   `flowCore::flowSet`, or a `SingleCellExperiment` for in-memory workflows.
+#' @param samples_dir Alias for `sample_dir`, accepted for workflows and scripts
+#'   that use the plural directory name.
 #' @param M Optional reference matrix (Markers x Detectors). If supplied,
 #'   unmixing is computed dynamically using this matrix. If not supplied,
 #'   it is loaded from the CSV path provided in `unmixing_matrix_file`.
 #' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
-#' @param variances_file Optional CSV path to a saved variances matrix. SCC
-#'   variances are loaded as reference QC metadata when available, but the
-#'   default WLS model does not use them as detector weights.
 #' @param detector_noise_file Optional CSV path to detector-specific WLS noise
 #'   floors, as written by [unmix_controls()] (`"scc_detector_noise.csv"`). If
 #'   omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
-#'   estimates the floors from `scc_dir` when available, and otherwise falls
-#'   back to the built-in scalar noise floor.
-#' @param method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).
+#'   falls back to the built-in scalar noise floor.
+#' @param unmixing_method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`,
+#'   `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses
+#'   per-event AF assignment with marker + selected-AF OLS, plus SCC-derived
+#'   spectral-variant optimization when available. `Spectreasy` uses the same
+#'   AutoSpectral-style fit, then blends marker abundances with a marker-only
+#'   OLS anchor using decoder-projected AF impact weights.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
-#'   iterations used when `method = "RWLS"`. The default, 1, preserves the
+#'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
 #' @param n_threads Positive integer; number of threads to use for event-wise
 #'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
-#' @param cytometer Cytometer name used only when `unmix_samples()` must build a
-#'   reference matrix dynamically. The default, `"auto"`, infers the cytometer
-#'   from FCS detector names when possible.
-#' @param scc_dir Directory containing single-color control files. Used to
-#'   dynamically build the reference matrix if `M` and `unmixing_matrix_file`
-#'   are missing.
-#' @param control_file Path to the control mapping CSV.
-#'   Used when dynamically building the reference matrix.
-#' @param af_n_bands Number of AF bands to extract from the unstained control
-#'   when only one AF source is available. Use `"auto"` to select the count
-#'   from AF event shapes and prune near-duplicate AF signatures.
-#' @param af_bands_per_file Number of AF bands requested per AF file when
-#'   multiple AF sources are pooled.
-#' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
-#' @param af_min_cluster_events Minimum number of AF events required to keep a
-#'   k-means AF cluster.
-#' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
-#'   events required to keep a k-means AF cluster.
-#' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
-#'   when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-#'   select fewer bands before near-duplicate AF signatures are pruned. Default
-#'   is `1.5`.
-#' @param exclude_af Logical; whether to exclude AF from unmixing.
-#' @param include_multi_af Logical; whether to include multi-AF controls.
+#' @param spectral_variant_library Optional in-memory AutoSpectral
+#'   spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`
+#'   or `"Spectreasy"`.
+#' @param spectral_variant_library_file Optional RDS path to an AutoSpectral
+#'   spectral-variant library. When omitted, `unmix_samples()` looks for
+#'   `scc_spectral_variants.rds` beside `unmixing_matrix_file`.
+#' @param spectral_variant_top_k Number of best variant candidates to test per
+#'   positive fluorophore for AutoSpectral.
+#' @param spectral_variant_min_abundance Minimum unmixed abundance for a
+#'   fluorophore to be eligible for AutoSpectral variant testing.
+#' @param spectral_variant_positive_fraction Additional positivity threshold
+#'   as a fraction of the event's strongest fluorophore abundance for
+#'   AutoSpectral variant testing.
+#' @param spectral_variant_min_improvement Minimum fractional residual
+#'   improvement required before accepting a cell-specific AutoSpectral
+#'   variant refit.
+#' @param spectreasy_weight_quantile Numeric in `[0, 1]`; only accepted when
+#'   `unmixing_method = "Spectreasy"`. Controls the quantile of
+#'   decoder-projected AF impacts used as the soft-saturation scale for
+#'   marker-specific AutoSpectral mixing. The default is `0.9`.
 #' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
 #'   stained sample event-wise WLS residuals, select the best candidate model by
 #'   held-out WLS residual score, and append the selected AF rows to the
@@ -637,9 +616,6 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param save_report Logical; if `TRUE`, write a sample QC PDF report and
 #'   sample QC metric CSVs from the in-memory unmixing results without rerunning
 #'   unmixing. Defaults to `TRUE`.
-#' @param output_file Optional output path for the sample QC PDF report. When
-#'   this is `NULL`, each `unmix_samples()` report run is written to a fresh
-#'   `qc_samples`, `qc_samples_2`, ... folder beside the unmixed FCS output.
 #' @param save_qc_plots Logical; if `TRUE`, save QC report plots as PNG files
 #'   in `qc_plot_dir` while creating the PDF report.
 #' @param qc_plot_dir Directory for sample QC report PNG files when
@@ -693,46 +669,51 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   APC_sample = simulate_sample("APC", M_demo)
 #' ))
 #'
-#' unmixed <- unmix_samples(toy_fs, M = M_demo, method = "OLS", output_dir = tempdir())
+#' unmixed <- unmix_samples(toy_fs, M = M_demo, unmixing_method = "OLS", output_dir = tempdir())
 #' names(unmixed)
 #' @export
-unmix_samples <- function(sample_dir = "samples", 
+unmix_samples <- function(sample_dir = "samples",
+                          samples_dir = NULL,
                           M = NULL, 
                           unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
-                          variances_file = file.path("spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
                           detector_noise_file = NULL,
-                          method = "WLS", 
+                          unmixing_method = "Spectreasy", 
                           rwls_max_iter = 1L,
                           n_threads = 1L,
-                          cytometer = "auto",
-                          scc_dir = NULL,
-                          control_file = NULL,
-                          af_n_bands = "auto",
-                          af_bands_per_file = 5,
-                          af_auto_max_bands = 20,
-                          af_min_cluster_events = 20,
-                          af_min_cluster_proportion = 0.005,
-                          af_n_bands_sensitivity = 1.5,
-                          exclude_af = FALSE,
-                          include_multi_af = FALSE,
+                          spectral_variant_library = NULL,
+                          spectral_variant_library_file = NULL,
+                          spectral_variant_top_k = 3L,
+                          spectral_variant_min_abundance = 1,
+                          spectral_variant_positive_fraction = 0.02,
+                          spectral_variant_min_improvement = 0.01,
+                          spectreasy_weight_quantile = 0.9,
                           estimate_af = FALSE,
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
                           save_report = TRUE,
-                          output_file = NULL,
                           save_qc_plots = FALSE,
                           qc_plot_dir = NULL,
                           subsample_n = NULL,
                           seed = NULL,
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
                           verbose = TRUE) {
+    spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
-    variances_file_was_missing <- missing(variances_file)
+    scc_dir <- NULL
+    if (!is.null(samples_dir)) {
+        if (!identical(sample_dir, "samples") && !identical(sample_dir, samples_dir)) {
+            stop("Use only one of sample_dir or samples_dir.", call. = FALSE)
+        }
+        sample_dir <- samples_dir
+    }
+    unmixing_matrix_file <- .resolve_unmixing_matrix_file_for_samples(
+        unmixing_matrix_file = unmixing_matrix_file,
+        output_dir = output_dir
+    )
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")
-        M <- .load_variances_for_unmixing(M, variances_file = variances_file)
         M <- .load_detector_noise_for_unmixing(
             M,
             detector_noise_file = detector_noise_file,
@@ -742,12 +723,6 @@ unmix_samples <- function(sample_dir = "samples",
         .stop_if_static_unmixing_matrix_path(unmixing_matrix_file, arg_name = "unmixing_matrix_file")
         M <- .read_unmixing_matrix_csv(unmixing_matrix_file)
         M <- .as_reference_matrix(M, "M")
-        variances_file <- .resolve_variances_file_for_unmixing(
-            unmixing_matrix_file = unmixing_matrix_file,
-            variances_file = variances_file,
-            prefer_sibling = variances_file_was_missing
-        )
-        M <- .load_variances_for_unmixing(M, variances_file = variances_file)
         M <- .load_detector_noise_for_unmixing(
             M,
             detector_noise_file = detector_noise_file,
@@ -755,63 +730,22 @@ unmix_samples <- function(sample_dir = "samples",
             scc_dir = scc_dir
         )
     } else {
-        # Try to build reference matrix dynamically
-        resolved_scc_dir <- if (!is.null(scc_dir)) scc_dir else "scc"
-        if (dir.exists(resolved_scc_dir)) {
-            message("Building reference matrix dynamically from: ", resolved_scc_dir)
-            M <- build_reference_matrix(
-                input_folder = resolved_scc_dir,
-                control_df = control_file,
-                af_n_bands = af_n_bands,
-                af_bands_per_file = af_bands_per_file,
-                af_auto_max_bands = af_auto_max_bands,
-                af_min_cluster_events = af_min_cluster_events,
-                af_min_cluster_proportion = af_min_cluster_proportion,
-                af_n_bands_sensitivity = af_n_bands_sensitivity,
-                exclude_af = exclude_af,
-                include_multi_af = include_multi_af,
-                cytometer = cytometer
-            )
-            M <- .load_detector_noise_for_unmixing(
-                M,
-                detector_noise_file = detector_noise_file,
-                scc_dir = resolved_scc_dir
-            )
-        } else {
-            if (!is.null(unmixing_matrix_file)) {
-                stop("unmixing_matrix_file not found: ", unmixing_matrix_file, 
-                     ". Also, no reference matrix provided and 'scc' directory not found.")
-            } else {
-                stop("No reference matrix provided, and 'scc' directory not found. Supply M, a valid unmixing_matrix_file, or an scc_dir.")
-            }
-        }
+        stop(
+            "No reference matrix provided. Run unmix_controls() first, then supply M or a valid unmixing_matrix_file.",
+            call. = FALSE
+        )
     }
 
-    method_upper <- toupper(method)
-    allowed_methods <- c("WLS", "RWLS", "OLS", "NNLS")
-    if (!(method_upper %in% allowed_methods)) {
-        stop("method must be one of: ", paste(allowed_methods, collapse = ", "))
-    }
+    method <- .normalize_unmix_method(unmixing_method)
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(n_threads)
+    if (!identical(method, "Spectreasy") && !spectreasy_weight_quantile_missing) {
+        stop("spectreasy_weight_quantile is only accepted when unmixing_method = \"Spectreasy\".", call. = FALSE)
+    }
+    if (identical(method, "Spectreasy")) {
+        spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
+    }
     estimate_af <- isTRUE(estimate_af)
-    M <- .ensure_wls_variances(
-        M = M,
-        method = method_upper,
-        variances_file = variances_file,
-        scc_dir = scc_dir,
-        control_file = control_file,
-        af_n_bands = af_n_bands,
-        af_bands_per_file = af_bands_per_file,
-        af_auto_max_bands = af_auto_max_bands,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity,
-        exclude_af = exclude_af,
-        include_multi_af = include_multi_af,
-        cytometer = cytometer,
-        seed = seed
-    )
 
     sample_entries <- .prepare_unmix_samples_input(sample_dir)
 
@@ -829,6 +763,17 @@ unmix_samples <- function(sample_dir = "samples",
             seed = seed,
             verbose = verbose
         )
+    }
+
+    spectral_variant_library_resolved <- if (.is_autospectral_style_method(method)) {
+        .resolve_spectral_variant_library_for_unmixing(
+            M = M,
+            spectral_variant_library = spectral_variant_library,
+            spectral_variant_library_file = spectral_variant_library_file,
+            unmixing_matrix_file = unmixing_matrix_file
+        )
+    } else {
+        NULL
     }
 
     results <- list()
@@ -854,23 +799,34 @@ unmix_samples <- function(sample_dir = "samples",
             flowCore::read.FCS(entry$file_path, transformation = FALSE, truncate_max_range = FALSE)
         }
 
-        res_obj <- calc_residuals(
-            ff,
-            M,
-            method = method_upper,
+        calc_args <- list(
+            flow_frame = ff,
+            M = M,
+            method = method,
             file_name = sn,
             rwls_max_iter = rwls_max_iter,
             n_threads = n_threads,
+            spectral_variant_library = spectral_variant_library_resolved,
+            spectral_variant_top_k = spectral_variant_top_k,
+            spectral_variant_min_abundance = spectral_variant_min_abundance,
+            spectral_variant_positive_fraction = spectral_variant_positive_fraction,
+            spectral_variant_min_improvement = spectral_variant_min_improvement,
             return_residuals = TRUE
         )
+        if (identical(method, "Spectreasy")) {
+            calc_args$spectreasy_weight_quantile <- spectreasy_weight_quantile
+        }
+        res_obj <- do.call(calc_residuals, calc_args)
         
         if (isTRUE(write_fcs)) {
             marker_source <- rownames(M)
+            write_data <- .aggregate_af_columns_for_output(res_obj$data, marker_source = marker_source)
             marker_source <- marker_source[!grepl("^AF_", marker_source, ignore.case = TRUE)]
-            markers_to_keep <- intersect(colnames(res_obj$data), marker_source)
-            passthrough_cols <- .get_passthrough_parameter_names(colnames(res_obj$data))
-            cols_to_write <- unique(c(markers_to_keep, passthrough_cols))
-            unmixed_exprs <- as.matrix(res_obj$data[, cols_to_write, drop = FALSE])
+            markers_to_keep <- intersect(colnames(write_data), marker_source)
+            autospectral_cols <- if (.is_autospectral_style_method(method) && "AF Index" %in% colnames(write_data)) "AF Index" else character()
+            passthrough_cols <- .get_passthrough_parameter_names(colnames(write_data))
+            cols_to_write <- unique(c(markers_to_keep, autospectral_cols, passthrough_cols))
+            unmixed_exprs <- as.matrix(write_data[, cols_to_write, drop = FALSE])
             
             new_ff <- flowCore::flowFrame(unmixed_exprs)
             new_ff <- .apply_feature_secondary_labels(
@@ -900,8 +856,9 @@ unmix_samples <- function(sample_dir = "samples",
     }
 
     class(results) <- c("spectreasy_unmixed_results", "list")
-    attr(results, "method") <- method_upper
+    attr(results, "method") <- method
     attr(results, "reference_matrix") <- M
+    attr(results, "spectral_variant_library") <- spectral_variant_library_resolved
     attr(results, "blind_af_info") <- attr(M, "blind_af_info")
     attr(results, "qc_report_file") <- NULL
     attr(results, "qc_samples_dir") <- NULL
@@ -909,19 +866,14 @@ unmix_samples <- function(sample_dir = "samples",
     attr(results, "qc_plot_dir") <- NULL
 
     if (isTRUE(save_report)) {
-        qc_samples_dir <- NULL
-        if (is.null(output_file)) {
-            qc_samples_dir <- .next_safe_output_dir(.default_unmix_samples_report_dir(output_dir))
-            output_file <- file.path(qc_samples_dir, "qc_samples_report.pdf")
-        } else {
-            qc_samples_dir <- dirname(output_file)
-        }
+        qc_samples_dir <- .next_safe_output_dir(.default_unmix_samples_report_dir(output_dir))
+        output_file <- file.path(qc_samples_dir, "qc_samples_report.pdf")
         message("Automatic sample QC report enabled: ", output_file)
         report_res <- qc_samples(
             results = results,
             M = M,
             output_file = output_file,
-            method = method_upper,
+            unmixing_method = method,
             qc_metrics_dir = qc_samples_dir,
             qc_plot_dir = qc_plot_dir,
             save_qc_pngs = save_qc_plots

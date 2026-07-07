@@ -54,18 +54,9 @@ test_that("derive_unmixing_matrix supports static WLS approximation and NNLS pro
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B2-A", "YG1-A", "R1-A")
 
-    V <- matrix(c(
-        10, 20, 30,
-        15, 25, 35
-    ), nrow = 2, byrow = TRUE, dimnames = dimnames(M))
     W_wls_default <- spectreasy::derive_unmixing_matrix(M, method = "WLS")
     expect_equal(dim(W_wls_default), dim(M))
     expect_true(all(is.finite(W_wls_default)))
-
-    W_wls <- spectreasy::derive_unmixing_matrix(M, method = "WLS", variances = V)
-    expect_equal(dim(W_wls), dim(M))
-    expect_true(all(is.finite(W_wls)))
-    expect_equal(W_wls, W_wls_default)
 
     expect_warning(
         W_nnls <- spectreasy::derive_unmixing_matrix(M, method = "NNLS"),
@@ -83,14 +74,6 @@ test_that("calc_residuals NNLS matches per-cell constrained reference fits", {
     ), nrow = 2, byrow = TRUE)
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B1-A", "YG1-A")
-
-    V <- matrix(c(
-        50, 10,
-        5, 60
-    ), nrow = 2, byrow = TRUE)
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-    attr(M, "variances") <- V
 
     exprs <- matrix(c(
         100,  20,
@@ -273,10 +256,12 @@ test_that("calc_residuals RWLS down-weights detector-level outliers", {
 test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::calc_residuals)))
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_samples)))
+    expect_true("samples_dir" %in% names(formals(spectreasy::unmix_samples)))
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_controls)))
     expect_true("estimate_af" %in% names(formals(spectreasy::unmix_samples)))
     expect_false(formals(spectreasy::unmix_samples)$estimate_af)
-    expect_equal(formals(spectreasy::unmix_samples)$method, "WLS")
+    expect_equal(formals(spectreasy::calc_residuals)$method, "Spectreasy")
+    expect_equal(formals(spectreasy::unmix_samples)$unmixing_method, "Spectreasy")
 })
 
 test_that("calc_residuals multi-AF RWLS honors rwls_max_iter", {
@@ -308,7 +293,7 @@ test_that("calc_residuals multi-AF RWLS honors rwls_max_iter", {
     )
 })
 
-test_that("calc_residuals WLS works without SCC-derived variances", {
+test_that("calc_residuals WLS works without detector-noise metadata", {
     M <- matrix(c(
         1, 0.2,
         0.1, 1
@@ -393,7 +378,7 @@ test_that("unmix_samples loads sibling SCC detector-noise file for WLS", {
     unmixed <- spectreasy::unmix_samples(
         sample_dir = sample_dir,
         unmixing_matrix_file = tmp_ref,
-        method = "WLS",
+        unmixing_method = "WLS",
         output_dir = output_dir,
         write_fcs = FALSE
     )
@@ -439,14 +424,14 @@ test_that("unmix_samples can estimate missing AF from stained samples", {
     without_af <- spectreasy::unmix_samples(
         sample_dir = fs,
         M = M_marker,
-        method = "WLS",
+        unmixing_method = "WLS",
         write_fcs = FALSE,
         verbose = FALSE
     )
     with_af <- spectreasy::unmix_samples(
         sample_dir = fs,
         M = M_marker,
-        method = "WLS",
+        unmixing_method = "WLS",
         estimate_af = TRUE,
         write_fcs = FALSE,
         verbose = FALSE,
@@ -590,7 +575,7 @@ test_that("unmix_samples writes unmixed FCS with passthrough acquisition paramet
     unmixed <- spectreasy::unmix_samples(
         sample_dir = sample_dir,
         M = M,
-        method = "OLS",
+        unmixing_method = "OLS",
         output_dir = output_dir,
         write_fcs = TRUE
     )
@@ -632,7 +617,7 @@ test_that("unmix_samples uses safe output filenames and supports flowSet return"
     unmixed_fs <- spectreasy::unmix_samples(
         sample_dir = fs,
         M = M,
-        method = "OLS",
+        unmixing_method = "OLS",
         output_dir = output_dir,
         write_fcs = TRUE,
         return_type = "flowSet"
@@ -685,7 +670,7 @@ test_that("unmix_samples supports SingleCellExperiment input and output", {
         spectreasy::unmix_samples(
             sample_dir = toy_sce,
             M = M,
-            method = "OLS",
+            unmixing_method = "OLS",
             write_fcs = FALSE,
             return_type = "SingleCellExperiment"
         )
@@ -702,7 +687,7 @@ test_that("unmix_samples supports SingleCellExperiment input and output", {
     expect_setequal(rownames(residual_alt), c("B1-A", "YG1-A"))
 })
 
-test_that(".compute_reference_spectrum computes and attaches variance attribute", {
+test_that(".compute_reference_spectrum computes detector spectrum", {
     detector_names <- c("B1-A", "YG1-A")
     set.seed(42)
     final_gated_data <- matrix(rnorm(100, mean = 1000, sd = 50), ncol = 2)
@@ -726,11 +711,7 @@ test_that(".compute_reference_spectrum computes and attaches variance attribute"
     expect_type(res, "double")
     expect_equal(length(res), 2)
     expect_equal(names(res), detector_names)
-    
-    var_attr <- attr(res, "variance")
-    expect_type(var_attr, "double")
-    expect_equal(length(var_attr), 2)
-    expect_true(all(var_attr >= 0))
+    expect_null(attr(res, "variance"))
 })
 
 test_that(".compute_reference_spectrum honors named universal negative files", {
@@ -891,96 +872,50 @@ test_that("AF profile extraction clusters pooled AF phenotypes", {
     expect_equal(profiles$raw_median, c("B1-A" = 55, "YG1-A" = 52.5, "V1-A" = 12.5), tolerance = 1e-6)
 })
 
-test_that("AF profile extraction can auto-select band count", {
-    detector_names <- c("B1-A", "YG1-A", "V1-A")
+test_that("SCC report reference overlay includes only single-band AF", {
+    M_one_af <- rbind(
+        FITC = c(1, 0.2),
+        PE = c(0.2, 1),
+        AF = c(0.1, 0.3)
+    )
+    colnames(M_one_af) <- c("B1-A", "YG1-A")
+
+    M_multi_af <- rbind(
+        M_one_af,
+        AF_2 = c(0.4, 0.1)
+    )
+
+    expect_equal(rownames(spectreasy:::.scc_reference_overlay_matrix(M_one_af)), c("FITC", "PE", "AF"))
+    expect_equal(rownames(spectreasy:::.scc_reference_overlay_matrix(M_multi_af)), c("FITC", "PE"))
+})
+
+test_that("single-band AF uses robust median normalized shape", {
+    detector_names <- c("B1-A", "YG1-A")
     af_events <- rbind(
-        matrix(rep(c(100, 15, 5), 120), ncol = 3, byrow = TRUE),
-        matrix(rep(c(10, 90, 20), 120), ncol = 3, byrow = TRUE)
+        matrix(rep(c(100, 10), 5), ncol = 2, byrow = TRUE),
+        c(1, 100)
     )
     colnames(af_events) <- detector_names
 
     profiles <- spectreasy:::.extract_reference_af_profiles(
         detector_names = detector_names,
-        n_bands = "auto",
-        max_cells = 500,
+        n_bands = 1,
+        max_cells = 100,
         af_events = af_events
     )
 
-    expect_equal(nrow(profiles$signatures), 2)
-    expect_true(profiles$selection$method %in% c("gmm_bic_on_pcs", "distinct_shape_count"))
-    expect_equal(profiles$selection$n_bands, 2)
+    expect_equal(profiles$selection$method, "median_fixed")
+    expect_equal(as.numeric(profiles$signatures[1, ]), c(1, 0.1), tolerance = 1e-6)
 })
 
-test_that("AF auto band selection can exceed the old 10-band ceiling", {
-    detector_names <- paste0("D", seq_len(12), "-A")
-    centers <- lapply(seq_len(12), function(i) {
-        v <- rep(0.01, length(detector_names))
-        v[i] <- 1
-        if (i > 1) v[i - 1] <- 0.15
-        if (i < length(detector_names)) v[i + 1] <- 0.15
-        v / max(v)
-    })
-    af_events <- do.call(rbind, lapply(centers, function(v) {
-        matrix(rep(v * 1000, 25), ncol = length(detector_names), byrow = TRUE)
-    }))
-    colnames(af_events) <- detector_names
-
-    profiles <- spectreasy:::.extract_reference_af_profiles(
-        detector_names = detector_names,
-        n_bands = "auto",
-        max_cells = 1000,
-        af_events = af_events,
-        auto_max_bands = 20,
-        min_cluster_events = 20,
-        min_cluster_proportion = 0
-    )
-
-    expect_equal(profiles$selection$method, "distinct_shape_count")
-    expect_equal(profiles$selection$n_bands, 12)
-    expect_equal(nrow(profiles$signatures), 12)
+test_that("fixed AF bank size is the default for AF extraction APIs", {
+    expect_equal(formals(spectreasy::build_reference_matrix)$af_n_bands, 100)
+    expect_equal(formals(spectreasy::unmix_controls)$af_n_bands, 100)
+    expect_equal(formals(spectreasy::extract_af_profile)$af_n_bands, 100)
+    expect_false("af_n_bands" %in% names(formals(spectreasy::unmix_samples)))
 })
 
-test_that("AF auto band selection prunes near-duplicate AF signatures", {
-    detector_names <- c("B1-A", "YG1-A", "V1-A", "R1-A")
-    centers <- list(
-        c(1, 0.20, 0.05, 0.02),
-        c(1, 0.21, 0.05, 0.02),
-        c(0.05, 1, 0.18, 0.03),
-        c(0.05, 1, 0.19, 0.03)
-    )
-    af_events <- do.call(rbind, lapply(centers, function(v) {
-        matrix(rep(v * 1000, 30), ncol = length(detector_names), byrow = TRUE)
-    }))
-    colnames(af_events) <- detector_names
-
-    profiles <- spectreasy:::.extract_reference_af_profiles(
-        detector_names = detector_names,
-        n_bands = "auto",
-        max_cells = 1000,
-        af_events = af_events,
-        auto_max_bands = 10,
-        min_cluster_events = 20,
-        min_cluster_proportion = 0
-    )
-
-    expect_lt(nrow(profiles$signatures), profiles$selection$raw_center_count)
-    expect_gt(profiles$selection$pruned_similar_bands, 0)
-    expect_equal(profiles$selection$n_bands, nrow(profiles$signatures))
-})
-
-test_that("AF auto is the default for matrix-building APIs", {
-    expect_equal(formals(spectreasy::build_reference_matrix)$af_n_bands, "auto")
-    expect_equal(formals(spectreasy::unmix_controls)$af_n_bands, "auto")
-    expect_equal(formals(spectreasy::unmix_samples)$af_n_bands, "auto")
-})
-
-test_that("AF auto default sensitivity keeps smaller useful bands", {
-    expect_equal(spectreasy:::.reference_af_sensitivity_to_min_improvement(1.5), 0.0075)
-    expect_equal(spectreasy:::.reference_af_sensitivity_to_min_improvement(1), 0.005)
-    expect_equal(spectreasy:::.reference_af_max_cosine_similarity(), 0.995)
-})
-
-test_that("AF k-means cluster retention uses the larger event or proportion threshold", {
+test_that("fixed AF k-means requests precise band count when possible", {
     detector_names <- c("B1-A", "YG1-A", "V1-A")
     af_events <- rbind(
         matrix(rep(c(100, 15, 5), 4978), ncol = 3, byrow = TRUE),
@@ -1006,7 +941,9 @@ test_that("AF k-means cluster retention uses the larger event or proportion thre
     )
 
     expect_equal(nrow(old_like_profiles$signatures), 2)
-    expect_equal(nrow(proportion_profiles$signatures), 1)
+    expect_equal(nrow(proportion_profiles$signatures), 2)
+    expect_equal(proportion_profiles$selection$method, "kmeans_fixed")
+    expect_equal(proportion_profiles$selection$requested_bands, 2)
 })
 
 test_that("AF profile extraction handles empty and all-zero AF events", {
@@ -1029,41 +966,27 @@ test_that("AF profile extraction handles empty and all-zero AF events", {
     expect_equal(zero_profiles$signatures[1, ], c("B1-A" = 0, "YG1-A" = 0))
 })
 
-test_that("AF argument validation supports multi-AF bands per file", {
+test_that("AF argument validation requires fixed numeric bands", {
     args <- spectreasy:::.validate_build_reference_af_args(
         af_n_bands = 2,
-        af_bands_per_file = 5,
         af_max_cells = 500
     )
 
     expect_equal(args$af_n_bands, 2L)
-    expect_equal(args$af_bands_per_file, 5L)
     expect_equal(args$af_max_cells, 500L)
-    expect_equal(args$af_auto_max_bands, 20L)
     expect_equal(args$af_min_cluster_events, 20L)
     expect_equal(args$af_min_cluster_proportion, 0.005)
-    expect_equal(args$af_n_bands_sensitivity, 1.5)
     expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_bands_per_file = 0),
-        "af_bands_per_file"
-    )
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(0, 500, af_bands_per_file = 1),
+        spectreasy:::.validate_build_reference_af_args(0, 500),
         "af_n_bands"
     )
-    args_auto <- spectreasy:::.validate_build_reference_af_args(
-        af_n_bands = "auto",
-        af_bands_per_file = 5,
-        af_max_cells = 500
-    )
-    expect_equal(args_auto$af_n_bands, "auto")
     expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 99, af_bands_per_file = 1),
+        spectreasy:::.validate_build_reference_af_args("auto", 500),
+        "af_n_bands"
+    )
+    expect_error(
+        spectreasy:::.validate_build_reference_af_args(2, 99),
         "af_max_cells"
-    )
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_auto_max_bands = 0),
-        "af_auto_max_bands"
     )
     expect_error(
         spectreasy:::.validate_build_reference_af_args(2, 500, af_min_cluster_events = 0),
@@ -1073,40 +996,96 @@ test_that("AF argument validation supports multi-AF bands per file", {
         spectreasy:::.validate_build_reference_af_args(2, 500, af_min_cluster_proportion = 1.5),
         "af_min_cluster_proportion"
     )
-    args_improvement <- spectreasy:::.validate_build_reference_af_args(
-        af_n_bands = "auto",
-        af_bands_per_file = 5,
-        af_max_cells = 500,
-        af_n_bands_sensitivity = 1
-    )
-    expect_equal(args_improvement$af_n_bands_sensitivity, 1)
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_n_bands_sensitivity = 5.5),
-        "af_n_bands_sensitivity"
-    )
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_n_bands_sensitivity = 0.05),
-        "af_n_bands_sensitivity"
-    )
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_n_bands_sensitivity = NULL),
-        "af_n_bands_sensitivity"
-    )
 })
 
-test_that("extra AF files are banked centrally, not processed as one averaged SCC row", {
-    af_file <- file.path(tempdir(), "af", "mixed_af.fcs")
-    config <- list(include_multi_af = TRUE, af_dir = dirname(af_file), exclude_af = FALSE)
-
-    processed <- spectreasy:::.process_reference_file(
-        fcs_file = af_file,
-        control_df = NULL,
-        sample_patterns = spectreasy::get_fluorophore_patterns(),
-        metadata = list(detector_names = c("B1-A")),
-        config = config
+test_that("mapped SCC AF files are pooled into one AF bank size request", {
+    detector_names <- c("B1-A", "YG1-A")
+    fcs_files <- file.path(tempdir(), paste0(c("Unstained_1", "Unstained_2", "Unstained_3", "UnstainedDead"), ".fcs"))
+    control_df <- data.frame(
+        filename = basename(fcs_files),
+        fluorophore = c("AF", "AF_2", "AF_3", "AF_Internal"),
+        marker = "Autofluorescence",
+        control.type = "cells",
+        stringsAsFactors = FALSE
+    )
+    captured <- new.env(parent = emptyenv())
+    testthat::local_mocked_bindings(
+        .extract_reference_af_gated_events = function(fcs_file, detector_names, config = NULL) {
+            i <- match(normalizePath(fcs_file, mustWork = FALSE), normalizePath(fcs_files, mustWork = FALSE))
+            events <- matrix(i, nrow = 3, ncol = length(detector_names), dimnames = list(NULL, detector_names))
+            list(
+                events = events,
+                source = data.table::data.table(
+                    file = basename(fcs_file),
+                    path = fcs_file,
+                    n_total = 3L,
+                    n_scatter_gated = 3L,
+                    scatter_gate_pct = 100,
+                    fsc_channel = "FSC-A",
+                    ssc_channel = "SSC-A"
+                )
+            )
+        },
+        .extract_reference_af_profiles = function(detector_names, n_bands, max_cells, af_events,
+                 min_cluster_events, min_cluster_proportion) {
+            captured$n_bands <- n_bands
+            captured$event_count <- nrow(af_events)
+            n_bands <- max(1L, as.integer(n_bands))
+            signatures <- matrix(0.1, nrow = n_bands, ncol = length(detector_names))
+            for (i in seq_len(n_bands)) {
+                signatures[i, ((i - 1L) %% length(detector_names)) + 1L] <- 1
+            }
+            rownames(signatures) <- c("AF", if (n_bands > 1L) paste0("AF_", seq.int(2L, n_bands)) else NULL)
+            colnames(signatures) <- detector_names
+            list(
+                raw_median = stats::setNames(rep(2, length(detector_names)), detector_names),
+                signatures = signatures,
+                selection = list(method = "kmeans_fixed", n_bands = n_bands)
+            )
+        },
+        .env = asNamespace("spectreasy")
     )
 
-    expect_null(processed)
+    out <- spectreasy:::.collect_reference_af_profiles(
+        control_df = control_df,
+        fcs_files = fcs_files,
+        detector_names = detector_names,
+        af_n_bands = 3L,
+        af_max_cells = 500L,
+        af_min_cluster_events = 20L,
+        af_min_cluster_proportion = 0.005,
+        fcs_files_all = fcs_files
+    )
+
+    expect_equal(captured$n_bands, 3L)
+    expect_equal(captured$event_count, 9L)
+    expect_equal(out$af_bank_info$source_count, 3L)
+    expect_equal(out$af_bank_info$requested_bands, 3L)
+    expect_equal(out$af_bank_info$mode, "pooled_af_sources")
+    expect_equal(out$af_bank_info$sources$source_type, rep("mapped_unstained", 3))
+    expect_false("UnstainedDead.fcs" %in% out$af_bank_info$sources$file)
+})
+
+test_that("viability controls auto-use dead cell AF negatives", {
+    control_df <- data.frame(
+        filename = c(
+            "scc_cells_AF_Unstained.fcs",
+            "scc_cells_AF_UnstainedDead.fcs",
+            "scc_cells_eFluor780_LiveDead.fcs",
+            "scc_cells_FITC_CD4.fcs"
+        ),
+        fluorophore = c("AF", "AF_Internal", "eFluor 780", "FITC"),
+        marker = c("Autofluorescence", "Autofluorescence", "Live", "CD4"),
+        channel = c("FL13-A", "FL11-A", "FL44-A", "FL37-A"),
+        control.type = c("cells", "cells", "cells", "cells"),
+        is.viability = c("", "", "TRUE", ""),
+        stringsAsFactors = FALSE
+    )
+
+    normalized <- spectreasy:::.normalize_build_reference_control_df(control_df)
+
+    expect_equal(normalized$universal.negative[normalized$filename == "scc_cells_eFluor780_LiveDead.fcs"], "scc_cells_AF_UnstainedDead.fcs")
+    expect_equal(normalized$universal.negative[normalized$filename == "scc_cells_FITC_CD4.fcs"], "")
 })
 
 test_that("cell histogram gating keeps full middle negative mode for bright controls", {
@@ -1239,7 +1218,7 @@ test_that("control.type from control file overrides filename fallback", {
     expect_equal(sample_info$type, "cells")
 })
 
-test_that("derive_unmixing_matrix WLS ignores SCC variances and honors detector noise", {
+test_that("derive_unmixing_matrix WLS honors detector noise", {
     M <- matrix(c(
         1.0, 0.2, 0.05,
         0.1, 1.0, 0.25
@@ -1247,25 +1226,13 @@ test_that("derive_unmixing_matrix WLS ignores SCC variances and honors detector 
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B1-A", "YG1-A", "R1-A")
     
-    V <- matrix(c(
-        100, 20, 5,
-        15, 120, 50
-    ), nrow = 2, byrow = TRUE)
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-    attr(M, "variances") <- V
-    
     expect_silent(
         W_wls <- spectreasy::derive_unmixing_matrix(M, method = "WLS")
     )
     
     expect_equal(dim(W_wls), dim(M))
-
-    W_wls_explicit <- spectreasy::derive_unmixing_matrix(M, method = "WLS", variances = V)
-    expect_equal(W_wls, W_wls_explicit)
     
     M_no_attr <- M
-    attr(M_no_attr, "variances") <- NULL
     expect_equal(spectreasy::derive_unmixing_matrix(M_no_attr, method = "WLS"), W_wls)
 
     attr(M_no_attr, "detector_noise") <- data.frame(
@@ -1351,125 +1318,21 @@ test_that("calc_residuals multi-AF WLS uses event-wise detector weights", {
     expect_equal(as.matrix(res[, rownames(M)]), expected, tolerance = 1e-6)
 })
 
-test_that("unmix_samples integrates with variances CSV file", {
-    M <- matrix(c(
-        1, 0.2,
-        0.1, 1
-    ), nrow = 2, byrow = TRUE)
-    rownames(M) <- c("FITC", "PE")
-    colnames(M) <- c("B1-A", "YG1-A")
+test_that("SCC QC plot failures warn without aborting unmixing helpers", {
+    bad_plot <- ggplot2::ggplot(data.frame(x = 1, y = 1), ggplot2::aes(x, y)) +
+        ggplot2::annotate("rect", ymin = -Inf, ymax = Inf, alpha = 0.1)
 
-    V <- matrix(c(
-        50, 10,
-        5, 60
-    ), nrow = 2, byrow = TRUE)
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-    
-    tmp_ref <- tempfile("ref_", fileext = ".csv")
-    tmp_var <- tempfile("var_", fileext = ".csv")
-    
-    ref_df <- as.data.frame(M)
-    ref_df$Marker <- rownames(M)
-    ref_df <- ref_df[, c("Marker", "B1-A", "YG1-A")]
-    write.csv(ref_df, tmp_ref, row.names = FALSE)
-    
-    var_df <- as.data.frame(V)
-    var_df$Marker <- rownames(V)
-    var_df <- var_df[, c("Marker", "B1-A", "YG1-A")]
-    write.csv(var_df, tmp_var, row.names = FALSE)
-    
-    exprs <- matrix(c(
-        100,  20,
-         10, 120
-    ), nrow = 2, byrow = TRUE)
-    colnames(exprs) <- c("B1-A", "YG1-A")
-    ff <- flowCore::flowFrame(exprs)
-    
-    sample_dir <- tempfile("samples_")
-    dir.create(sample_dir, showWarnings = FALSE)
-    flowCore::write.FCS(ff, file.path(sample_dir, "sample.fcs"))
-    
-    output_dir <- tempfile("unmixed_")
-    
-    unmixed <- spectreasy::unmix_samples(
-        sample_dir = sample_dir,
-        M = NULL,
-        unmixing_matrix_file = tmp_ref,
-        variances_file = tmp_var,
-        method = "WLS",
-        output_dir = output_dir,
-        write_fcs = TRUE
+    expect_warning(
+        ok <- spectreasy:::.save_reference_ggsave(
+            tempfile(fileext = ".png"),
+            bad_plot,
+            sn = "bad_control",
+            plot_type = "bad plot",
+            width = 1,
+            height = 1,
+            dpi = 72
+        ),
+        "Continuing unmixing"
     )
-    
-    expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
-    expect_setequal(names(unmixed), "sample")
-})
-
-test_that("unmix_samples finds sibling variances for saved reference matrix", {
-    M <- matrix(c(
-        1, 0.2,
-        0.1, 1
-    ), nrow = 2, byrow = TRUE)
-    rownames(M) <- c("FITC", "PE")
-    colnames(M) <- c("B1-A", "YG1-A")
-
-    V <- matrix(c(
-        50, 10,
-        5, 60
-    ), nrow = 2, byrow = TRUE)
-    rownames(V) <- rownames(M)
-    colnames(V) <- colnames(M)
-
-    matrix_dir <- tempfile("saved_matrix_")
-    dir.create(matrix_dir, showWarnings = FALSE)
-    tmp_ref <- file.path(matrix_dir, "scc_reference_matrix.csv")
-    tmp_var <- file.path(matrix_dir, "scc_variances.csv")
-
-    ref_df <- as.data.frame(M)
-    ref_df$Marker <- rownames(M)
-    ref_df <- ref_df[, c("Marker", "B1-A", "YG1-A")]
-    write.csv(ref_df, tmp_ref, row.names = FALSE)
-
-    var_df <- as.data.frame(V)
-    var_df$Marker <- rownames(V)
-    var_df <- var_df[, c("Marker", "B1-A", "YG1-A")]
-    write.csv(var_df, tmp_var, row.names = FALSE)
-
-    exprs <- matrix(c(
-        100, 20,
-        10, 120
-    ), nrow = 2, byrow = TRUE)
-    colnames(exprs) <- c("B1-A", "YG1-A")
-    ff <- flowCore::flowFrame(exprs)
-
-    sample_dir <- tempfile("samples_")
-    dir.create(sample_dir, showWarnings = FALSE)
-    flowCore::write.FCS(ff, file.path(sample_dir, "sample.fcs"))
-
-    output_dir <- tempfile("unmixed_")
-
-    work_dir <- tempfile("working_dir_")
-    dir.create(file.path(work_dir, "spectreasy_outputs", "unmix_controls"), recursive = TRUE)
-    wrong_var <- matrix(1, nrow = 1, ncol = 2, dimnames = list("Wrong", colnames(M)))
-    wrong_var_df <- as.data.frame(wrong_var)
-    wrong_var_df$Marker <- rownames(wrong_var)
-    wrong_var_df <- wrong_var_df[, c("Marker", "B1-A", "YG1-A")]
-    write.csv(
-        wrong_var_df,
-        file.path(work_dir, "spectreasy_outputs", "unmix_controls", "scc_variances.csv"),
-        row.names = FALSE
-    )
-    withr::local_dir(work_dir)
-
-    unmixed <- spectreasy::unmix_samples(
-        sample_dir = sample_dir,
-        unmixing_matrix_file = tmp_ref,
-        method = "WLS",
-        output_dir = output_dir,
-        write_fcs = TRUE
-    )
-
-    expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
-    expect_setequal(names(unmixed), "sample")
+    expect_false(ok)
 })

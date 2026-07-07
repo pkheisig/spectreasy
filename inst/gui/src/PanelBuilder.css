@@ -375,11 +375,12 @@
   background: var(--bg-spectrum);
   border-bottom: 1px solid var(--border-color);
   padding: 20px 24px;
+  overflow-x: auto;
 }
 
 .spectrum-svg {
   display: block;
-  max-width: 100%;
+  max-width: none;
   filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.05));
 }
 
@@ -553,11 +554,11 @@
 .similarity-table th,
 .similarity-table td {
   border: 1px solid var(--border-color);
-  min-width: 60px;
-  height: 48px;
+  min-width: 48px;
+  height: 32px;
   text-align: center;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .similarity-table .row-label {
@@ -572,7 +573,7 @@
 }
 
 .similarity-table .col-label {
-  height: 180px;
+  height: 110px;
   vertical-align: bottom;
   background: transparent;
   border: none;
@@ -582,7 +583,7 @@
   display: inline-block;
   writing-mode: vertical-rl;
   transform: rotate(180deg);
-  max-height: 160px;
+  max-height: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-secondary);
@@ -594,6 +595,7 @@
   padding: 24px;
   border-bottom: 1px solid var(--border-color);
   background: rgba(0, 0, 0, 0.01);
+  overflow-x: auto;
 }
 
 .panel-builder.dark .signature-card {
@@ -620,7 +622,7 @@
 
 .signature-band-svg {
   display: block;
-  max-width: 100%;
+  max-width: none;
 }
 
 .empty-state {

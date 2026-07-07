@@ -12,6 +12,7 @@
 ^inst/gui/\.DS_Store$
 ^\.DS_Store$
 ^\.git$
+^\.codex_tmp$
 ^\.vscode$
 ^\.idea$
 ^.*\.Rproj$

@@ -90,7 +90,7 @@ test_that("qc_samples accepts unmix_samples results directly", {
     unmixed <- spectreasy::unmix_samples(
         toy_fs,
         M = M,
-        method = "OLS",
+        unmixing_method = "OLS",
         output_dir = tempdir(),
         write_fcs = FALSE
     )
@@ -98,6 +98,17 @@ test_that("qc_samples accepts unmix_samples results directly", {
     expect_s3_class(unmixed, "spectreasy_unmixed_results")
     expect_true(file.exists(attr(unmixed, "qc_report_file")))
     expect_true(dir.exists(attr(unmixed, "qc_samples_dir")))
+    qc_samples_dir <- attr(unmixed, "qc_metrics_dir")
+    expect_true(dir.exists(qc_samples_dir))
+    expect_true(file.exists(file.path(qc_samples_dir, "reference_spectra.csv")))
+    expect_true(file.exists(file.path(qc_samples_dir, "fluorophore_spectral_similarity.csv")))
+    expect_true(file.exists(file.path(qc_samples_dir, "negative_population_spread.csv")))
+    expect_true(file.exists(file.path(qc_samples_dir, "rms_residual_per_detector.csv")))
+    expect_true(file.exists(file.path(qc_samples_dir, "detector_reconstruction_error.csv")))
+    expect_false(file.exists(file.path(qc_samples_dir, "overall_detector_reconstruction_error_per_sample.csv")))
+    expect_false(file.exists(file.path(qc_samples_dir, "sample_qc_summary.csv")))
+    expect_false(file.exists(file.path(qc_samples_dir, "spectral_spread_matrix.csv")))
+    expect_false(file.exists(file.path(qc_samples_dir, "directional_spread_score.csv")))
 
     combined <- as.data.frame(unmixed)
     expect_true("File" %in% colnames(combined))
@@ -157,9 +168,11 @@ test_that("qc_samples has stable pages and no recommendation page", {
     expect_true(file.exists(pdf_out))
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 5)
+    expect_equal(info$pages, 4)
 
-    txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
+    page_text <- pdftools::pdf_text(pdf_out)
+    expect_true(grepl("Reference Spectra Overlay", page_text[[1]], fixed = TRUE))
+    txt <- paste(page_text, collapse = "\n")
     expect_false(grepl("Conclusions & Recommendations", txt, fixed = TRUE))
     expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))
     expect_false(grepl("Sample NxN Scatter Matrix: SampleB", txt, fixed = TRUE))
@@ -188,10 +201,10 @@ test_that("qc_samples skips negative population spread for NNLS", {
     colnames(M) <- c("B1-A", "YG1-A", "R1-A")
 
     pdf_out <- tempfile(fileext = ".pdf")
-    spectreasy::qc_samples(results = results, M = M, output_file = pdf_out, method = "NNLS")
+    spectreasy::qc_samples(results = results, M = M, output_file = pdf_out, unmixing_method = "NNLS")
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 4)
+    expect_equal(info$pages, 3)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_false(grepl("Negative Population Spread", txt, fixed = TRUE))
@@ -227,7 +240,7 @@ test_that("qc_samples can include NxN pages for all samples", {
     )
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 6)
+    expect_equal(info$pages, 5)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))
@@ -255,30 +268,21 @@ test_that("qc_samples overview batches while moderate matrix pages stay complete
     results_df <- do.call(rbind, lapply(res_list, function(x) x$data))
     nps_scores <- spectreasy::calculate_nps(results_df)
     sim_mat <- spectreasy:::calculate_similarity_matrix(M)
-    ssm <- spectreasy::calculate_ssm(M)
 
     rms_pages <- spectreasy:::.build_qc_report_rms_pages(res_list, M = M)
     nps_pages <- spectreasy:::.build_qc_report_nps_pages(nps_scores)
     sim_pages <- spectreasy:::.build_qc_report_matrix_pages(sim_mat, plot_fun = spectreasy:::plot_similarity_matrix)
-    ssm_pages <- spectreasy:::.build_qc_report_matrix_pages(ssm, plot_fun = spectreasy::plot_ssm)
 
     expect_equal(length(rms_pages), 2)
     expect_equal(length(nps_pages), 2)
     expect_equal(length(sim_pages), 1)
-    expect_equal(length(ssm_pages), 1)
 
     sim_chunk_pages <- spectreasy:::.build_qc_report_matrix_pages(
         sim_mat,
         plot_fun = spectreasy:::plot_similarity_matrix,
         max_markers_per_page = 10
     )
-    ssm_chunk_pages <- spectreasy:::.build_qc_report_matrix_pages(
-        ssm,
-        plot_fun = spectreasy::plot_ssm,
-        max_markers_per_page = 10
-    )
     expect_equal(length(sim_chunk_pages), 2)
-    expect_equal(length(ssm_chunk_pages), 2)
 })
 
 test_that("qc_samples matrix pages split markers into balanced groups", {
@@ -305,8 +309,43 @@ test_that("qc_samples matrix pages split markers into balanced groups", {
     )), 2)
     expect_equal(length(spectreasy:::.build_qc_report_matrix_pages(
         make_square(41),
-        plot_fun = spectreasy::plot_ssm
+        plot_fun = spectreasy:::plot_similarity_matrix
     )), 3)
+})
+
+test_that("spectral panel similarity matrix pages use report-specific chunking", {
+    make_square <- function(n) {
+        M <- diag(n)
+        rownames(M) <- paste0("F", seq_len(n))
+        colnames(M) <- paste0("F", seq_len(n))
+        M
+    }
+
+    expect_equal(
+        lengths(spectreasy:::.split_qc_report_matrix_marker_batches(rownames(make_square(15)), max_markers_per_page = 15)),
+        15L
+    )
+    expect_equal(
+        lengths(spectreasy:::.split_qc_report_matrix_marker_batches(rownames(make_square(16)), max_markers_per_page = 8)),
+        c(8L, 8L)
+    )
+    expect_equal(
+        lengths(spectreasy:::.split_qc_report_matrix_marker_batches(rownames(make_square(24)), max_markers_per_page = 8)),
+        c(8L, 8L, 8L)
+    )
+})
+
+test_that("calculate_similarity_matrix clamps negative numerical noise to zero", {
+    M <- matrix(c(
+        1, 0,
+        -1e-12, 1
+    ), nrow = 2, byrow = TRUE)
+    rownames(M) <- c("A", "B")
+    colnames(M) <- c("D1", "D2")
+
+    sim <- spectreasy:::calculate_similarity_matrix(M)
+    expect_gte(sim["A", "B"], 0)
+    expect_equal(sim["A", "B"], 0)
 })
 
 test_that("qc_samples loads M from unmixing_matrix_file", {
@@ -357,8 +396,6 @@ test_that("per-cell AF selection unmix selects exactly one AF band per cell", {
     ), nrow = 4, byrow = TRUE)
     rownames(M) <- c("FITC", "PE", "AF", "AF_2")
     colnames(M) <- c("B1-A", "YG1-A", "R1-A", "V1-A")
-    V <- matrix(1, nrow = nrow(M), ncol = ncol(M), dimnames = dimnames(M))
-    attr(M, "variances") <- V
 
     # Construct some cells where we know which AF band they should select
     # Cell 1: high FITC, some PE, high AF (R1-A)
@@ -391,92 +428,30 @@ test_that("per-cell AF selection unmix selects exactly one AF band per cell", {
     }
 })
 
-test_that("unmix_samples can dynamically construct reference matrix and handle multi-AF", {
-    # 1. Create a temporary SCC directory
-    scc_dir <- tempfile("scc_dir_")
-    dir.create(scc_dir)
-    
-    # 2. Generate a flowFrame with some channels: "B1-A", "YG1-A"
-    # FITC control
-    fitc_exprs <- cbind(
-        "B1-A" = rnorm(200, mean = 1000, sd = 50),
-        "YG1-A" = rnorm(200, mean = 10, sd = 2),
-        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
-    )
-    fitc_ff <- flowCore::flowFrame(fitc_exprs)
-    flowCore::write.FCS(fitc_ff, file.path(scc_dir, "FITC (Beads).fcs"))
-    
-    # PE control
-    pe_exprs <- cbind(
-        "B1-A" = rnorm(200, mean = 10, sd = 2),
-        "YG1-A" = rnorm(200, mean = 1500, sd = 75),
-        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
-    )
-    pe_ff <- flowCore::flowFrame(pe_exprs)
-    flowCore::write.FCS(pe_ff, file.path(scc_dir, "PE (Beads).fcs"))
-    
-    # Unstained / AF control
-    af_exprs <- cbind(
-        "B1-A" = rnorm(200, mean = 15, sd = 3),
-        "YG1-A" = rnorm(200, mean = 15, sd = 3),
-        "FSC-A" = rnorm(200, mean = 100000, sd = 5000),
-        "SSC-A" = rnorm(200, mean = 50000, sd = 2500)
-    )
-    af_ff <- flowCore::flowFrame(af_exprs)
-    flowCore::write.FCS(af_ff, file.path(scc_dir, "Unstained (Cells).fcs"))
-    
-    # 3. Create a control_file mapping
-    control_df <- data.frame(
-        filename = c("FITC (Beads).fcs", "PE (Beads).fcs", "Unstained (Cells).fcs"),
-        fluorophore = c("FITC", "PE", "AF"),
-        marker = c("CD4", "CD8", "Autofluorescence"),
-        channel = c("B1-A", "YG1-A", "B1-A"),
-        control.type = c("beads", "beads", "cells"),
-        universal.negative = c("", "", ""),
-        large.gate = c("", "", ""),
-        is.viability = c("", "", ""),
-        stringsAsFactors = FALSE
-    )
-    control_file <- tempfile(fileext = ".csv")
-    write.csv(control_df, control_file, row.names = FALSE)
-    
-    # 4. Create sample flowSet to unmix
+test_that("unmix_samples rejects reference-building arguments", {
     sample_exprs <- matrix(c(
         500, 200, 1, 100000, 50000,
         100, 800, 2, 100000, 50000
     ), nrow = 2, byrow = TRUE)
     colnames(sample_exprs) <- c("B1-A", "YG1-A", "Time", "FSC-A", "SSC-A")
-    sample_ff <- flowCore::flowFrame(sample_exprs)
-    toy_fs <- flowCore::flowSet(list(Sample1 = sample_ff))
-    
-    # 5. Call unmix_samples with scc_dir and af_n_bands = 2
-    # Ensure unmixing_matrix_file points to a non-existent temp file so it triggers build
-    temp_matrix_file <- tempfile(fileext = ".csv")
-    
-    unmixed <- spectreasy::unmix_samples(
-        sample_dir = toy_fs,
-        unmixing_matrix_file = temp_matrix_file,
-        scc_dir = scc_dir,
-        control_file = control_file,
-        af_n_bands = 2,
-        write_fcs = FALSE,
-        return_type = "list"
+    toy_fs <- flowCore::flowSet(list(Sample1 = flowCore::flowFrame(sample_exprs)))
+
+    expect_error(
+        spectreasy::unmix_samples(
+            sample_dir = toy_fs,
+            unmixing_matrix_file = tempfile(fileext = ".csv"),
+            scc_dir = tempfile("scc_dir_"),
+            control_file = tempfile(fileext = ".csv"),
+            af_n_bands = 2,
+            write_fcs = FALSE,
+            return_type = "list"
+        ),
+        regexp = "unused argument"
     )
-    
-    expect_s3_class(unmixed, "spectreasy_unmixed_results")
-    unmixed_df <- as.data.frame(unmixed)
-    
-    # Check that columns FITC, PE, AF, and AF_2 exist in the output
-    expect_true(all(c("FITC", "PE", "AF", "AF_2") %in% colnames(unmixed_df)))
-    
-    # Verify that selection unmix worked: for each cell, at most one of AF and AF_2 is non-zero
-    expect_true(sum(unmixed_df[1, c("AF", "AF_2")] != 0) <= 1)
-    expect_true(sum(unmixed_df[2, c("AF", "AF_2")] != 0) <= 1)
 })
 
-test_that("unmix_controls supports af_n_bands and include_multi_af", {
+test_that("unmix_controls supports fixed AF k-means bands from SCC mapping", {
+    set.seed(503)
     scc_dir <- tempfile("scc_dir_controls_")
     dir.create(scc_dir)
     
@@ -529,10 +504,10 @@ test_that("unmix_controls supports af_n_bands and include_multi_af", {
     res <- spectreasy::unmix_controls(
         scc_dir = scc_dir,
         control_file = control_file,
-        auto_create_control = FALSE,
+        auto_create_mapping = FALSE,
         output_dir = output_dir,
-        af_n_bands = 2,
-        include_multi_af = FALSE
+        unmixing_method = "WLS",
+        af_n_bands = 2
     )
     
     expect_true(all(c("FITC", "PE", "AF", "AF_2") %in% rownames(res$M)))
@@ -649,7 +624,7 @@ test_that("unmix_samples supports in-memory subsampling via subsample_n", {
     unmixed <- spectreasy::unmix_samples(
         toy_fs,
         M = M,
-        method = "OLS",
+        unmixing_method = "OLS",
         output_dir = tmp_dir,
         write_fcs = TRUE,
         subsample_n = 10,
@@ -692,7 +667,7 @@ test_that("unmix_samples excludes secondary AF bands from written FCS files", {
     unmixed <- spectreasy::unmix_samples(
         toy_fs,
         M = M,
-        method = "OLS",
+        unmixing_method = "OLS",
         output_dir = tmp_dir,
         write_fcs = TRUE
     )
@@ -700,7 +675,13 @@ test_that("unmix_samples excludes secondary AF bands from written FCS files", {
     fcs_path <- file.path(tmp_dir, "Sample1_unmixed.fcs")
     expect_true(file.exists(fcs_path))
     ff_written <- flowCore::read.FCS(fcs_path, transformation = FALSE, truncate_max_range = FALSE)
-    written_cols <- colnames(flowCore::exprs(ff_written))
+    written_exprs <- flowCore::exprs(ff_written)
+    written_cols <- colnames(written_exprs)
     expect_true("AF" %in% written_cols)
     expect_false("AF_2" %in% written_cols)
+    expect_equal(
+        as.numeric(written_exprs[, "AF"]),
+        rowSums(as.matrix(unmixed$Sample1$data[, c("AF", "AF_2"), drop = FALSE])),
+        tolerance = 1e-4
+    )
 })

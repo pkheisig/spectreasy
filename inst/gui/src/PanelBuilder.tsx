@@ -88,6 +88,12 @@ const toNumber = (value: string | number | undefined) => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const toSimilarityValue = (value: string | number | undefined) => {
+    const numeric = toNumber(value);
+    if (Math.abs(numeric) < 0.005) return 0;
+    return Math.max(0, Math.min(1, numeric));
+};
+
 const laserLabel = (laser: string) => {
     if (laser === 'YellowGreen') return 'YG 561';
     if (laser === 'Violet') return 'V 405';
@@ -101,10 +107,18 @@ const laserLabel = (laser: string) => {
 
 const unique = <T,>(values: T[]) => Array.from(new Set(values));
 
+const detectorPointX = (index: number, count: number, left: number, width: number) => (
+    count <= 1 ? left + width / 2 : left + (index / (count - 1)) * width
+);
+
+const detectorColumnCenterX = (index: number, count: number, left: number, width: number) => (
+    left + ((index + 0.5) / Math.max(1, count)) * width
+);
+
 const linePath = (row: NumericRow, detectors: DetectorInfo[], width: number, height: number, left = 0) => {
     if (detectors.length === 0) return '';
     return detectors.map((det, index) => {
-        const x = left + (detectors.length === 1 ? width / 2 : (index / (detectors.length - 1)) * width);
+        const x = detectorPointX(index, detectors.length, left, width);
         const y = height - toNumber(row[det.detector]) * (height - 32) - 24;
         return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
@@ -387,7 +401,7 @@ const detectImportedPanelRows = (text: string, fluorophores: FluorInfo[]) => {
     return imported;
 };
 
-const getCytometerName = (val: any): string => {
+const getCytometerName = (val: unknown): string => {
     if (!val) return '';
     if (Array.isArray(val)) return String(val[0] || '');
     return String(val);
@@ -514,7 +528,9 @@ const PanelBuilder = () => {
                 const parsed = JSON.parse(stored);
                 if (Array.isArray(parsed)) return parsed;
             }
-        } catch {}
+        } catch {
+            return Array(emptySlots).fill('');
+        }
         return Array(emptySlots).fill('');
     });
     const slotsRef = useRef<string[]>(slots);
@@ -536,6 +552,7 @@ const PanelBuilder = () => {
     const [importing, setImporting] = useState(false);
     const [hoveredFluor, setHoveredFluor] = useState<string | null>(null);
     const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('spectreasy_theme') as 'light' | 'dark') || 'light');
+    const [guiStateLoaded, setGuiStateLoaded] = useState(false);
 
     useEffect(() => {
         localStorage.setItem('spectreasy_cytometer', getCytometerName(cytometer));
@@ -556,6 +573,24 @@ const PanelBuilder = () => {
     useEffect(() => {
         localStorage.setItem('spectreasy_markers', JSON.stringify(markers));
     }, [markers]);
+
+    useEffect(() => {
+        if (!guiStateLoaded) return;
+        const timer = window.setTimeout(() => {
+            void axios.post(`${API_BASE}/gui_state`, {
+                module: 'panel_builder',
+                config_json: {
+                    cytometer: getCytometerName(cytometer),
+                    configuration: getCytometerName(configuration),
+                    theme,
+                    slots,
+                    markers,
+                    tab
+                }
+            }).catch(() => null);
+        }, 500);
+        return () => window.clearTimeout(timer);
+    }, [cytometer, configuration, theme, slots, markers, tab, guiStateLoaded]);
 
     const selected = useMemo(() => slots.filter(Boolean), [slots]);
 
@@ -662,16 +697,28 @@ const PanelBuilder = () => {
     useEffect(() => {
         const boot = async () => {
             try {
+                const stateRes = await axios.get(`${API_BASE}/gui_state?module=panel_builder`).catch(() => null);
+                const saved = stateRes?.data?.config || {};
+                const savedCytometer = typeof saved.cytometer === 'string' ? getCytometerName(saved.cytometer) : cytometer;
+                const savedConfiguration = typeof saved.configuration === 'string' ? getCytometerName(saved.configuration) : configuration;
+                const savedSlots = Array.isArray(saved.slots) ? saved.slots.map(String) : slots;
+                const savedMarkers = saved.markers && typeof saved.markers === 'object' ? saved.markers as Record<number, string> : markers;
+                if (saved.theme === 'light' || saved.theme === 'dark') setTheme(saved.theme);
+                if (saved.tab === 'panel' || saved.tab === 'similarity' || saved.tab === 'signatures') setTab(saved.tab);
+                setSlots(savedSlots);
+                slotsRef.current = savedSlots;
+                setMarkers(savedMarkers);
                 const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, {
-                    cytometer,
-                    configuration,
-                    fluorophores: slots.filter(Boolean),
+                    cytometer: savedCytometer,
+                    configuration: savedConfiguration,
+                    fluorophores: savedSlots.filter(Boolean),
                 });
                 if (res.data?.error) throw new Error(String(res.data.error));
                 const initial = res.data as PanelPayload;
                 setPayload(initial);
                 setCytometer(getCytometerName(initial.cytometer));
                 setConfiguration(getCytometerName(initial.configuration));
+                setGuiStateLoaded(true);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Could not load spectral libraries.');
             } finally {
@@ -700,6 +747,7 @@ const PanelBuilder = () => {
         const nextSlots = currentSlots.map((existing, i) => (i === index ? fluor : existing));
         slotsRef.current = nextSlots;
         setSlots(nextSlots);
+        localStorage.setItem('spectreasy_slots', JSON.stringify(nextSlots));
         setQueries(prev => ({ ...prev, [index]: '' }));
         setActiveSlot(null);
         await fetchPanel(cytometer, configuration, nextSlots.filter(Boolean)).catch(err => {
@@ -712,11 +760,16 @@ const PanelBuilder = () => {
         setMarkers(prev => {
             const next = { ...prev };
             delete next[index];
+            localStorage.setItem('spectreasy_markers', JSON.stringify(next));
             return next;
         });
     };
 
-    const addSlot = () => setSlots(prev => [...prev, '']);
+    const addSlot = () => setSlots(prev => {
+        const next = [...prev, ''];
+        localStorage.setItem('spectreasy_slots', JSON.stringify(next));
+        return next;
+    });
 
     const changeCytometer = async (nextCytometer: string) => {
         setLoading(true);
@@ -735,6 +788,8 @@ const PanelBuilder = () => {
             slotsRef.current = nextSlots;
             setSlots(nextSlots);
             setMarkers(nextMarkers);
+            localStorage.setItem('spectreasy_slots', JSON.stringify(nextSlots));
+            localStorage.setItem('spectreasy_markers', JSON.stringify(nextMarkers));
             setPayload(nextPayload);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Could not switch cytometer.');
@@ -754,6 +809,8 @@ const PanelBuilder = () => {
         slotsRef.current = nextSlots;
         setSlots(nextSlots);
         setMarkers(nextMarkers);
+        localStorage.setItem('spectreasy_slots', JSON.stringify(nextSlots));
+        localStorage.setItem('spectreasy_markers', JSON.stringify(nextMarkers));
         setPayload(nextPayload);
     };
 
@@ -775,6 +832,8 @@ const PanelBuilder = () => {
         slotsRef.current = emptySlotsArray;
         setSlots(emptySlotsArray);
         setMarkers({});
+        localStorage.setItem('spectreasy_slots', JSON.stringify(emptySlotsArray));
+        localStorage.setItem('spectreasy_markers', JSON.stringify({}));
         setQueries({});
         setActiveSlot(null);
         setLoading(true);
@@ -873,6 +932,8 @@ const PanelBuilder = () => {
                 if (row.marker) nextMarkers[index] = row.marker;
             });
             setMarkers(nextMarkers);
+            localStorage.setItem('spectreasy_slots', JSON.stringify(nextSlots));
+            localStorage.setItem('spectreasy_markers', JSON.stringify(nextMarkers));
             setQueries({});
             setActiveSlot(null);
             await fetchPanel(cytometer, configuration, imported.map(row => row.fluor));
@@ -896,6 +957,9 @@ const PanelBuilder = () => {
 
     const chartWidth = Math.max(1040, payload.detectors.length * 22);
     const chartHeight = 230;
+    const spectrumLeft = 42;
+    const spectrumRight = chartWidth - 8;
+    const spectrumPlotWidth = spectrumRight - spectrumLeft;
     const signatureLeft = 58;
     const signatureTop = 22;
     const signaturePlotHeight = 265;
@@ -969,7 +1033,7 @@ const PanelBuilder = () => {
                                 className="configuration-select"
                                 value={configuration}
                                 onChange={event => void changeConfiguration(event.target.value)}
-                                aria-label="Aurora laser configuration"
+                                aria-label="Detector configuration"
                             >
                                 {payload.configurations.map(config => (
                                     <option key={config.id} value={config.id}>
@@ -1048,7 +1112,7 @@ const PanelBuilder = () => {
 
                 <main className="main-panel">
                     <div className="top-spectrum">
-                        <svg className="spectrum-svg" width="100%" height={chartHeight + 56} viewBox={`0 0 ${chartWidth} ${chartHeight + 56}`} role="img" aria-label="Combined spectral signatures">
+                        <svg className="spectrum-svg" width={chartWidth} height={chartHeight + 56} viewBox={`0 0 ${chartWidth} ${chartHeight + 56}`} role="img" aria-label="Combined spectral signatures">
                             <defs>
                                 <linearGradient id="rainbow-axis-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
                                     {payload.detectors.map((det, index) => {
@@ -1067,13 +1131,13 @@ const PanelBuilder = () => {
                                 const y = chartHeight - (tick / 100) * (chartHeight - 32) - 24;
                                 return (
                                     <g key={tick}>
-                                        <line x1={42} y1={y} x2={chartWidth - 8} y2={y} stroke="var(--chart-grid)" strokeWidth={1} />
+                                        <line x1={spectrumLeft} y1={y} x2={spectrumRight} y2={y} stroke="var(--chart-grid)" strokeWidth={1} />
                                         <text x={28} y={y + 4} fontSize={12} textAnchor="end" className="chart-axis-text">{tick}</text>
                                     </g>
                                 );
                             })}
                             {payload.detectors.map((det, index) => {
-                                const x = 42 + (index / Math.max(1, payload.detectors.length - 1)) * (chartWidth - 56);
+                                const x = detectorPointX(index, payload.detectors.length, spectrumLeft, spectrumPlotWidth);
                                 return (
                                     <g key={det.detector}>
                                         <line x1={x} y1={6} x2={x} y2={chartHeight - 24} stroke="var(--chart-grid)" strokeWidth={1} />
@@ -1083,14 +1147,14 @@ const PanelBuilder = () => {
                                     </g>
                                 );
                             })}
-                            <rect x={42} y={chartHeight - 14} width={chartWidth - 56} height={6} fill="url(#rainbow-axis-gradient)" />
-                            <line x1={42} y1={chartHeight - 24} x2={chartWidth - 8} y2={chartHeight - 24} stroke="var(--chart-axis)" strokeWidth={3} />
+                            <rect x={spectrumLeft} y={chartHeight - 14} width={spectrumPlotWidth} height={6} fill="url(#rainbow-axis-gradient)" />
+                            <line x1={spectrumLeft} y1={chartHeight - 24} x2={spectrumRight} y2={chartHeight - 24} stroke="var(--chart-axis)" strokeWidth={3} />
                             {selected.map(fluor => {
                                 const row = spectraByName.get(fluor);
                                 if (!row) return null;
                                 const isHovered = hoveredFluor === fluor;
                                 const hasHoverActive = hoveredFluor !== null;
-                                const pathData = linePath(row, payload.detectors, chartWidth - 56, chartHeight, 42);
+                                const pathData = linePath(row, payload.detectors, spectrumPlotWidth, chartHeight, spectrumLeft);
                                 return (
                                     <g key={fluor}>
                                         <path
@@ -1187,7 +1251,14 @@ const PanelBuilder = () => {
                                                                         className="matrix-marker-input"
                                                                         value={entry.marker}
                                                                         placeholder="Marker"
-                                                                        onChange={event => setMarkers(prev => ({ ...prev, [entry.slotIndex]: event.target.value }))}
+                                                                        onChange={event => {
+                                                                            const val = event.target.value;
+                                                                            setMarkers(prev => {
+                                                                                const next = { ...prev, [entry.slotIndex]: val };
+                                                                                localStorage.setItem('spectreasy_markers', JSON.stringify(next));
+                                                                                return next;
+                                                                            });
+                                                                        }}
                                                                     />
                                                                 )}
                                                             </td>,
@@ -1219,7 +1290,7 @@ const PanelBuilder = () => {
                                                         <th className="row-label">{rowName}</th>
                                                         {selected.map((colName, colIndex) => {
                                                             if (colIndex > rowIndex) return null;
-                                                            const value = rowName === colName ? 1 : toNumber(similarityByName.get(rowName)?.[colName]);
+                                                            const value = rowName === colName ? 1 : toSimilarityValue(similarityByName.get(rowName)?.[colName]);
                                                             const cellStyle = getSimilarityStyle(value, rowName === colName, theme);
                                                             return (
                                                                 <td key={colName} style={cellStyle}>
@@ -1260,7 +1331,7 @@ const PanelBuilder = () => {
                                     return (
                                         <div className="signature-card" key={fluor}>
                                             <h3>{fluor}</h3>
-                                            <svg className="signature-band-svg" width="100%" height={signatureHeight} viewBox={`0 0 ${chartWidth} ${signatureHeight}`} role="img" aria-label={`${fluor} signature`}>
+                                            <svg className="signature-band-svg" width={chartWidth} height={signatureHeight} viewBox={`0 0 ${chartWidth} ${signatureHeight}`} role="img" aria-label={`${fluor} signature`}>
                                                 <rect x={signatureLeft} y={signatureTop} width={signaturePlotWidth} height={signaturePlotHeight} fill={plotBg} stroke={plotStroke} />
                                                 {[0, 1, 2, 3, 4, 5, 6].map(tick => {
                                                     const y = signatureY(tick, signatureTop, signaturePlotHeight);
@@ -1273,8 +1344,7 @@ const PanelBuilder = () => {
                                                 })}
                                                 <text x={14} y={signatureTop + signaturePlotHeight / 2} fontSize={13} fontWeight={700} textAnchor="middle" transform={`rotate(-90 14 ${signatureTop + signaturePlotHeight / 2})`} fill={textHeading}>Intensity</text>
                                                 {payload.detectors.map((det, index) => {
-                                                    const x = signatureLeft + index * signatureColumnWidth;
-                                                    const centerX = x + signatureColumnWidth / 2;
+                                                    const centerX = detectorColumnCenterX(index, payload.detectors.length, signatureLeft, signaturePlotWidth);
                                                     const value = toNumber(row[det.detector]);
                                                     return (
                                                         <g key={det.detector}>

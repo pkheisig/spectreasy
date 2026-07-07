@@ -12,13 +12,17 @@ qc_controls(
   output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
   control_file = "fcs_mapping.csv",
   cytometer = "auto",
-  method = "WLS",
+  unmixing_method = "WLS",
   qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
   save_qc_pngs = FALSE,
+  qc_metrics_dir = NULL,
+  unmixed_list = NULL,
+  qc_summary = NULL,
+  report_plot_dir = NULL,
+  pd = NULL,
+  af_bank_info = NULL,
+  cleanup_report_plot_dir = FALSE,
   use_scatter_gating = TRUE,
-  include_multi_af = FALSE,
-  af_dir = "af",
-  af_bands_per_file = 5,
   unmix_scatter_max_points = 1000,
   unmix_scatter_axis_limit = NULL,
   seed = NULL,
@@ -42,7 +46,7 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 \item{cytometer}{Cytometer name passed to [build_reference_matrix()]. The
 default, `"auto"`, infers the cytometer from FCS detector names when possible.}
 
-\item{method}{Unmixing method used for the control scatter matrix
+\item{unmixing_method}{Unmixing method used for the control scatter matrix
 (`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`).}
 
 \item{qc_plot_dir}{Directory where FSC/SSC, intensity-gate, and spectrum PNGs are written
@@ -52,16 +56,31 @@ when `save_qc_pngs = TRUE`.}
 `qc_plot_dir`. If `FALSE` (default), PNGs are written to a temporary directory
 for report assembly and removed afterward.}
 
+\item{qc_metrics_dir}{Optional directory where plot-ready SCC QC metric
+CSVs are written alongside the PDF report.}
+
+\item{unmixed_list}{Optional precomputed SCC unmixing results from
+[unmix_controls()]. When supplied with `M`, the report reuses these results
+instead of unmixing SCC files again.}
+
+\item{qc_summary}{Optional precomputed SCC gating summary from
+`attr(M, "qc_summary")`.}
+
+\item{report_plot_dir}{Optional directory containing precomputed SCC
+FSC/SSC, gate, and spectrum PNGs from [build_reference_matrix()].}
+
+\item{pd}{Optional detector metadata (`flowCore::pData(parameters(ff))`).}
+
+\item{af_bank_info}{Optional precomputed AF bank metadata from
+`attr(M, "af_bank_info")`.}
+
+\item{cleanup_report_plot_dir}{Logical; if `TRUE`, remove
+`report_plot_dir` after the PDF is assembled. Intended for internal
+temporary plot directories created by [unmix_controls()].}
+
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use scatter/intensity
 gating and show scatter gate plots in the report. If `FALSE`, use and show
 the legacy histogram gate.}
-
-\item{include_multi_af}{Logical; forward to [build_reference_matrix()].}
-
-\item{af_dir}{AF directory forwarded to [build_reference_matrix()].}
-
-\item{af_bands_per_file}{Number of AF bands requested per AF file when
-multiple AF sources are pooled.}
 
 \item{unmix_scatter_max_points}{Maximum events sampled per control for the
 SCC unmixing scatter matrix.}
@@ -76,7 +95,7 @@ ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.}
 }
 \value{
 Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
-  `af_bank_info`, and `method`.
+  `qc_metrics_dir`, `af_bank_info`, and `unmixing_method`.
   `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 }
 \description{

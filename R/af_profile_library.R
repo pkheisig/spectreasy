@@ -91,17 +91,13 @@ af_profile_dir <- function(create = TRUE) {
 #' Extract an AF profile from one unstained FCS file
 #'
 #' @param fcs_file Path to an unstained/autofluorescence `.fcs` file.
-#' @param af_n_bands Number of AF bands to extract. The default, `"auto"`,
-#'   chooses the count from AF event shapes.
+#' @param af_n_bands Number of AF bands to extract. The default, `100`, builds
+#'   a broad fixed AF bank for Spectreasy unmixing.
 #' @param af_max_cells Maximum number of scatter-gated AF events used.
-#' @param af_auto_max_bands Maximum AF bands that `"auto"` may test/select.
 #' @param af_min_cluster_events Minimum number of AF events required to keep a
 #'   k-means AF cluster.
 #' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
 #'   events required to keep a k-means AF cluster.
-#' @param af_n_bands_sensitivity Normalized sensitivity for adding AF bands
-#'   when `af_n_bands = "auto"`. Lower values allow more bands; higher values
-#'   select fewer bands. Default is `1.5`.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param show_plot Logical; print the AF spectra plot after extraction.
 #' @param verbose Logical; print progress updates while extracting.
@@ -109,12 +105,10 @@ af_profile_dir <- function(create = TRUE) {
 #' @return A `spectreasy_af_profile` object containing `$profile` and `$plot`.
 #' @export
 extract_af_profile <- function(fcs_file,
-                               af_n_bands = "auto",
+                               af_n_bands = 100,
                                af_max_cells = 50000,
-                               af_auto_max_bands = 20,
                                af_min_cluster_events = 20,
                                af_min_cluster_proportion = 0.005,
-                               af_n_bands_sensitivity = 1.5,
                                seed = NULL,
                                show_plot = TRUE,
                                verbose = TRUE) {
@@ -131,11 +125,8 @@ extract_af_profile <- function(fcs_file,
     af_args <- .validate_build_reference_af_args(
         af_n_bands = af_n_bands,
         af_max_cells = af_max_cells,
-        af_bands_per_file = 1,
-        af_auto_max_bands = af_auto_max_bands,
         af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        af_n_bands_sensitivity = af_n_bands_sensitivity
+        af_min_cluster_proportion = af_min_cluster_proportion
     )
     .with_optional_seed(seed)
 
@@ -168,8 +159,8 @@ extract_af_profile <- function(fcs_file,
 
     if (isTRUE(verbose)) {
         message(
-            "  Extracting AF band(s)",
-            if (identical(af_args$af_n_bands, "auto")) " with auto band selection" else paste0(" (requested: ", af_args$af_n_bands, ")"),
+            "  Building k-means AF bank",
+            paste0(" with ", af_args$af_n_bands, " band(s)"),
             "..."
         )
     }
@@ -179,10 +170,8 @@ extract_af_profile <- function(fcs_file,
             n_bands = af_args$af_n_bands,
             max_cells = af_args$af_max_cells,
             af_events = gated$events,
-            auto_max_bands = af_args$af_auto_max_bands,
             min_cluster_events = af_args$af_min_cluster_events,
-            min_cluster_proportion = af_args$af_min_cluster_proportion,
-            n_bands_sensitivity = af_args$af_n_bands_sensitivity
+            min_cluster_proportion = af_args$af_min_cluster_proportion
         ),
         warning = function(w) {
             if (grepl("Quick-TRANSfer stage steps exceeded maximum", conditionMessage(w), fixed = TRUE)) {
@@ -206,11 +195,9 @@ extract_af_profile <- function(fcs_file,
             fcs_file = normalizePath(fcs_file, mustWork = FALSE),
             af_n_bands = af_args$af_n_bands,
             af_max_cells = af_args$af_max_cells,
-            af_auto_max_bands = af_args$af_auto_max_bands,
             af_min_cluster_events = af_args$af_min_cluster_events,
             af_min_cluster_proportion = af_args$af_min_cluster_proportion,
-            af_n_bands_sensitivity = af_args$af_n_bands_sensitivity,
-            auto_selection = af_profiles$selection
+            selection = af_profiles$selection
         )
     )
     if (isTRUE(show_plot)) {

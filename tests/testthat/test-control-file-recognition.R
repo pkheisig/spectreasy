@@ -31,7 +31,8 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
         "Negative Beads.fcs",
         "Bead background.fcs",
         "BG CompBeads.fcs",
-        "Unstained (Cells).fcs"
+        "Unstained (Cells).fcs",
+        "scc_cells_AF_UnstainedDead.fcs"
     )
     created <- file.create(file.path(scc_dir, files))
     testthat::expect_true(all(created))
@@ -39,19 +40,18 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
     out_csv <- tempfile(fileext = ".csv")
     df <- spectreasy::create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         output_file = out_csv
     )
 
     by_file <- split(df, df$filename)
 
-    testthat::expect_named(df, c("filename", "fluorophore", "marker", "channel", "control.type", "is.viability"))
-    testthat::expect_false("universal.negative" %in% colnames(df))
+    testthat::expect_named(df, c("filename", "fluorophore", "marker", "channel", "control.type", "universal.negative", "is.viability"))
     testthat::expect_false("large.gate" %in% colnames(df))
 
     testthat::expect_equal(by_file[["LIVE DEAD NIR (Cells).fcs"]]$fluorophore[[1]], "LIVE/DEAD NIR")
     testthat::expect_equal(by_file[["LIVE DEAD NIR (Cells).fcs"]]$control.type[[1]], "cells")
     testthat::expect_equal(by_file[["LIVE DEAD NIR (Cells).fcs"]]$is.viability[[1]], "TRUE")
+    testthat::expect_equal(by_file[["LIVE DEAD NIR (Cells).fcs"]]$universal.negative[[1]], "scc_cells_AF_UnstainedDead.fcs")
 
     testthat::expect_equal(by_file[["Alexa 647 (Beads).fcs"]]$fluorophore[[1]], "Alexa Fluor 647")
     testthat::expect_equal(by_file[["AF594 (Beads).fcs"]]$fluorophore[[1]], "Alexa Fluor 594")
@@ -119,6 +119,10 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
     testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$fluorophore[[1]], "AF")
     testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$marker[[1]], "Autofluorescence")
     testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$control.type[[1]], "cells")
+
+    testthat::expect_equal(by_file[["scc_cells_AF_UnstainedDead.fcs"]]$fluorophore[[1]], "AF_dead")
+    testthat::expect_equal(by_file[["scc_cells_AF_UnstainedDead.fcs"]]$marker[[1]], "Dead cell background")
+    testthat::expect_equal(by_file[["scc_cells_AF_UnstainedDead.fcs"]]$control.type[[1]], "cells")
 })
 
 testthat::test_that("detector fallback matches whole detector codes", {
@@ -145,7 +149,6 @@ testthat::test_that("create_control_file warns when peak detection cannot read a
     testthat::expect_warning(
         df <- spectreasy::create_control_file(
             input_folder = scc_dir,
-            include_af_folder = FALSE,
             output_file = out_csv
         ),
         regexp = "Could not read FCS file while auto-detecting peak channel"
@@ -178,8 +181,72 @@ testthat::test_that("supported cytometer metadata is normalized", {
 
     xenith_ref <- spectreasy:::.load_control_file_shipped_reference("Xenith")
     testthat::expect_equal(xenith_ref$channel_map[["FL37-A"]], "FITC")
+    thermo_xenith_ref <- spectreasy:::.load_control_file_shipped_reference("Thermo Fisher Attune Xenith")
+    testthat::expect_equal(thermo_xenith_ref$fluor_peak_channel_map[["bv785"]], "FL20-A")
+    testthat::expect_equal(thermo_xenith_ref$fluor_peak_channel_map[["bv421"]], "FL16-A")
     aurora_ref <- spectreasy:::.load_control_file_shipped_reference("Aurora")
     testthat::expect_equal(aurora_ref$channel_map[["YG4-A"]], "PE-Fire 640")
+})
+
+testthat::test_that("spectral panel cytometer configurations load cleanly", {
+    discover <- spectreasy:::.spectral_panel_payload(
+        cytometer = "discover",
+        configuration = "discover_s8",
+        fluorophores = character()
+    )
+    testthat::expect_equal(discover$configuration, "discover_s8")
+    testthat::expect_equal(nrow(discover$detectors), 78)
+    testthat::expect_true(all(c("UV1 (375)-A", "R8 (845)-A") %in% discover$detectors$detector))
+
+    id7000 <- spectreasy:::.spectral_panel_payload(
+        cytometer = "id7000",
+        fluorophores = character()
+    )
+    testthat::expect_equal(id7000$configuration, "id7000_5l")
+    testthat::expect_equal(nrow(id7000$detectors), 147)
+    testthat::expect_false(any(grepl("^320", id7000$detectors$detector)))
+
+    id7000_4l <- spectreasy:::.spectral_panel_payload(
+        cytometer = "id7000",
+        configuration = "id7000_4l",
+        fluorophores = character()
+    )
+    testthat::expect_equal(nrow(id7000_4l$detectors), 112)
+    testthat::expect_false(any(grepl("^355|^320", id7000_4l$detectors$detector)))
+
+    id7000_3l <- spectreasy:::.spectral_panel_payload(
+        cytometer = "id7000",
+        configuration = "id7000_3l",
+        fluorophores = character()
+    )
+    testthat::expect_equal(nrow(id7000_3l$detectors), 86)
+    testthat::expect_false(any(grepl("^355|^320|^561", id7000_3l$detectors$detector)))
+
+    xenith <- spectreasy:::.spectral_panel_payload(
+        cytometer = "xenith",
+        fluorophores = character()
+    )
+    by_laser <- split(xenith$detectors$emission, xenith$detectors$laser)
+    testthat::expect_true(all(vapply(by_laser, function(x) all(diff(x) >= 0), logical(1))))
+    testthat::expect_equal(
+        xenith$detectors$label[match("FL16-A", xenith$detectors$detector)],
+        "405nm - 420/10-A"
+    )
+})
+
+testthat::test_that("Xenith spectra plots use wavelength detector labels without pData", {
+    M <- matrix(
+        c(1, 0.4, 0.1, 0.2, 1, 0.3),
+        nrow = 2,
+        byrow = TRUE,
+        dimnames = list(c("BV421", "BV510"), c("FL16-A", "FL15-A", "FL13-A"))
+    )
+
+    p <- spectreasy::plot_spectra(M, output_file = NULL, annotate_peaks = "never")
+    built <- ggplot2::ggplot_build(p)
+    labels <- built$layout$panel_params[[1]]$x$get_labels()
+    testthat::expect_true("405nm - 420/10-A" %in% labels)
+    testthat::expect_false("FL16-A" %in% labels)
 })
 
 testthat::test_that("cytometer auto detection recognizes detector naming conventions", {
@@ -211,7 +278,6 @@ testthat::test_that("custom fluorophore overrides accept common filename forms",
     out_csv <- tempfile(fileext = ".csv")
     df <- spectreasy::create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         unknown_fluor_policy = "empty",
         output_file = out_csv,
         custom_fluorophores = c("odd-control-name" = "BUV737")
@@ -245,7 +311,6 @@ testthat::test_that("create_control_file keeps dictionary peak channel for known
 
     df <- spectreasy::create_control_file(
         input_folder = scc_dir,
-        include_af_folder = FALSE,
         cytometer = "aurora",
         unknown_fluor_policy = "empty",
         custom_fluorophores = c("Mystery Dye (Beads)" = "Mystery Dye"),
@@ -283,4 +348,32 @@ testthat::test_that("reference peak selection trusts mapped control channel", {
     )
 
     testthat::expect_equal(out$peak_channel, "V15-A")
+})
+
+testthat::test_that("reference peak selection uses cytometer libraries before empirical brightness", {
+    n <- 300
+    gated_data <- cbind(
+        "FL16-A" = stats::rnorm(n, 9000, 300),
+        "FL20-A" = stats::rnorm(n, 1200, 80),
+        "FL37-A" = c(stats::rnorm(n - 10, 100, 20), stats::rnorm(10, 90000, 500))
+    )
+    row_info <- data.frame(
+        filename = "scc_cells_BV785_low.fcs",
+        fluorophore = "BV785",
+        marker = "CD3",
+        channel = "FL16-A",
+        stringsAsFactors = FALSE
+    )
+
+    out <- spectreasy:::.select_reference_peak_channel(
+        gated_data = gated_data,
+        detector_names = colnames(gated_data),
+        row_info = row_info,
+        channel_alias_map = character(),
+        sn_ext = row_info$filename[[1]],
+        sn = "scc_cells_BV785_low",
+        cytometer = "Thermo Fisher Attune Xenith"
+    )
+
+    testthat::expect_equal(out$peak_channel, "FL20-A")
 })
