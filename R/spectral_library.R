@@ -21,7 +21,11 @@
         id7000 = "id7000",
         sonyid7000 = "id7000",
         xenith = "xenith",
-        attunexenith = "xenith"
+        attunexenith = "xenith",
+        thermofisherxenith = "xenith",
+        thermofisherattunexenith = "xenith",
+        thermoscientificxenith = "xenith",
+        thermoscientificattunexenith = "xenith"
     )
 }
 

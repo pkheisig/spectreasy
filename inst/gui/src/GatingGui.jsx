@@ -523,8 +523,53 @@ function formatConfirmIssues(issues) {
   return shown
 }
 
-function buildRows(gates, files) {
-  const rows = []
+function buildRows(gates, files, settings = {}) {
+  const rows = [
+    {
+      gate_type: 'setting',
+      scope: 'global',
+      filename: '',
+      x_channel: 'point_size',
+      y_channel: '',
+      plot_mode: 'setting',
+      vertex_index: 0,
+      x: Number(settings.pointSize || 1.5),
+      y: '',
+    },
+    {
+      gate_type: 'setting',
+      scope: 'global',
+      filename: '',
+      x_channel: 'max_points',
+      y_channel: '',
+      plot_mode: 'setting',
+      vertex_index: 0,
+      x: normalizeEventCount(settings.maxPoints),
+      y: '',
+    },
+    {
+      gate_type: 'setting',
+      scope: 'global',
+      filename: '',
+      x_channel: 'histogram_bins',
+      y_channel: '',
+      plot_mode: 'setting',
+      vertex_index: 0,
+      x: normalizeHistogramBins(settings.histogramBins),
+      y: '',
+    },
+    {
+      gate_type: 'setting',
+      scope: 'global',
+      filename: '',
+      x_channel: 'histogram_transform',
+      y_channel: '',
+      plot_mode: 'setting',
+      vertex_index: 0,
+      x: normalizeHistogramTransform(settings.histogramTransform),
+      y: '',
+    },
+  ]
   Object.values(gates).forEach((gate) => {
     if (gate?.mode === 'blocked') {
       rows.push({
@@ -577,12 +622,18 @@ function parseConfigRows(rows) {
   const gates = {}
   let pointSize = null
   let maxPoints = null
+  let histogramBins = null
+  let histogramTransform = null
   rows.forEach((row) => {
     if (row.gate_type === 'setting') {
       if (row.x_channel === 'point_size') {
         pointSize = Number(row.x) || 1.5
       } else if (row.x_channel === 'max_points') {
         maxPoints = normalizeEventCount(row.x)
+      } else if (row.x_channel === 'histogram_bins') {
+        histogramBins = normalizeHistogramBins(row.x)
+      } else if (row.x_channel === 'histogram_transform') {
+        histogramTransform = normalizeHistogramTransform(row.x)
       }
       return
     }
@@ -615,7 +666,13 @@ function parseConfigRows(rows) {
       .map(({ x, y }) => ({ x, y }))
     if (!gateHasValidShape(gates[key])) delete gates[key]
   })
-  return { gates, pointSize, maxPoints: maxPoints === null ? null : normalizeEventCount(maxPoints) }
+  return {
+    gates,
+    pointSize,
+    maxPoints: maxPoints === null ? null : normalizeEventCount(maxPoints),
+    histogramBins,
+    histogramTransform,
+  }
 }
 
 function useApi(path, options) {
@@ -1504,6 +1561,10 @@ function App() {
         } else if (cacheData?.gates && Object.keys(cacheData.gates).length > 0) {
           setGates(cacheData.gates)
         }
+        if (typeof csvGates.pointSize === 'number') setPointSize(csvGates.pointSize)
+        if (typeof csvGates.maxPoints === 'number') setMaxPoints(normalizeEventCount(csvGates.maxPoints))
+        if (typeof csvGates.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(csvGates.histogramBins))
+        if (typeof csvGates.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(csvGates.histogramTransform))
         if (cacheData?.pointSize) {
           setPointSize(Number(cacheData.pointSize))
         }
@@ -1566,11 +1627,11 @@ function App() {
       useApi('/gate_config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: CONFIG_NAME, rows: buildRows(gates, files) }),
+        body: JSON.stringify({ filename: CONFIG_NAME, rows: buildRows(gates, files, { pointSize, maxPoints, histogramBins, histogramTransform }) }),
       }).catch(() => {})
     }, 700)
     return () => clearTimeout(timer)
-  }, [gates, files, gatesLoaded])
+  }, [gates, files, pointSize, maxPoints, histogramBins, histogramTransform, gatesLoaded])
 
   useEffect(() => {
     if (!selected || !gatesLoaded) return
@@ -1892,7 +1953,7 @@ function App() {
   }
 
   async function saveConfig(closeAfter = false, choosePath = false) {
-    const rows = buildRows(gates, files)
+    const rows = buildRows(gates, files, { pointSize, maxPoints, histogramBins, histogramTransform })
     try {
       const saved = await useApi('/gate_config', {
         method: 'POST',
@@ -1920,7 +1981,7 @@ function App() {
   }
 
   async function saveConfigAsCsv() {
-    const rows = buildRows(gates, files)
+    const rows = buildRows(gates, files, { pointSize, maxPoints, histogramBins, histogramTransform })
     const csvText = gateRowsToCsv(rows)
     let filename = CONFIG_NAME
     try {
@@ -1955,6 +2016,8 @@ function App() {
     setGates(parsed.gates)
     if (typeof parsed.pointSize === 'number') setPointSize(parsed.pointSize)
     if (typeof parsed.maxPoints === 'number') setMaxPoints(normalizeEventCount(parsed.maxPoints))
+    if (typeof parsed.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(parsed.histogramBins))
+    if (typeof parsed.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(parsed.histogramTransform))
     setDraft([])
     await useApi('/gate_config', {
       method: 'POST',

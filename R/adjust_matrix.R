@@ -166,7 +166,41 @@
     invisible(NULL)
 }
 
-.run_gui_until_shutdown <- function(pr, port, host = "127.0.0.1", quiet = FALSE) {
+.spectreasy_gui_mode_label <- function(mode) {
+    if (identical(mode, "control-gating")) return("Control gating GUI")
+    if (identical(mode, "panel-builder")) return("Spectral panel builder GUI")
+    "Matrix adjustment GUI"
+}
+
+.spectreasy_gui_display_path <- function(path) {
+    if (is.null(path) || length(path) == 0 || is.na(path[1]) || !nzchar(path[1])) return("")
+    path <- as.character(path[1])
+    path <- normalizePath(path, mustWork = FALSE)
+    wd <- normalizePath(getwd(), mustWork = FALSE)
+    if (identical(dirname(path), wd)) basename(path) else path
+}
+
+.message_spectreasy_gui_startup <- function(mode,
+                                            port,
+                                            frontend_url,
+                                            asset_mode = "bundled",
+                                            gate_file = NULL) {
+    line <- strrep("-", 58)
+    message("\n", line)
+    message("Spectreasy ", .spectreasy_gui_mode_label(mode))
+    message(line)
+    message("Frontend : ", frontend_url)
+    message("API port : ", port)
+    message("Assets   : ", asset_mode)
+    gate_file_display <- .spectreasy_gui_display_path(gate_file)
+    if (nzchar(gate_file_display)) {
+        message("Gate CSV : ", gate_file_display)
+    }
+    message("INFO     : Press Ctrl + C in this R console to terminate the GUI app.")
+    message(line, "\n")
+}
+
+.run_gui_until_shutdown <- function(pr, port, host = "127.0.0.1", quiet = FALSE, announce = TRUE) {
     options(spectreasy.gui_shutdown_requested = FALSE)
     server <- httpuv::startServer(host = host, port = port, app = pr, quiet = quiet)
     options(spectreasy.gui_server = server)
@@ -178,7 +212,9 @@
         )
     }, add = TRUE)
 
-    message("Running spectreasy GUI API at http://", host, ":", port)
+    if (isTRUE(announce)) {
+        message("Running spectreasy GUI API at http://", host, ":", port)
+    }
     while (!isTRUE(getOption("spectreasy.gui_shutdown_requested", FALSE))) {
         httpuv::service(timeout = 250)
     }
@@ -252,21 +288,16 @@
             port = port,
             npm_bin = frontend$npm_bin
         )
-    } else {
-        message("Using bundled GUI assets from: ", paths$dist_path)
-    }
-
-    message("Starting spectreasy API on port ", port)
-    message("Matrix directory: ", dirs$matrix_dir)
-    message("Samples directory: ", dirs$samples_dir)
-    if (identical(mode, "control-gating")) {
-        message("SCC directory: ", gate_paths$scc_dir)
-        message("Control mapping: ", gate_paths$control_file)
-        message("Gate CSV: ", gate_paths$gate_file)
     }
     frontend_url <- paste0(frontend$frontend_url, "?mode=", utils::URLencode(mode, reserved = TRUE))
 
-    message("Frontend: ", frontend_url)
+    .message_spectreasy_gui_startup(
+        mode = mode,
+        port = port,
+        frontend_url = frontend_url,
+        asset_mode = if (identical(frontend$mode, "dev")) "Vite dev server" else "bundled package assets",
+        gate_file = if (identical(mode, "control-gating")) gate_paths$gate_file else NULL
+    )
 
     if (isTRUE(open_browser)) utils::browseURL(frontend_url)
 
@@ -281,7 +312,7 @@
         plumber::pr_static(pr, "/", paths$dist_path)
     }
     if (identical(mode, "control-gating")) {
-        .run_gui_until_shutdown(pr, port = port, host = "127.0.0.1")
+        .run_gui_until_shutdown(pr, port = port, host = "127.0.0.1", announce = FALSE)
     } else {
         pr$run(port = port, host = "127.0.0.1")
     }

@@ -59,7 +59,12 @@ supported_cytometers <- function(include_auto = FALSE) {
         ),
         opteon = c("opteon", "novocyte opteon", "agilent opteon"),
         mosaic = c("mosaic", "cytoflex mosaic", "beckman coulter mosaic"),
-        xenith = c("xenith", "attune xenith", "thermofisher xenith")
+        xenith = c(
+            "xenith", "attune xenith", "thermofisher xenith",
+            "thermo fisher xenith", "thermo fisher attune xenith",
+            "thermofisher attune xenith", "thermofisherattunexenith",
+            "thermo scientific xenith", "thermo scientific attune xenith"
+        )
     )
     keys <- unlist(lapply(aliases, .normalize_cytometer_token), use.names = FALSE)
     vals <- rep(names(aliases), lengths(aliases))

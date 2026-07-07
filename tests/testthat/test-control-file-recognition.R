@@ -181,6 +181,9 @@ testthat::test_that("supported cytometer metadata is normalized", {
 
     xenith_ref <- spectreasy:::.load_control_file_shipped_reference("Xenith")
     testthat::expect_equal(xenith_ref$channel_map[["FL37-A"]], "FITC")
+    thermo_xenith_ref <- spectreasy:::.load_control_file_shipped_reference("Thermo Fisher Attune Xenith")
+    testthat::expect_equal(thermo_xenith_ref$fluor_peak_channel_map[["bv785"]], "FL20-A")
+    testthat::expect_equal(thermo_xenith_ref$fluor_peak_channel_map[["bv421"]], "FL16-A")
     aurora_ref <- spectreasy:::.load_control_file_shipped_reference("Aurora")
     testthat::expect_equal(aurora_ref$channel_map[["YG4-A"]], "PE-Fire 640")
 })
@@ -326,4 +329,32 @@ testthat::test_that("reference peak selection trusts mapped control channel", {
     )
 
     testthat::expect_equal(out$peak_channel, "V15-A")
+})
+
+testthat::test_that("reference peak selection uses cytometer libraries before empirical brightness", {
+    n <- 300
+    gated_data <- cbind(
+        "FL16-A" = stats::rnorm(n, 9000, 300),
+        "FL20-A" = stats::rnorm(n, 1200, 80),
+        "FL37-A" = c(stats::rnorm(n - 10, 100, 20), stats::rnorm(10, 90000, 500))
+    )
+    row_info <- data.frame(
+        filename = "scc_cells_BV785_low.fcs",
+        fluorophore = "BV785",
+        marker = "CD3",
+        channel = "FL16-A",
+        stringsAsFactors = FALSE
+    )
+
+    out <- spectreasy:::.select_reference_peak_channel(
+        gated_data = gated_data,
+        detector_names = colnames(gated_data),
+        row_info = row_info,
+        channel_alias_map = character(),
+        sn_ext = row_info$filename[[1]],
+        sn = "scc_cells_BV785_low",
+        cytometer = "Thermo Fisher Attune Xenith"
+    )
+
+    testthat::expect_equal(out$peak_channel, "FL20-A")
 })

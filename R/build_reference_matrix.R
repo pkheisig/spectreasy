@@ -566,12 +566,65 @@
     if (!file.exists(path)) return(NULL)
     df <- tryCatch(utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE), error = function(e) NULL)
     required <- c("gate_type", "scope", "filename", "x_channel", "y_channel", "plot_mode", "vertex_index", "x", "y")
-    if (is.null(df) || nrow(df) == 0 || !all(required %in% colnames(df))) return(NULL)
+    if (is.null(df) || nrow(df) == 0) {
+        stop("Could not read a valid manual gate CSV: ", path, call. = FALSE)
+    }
+    missing_cols <- setdiff(required, colnames(df))
+    if (length(missing_cols) > 0) {
+        stop("Manual gate CSV is missing required columns: ", paste(missing_cols, collapse = ", "), call. = FALSE)
+    }
+    settings <- list()
+    setting_rows <- df[df$gate_type == "setting", , drop = FALSE]
+    if (nrow(setting_rows) > 0) {
+        for (i in seq_len(nrow(setting_rows))) {
+            key <- trimws(as.character(setting_rows$x_channel[i]))
+            value <- trimws(as.character(setting_rows$x[i]))
+            if (!nzchar(key)) next
+            if (identical(key, "point_size")) {
+                settings$point_size <- suppressWarnings(as.numeric(value))
+            } else if (identical(key, "max_points")) {
+                settings$max_points <- suppressWarnings(as.integer(value))
+            } else if (identical(key, "histogram_bins")) {
+                settings$histogram_bins <- suppressWarnings(as.integer(value))
+            } else if (identical(key, "histogram_transform")) {
+                settings$histogram_transform <- tolower(value)
+            }
+        }
+    }
     keep <- df$gate_type != "setting" &
         (df$plot_mode == "blocked" | (df$plot_mode != "missing" & suppressWarnings(as.integer(df$vertex_index)) > 0))
     df <- df[keep, , drop = FALSE]
-    if (nrow(df) == 0) return(NULL)
-    split(df, paste(df$gate_type, df$scope, df$filename, sep = "\r"))
+    if (nrow(df) == 0) {
+        out <- list()
+    } else {
+        out <- split(df, paste(df$gate_type, df$scope, df$filename, sep = "\r"))
+    }
+    attr(out, "settings") <- settings
+    out
+}
+
+.reference_manual_gate_settings <- function(manual_gates) {
+    settings <- if (!is.null(manual_gates)) attr(manual_gates, "settings") else NULL
+    if (is.null(settings)) settings <- list()
+    bins_value <- if (is.null(settings$histogram_bins)) 100L else settings$histogram_bins
+    bins <- suppressWarnings(as.integer(bins_value))
+    if (!is.finite(bins) || is.na(bins)) bins <- 100L
+    bins <- min(max(bins, 5L), 500L)
+    transform_value <- if (is.null(settings$histogram_transform)) "asinh" else settings$histogram_transform
+    transform <- tolower(trimws(as.character(transform_value)))
+    if (!transform %in% c("asinh", "linear", "log10", "biexponential")) transform <- "asinh"
+    max_points_value <- if (is.null(settings$max_points)) 50000L else settings$max_points
+    max_points <- suppressWarnings(as.integer(max_points_value))
+    if (!is.finite(max_points) || is.na(max_points) || max_points <= 0L) max_points <- 50000L
+    point_size_value <- if (is.null(settings$point_size)) 1.5 else settings$point_size
+    point_size <- suppressWarnings(as.numeric(point_size_value))
+    if (!is.finite(point_size) || is.na(point_size) || point_size <= 0) point_size <- 1.5
+    list(
+        histogram_bins = bins,
+        histogram_transform = transform,
+        max_points = max_points,
+        point_size = point_size
+    )
 }
 
 .reference_manual_gate_key <- function(gate_type, scope, filename = "") {
@@ -664,7 +717,8 @@
         manual = TRUE,
         manual_gate_info = list(
             cell = list(vertices = cell_vertices, x_channel = cell_x, y_channel = cell_y),
-            singlet = list(vertices = singlet_vertices, x_channel = singlet_x, y_channel = singlet_y)
+            singlet = list(vertices = singlet_vertices, x_channel = singlet_x, y_channel = singlet_y),
+            settings = .reference_manual_gate_settings(manual_gates)
         )
     )
 }
@@ -696,6 +750,13 @@
     attr(vals_log, "gate_type") <- paste0("manual_", mode)
     attr(vals_log, "gate_method") <- paste0("manual_", mode)
     attr(vals_log, "positive_gate_present") <- TRUE
+    if (identical(mode, "positive_1d") && nrow(verts) >= 2) {
+        positive_lim <- range(verts$x, na.rm = TRUE)
+        if (all(is.finite(positive_lim)) && positive_lim[2] > positive_lim[1]) {
+            attr(vals_log, "pos_raw_min") <- positive_lim[1]
+            attr(vals_log, "pos_raw_max") <- positive_lim[2]
+        }
+    }
     negative_gate <- .reference_manual_gate(manual_gates, "negative", filename, sample_type)
     negative_verts <- .reference_gate_vertices(negative_gate)
     if (!is.null(negative_gate) && !is.null(negative_verts) && nrow(negative_verts) >= 2) {
@@ -706,6 +767,8 @@
                 attr(vals_log, "negative_gate_present") <- TRUE
                 attr(vals_log, "neg_log_min") <- log10(max(negative_lim[1], 1))
                 attr(vals_log, "neg_log_max") <- log10(max(negative_lim[2], 1))
+                attr(vals_log, "neg_raw_min") <- negative_lim[1]
+                attr(vals_log, "neg_raw_max") <- negative_lim[2]
             }
         }
     }
@@ -714,7 +777,11 @@
         hist_info = list(
             vals_log = vals_log,
             gate_min = min(peak_vals[keep], na.rm = TRUE),
-            gate_max = max(peak_vals[keep], na.rm = TRUE)
+            gate_max = max(peak_vals[keep], na.rm = TRUE),
+            positive_raw_min = attr(vals_log, "pos_raw_min"),
+            positive_raw_max = attr(vals_log, "pos_raw_max"),
+            negative_raw_min = attr(vals_log, "neg_raw_min"),
+            negative_raw_max = attr(vals_log, "neg_raw_max")
         )
     )
 }
@@ -1537,7 +1604,7 @@
 # infers the channel via the 99.9% quantile across all detectors, and cross-references/validates
 # it against the target channel in metadata.
 # Returns a list containing the resolved peak channel and 99.9% quantiles for all channels.
-.select_reference_peak_channel <- function(gated_data, detector_names, row_info, channel_alias_map, sn_ext, sn) {
+.select_reference_peak_channel <- function(gated_data, detector_names, row_info, channel_alias_map, sn_ext, sn, cytometer = "auto") {
     is_unstained <- grepl("unstained|autofluorescence|\\bAF\\b", paste(sn_ext, sn), ignore.case = TRUE)
     if (nrow(row_info) > 0) {
         is_unstained <- is_unstained || .is_af_control_row(
@@ -1559,6 +1626,20 @@
 
     inferred_peak_channel <- detector_names[which.max(q999_by_channel)]
     peak_channel <- inferred_peak_channel
+
+    expected_channel <- ""
+    cytometer_id <- .resolve_cytometer_id(cytometer, allow_auto = TRUE, unknown_as_auto = TRUE)
+    if (!identical(cytometer_id, "auto") && nrow(row_info) > 0 && "fluorophore" %in% colnames(row_info)) {
+        expected_ref <- tryCatch(.load_control_file_shipped_reference(cytometer_id), error = function(e) NULL)
+        if (!is.null(expected_ref)) {
+            expected_raw <- .control_file_expected_channel_for_fluor(row_info$fluorophore[1], expected_ref$fluor_peak_channel_map)
+            expected_channel <- .resolve_reference_control_channel(expected_raw, detector_names, channel_alias_map = channel_alias_map)
+        }
+    }
+    if (nzchar(expected_channel)) {
+        peak_channel <- expected_channel
+        return(list(peak_channel = peak_channel, q999_by_channel = q999_by_channel))
+    }
 
     if (nrow(row_info) > 0 && !is.na(row_info$channel[1]) && row_info$channel[1] != "") {
         resolved_channel <- .resolve_reference_control_channel(row_info$channel[1], detector_names, channel_alias_map = channel_alias_map)
@@ -2817,53 +2898,212 @@
     )
 }
 
+.reference_even_indices <- function(n, max_points = 50000L) {
+    n <- as.integer(n)
+    max_points <- suppressWarnings(as.integer(max_points))
+    if (!is.finite(max_points) || is.na(max_points) || max_points <= 0L) max_points <- 50000L
+    if (n <= max_points) return(seq_len(n))
+    unique(pmax(1L, pmin(n, floor(seq(1, n, length.out = max_points)))))
+}
+
+.reference_density_palette <- function(size = 64L) {
+    vapply(seq_len(size), function(i) {
+        v <- (i - 1) / max(size - 1, 1)
+        r <- max(0, min(1, min(4 * v - 1.5, -4 * v + 4.5)))
+        g <- max(0, min(1, min(4 * v - 0.5, -4 * v + 3.5)))
+        b <- max(0, min(1, min(4 * v + 0.5, -4 * v + 2.5)))
+        grDevices::rgb(r, g, b, alpha = 0.70)
+    }, character(1))
+}
+
+.reference_point_density <- function(x, y) {
+    n <- length(x)
+    if (n == 0) return(numeric())
+    min_x <- min(x, na.rm = TRUE)
+    max_x <- max(x, na.rm = TRUE)
+    min_y <- min(y, na.rm = TRUE)
+    max_y <- max(y, na.rm = TRUE)
+    rx <- max(max_x - min_x, 1)
+    ry <- max(max_y - min_y, 1)
+    num_bins <- 160L
+    grid_side <- num_bins + 1L
+    bx <- pmax(0L, pmin(num_bins, floor(((x - min_x) / rx) * num_bins)))
+    by <- pmax(0L, pmin(num_bins, floor(((y - min_y) / ry) * num_bins)))
+    grid <- tabulate(by * grid_side + bx + 1L, nbins = grid_side * grid_side)
+    dim(grid) <- c(grid_side, grid_side)
+    radius <- 5L
+    sigma <- 2
+    offsets <- expand.grid(dx = -radius:radius, dy = -radius:radius)
+    offsets$weight <- exp(-(offsets$dx^2 + offsets$dy^2) / (2 * sigma^2))
+    densities <- numeric(n)
+    for (i in seq_len(n)) {
+        nx <- bx[i] + offsets$dx + 1L
+        ny <- by[i] + offsets$dy + 1L
+        ok <- nx >= 1L & nx <= grid_side & ny >= 1L & ny <= grid_side
+        densities[i] <- sum(grid[cbind(ny[ok], nx[ok])] * offsets$weight[ok])
+    }
+    densities
+}
+
+.reference_pretty_k_label <- function(x) {
+    ifelse(abs(x) >= 1000, paste0(round(x / 1000), "K"), as.character(round(x)))
+}
+
 .reference_qc_scatter_density_plot <- function(data,
                                                x_channel,
                                                y_channel,
                                                pd,
                                                gate_vertices = NULL,
                                                title,
-                                               subtitle = NULL) {
+                                               subtitle = NULL,
+                                               max_points = 50000L,
+                                               point_size = 1.5) {
     x_desc <- .get_reference_axis_label(x_channel, pd)
     y_desc <- .get_reference_axis_label(y_channel, pd)
     x_vals <- data[, x_channel]
     y_vals <- data[, y_channel]
-    x_max <- as.numeric(stats::quantile(x_vals, 0.998, na.rm = TRUE))
-    y_max <- as.numeric(stats::quantile(y_vals, 0.998, na.rm = TRUE))
-    max_xy <- max(x_max, y_max, 1, na.rm = TRUE) * 1.05
-    x_breaks <- seq(0, max_xy, length.out = 201)
-    y_breaks <- x_breaks
-    x_bin <- findInterval(x_vals, x_breaks)
-    y_bin <- findInterval(y_vals, y_breaks)
-    keep_bin <- x_bin >= 1 & x_bin <= 200 & y_bin >= 1 & y_bin <= 200
-    dt2d <- data.table::as.data.table(as.data.frame(table(
-        x_bin = x_bin[keep_bin],
-        y_bin = y_bin[keep_bin]
-    )))
-    data.table::setnames(dt2d, c("x_bin", "y_bin", "count"))
-    dt2d$x_bin <- as.integer(as.character(dt2d$x_bin))
-    dt2d$y_bin <- as.integer(as.character(dt2d$y_bin))
-    dt2d$count <- as.integer(as.character(dt2d$count))
-    dt2d <- dt2d[dt2d$count > 0, ]
-    dt2d$x <- x_breaks[dt2d$x_bin]
-    dt2d$y <- y_breaks[dt2d$y_bin]
-    dt2d$fill <- log10(dt2d$count + 1)
-    p <- ggplot2::ggplot(dt2d, ggplot2::aes(x, y, fill = fill)) +
-        ggplot2::geom_tile(width = diff(x_breaks)[1], height = diff(y_breaks)[1]) +
-        ggplot2::scale_fill_gradientn(colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"), guide = "none") +
+    keep <- is.finite(x_vals) & is.finite(y_vals)
+    x_vals <- x_vals[keep]
+    y_vals <- y_vals[keep]
+    idx <- .reference_even_indices(length(x_vals), max_points = max_points)
+    plot_df <- data.frame(x = x_vals[idx], y = y_vals[idx])
+    density <- .reference_point_density(plot_df$x, plot_df$y)
+    palette <- .reference_density_palette()
+    bucket <- if (length(density) > 0 && max(density, na.rm = TRUE) > 0) {
+        pmax(1L, pmin(length(palette), floor((density / max(density, na.rm = TRUE)) * (length(palette) - 1L)) + 1L))
+    } else {
+        rep(1L, nrow(plot_df))
+    }
+    plot_df$color <- palette[bucket]
+    x_lim <- range(c(0, stats::quantile(x_vals, 0.998, na.rm = TRUE), if (!is.null(gate_vertices)) gate_vertices$x), na.rm = TRUE)
+    y_lim <- range(c(0, stats::quantile(y_vals, 0.998, na.rm = TRUE), if (!is.null(gate_vertices)) gate_vertices$y), na.rm = TRUE)
+    x_lim[2] <- max(x_lim[2] * 1.04, 1)
+    y_lim[2] <- max(y_lim[2] * 1.04, 1)
+    point_size <- max(0.15, min(1.2, as.numeric(point_size) * 0.28))
+    p <- ggplot2::ggplot(plot_df, ggplot2::aes(x, y)) +
+        ggplot2::geom_point(color = plot_df$color, size = point_size, alpha = 0.95, stroke = 0) +
         ggplot2::labs(title = title, subtitle = subtitle, x = x_desc, y = y_desc) +
-        ggplot2::theme_minimal() +
+        ggplot2::scale_x_continuous(labels = .reference_pretty_k_label) +
+        ggplot2::scale_y_continuous(labels = .reference_pretty_k_label) +
+        ggplot2::theme_minimal(base_size = 12) +
         ggplot2::theme(
             legend.position = "none",
             panel.grid = ggplot2::element_blank(),
-            panel.background = ggplot2::element_rect(fill = "white", color = NA),
-            axis.line = ggplot2::element_line(color = "black", linewidth = 0.35),
-            axis.ticks = ggplot2::element_line(color = "black", linewidth = 0.3),
-            plot.subtitle = ggplot2::element_text(size = 10.6)
+            panel.background = ggplot2::element_rect(fill = "#fbfaf6", color = "#ded9cf", linewidth = 0.35),
+            axis.line = ggplot2::element_line(color = "#6c746f", linewidth = 0.35),
+            axis.ticks = ggplot2::element_line(color = "#6c746f", linewidth = 0.3),
+            axis.title = ggplot2::element_text(color = "#626a65", face = "bold"),
+            axis.text = ggplot2::element_text(color = "#626a65", face = "bold"),
+            plot.title = ggplot2::element_text(color = "#17201c", face = "plain", size = 14),
+            plot.subtitle = ggplot2::element_text(color = "#69716b", size = 10.6)
         ) +
-        ggplot2::coord_cartesian(xlim = c(0, max_xy), ylim = c(0, max_xy))
+        ggplot2::coord_cartesian(xlim = x_lim, ylim = y_lim, expand = FALSE)
     if (!is.null(gate_vertices) && nrow(gate_vertices) >= 3) {
-        p <- p + ggplot2::geom_path(data = gate_vertices, ggplot2::aes(x, y), inherit.aes = FALSE, color = "red", linewidth = 1)
+        gate_closed <- rbind(gate_vertices, gate_vertices[1, , drop = FALSE])
+        p <- p +
+            ggplot2::geom_polygon(data = gate_vertices, ggplot2::aes(x, y), inherit.aes = FALSE, fill = "#d65238", alpha = 0.12) +
+            ggplot2::geom_path(data = gate_closed, ggplot2::aes(x, y), inherit.aes = FALSE, color = "#d65238", linewidth = 1.05) +
+            ggplot2::geom_point(data = gate_vertices, ggplot2::aes(x, y), inherit.aes = FALSE, shape = 21, size = 2.4, stroke = 0.9, color = "#d65238", fill = "#fbfaf6")
+    }
+    p
+}
+
+.reference_histogram_transform_values <- function(values, transform = "asinh") {
+    transform <- tolower(trimws(as.character(transform)[1]))
+    values <- as.numeric(values)
+    if (identical(transform, "log10")) {
+        return(log10(pmax(values, 1)))
+    }
+    if (identical(transform, "asinh")) {
+        return(asinh(values / 150))
+    }
+    if (identical(transform, "biexponential")) {
+        return(sign(values) * log10(1 + abs(values) / 50))
+    }
+    values
+}
+
+.reference_histogram_density_curve <- function(values, domain, bins = 100L) {
+    bins <- suppressWarnings(as.integer(bins))
+    if (!is.finite(bins) || is.na(bins)) bins <- 100L
+    bins <- min(max(bins, 5L), 500L)
+    values <- values[is.finite(values)]
+    if (length(values) == 0 || !all(is.finite(domain)) || domain[2] <= domain[1]) {
+        return(data.frame(x = numeric(), y = numeric()))
+    }
+    idx <- pmax(0L, pmin(bins, floor(((values - domain[1]) / (domain[2] - domain[1])) * bins)))
+    counts <- tabulate(idx + 1L, nbins = bins + 1L)
+    smooth_radius <- max(1L, min(3L, floor(bins / 40L)))
+    y <- numeric(bins + 1L)
+    for (i in 0:bins) {
+        js <- (-smooth_radius):smooth_radius
+        bin_idx <- i + js
+        ok <- bin_idx >= 0L & bin_idx <= bins
+        weights <- exp(-(js[ok] * js[ok]) / 4)
+        y[i + 1L] <- sum(counts[bin_idx[ok] + 1L] * weights) / max(sum(weights), 1)
+    }
+    data.frame(x = seq(domain[1], domain[2], length.out = bins + 1L), y = y)
+}
+
+.reference_qc_histogram_gui_plot <- function(peak_vals,
+                                             pd,
+                                             peak_channel,
+                                             vals_log,
+                                             gate_min,
+                                             gate_max,
+                                             settings,
+                                             hist_info = NULL) {
+    transform <- settings$histogram_transform
+    bins <- settings$histogram_bins
+    values_t <- .reference_histogram_transform_values(peak_vals, transform = transform)
+    pos_min <- if (!is.null(hist_info) && !is.null(hist_info$positive_raw_min)) hist_info$positive_raw_min else attr(vals_log, "pos_raw_min")
+    pos_max <- if (!is.null(hist_info) && !is.null(hist_info$positive_raw_max)) hist_info$positive_raw_max else attr(vals_log, "pos_raw_max")
+    scalar_finite <- function(x) length(x) == 1L && is.finite(x)
+    if (!scalar_finite(pos_min)) pos_min <- gate_min
+    if (!scalar_finite(pos_max)) pos_max <- gate_max
+    neg_min <- if (!is.null(hist_info) && !is.null(hist_info$negative_raw_min)) hist_info$negative_raw_min else attr(vals_log, "neg_raw_min")
+    neg_max <- if (!is.null(hist_info) && !is.null(hist_info$negative_raw_max)) hist_info$negative_raw_max else attr(vals_log, "neg_raw_max")
+    neg_log_min <- attr(vals_log, "neg_log_min")
+    neg_log_max <- attr(vals_log, "neg_log_max")
+    if (!scalar_finite(neg_min) && scalar_finite(neg_log_min)) neg_min <- 10^neg_log_min
+    if (!scalar_finite(neg_max) && scalar_finite(neg_log_max)) neg_max <- 10^neg_log_max
+    gate_raw <- c(pos_min, pos_max, neg_min, neg_max)
+    gate_t <- .reference_histogram_transform_values(gate_raw[is.finite(gate_raw)], transform = transform)
+    domain <- range(c(values_t, gate_t), na.rm = TRUE)
+    if (!all(is.finite(domain)) || domain[2] <= domain[1]) domain <- c(0, 1)
+    pad <- max((domain[2] - domain[1]) * 0.025, 1e-6)
+    domain <- c(domain[1] - pad, domain[2] + pad)
+    curve <- .reference_histogram_density_curve(values_t, domain, bins = bins)
+    ymax <- max(curve$y, 1, na.rm = TRUE)
+    x_desc <- .get_reference_axis_label(peak_channel, pd)
+    p <- ggplot2::ggplot(curve, ggplot2::aes(x, y)) +
+        ggplot2::geom_ribbon(ggplot2::aes(ymin = 0, ymax = y), fill = "#263f73", alpha = 0.28) +
+        ggplot2::geom_line(color = "#263f73", linewidth = 0.85) +
+        ggplot2::labs(title = "Histogram", x = x_desc, y = "Events per bin") +
+        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.08))) +
+        ggplot2::theme_minimal(base_size = 12) +
+        ggplot2::theme(
+            legend.position = "none",
+            panel.grid = ggplot2::element_blank(),
+            panel.background = ggplot2::element_rect(fill = "#fbfaf6", color = "#ded9cf", linewidth = 0.35),
+            axis.line = ggplot2::element_line(color = "#6c746f", linewidth = 0.35),
+            axis.ticks = ggplot2::element_line(color = "#6c746f", linewidth = 0.3),
+            axis.title = ggplot2::element_text(color = "#626a65", face = "bold"),
+            axis.text = ggplot2::element_text(color = "#626a65", face = "bold"),
+            plot.title = ggplot2::element_text(color = "#17201c", face = "plain", size = 14)
+        ) +
+        ggplot2::coord_cartesian(xlim = domain, ylim = c(0, ymax * 1.08), expand = FALSE)
+    if (isTRUE(attr(vals_log, "negative_gate_present")) && scalar_finite(neg_min) && scalar_finite(neg_max) && neg_max > neg_min) {
+        neg_t <- .reference_histogram_transform_values(c(neg_min, neg_max), transform = transform)
+        p <- p +
+            ggplot2::annotate("rect", xmin = min(neg_t), xmax = max(neg_t), ymin = -Inf, ymax = Inf, alpha = 0.13, fill = "#263f73") +
+            ggplot2::geom_vline(xintercept = neg_t, color = "#263f73", linewidth = 1)
+    }
+    if (isTRUE(attr(vals_log, "positive_gate_present")) && scalar_finite(pos_min) && scalar_finite(pos_max) && pos_max > pos_min) {
+        pos_t <- .reference_histogram_transform_values(c(pos_min, pos_max), transform = transform)
+        p <- p +
+            ggplot2::annotate("rect", xmin = min(pos_t), xmax = max(pos_t), ymin = -Inf, ymax = Inf, alpha = 0.13, fill = "#d65238") +
+            ggplot2::geom_vline(xintercept = pos_t, color = "#d65238", linewidth = 1)
     }
     p
 }
@@ -2892,7 +3132,13 @@
                                      det_info,
                                      out_path,
                                      use_scatter_gating = TRUE,
-                                     manual_gate_info = NULL) {
+                                     manual_gate_info = NULL,
+                                     hist_info = NULL) {
+    gate_settings <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$settings)) {
+        manual_gate_info$settings
+    } else {
+        .reference_manual_gate_settings(NULL)
+    }
     cell_info <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$cell)) manual_gate_info$cell else NULL
     cell_x <- if (!is.null(cell_info) && !is.null(cell_info$x_channel) && cell_info$x_channel %in% colnames(raw_data)) cell_info$x_channel else fsc
     cell_y <- if (!is.null(cell_info) && !is.null(cell_info$y_channel) && cell_info$y_channel %in% colnames(raw_data)) cell_info$y_channel else ssc
@@ -2904,7 +3150,9 @@
         pd = pd,
         gate_vertices = cell_vertices,
         title = paste0(sn, " - Cell Gate"),
-        subtitle = paste0(round(100 * nrow(gated_data) / nrow(raw_data), 1), "% gated")
+        subtitle = paste0(round(100 * nrow(gated_data) / nrow(raw_data), 1), "% gated"),
+        max_points = gate_settings$max_points,
+        point_size = gate_settings$point_size
     )
     .save_reference_ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, sn, "FSC/SSC", width = 5, height = 5, dpi = 300)
     fsc_desc <- .get_reference_axis_label(fsc, pd)
@@ -2927,14 +3175,15 @@
             pd = pd,
             gate_vertices = singlet_vertices,
             title = paste0(sn, " - Singlet Gate"),
-            subtitle = paste0(round(100 * nrow(gated_data) / max(nrow(singlet_source), 1), 1), "% gated")
+            subtitle = paste0(round(100 * nrow(gated_data) / max(nrow(singlet_source), 1), 1), "% gated"),
+            max_points = gate_settings$max_points,
+            point_size = gate_settings$point_size
         )
         .save_reference_ggsave(file.path(out_path, "singlet", paste0(sn, "_singlet.png")), p_singlet, sn, "singlet", width = 5, height = 5, dpi = 300)
     }
 
     neg_log_min <- attr(vals_log, "neg_log_min")
     neg_log_max <- attr(vals_log, "neg_log_max")
-    gate_method <- attr(vals_log, "gate_method")
     negative_gate_present <- isTRUE(attr(vals_log, "negative_gate_present"))
     positive_gate_present <- isTRUE(attr(vals_log, "positive_gate_present"))
     negative_gate_valid <- negative_gate_present &&
@@ -2945,44 +3194,16 @@
         is.finite(gate_min) &&
         is.finite(gate_max) &&
         gate_max > gate_min
-    comp <- attr(vals_log, "gmm_components")
-    comp_means <- if (!is.null(comp) && nrow(comp) > 0) comp$mean else numeric()
-
-    hist_subtitle_lines <- if (positive_gate_present) {
-        c(
-            paste0(round(100 * nrow(final_gated_data) / nrow(gated_data), 1), "% positive gated"),
-            gate_method
-        )
-    } else {
-        c("AF/unstained control: scatter-gated only; no positive histogram gate", gate_method)
-    }
-    hist_subtitle <- paste(
-        unlist(lapply(hist_subtitle_lines, strwrap, width = 95), use.names = FALSE),
-        collapse = "\n"
+    p2 <- .reference_qc_histogram_gui_plot(
+        peak_vals = peak_vals,
+        pd = pd,
+        peak_channel = peak_channel,
+        vals_log = vals_log,
+        gate_min = gate_min,
+        gate_max = gate_max,
+        settings = gate_settings,
+        hist_info = hist_info
     )
-
-    p2 <- ggplot2::ggplot(data.table::data.table(x = vals_log), ggplot2::aes(x)) +
-        ggplot2::geom_density(fill = "grey80", color = "grey40") +
-        ggplot2::labs(
-            title = paste0(sn, " - ", peak_channel),
-            subtitle = hist_subtitle,
-            x = paste0("log10(", peak_channel, ")")
-        ) +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(legend.position = "none", plot.subtitle = ggplot2::element_text(size = 8.4, lineheight = 1.05))
-    if (negative_gate_valid) {
-        p2 <- p2 +
-            ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.15, fill = "#2C7BE5") +
-            ggplot2::geom_vline(xintercept = c(neg_log_min, neg_log_max), color = "#2C7BE5", linewidth = 0.8)
-    }
-    if (positive_gate_valid) {
-        p2 <- p2 +
-            ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.18, fill = "#D62728") +
-            ggplot2::geom_vline(xintercept = c(log10(gate_min), log10(gate_max)), color = "#D62728", linewidth = 1)
-    }
-    if (length(comp_means) > 0) {
-        p2 <- p2 + ggplot2::geom_vline(xintercept = comp_means, color = "black", linetype = "dashed", alpha = 0.35, linewidth = 0.5)
-    }
     .save_reference_ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, sn, "histogram", width = 6.5, height = 4, dpi = 300)
     if (isTRUE(use_scatter_gating)) {
         scatter_x <- log10(pmax(peak_vals, 1))
@@ -3154,7 +3375,8 @@
         row_info = row_info,
         channel_alias_map = metadata$channel_alias_map,
         sn_ext = sn_ext,
-        sn = sn
+        sn = sn,
+        cytometer = config$cytometer
     )
     peak_channel <- peak_info$peak_channel
     message("  Peak channel: ", peak_channel)
@@ -3247,7 +3469,8 @@
                 det_info = metadata$det_info,
                 out_path = config$out_path,
                 use_scatter_gating = TRUE,
-                manual_gate_info = scatter_info$manual_gate_info
+                manual_gate_info = scatter_info$manual_gate_info,
+                hist_info = hist_info
             )
         }
 
@@ -3375,7 +3598,8 @@
             det_info = metadata$det_info,
             out_path = config$out_path,
             use_scatter_gating = config$use_scatter_gating,
-            manual_gate_info = scatter_info$manual_gate_info
+            manual_gate_info = scatter_info$manual_gate_info,
+            hist_info = hist_info
         )
     }
 

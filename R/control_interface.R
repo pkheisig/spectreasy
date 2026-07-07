@@ -109,6 +109,26 @@
         }
     }
 
+    add_peak_channel <- function(fluorophore, peak_channel, overwrite = FALSE) {
+        fluorophore <- trimws(as.character(fluorophore)[1])
+        peak_channel <- .control_file_canonicalize_channel(peak_channel)[1]
+        if (!nzchar(fluorophore) || is.na(peak_channel) || !nzchar(peak_channel)) return(invisible(FALSE))
+        canonical <- out$name_map[.control_file_normalize_token(fluorophore)]
+        if (is.na(canonical) || !nzchar(canonical)) canonical <- fluorophore
+        keys <- unique(c(
+            .control_file_normalize_token(fluorophore),
+            .control_file_normalize_token(canonical),
+            names(out$name_map)[out$name_map == canonical]
+        ))
+        keys <- keys[nzchar(keys)]
+        for (key in keys) {
+            if (isTRUE(overwrite) || !key %in% names(out$fluor_peak_channel_map)) {
+                out$fluor_peak_channel_map[key] <<- peak_channel
+            }
+        }
+        invisible(TRUE)
+    }
+
     if (nzchar(channel_file)) {
         channel_df <- tryCatch(
             utils::read.csv(channel_file, stringsAsFactors = FALSE, check.names = FALSE),
@@ -138,9 +158,7 @@
                 if (is.na(peak_channel) || !nzchar(peak_channel)) {
                     peak_channel <- ch_vals[1]
                 }
-                if (nzchar(fluor_key) && !fluor_key %in% names(out$fluor_peak_channel_map)) {
-                    out$fluor_peak_channel_map[fluor_key] <- peak_channel
-                }
+                add_peak_channel(canonical, peak_channel, overwrite = FALSE)
                 for (ch in ch_vals) {
                     if (!ch %in% names(out$channel_map)) {
                         out$channel_map[ch] <- canonical
@@ -151,6 +169,19 @@
                         )
                     }
                 }
+            }
+        }
+    }
+
+    if (!identical(cytometer_id, "auto") && cytometer_id %in% names(.spectral_library_file_map())) {
+        library <- tryCatch(
+            .read_spectral_library_matrix(cytometer_id, normalize = FALSE),
+            error = function(e) NULL
+        )
+        if (!is.null(library) && nrow(library) > 0 && ncol(library) > 0) {
+            peak_channels <- colnames(library)[max.col(library, ties.method = "first")]
+            for (i in seq_len(nrow(library))) {
+                add_peak_channel(rownames(library)[i], peak_channels[i], overwrite = FALSE)
             }
         }
     }
