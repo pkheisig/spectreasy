@@ -43,7 +43,7 @@ const HISTOGRAM_TRANSFORMS = [
   { value: 'biexponential', label: 'Biexponential' },
 ]
 const PRELOAD_POINTS = 100000
-const MIN_CONFIRM_EVENTS = 20
+const MIN_CONFIRM_EVENTS = 200
 const REQUIRED_GATE_CSV_COLUMNS = ['gate_type', 'scope', 'filename', 'x_channel', 'y_channel', 'plot_mode', 'vertex_index', 'x', 'y']
 const PLOT_WIDTH = 520
 const PLOT_HEIGHT = 420
