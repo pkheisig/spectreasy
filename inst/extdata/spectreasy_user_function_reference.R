@@ -33,12 +33,15 @@
         cytometer = "auto",
         auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
         output_dir = "spectreasy_outputs/unmix_controls",
-        unmixing_method = "WLS",
+        unmixing_method = "Spectreasy",
         unmix_scatter_panel_size_mm = 30,
         seed = NULL,
-        af_n_bands = 10,
+        af_n_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
+        manual_gating = TRUE,
+        manual_gate_file = "ssc_gate_config.csv",
+        gating_file = manual_gate_file,
         rwls_max_iter = 1L,
         unmix_threads = 1L,
         save_qc_plots = FALSE,
@@ -53,7 +56,7 @@
         spectral_variant_max_variants = 8L,
         spectral_variant_min_events = 50L,
         # Spectreasy only:
-        # spectreasy_weight_quantile = 0.9,
+        spectreasy_weight_quantile = 0.9,
         autospectral_n_candidates = 1000L,
         autospectral_n_spectral = 200L,
         autospectral_min_events = 10L,
@@ -92,7 +95,7 @@
             "scc_reference_matrix.csv"
         ),
         detector_noise_file = NULL,
-        unmixing_method = "WLS",
+        unmixing_method = "Spectreasy",
         rwls_max_iter = 1L,
         n_threads = 1L,
         spectral_variant_library = NULL,
@@ -102,7 +105,7 @@
         spectral_variant_positive_fraction = 0.02,
         spectral_variant_min_improvement = 0.01,
         # Spectreasy only:
-        # spectreasy_weight_quantile = 0.9,
+        spectreasy_weight_quantile = 0.9,
         estimate_af = FALSE,
         output_dir = file.path(
             "spectreasy_outputs",
@@ -119,17 +122,19 @@
         verbose = TRUE
     )
 
-    # Spectreasy uses the AutoSpectral-style AF-band assignment and spectral
-    # variants, then blends the marker abundances with a marker-only OLS anchor.
+    # Spectreasy is the default unmixing method. It builds on the AutoSpectral
+    # approach with AF-band assignment and spectral variants, then reweights
+    # each marker between an AF-aware fit and a marker-only OLS anchor.
     # Lower spectreasy_weight_quantile values increase the marker blend weights;
-    # higher values make the blend more conservative. This argument is accepted
-    # only when unmixing_method = "Spectreasy".
+    # higher values make the blend more conservative.
     ctrl_spectreasy <- unmix_controls(
         scc_dir = "scc",
         control_file = "fcs_mapping.csv",
         output_dir = "spectreasy_outputs/unmix_controls_spectreasy",
         unmixing_method = "Spectreasy",
-        af_n_bands = 10,
+        af_n_bands = 100,
+        manual_gating = TRUE,
+        gating_file = file.path(getwd(), "ssc_gate_config.csv"),
         spectreasy_weight_quantile = 0.9
     )
 
@@ -190,13 +195,22 @@
         dev_mode = FALSE
     )
 
+    gate_controls(
+        scc_dir = "scc",
+        control_file = "fcs_mapping.csv",
+        gate_file = "ssc_gate_config.csv",
+        port = 8000,
+        open_browser = TRUE,
+        dev_mode = FALSE
+    )
+
     # -------------------------------------------------------------------------
     # Autofluorescence profile library workflow
     # -------------------------------------------------------------------------
 
     profile <- extract_af_profile(
         fcs_file = "scc/Unstained.fcs",
-        af_n_bands = 10,
+        af_n_bands = 100,
         af_max_cells = 50000,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
@@ -246,7 +260,7 @@
         output_folder = "gating_and_spectrum_plots",
         save_qc_plots = FALSE,
         control_df = NULL,
-        af_n_bands = 10,
+        af_n_bands = 100,
         af_max_cells = 50000,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,

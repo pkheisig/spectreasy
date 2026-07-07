@@ -1748,6 +1748,7 @@ function App() {
   ), [files, payloadCache, gates])
   const canConfirm = confirmIssues.length === 0
   const confirmIssueLines = useMemo(() => formatConfirmIssues(confirmIssues), [confirmIssues])
+  const initialLoading = !status.startsWith('Could not') && (!gatesLoaded || (files.length > 0 && (!preloadComplete || !payload)))
   const singletWarningText = currentFile.is_af && gateIsFinalized(singletGate) && singletsFilteredEvents.length < MIN_CONFIRM_EVENTS
     ? `Only ${singletsFilteredEvents.length.toLocaleString()} events in singlets`
     : ''
@@ -2007,7 +2008,7 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${initialLoading ? 'is-initial-loading' : ''}`}>
       <aside className="sidebar">
         <div className="brand">
           <ScatterChart size={26} />
@@ -2363,6 +2364,15 @@ function App() {
               <button className="cancel-btn" onClick={() => setShowConfirmModal(false)}>Cancel</button>
               <button className="confirm-btn" disabled={!canConfirm} onClick={() => { if (canConfirm) { setShowConfirmModal(false); saveConfig(true) } }}>Confirm & Exit</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {initialLoading && (
+        <div className="initial-loading-overlay" role="status" aria-live="polite" aria-label="Loading files">
+          <div className="initial-loading-card">
+            <div className="initial-loading-spinner" aria-hidden="true" />
+            <strong>Loading files...</strong>
           </div>
         </div>
       )}
