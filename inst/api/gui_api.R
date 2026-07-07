@@ -996,7 +996,14 @@ function(req) {
 #* Shut down manual gating GUI
 #* @post /gate_shutdown
 function(req) {
-    later::later(function() httpuv::stopAllServers(), delay = 0.35)
+    options(spectreasy.gui_shutdown_requested = TRUE)
+    server <- getOption("spectreasy.gui_server", NULL)
+    later::later(function() {
+        if (!is.null(server)) {
+            try(httpuv::stopServer(server), silent = TRUE)
+        }
+        try(httpuv::stopAllServers(), silent = TRUE)
+    }, delay = 0.1)
     list(success = TRUE, message = "Gate config saved. Manual gating GUI is shutting down.")
 }
 

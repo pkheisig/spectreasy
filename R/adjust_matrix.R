@@ -166,6 +166,25 @@
     invisible(NULL)
 }
 
+.run_gui_until_shutdown <- function(pr, port, host = "127.0.0.1", quiet = FALSE) {
+    options(spectreasy.gui_shutdown_requested = FALSE)
+    server <- httpuv::startServer(host = host, port = port, app = pr, quiet = quiet)
+    options(spectreasy.gui_server = server)
+    on.exit({
+        try(httpuv::stopServer(server), silent = TRUE)
+        options(
+            spectreasy.gui_server = NULL,
+            spectreasy.gui_shutdown_requested = NULL
+        )
+    }, add = TRUE)
+
+    message("Running spectreasy GUI API at http://", host, ":", port)
+    while (!isTRUE(getOption("spectreasy.gui_shutdown_requested", FALSE))) {
+        httpuv::service(timeout = 250)
+    }
+    invisible(NULL)
+}
+
 .launch_spectreasy_gui <- function(matrix_dir = NULL,
                                    samples_dir = NULL,
                                    port = 8000,
@@ -180,6 +199,13 @@
         stop(
             "Package 'plumber' is required for the spectreasy GUI. ",
             "Please install the suggested dependency to use the GUI.",
+            call. = FALSE
+        )
+    }
+    if (!requireNamespace("httpuv", quietly = TRUE) || !requireNamespace("later", quietly = TRUE)) {
+        stop(
+            "Packages 'httpuv' and 'later' are required for the spectreasy GUI. ",
+            "Please install the suggested GUI dependencies.",
             call. = FALSE
         )
     }
@@ -254,7 +280,11 @@
     if (!isTRUE(dev_mode)) {
         plumber::pr_static(pr, "/", paths$dist_path)
     }
-    pr$run(port = port, host = "127.0.0.1")
+    if (identical(mode, "control-gating")) {
+        .run_gui_until_shutdown(pr, port = port, host = "127.0.0.1")
+    } else {
+        pr$run(port = port, host = "127.0.0.1")
+    }
 
     invisible(NULL)
 }

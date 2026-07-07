@@ -351,9 +351,15 @@
 #'   `unmixing_method = "AutoSpectral"` or `"Spectreasy"`; these methods use their own
 #'   post-FSC/SSC SCC spectral selector.
 #' @param manual_gating Logical; if `TRUE` (default), launch the manual control
-#'   gating GUI before building the SCC reference matrix.
+#'   gating GUI before building the SCC reference matrix. If `FALSE`, the GUI is
+#'   skipped; an existing `gating_file`/`manual_gate_file` is still reused when
+#'   supplied.
 #' @param manual_gate_file Gate CSV written by [gate_controls()]. Relative paths
-#'   are resolved from the current working directory.
+#'   are resolved from the current working directory. Kept for backwards
+#'   compatibility; prefer `gating_file` in new code.
+#' @param gating_file Optional gate CSV to reuse without launching the GUI, for
+#'   example `file.path(getwd(), "ssc_gate_config.csv")`. If supplied explicitly,
+#'   the file must exist. Defaults to `manual_gate_file`.
 #' @param clean_scc_with_unstained Logical; when `unmixing_method =
 #'   "AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative
 #'   background events before calculating SCC spectra.
@@ -420,6 +426,7 @@ unmix_controls <- function(
     use_scatter_gating = TRUE,
     manual_gating = TRUE,
     manual_gate_file = "ssc_gate_config.csv",
+    gating_file = manual_gate_file,
     clean_scc_with_unstained = TRUE,
     scc_background_method = c("scatter_knn", "none"),
     scc_background_k = 2L,
@@ -436,6 +443,8 @@ unmix_controls <- function(
     ...
 ) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
+    manual_gate_file_missing <- missing(manual_gate_file)
+    gating_file_missing <- missing(gating_file)
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
     unmixing_method <- .normalize_unmix_method(unmixing_method)
     use_autospectral <- .is_autospectral_style_method(unmixing_method)
@@ -460,6 +469,10 @@ unmix_controls <- function(
 
     control_file <- .resolve_control_file_path(control_file)
     output_dir <- .normalize_unmix_controls_output_dir(output_dir)
+    if (!gating_file_missing) {
+        manual_gate_file <- gating_file
+    }
+    manual_gate_file_explicit <- !gating_file_missing || !manual_gate_file_missing
 
     if (!dir.exists(output_dir)) {
         dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
@@ -493,8 +506,16 @@ unmix_controls <- function(
 
     if (isTRUE(manual_gating)) {
         if (!interactive()) {
-            warning("manual_gating = TRUE requires an interactive R session; continuing with automatic gating.", call. = FALSE)
-            manual_gate_file <- NULL
+            if (manual_gate_file_explicit && length(manual_gate_file) > 0 && !is.na(manual_gate_file[1]) && nzchar(trimws(as.character(manual_gate_file)[1]))) {
+                manual_gate_file <- normalizePath(as.character(manual_gate_file)[1], mustWork = FALSE)
+                if (!file.exists(manual_gate_file)) {
+                    stop("manual_gating = TRUE requires an interactive R session and the supplied gating_file does not exist: ", manual_gate_file, call. = FALSE)
+                }
+                warning("manual_gating = TRUE requires an interactive R session; reusing supplied gating_file instead.", call. = FALSE)
+            } else {
+                warning("manual_gating = TRUE requires an interactive R session; continuing with automatic gating.", call. = FALSE)
+                manual_gate_file <- NULL
+            }
         } else {
             manual_gate_file <- gate_controls(
                 scc_dir = scc_dir,
@@ -504,7 +525,19 @@ unmix_controls <- function(
             )
         }
     } else {
-        manual_gate_file <- NULL
+        if (length(manual_gate_file) == 0 || is.na(manual_gate_file[1]) || !nzchar(trimws(as.character(manual_gate_file)[1]))) {
+            manual_gate_file <- NULL
+        } else {
+            manual_gate_file <- normalizePath(as.character(manual_gate_file)[1], mustWork = FALSE)
+            if (!file.exists(manual_gate_file)) {
+                if (manual_gate_file_explicit) {
+                    stop("gating_file not found: ", manual_gate_file, call. = FALSE)
+                }
+                manual_gate_file <- NULL
+            } else {
+                message("Using manual gate CSV: ", manual_gate_file)
+            }
+        }
     }
 
     output_paths <- .unmix_output_paths(output_dir)

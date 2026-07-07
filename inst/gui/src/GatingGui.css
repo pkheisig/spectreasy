@@ -234,6 +234,46 @@ button:disabled {
   color: white;
 }
 
+.confirm-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.confirm-wrapper .confirm:disabled {
+  background: #b8b5ad;
+  border-color: #a8a49b;
+  color: #fffdfa;
+  opacity: 0.85;
+}
+
+.confirm-tooltip {
+  position: absolute;
+  z-index: 60;
+  right: 0;
+  top: calc(100% + 8px);
+  width: min(420px, calc(100vw - 36px));
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid rgba(214, 82, 56, 0.35);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 18px 36px rgba(23, 32, 29, 0.2);
+  font-size: 12px;
+  text-align: left;
+}
+
+.confirm-tooltip strong {
+  color: var(--accent-2);
+  font-size: 12px;
+}
+
+.confirm-tooltip span {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 .gate-toolbar {
   margin: 14px 0 10px;
 }
@@ -325,6 +365,14 @@ button:disabled {
 .plot-head span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.plot-warning {
+  margin-top: 5px;
+  color: var(--accent-2);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .plot-svg {

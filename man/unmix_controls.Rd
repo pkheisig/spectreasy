@@ -24,6 +24,7 @@ unmix_controls(
   use_scatter_gating = TRUE,
   manual_gating = TRUE,
   manual_gate_file = "ssc_gate_config.csv",
+  gating_file = manual_gate_file,
   clean_scc_with_unstained = TRUE,
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 2L,
@@ -98,10 +99,17 @@ use the legacy one-dimensional histogram gate. Ignored when
 post-FSC/SSC SCC spectral selector.}
 
 \item{manual_gating}{Logical; if `TRUE` (default), launch the manual control
-gating GUI before building the SCC reference matrix.}
+gating GUI before building the SCC reference matrix. If `FALSE`, the GUI is
+skipped; an existing `gating_file`/`manual_gate_file` is still reused when
+supplied.}
 
 \item{manual_gate_file}{Gate CSV written by [gate_controls()]. Relative paths
-are resolved from the current working directory.}
+are resolved from the current working directory. Kept for backwards
+compatibility; prefer `gating_file` in new code.}
+
+\item{gating_file}{Optional gate CSV to reuse without launching the GUI, for
+example `file.path(getwd(), "ssc_gate_config.csv")`. If supplied explicitly,
+the file must exist. Defaults to `manual_gate_file`.}
 
 \item{clean_scc_with_unstained}{Logical; when `unmixing_method =
 "AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative

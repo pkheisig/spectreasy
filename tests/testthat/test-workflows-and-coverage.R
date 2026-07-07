@@ -231,6 +231,29 @@ test_that("unmix_controls does not overwrite an existing invalid control file", 
     expect_equal(readLines(control_csv, warn = FALSE), before)
 })
 
+test_that("unmix_controls errors early for an explicit missing gating file", {
+    wf <- make_synthetic_workflow()
+    output_dir <- tempfile("spectreasy_missing_gate_")
+    control_csv <- tempfile(fileext = ".csv")
+    missing_gate <- tempfile(fileext = ".csv")
+    utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
+
+    expect_error(
+        spectreasy::unmix_controls(
+            scc_dir = wf$scc_dir,
+            control_file = control_csv,
+            output_dir = output_dir,
+            unmixing_method = "OLS",
+            manual_gating = FALSE,
+            gating_file = missing_gate,
+            save_report = FALSE,
+            seed = 1,
+            subsample_n = 120
+        ),
+        regexp = "gating_file not found"
+    )
+})
+
 test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     wf <- make_synthetic_workflow()
     output_dir <- tempfile("spectreasy_covr_auto_")

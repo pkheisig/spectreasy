@@ -43,6 +43,8 @@ const HISTOGRAM_TRANSFORMS = [
   { value: 'biexponential', label: 'Biexponential' },
 ]
 const PRELOAD_POINTS = 100000
+const MIN_CONFIRM_EVENTS = 20
+const REQUIRED_GATE_CSV_COLUMNS = ['gate_type', 'scope', 'filename', 'x_channel', 'y_channel', 'plot_mode', 'vertex_index', 'x', 'y']
 const PLOT_WIDTH = 520
 const PLOT_HEIGHT = 420
 const PAD = { left: 54, right: 18, top: 18, bottom: 46 }
@@ -230,6 +232,10 @@ function histogramGateKey(type, filename) {
   return type === 'negative' ? `negative:${filename}` : `positive:${filename}`
 }
 
+function fileControlType(file) {
+  return (file?.['control.type'] || 'cells').toLowerCase()
+}
+
 function displayEventsForLimit(events, maxPoints) {
   if (!Array.isArray(events) || events.length === 0) return []
   const limit = Number(maxPoints)
@@ -310,7 +316,7 @@ function gateRowsToCsv(rows) {
   return `${lines.join('\n')}\n`
 }
 
-function parseCsvRows(text) {
+function parseCsvDocument(text) {
   const rows = []
   let row = []
   let field = ''
@@ -351,10 +357,10 @@ function parseCsvRows(text) {
     row.push(field)
     rows.push(row)
   }
-  if (rows.length === 0) return []
+  if (rows.length === 0) return { headers: [], rows: [] }
 
   const headers = rows[0].map((header) => header.trim())
-  return rows.slice(1)
+  const dataRows = rows.slice(1)
     .filter((values) => values.some((value) => String(value || '').trim().length > 0))
     .map((values) => {
       const out = {}
@@ -363,6 +369,53 @@ function parseCsvRows(text) {
       })
       return out
     })
+  return { headers, rows: dataRows }
+}
+
+function validateGateCsvRows(rows, files, headers = []) {
+  const missingColumns = REQUIRED_GATE_CSV_COLUMNS.filter((column) => !headers.includes(column))
+  if (missingColumns.length) {
+    throw new Error(`CSV is missing required columns: ${missingColumns.join(', ')}`)
+  }
+
+  const knownFiles = new Set(files.map((file) => file.filename).filter(Boolean))
+  const allowedGateTypes = new Set(['cell', 'singlet', 'positive', 'negative', 'setting'])
+  const allowedPlotModes = new Set(['scatter', 'histogram', 'separator', 'positive_1d', 'negative_1d', 'missing', 'blocked'])
+  const unknownFiles = new Set()
+
+  rows.forEach((row, index) => {
+    const rowNumber = index + 2
+    const gateType = String(row.gate_type || '').trim()
+    const plotMode = String(row.plot_mode || '').trim()
+    const scope = String(row.scope || '').trim()
+    const filename = String(row.filename || '').trim()
+
+    if (!gateType) throw new Error(`CSV row ${rowNumber} has no gate_type`)
+    if (!allowedGateTypes.has(gateType)) throw new Error(`CSV row ${rowNumber} has unknown gate_type "${gateType}"`)
+    if (gateType === 'setting') return
+    if (!plotMode) throw new Error(`CSV row ${rowNumber} has no plot_mode`)
+    if (!allowedPlotModes.has(plotMode)) throw new Error(`CSV row ${rowNumber} has unknown plot_mode "${plotMode}"`)
+    if (scope === 'file' && !filename) throw new Error(`CSV row ${rowNumber} is file-specific but has no filename`)
+    if ((gateType === 'positive' || gateType === 'negative') && plotMode !== 'missing' && !filename) {
+      throw new Error(`CSV row ${rowNumber} is a ${gateType} gate but has no filename`)
+    }
+    if (filename && !knownFiles.has(filename)) unknownFiles.add(filename)
+    if (plotMode === 'missing' || plotMode === 'blocked') return
+
+    const vertexIndex = Number(row.vertex_index)
+    const x = Number(row.x)
+    const y = Number(row.y)
+    if (!Number.isInteger(vertexIndex) || vertexIndex < 1) {
+      throw new Error(`CSV row ${rowNumber} has an invalid vertex_index`)
+    }
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new Error(`CSV row ${rowNumber} has invalid gate coordinates`)
+    }
+  })
+
+  if (unknownFiles.size) {
+    throw new Error(`CSV contains files not in this session: ${Array.from(unknownFiles).slice(0, 8).join(', ')}`)
+  }
 }
 
 async function saveCsvWithSystemPicker(filename, csvText) {
@@ -400,6 +453,74 @@ function gateHasValidShape(gate) {
   if (gate.mode === 'separator') return vertices.length >= 1
   if (gate.mode === 'positive_1d' || gate.mode === 'negative_1d') return vertices.length >= 2
   return vertices.length >= 3
+}
+
+function gateIsFinalized(gate) {
+  return Boolean(gate) && gate.mode !== 'blocked' && gateHasValidShape(gate)
+}
+
+function resolveGateForFile(gates, type, file) {
+  const filename = file?.filename || ''
+  const controlType = fileControlType(file)
+  const fileGate = gates[`${type}:${filename}`]
+  if (fileGate?.mode === 'blocked') return null
+  if (fileGate) return fileGate
+  if (type === 'positive' || type === 'negative') return null
+  return gates[`${type}:${controlType}`] || null
+}
+
+function validateFileForConfirm(file, payload, gates) {
+  const filename = file?.filename || ''
+  const issues = []
+  const events = Array.isArray(payload?.events) ? payload.events : []
+  if (!filename) return issues
+  if (!events.length) {
+    issues.push({ filename, message: 'events are still loading' })
+    return issues
+  }
+
+  const cellGate = resolveGateForFile(gates, 'cell', file)
+  const singletGate = resolveGateForFile(gates, 'singlet', file)
+  if (!gateIsFinalized(cellGate)) issues.push({ filename, message: 'cell gate unfinished' })
+  if (!gateIsFinalized(singletGate)) issues.push({ filename, message: 'singlet gate unfinished' })
+
+  const cells = gateIsFinalized(cellGate)
+    ? filterPolygonEvents(events, cellGate, cellGate.xChannel, cellGate.yChannel)
+    : []
+  const singlets = gateIsFinalized(singletGate)
+    ? filterPolygonEvents(cells, singletGate, singletGate.xChannel, singletGate.yChannel)
+    : []
+
+  if (file.is_af) {
+    if (gateIsFinalized(singletGate) && singlets.length < MIN_CONFIRM_EVENTS) {
+      issues.push({ filename, message: `singlet gate has only ${singlets.length.toLocaleString()} events` })
+    }
+    return issues
+  }
+
+  const positiveGate = resolveGateForFile(gates, 'positive', file)
+  if (!gateIsFinalized(positiveGate)) {
+    issues.push({ filename, message: 'positive gate unfinished' })
+    return issues
+  }
+
+  const positive = summarizeGate(singlets, positiveGate, 'peak', 'count', 'histogram')
+  if (positive.count < MIN_CONFIRM_EVENTS) {
+    issues.push({ filename, message: `positive gate has only ${positive.count.toLocaleString()} events` })
+  }
+  return issues
+}
+
+function formatConfirmIssues(issues) {
+  const grouped = new Map()
+  issues.forEach((issue) => {
+    if (!grouped.has(issue.filename)) grouped.set(issue.filename, [])
+    grouped.get(issue.filename).push(issue.message)
+  })
+  const lines = Array.from(grouped.entries()).map(([filename, messages]) => `${filename}: ${messages.join(', ')}`)
+  const shown = lines.slice(0, 8)
+  if (lines.length > shown.length) shown.push(`+${lines.length - shown.length} more files`)
+  return shown
 }
 
 function buildRows(gates, files) {
@@ -667,6 +788,7 @@ function GatePlot({
   xDomain: xDomainProp,
   yDomain: yDomainProp,
   statsText,
+  warningText,
   drawActive,
   pointSize,
   mode = 'scatter',
@@ -1064,6 +1186,11 @@ function GatePlot({
               {statsText}
             </div>
           )}
+          {warningText && (
+            <div className="plot-warning">
+              {warningText}
+            </div>
+          )}
         </div>
       </header>
 
@@ -1317,6 +1444,7 @@ function App() {
   const [contextMenu, setContextMenu] = useState(null)
   const [configs, setConfigs] = useState([])
   const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [showConfirmIssues, setShowConfirmIssues] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [drawActive, setDrawActive] = useState(false)
   const [pointSize, setPointSize] = useState(1.5)
@@ -1615,6 +1743,17 @@ function App() {
   const singletSummary = summarizeGate(cellsFilteredEvents, singletGate, singletGate?.xChannel || singletAxes.x, singletGate?.yChannel || singletAxes.y, 'scatter')
   const positiveSummary = summarizeGate(singletsFilteredEvents, positiveGate, 'peak', 'count', 'histogram')
   const negativeSummary = summarizeGate(singletsFilteredEvents, negativeGate, 'peak', 'count', 'histogram')
+  const confirmIssues = useMemo(() => (
+    files.flatMap((file) => validateFileForConfirm(file, payloadCache[file.filename], gates))
+  ), [files, payloadCache, gates])
+  const canConfirm = confirmIssues.length === 0
+  const confirmIssueLines = useMemo(() => formatConfirmIssues(confirmIssues), [confirmIssues])
+  const singletWarningText = currentFile.is_af && gateIsFinalized(singletGate) && singletsFilteredEvents.length < MIN_CONFIRM_EVENTS
+    ? `Only ${singletsFilteredEvents.length.toLocaleString()} events in singlets`
+    : ''
+  const positiveWarningText = !currentFile.is_af && gateIsFinalized(positiveGate) && positiveSummary.count < MIN_CONFIRM_EVENTS
+    ? `Only ${positiveSummary.count.toLocaleString()} events in Pos gate`
+    : ''
 
   function handleDragEnd() {
     setStatus('Ready')
@@ -1809,7 +1948,8 @@ function App() {
     }
   }
 
-  async function applyLoadedConfigRows(rows, sourceName) {
+  async function applyLoadedConfigRows(rows, sourceName, headers = REQUIRED_GATE_CSV_COLUMNS) {
+    validateGateCsvRows(rows, files, headers)
     const parsed = parseConfigRows(rows)
     setGates(parsed.gates)
     if (typeof parsed.pointSize === 'number') setPointSize(parsed.pointSize)
@@ -1842,7 +1982,8 @@ function App() {
       if (!handle) return
       const file = await handle.getFile()
       const text = await file.text()
-      await applyLoadedConfigRows(parseCsvRows(text), file.name)
+      const parsedCsv = parseCsvDocument(text)
+      await applyLoadedConfigRows(parsedCsv.rows, file.name, parsedCsv.headers)
     } catch (err) {
       if (err?.name === 'AbortError') {
         setStatus('Load cancelled')
@@ -1856,7 +1997,8 @@ function App() {
     if (!file) return
     try {
       const text = await file.text()
-      await applyLoadedConfigRows(parseCsvRows(text), file.name)
+      const parsedCsv = parseCsvDocument(text)
+      await applyLoadedConfigRows(parsedCsv.rows, file.name, parsedCsv.headers)
     } catch (err) {
       setStatus(`Could not load gate CSV: ${err.message}`)
     } finally {
@@ -1919,7 +2061,30 @@ function App() {
             />
             <button title="Save gates as CSV" onClick={() => saveConfigAsCsv()}><Save size={17} /> Save</button>
             <button title="Load gates from CSV" onClick={() => loadConfigFromPicker()}><FolderOpen size={17} /> Load</button>
-            <button title="Export and close" className="confirm" onClick={() => setShowConfirmModal(true)}><CheckCircle2 size={18} /> Confirm</button>
+            <span
+              className="confirm-wrapper"
+              onMouseEnter={() => !canConfirm && setShowConfirmIssues(true)}
+              onMouseLeave={() => setShowConfirmIssues(false)}
+              onFocus={() => !canConfirm && setShowConfirmIssues(true)}
+              onBlur={() => setShowConfirmIssues(false)}
+            >
+              <button
+                title={canConfirm ? 'Export and close' : 'Finish required gates before confirming'}
+                className="confirm"
+                disabled={!canConfirm}
+                onClick={() => { if (canConfirm) setShowConfirmModal(true) }}
+              >
+                <CheckCircle2 size={18} /> Confirm
+              </button>
+              {!canConfirm && showConfirmIssues && (
+                <div className="confirm-tooltip" role="status">
+                  <strong>Cannot confirm yet</strong>
+                  {confirmIssueLines.map((line) => (
+                    <span key={line}>{line}</span>
+                  ))}
+                </div>
+              )}
+            </span>
           </div>
         </header>
 
@@ -2040,6 +2205,7 @@ function App() {
             xDomain={domainForChannel(singletAxes.x, domains.fsc_h)}
             yDomain={domainForChannel(singletAxes.y, domains.fsc_a)}
             statsText={singletGate ? `${singletSummary.count.toLocaleString()} (${singletSummary.pct.toFixed(1)}%)` : null}
+            warningText={singletWarningText}
             drawActive={drawActive}
             pointSize={pointSize}
             onContextGate={(x, y) => setContextMenu({ x, y, gateKey: gates[`singlet:${selected}`] ? `singlet:${selected}` : `singlet:${controlType}` })}
@@ -2120,6 +2286,7 @@ function App() {
                 positiveGate ? `Pos ${positiveSummary.count.toLocaleString()} (${positiveSummary.pct.toFixed(1)}%)` : null,
                 negativeGate ? `Neg ${negativeSummary.count.toLocaleString()} (${negativeSummary.pct.toFixed(1)}%)` : null,
               ].filter(Boolean).join(' · ') || null}
+              warningText={positiveWarningText}
               drawActive={drawActive}
               pointSize={pointSize}
               onContextGate={(x, y, key) => setContextMenu({ x, y, gateKey: key || histogramGateKey(histogramGateType, selected) })}
@@ -2180,7 +2347,7 @@ function App() {
             gates[contextMenu.gateKey].scope === 'cells' || gates[contextMenu.gateKey].scope === 'beads' ? (
               <button onClick={makeFileSpecific}><FileDown size={15} /> Make file specific</button>
             ) : (
-              <button onClick={useGlobalGate}><Upload size={15} /> Use global gate</button>
+              <button onClick={useGlobalGate}><Upload size={15} /> Make gate global</button>
             )
           )}
           <button onClick={clearContextGate}><Eraser size={15} /> Clear gate</button>
@@ -2194,7 +2361,7 @@ function App() {
             <p>Are you sure you want to save all gate configurations and exit the Gating GUI?</p>
             <div className="confirm-modal-actions">
               <button className="cancel-btn" onClick={() => setShowConfirmModal(false)}>Cancel</button>
-              <button className="confirm-btn" onClick={() => { setShowConfirmModal(false); saveConfig(true) }}>Confirm & Exit</button>
+              <button className="confirm-btn" disabled={!canConfirm} onClick={() => { if (canConfirm) { setShowConfirmModal(false); saveConfig(true) } }}>Confirm & Exit</button>
             </div>
           </div>
         </div>
