@@ -63,7 +63,6 @@ from the project directory created above.
 control_file <- file.path(project_dir, "fcs_mapping.csv")
 auto_control_df <- create_control_file(
   input_folder = file.path(project_dir, "scc"),
-  include_af_folder = FALSE,
   cytometer = "Aurora",
   output_file = file.path(project_dir, "fcs_mapping_auto.csv")
 )
@@ -118,6 +117,7 @@ ctrl <- unmix_controls(
   cytometer = "Aurora",
   output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls"),
   unmixing_method = "Spectreasy",
+  manual_gating = FALSE,
   unmix_scatter_panel_size_mm = 30,
   save_qc_plots = TRUE,
   seed = 1

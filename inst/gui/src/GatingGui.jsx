@@ -30,6 +30,7 @@ const CONFIG_NAME = 'ssc_gate_config.csv'
 const GUI_MODULE = 'control_gating'
 const DEFAULT_EVENT_COUNT = 50000
 const EVENT_COUNT_VERSION = 2
+const AXIS_SETTINGS_VERSION = 2
 const EVENT_COUNT_STEPS = [1000, 2000, 3000, 5000, 10000, 20000, 50000, 100000]
 const DEFAULT_HISTOGRAM_BINS = 100
 const HISTOGRAM_BIN_MIN = 5
@@ -145,7 +146,7 @@ function TransformDropdown({ value, onChange }) {
                     setOpen(false)
                   }}
                 >
-                  <span className="transform-check">{selected ? <Check size={18} /> : null}</span>
+                  <span className="transform-check">{selected ? <Check size={14} /> : null}</span>
                   {item.label}
                 </button>
               )
@@ -295,6 +296,103 @@ function cleanVertices(vertices) {
     .filter((vertex) => Number.isFinite(vertex.x) && Number.isFinite(vertex.y))
 }
 
+function csvEscape(value) {
+  const clean = value === null || value === undefined ? '' : String(value)
+  return `"${clean.replace(/"/g, '""')}"`
+}
+
+function gateRowsToCsv(rows) {
+  const columns = ['gate_type', 'scope', 'filename', 'x_channel', 'y_channel', 'plot_mode', 'vertex_index', 'x', 'y']
+  const lines = [
+    columns.map(csvEscape).join(','),
+    ...rows.map((row) => columns.map((column) => csvEscape(row?.[column] ?? '')).join(',')),
+  ]
+  return `${lines.join('\n')}\n`
+}
+
+function parseCsvRows(text) {
+  const rows = []
+  let row = []
+  let field = ''
+  let inQuotes = false
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i]
+    const next = text[i + 1]
+
+    if (inQuotes) {
+      if (char === '"' && next === '"') {
+        field += '"'
+        i += 1
+      } else if (char === '"') {
+        inQuotes = false
+      } else {
+        field += char
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inQuotes = true
+    } else if (char === ',') {
+      row.push(field)
+      field = ''
+    } else if (char === '\n') {
+      row.push(field)
+      rows.push(row)
+      row = []
+      field = ''
+    } else if (char !== '\r') {
+      field += char
+    }
+  }
+
+  if (field.length || row.length) {
+    row.push(field)
+    rows.push(row)
+  }
+  if (rows.length === 0) return []
+
+  const headers = rows[0].map((header) => header.trim())
+  return rows.slice(1)
+    .filter((values) => values.some((value) => String(value || '').trim().length > 0))
+    .map((values) => {
+      const out = {}
+      headers.forEach((header, index) => {
+        if (header) out[header] = values[index] ?? ''
+      })
+      return out
+    })
+}
+
+async function saveCsvWithSystemPicker(filename, csvText) {
+  const savePicker = window.showSaveFilePicker
+  if (typeof savePicker === 'function') {
+    const handle = await savePicker({
+      suggestedName: filename,
+      types: [{
+        description: 'CSV files',
+        accept: { 'text/csv': ['.csv'] },
+      }],
+    })
+    const writable = await handle.createWritable()
+    await writable.write(new Blob([csvText], { type: 'text/csv;charset=utf-8' }))
+    await writable.close()
+    return handle.name || filename
+  }
+
+  const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+  return filename
+}
+
 function gateHasValidShape(gate) {
   if (gate?.mode === 'blocked') return true
   const vertices = cleanVertices(gate?.vertices)
@@ -305,7 +403,6 @@ function gateHasValidShape(gate) {
 }
 
 function buildRows(gates, files) {
-  const created = new Date().toISOString()
   const rows = []
   Object.values(gates).forEach((gate) => {
     if (gate?.mode === 'blocked') {
@@ -319,7 +416,6 @@ function buildRows(gates, files) {
         vertex_index: 0,
         x: '',
         y: '',
-        created_at: created,
       })
       return
     }
@@ -335,7 +431,6 @@ function buildRows(gates, files) {
         vertex_index: index + 1,
         x: vertex.x,
         y: vertex.y,
-        created_at: created,
       })
     })
   })
@@ -351,7 +446,6 @@ function buildRows(gates, files) {
         vertex_index: 0,
         x: '',
         y: '',
-        created_at: created,
       })
     }
   })
@@ -387,13 +481,17 @@ function parseConfigRows(rows) {
       }
     }
     if (row.plot_mode === 'blocked') return
-    if (Number(row.vertex_index) < 1) return
-    const vertex = { x: Number(row.x), y: Number(row.y) }
+    const vertexIndex = Number(row.vertex_index)
+    if (vertexIndex < 1) return
+    const vertex = { x: Number(row.x), y: Number(row.y), vertexIndex }
     if (Number.isFinite(vertex.x) && Number.isFinite(vertex.y)) {
       gates[key].vertices.push(vertex)
     }
   })
   Object.keys(gates).forEach((key) => {
+    gates[key].vertices = gates[key].vertices
+      .sort((a, b) => a.vertexIndex - b.vertexIndex)
+      .map(({ x, y }) => ({ x, y }))
     if (!gateHasValidShape(gates[key])) delete gates[key]
   })
   return { gates, pointSize, maxPoints: maxPoints === null ? null : normalizeEventCount(maxPoints) }
@@ -588,6 +686,8 @@ function GatePlot({
   onClear,
   onToggleHistogramGate,
 }) {
+  const plotRef = useRef(null)
+  const menuRef = useRef(null)
   const svgRef = useRef(null)
   const canvasRef = useRef(null)
   const [dragTarget, setDragTarget] = useState(null)
@@ -647,7 +747,11 @@ function GatePlot({
     const scaleY = PLOT_HEIGHT / box.height
     const sx = clamp((evt.clientX - box.left) * scaleX, PAD.left, PLOT_WIDTH - PAD.right)
     const sy = clamp((evt.clientY - box.top) * scaleY, PAD.top, PLOT_HEIGHT - PAD.bottom)
-    return { x: fromPlotX(xScale.fromScreen(sx)), y: yScale.fromScreen(sy) }
+    return {
+      x: fromPlotX(xScale.fromScreen(sx)),
+      y: yScale.fromScreen(sy),
+      plotX: xScale.fromScreen(sx)
+    }
   }
 
   function openAxisMenu(axis, evt) {
@@ -660,6 +764,22 @@ function GatePlot({
     onAxisChange?.(axis, channel)
     setAxisMenu(null)
   }
+
+  useEffect(() => {
+    if (!axisMenu) return
+    const closeAxisMenu = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setAxisMenu(null)
+      }
+    }
+    const timer = setTimeout(() => {
+      window.addEventListener('pointerdown', closeAxisMenu)
+    }, 0)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('pointerdown', closeAxisMenu)
+    }
+  }, [axisMenu])
 
   // Draw plot points onto Canvas
   useEffect(() => {
@@ -775,6 +895,7 @@ function GatePlot({
     if (dragTarget === null || lastMousePos === null || !dragTarget.gate?.vertices?.length) return
     const dx = currentPt.x - lastMousePos.x
     const dy = currentPt.y - lastMousePos.y
+    const dPlotX = currentPt.plotX - (lastMousePos.plotX ?? toPlotX(lastMousePos.x))
     setLastMousePos(currentPt)
 
     const dragMode = dragTarget.gate.mode
@@ -783,16 +904,28 @@ function GatePlot({
     const sourceVertices = dragPreviewVertices || dragTarget.gate.vertices
 
     if (dragKind === 'gate' || dragKind === 'separator') {
-      const newVertices = sourceVertices.map((v) => ({
-        x: v.x + dx,
-        y: is1D ? 0 : v.y + dy,
-      }))
+      const newVertices = sourceVertices.map((v) => {
+        if (is1D) {
+          const newPlotX = toPlotX(v.x) + dPlotX
+          return { x: fromPlotX(newPlotX), y: 0 }
+        }
+        return {
+          x: v.x + dx,
+          y: v.y + dy,
+        }
+      })
       setDragPreviewVertices(newVertices)
     } else if (typeof dragKind === 'number') {
       const newVertices = sourceVertices.map((v) => ({ ...v }))
-      const newPt = {
-        x: sourceVertices[dragKind].x + dx,
-        y: is1D ? 0 : sourceVertices[dragKind].y + dy,
+      let newPt
+      if (is1D) {
+        const newPlotX = toPlotX(sourceVertices[dragKind].x) + dPlotX
+        newPt = { x: fromPlotX(newPlotX), y: 0 }
+      } else {
+        newPt = {
+          x: sourceVertices[dragKind].x + dx,
+          y: sourceVertices[dragKind].y + dy,
+        }
       }
       newVertices[dragKind] = newPt
       setDragPreviewVertices(newVertices)
@@ -982,7 +1115,7 @@ function GatePlot({
         )}
       </div>
 
-      <div style={{ position: 'relative', width: '100%', aspectRatio: `${PLOT_WIDTH} / ${PLOT_HEIGHT}` }}>
+      <div ref={plotRef} style={{ position: 'relative', width: '100%', aspectRatio: `${PLOT_WIDTH} / ${PLOT_HEIGHT}` }}>
         {mode === 'scatter' && (
           <canvas
             ref={canvasRef}
@@ -1153,7 +1286,7 @@ function GatePlot({
           ))}
         </svg>
         {axisMenu && (
-          <div className={`axis-menu axis-menu-${axisMenu}`} onClick={(evt) => evt.stopPropagation()}>
+          <div ref={menuRef} className={`axis-menu axis-menu-${axisMenu}`} onClick={(evt) => evt.stopPropagation()}>
             {availableChannels.map((channel) => (
               <button
                 key={`${axisMenu}-${channel}`}
@@ -1197,6 +1330,7 @@ function App() {
   const [axisSettings, setAxisSettings] = useState({ cell: {}, singlet: {} })
   const [spectrum, setSpectrum] = useState(null)
   const [spectrumCache, setSpectrumCache] = useState({})
+  const loadInputRef = useRef(null)
 
   // Sync dark mode class to document body
   useEffect(() => {
@@ -1260,7 +1394,9 @@ function App() {
         if (typeof persisted.darkMode === 'boolean') setDarkMode(persisted.darkMode)
         if (typeof persisted.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(persisted.histogramBins))
         if (typeof persisted.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(persisted.histogramTransform))
-        if (persisted.axisSettings && typeof persisted.axisSettings === 'object') setAxisSettings(persisted.axisSettings)
+        if (persisted.axisSettings && typeof persisted.axisSettings === 'object' && persisted.axisSettingsVersion === AXIS_SETTINGS_VERSION) {
+          setAxisSettings(persisted.axisSettings)
+        }
         setGatesLoaded(true)
         setGuiStateLoaded(true)
         setStatus('Ready')
@@ -1276,7 +1412,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           module: GUI_MODULE,
-          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, darkMode, axisSettings }
+          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, darkMode, axisSettings, axisSettingsVersion: AXIS_SETTINGS_VERSION }
         })
       }).catch(() => {})
     }, 350)
@@ -1618,7 +1754,7 @@ function App() {
   async function saveConfig(closeAfter = false, choosePath = false) {
     const rows = buildRows(gates, files)
     try {
-      const saved = await useApi(choosePath ? '/gate_config_save_dialog' : '/gate_config', {
+      const saved = await useApi('/gate_config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: CONFIG_NAME, rows }),
@@ -1643,27 +1779,88 @@ function App() {
     }
   }
 
-  async function loadConfig() {
+  async function saveConfigAsCsv() {
+    const rows = buildRows(gates, files)
+    const csvText = gateRowsToCsv(rows)
+    let filename = CONFIG_NAME
     try {
-      const data = await useApi('/gate_config_load_dialog')
-      if (data.cancelled) {
-        setStatus(data.message || 'Load cancelled')
-        return
+      filename = await saveCsvWithSystemPicker(CONFIG_NAME, csvText)
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        setStatus('Save cancelled')
+      } else {
+        setStatus(`Could not open save picker: ${err.message}`)
       }
-      if (data.success === false) {
-        setStatus(data.message || 'Could not load gate CSV')
-        return
-      }
-      const parsed = parseConfigRows(data.rows || [])
-      setGates(parsed.gates)
-      if (typeof parsed.pointSize === 'number') setPointSize(parsed.pointSize)
-      if (typeof parsed.maxPoints === 'number') setMaxPoints(normalizeEventCount(parsed.maxPoints))
-      setDraft([])
-      setStatus(`Loaded ${data.rows?.length || 0} rows from ${data.path}`)
+      return
+    }
+
+    setStatus('Saving gate CSV')
+    try {
+      const saved = await useApi('/gate_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: CONFIG_NAME, rows }),
+      }).catch(() => null)
       const cfg = await useApi('/gate_configs')
       setConfigs(cfg.configs || [])
+      setStatus(`Saved ${saved?.rows ?? rows.length} rows to ${filename}`)
+    } catch (err) {
+      setStatus(`Saved ${rows.length} rows to ${filename}; backend sync failed: ${err.message}`)
+    }
+  }
+
+  async function applyLoadedConfigRows(rows, sourceName) {
+    const parsed = parseConfigRows(rows)
+    setGates(parsed.gates)
+    if (typeof parsed.pointSize === 'number') setPointSize(parsed.pointSize)
+    if (typeof parsed.maxPoints === 'number') setMaxPoints(normalizeEventCount(parsed.maxPoints))
+    setDraft([])
+    await useApi('/gate_config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: CONFIG_NAME, rows }),
+    }).catch(() => null)
+    const cfg = await useApi('/gate_configs')
+    setConfigs(cfg.configs || [])
+    setStatus(`Loaded ${rows.length} rows from ${sourceName}`)
+  }
+
+  async function loadConfigFromPicker() {
+    const openPicker = window.showOpenFilePicker
+    if (typeof openPicker !== 'function') {
+      loadInputRef.current?.click()
+      return
+    }
+    try {
+      const [handle] = await openPicker({
+        multiple: false,
+        types: [{
+          description: 'CSV files',
+          accept: { 'text/csv': ['.csv'] },
+        }],
+      })
+      if (!handle) return
+      const file = await handle.getFile()
+      const text = await file.text()
+      await applyLoadedConfigRows(parseCsvRows(text), file.name)
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        setStatus('Load cancelled')
+      } else {
+        setStatus(`Could not load gate CSV: ${err.message}`)
+      }
+    }
+  }
+
+  async function loadConfigFromFile(file) {
+    if (!file) return
+    try {
+      const text = await file.text()
+      await applyLoadedConfigRows(parseCsvRows(text), file.name)
     } catch (err) {
       setStatus(`Could not load gate CSV: ${err.message}`)
+    } finally {
+      if (loadInputRef.current) loadInputRef.current.value = ''
     }
   }
 
@@ -1713,8 +1910,15 @@ function App() {
             <button title="Settings" onClick={() => setShowSettingsModal(true)}>
               <Settings size={17} />
             </button>
-            <button title="Save gates as CSV" onClick={() => saveConfig(false, true)}><Save size={17} /> Save</button>
-            <button title="Load gates from CSV" onClick={() => loadConfig()}><FolderOpen size={17} /> Load</button>
+            <input
+              ref={loadInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden-file-input"
+              onChange={(event) => loadConfigFromFile(event.target.files?.[0] || null)}
+            />
+            <button title="Save gates as CSV" onClick={() => saveConfigAsCsv()}><Save size={17} /> Save</button>
+            <button title="Load gates from CSV" onClick={() => loadConfigFromPicker()}><FolderOpen size={17} /> Load</button>
             <button title="Export and close" className="confirm" onClick={() => setShowConfirmModal(true)}><CheckCircle2 size={18} /> Confirm</button>
           </div>
         </header>

@@ -219,6 +219,10 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.hidden-file-input {
+  display: none;
+}
+
 .icon-button {
   width: 36px;
   padding: 0;
@@ -368,8 +372,10 @@ button:disabled {
   z-index: 12;
   display: grid;
   gap: 4px;
-  max-height: 190px;
-  overflow: auto;
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   min-width: 128px;
   padding: 6px;
   border: 1px solid var(--line);
@@ -377,6 +383,11 @@ button:disabled {
   background: var(--panel);
   box-shadow: 0 14px 34px rgba(23, 32, 29, 0.18);
   animation: fadeIn 0.14s ease-out;
+}
+
+.axis-menu::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .axis-menu-x {
@@ -616,17 +627,17 @@ button.on {
 
 .transform-dropdown-control {
   width: 100%;
-  min-height: 50px;
+  min-height: 36px;
   display: grid;
-  grid-template-columns: minmax(116px, max-content) minmax(0, 1fr);
+  grid-template-columns: minmax(84px, max-content) minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  padding: 4px 8px 4px 14px;
+  gap: 8px;
+  padding: 3px 6px 3px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   color: var(--muted);
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -637,14 +648,14 @@ button.on {
 
 .transform-select {
   width: 100%;
-  min-height: 42px;
+  min-height: 30px;
   justify-content: space-between;
-  padding: 0 44px 0 12px;
-  border-radius: 8px;
+  padding: 0 32px 0 10px;
+  border-radius: 6px;
   border-color: var(--line);
   background: var(--panel);
   color: var(--ink);
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 800;
   position: relative;
 }
@@ -652,10 +663,10 @@ button.on {
 .transform-select::after {
   content: "";
   position: absolute;
-  right: 14px;
+  right: 12px;
   top: 50%;
-  width: 12px;
-  height: 12px;
+  width: 9px;
+  height: 9px;
   border-right: 2px solid var(--ink);
   border-bottom: 2px solid var(--ink);
   transform: translateY(-65%) rotate(45deg);
@@ -664,30 +675,30 @@ button.on {
 .transform-menu {
   position: absolute;
   z-index: 40;
-  top: calc(100% + 8px);
-  left: -12px;
-  min-width: min(292px, calc(100vw - 40px));
+  top: calc(100% + 5px);
+  left: -6px;
+  min-width: min(190px, calc(100vw - 40px));
   display: grid;
   gap: 0;
-  padding: 10px;
+  padding: 6px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 18px;
+  border-radius: 12px;
   background: rgba(58, 58, 53, 0.92);
-  box-shadow: 0 14px 34px rgba(23, 32, 29, 0.38);
+  box-shadow: 0 10px 24px rgba(23, 32, 29, 0.32);
   backdrop-filter: blur(10px);
   overflow: hidden;
 }
 
 .transform-menu button {
   width: 100%;
-  min-height: 40px;
+  min-height: 30px;
   justify-content: flex-start;
-  gap: 10px;
+  gap: 7px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 7px;
   background: transparent;
   color: #f5f1ea;
-  font-size: 17px;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -697,7 +708,7 @@ button.on {
 }
 
 .transform-check {
-  width: 20px;
+  width: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

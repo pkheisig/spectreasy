@@ -186,67 +186,173 @@ set_gate_file <- function(path) {
     path
 }
 
-gate_csv_filetypes <- function() {
-    "{{CSV files} {.csv}} {{All files} *}"
-}
-
 gate_working_dir <- function() {
     normalizePath(getwd(), mustWork = FALSE)
 }
 
-gate_has_csv_file_picker <- function() {
-    rstudio_ok <- FALSE
-    if (requireNamespace("rstudioapi", quietly = TRUE)) {
-        rstudio_ok <- tryCatch(rstudioapi::isAvailable(), error = function(e) FALSE)
-    }
-    tcltk_ok <- requireNamespace("tcltk", quietly = TRUE) && isTRUE(capabilities("tcltk"))
-    isTRUE(rstudio_ok) || isTRUE(tcltk_ok)
+gate_applescript_quote <- function(x) {
+    x <- gsub("\\\\", "\\\\\\\\", as.character(x)[1])
+    x <- gsub('"', '\\\\"', x, fixed = TRUE)
+    paste0('"', x, '"')
 }
 
-gate_pick_csv_file <- function(mode = c("open", "save"), title = "Select gate CSV") {
+gate_has_system_file_picker <- function() {
+    sysname <- Sys.info()[["sysname"]]
+    if (identical(sysname, "Darwin")) return(nzchar(Sys.which("osascript")))
+    if (identical(sysname, "Windows")) return(nzchar(Sys.which("powershell")))
+    if (identical(sysname, "Linux")) return(nzchar(Sys.which("zenity")) || nzchar(Sys.which("kdialog")))
+    FALSE
+}
+
+gate_powershell_quote <- function(x) {
+    paste0("'", gsub("'", "''", as.character(x)[1], fixed = TRUE), "'")
+}
+
+gate_pick_csv_file_windows <- function(mode, initial_dir, default_name) {
+    title <- if (mode == "save") "Save gate CSV" else "Load gate CSV"
+    dialog_class <- if (mode == "save") "SaveFileDialog" else "OpenFileDialog"
+    ps_cmd <- paste0(
+        "Add-Type -AssemblyName System.Windows.Forms; ",
+        "$f = New-Object System.Windows.Forms.", dialog_class, "; ",
+        "$f.Title = ", gate_powershell_quote(title), "; ",
+        "$f.Filter = 'CSV files (*.csv)|*.csv'; ",
+        "$f.InitialDirectory = ", gate_powershell_quote(initial_dir), "; ",
+        if (mode == "save") paste0("$f.FileName = ", gate_powershell_quote(default_name), "; "),
+        "if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $f.FileName } else { write-output 'CANCEL' }"
+    )
+    res <- tryCatch(
+        system2("powershell", c("-NoProfile", "-Command", ps_cmd), stdout = TRUE, stderr = FALSE),
+        error = function(e) character()
+    )
+    if (length(res) > 0) {
+        return(trimws(res[length(res)]))
+    }
+    character()
+}
+
+gate_pick_csv_file_linux <- function(mode, initial_dir, default_name) {
+    if (nzchar(Sys.which("zenity"))) {
+        args <- c("--file-selection", "--title", if (mode == "save") "Save gate CSV" else "Load gate CSV")
+        if (mode == "save") {
+            args <- c(args, "--save", "--confirm-overwrite", "--filename", file.path(initial_dir, default_name))
+        } else {
+            args <- c(args, "--filename", initial_dir)
+        }
+        args <- c(args, "--file-filter=CSV files (*.csv) | *.csv")
+        res <- tryCatch(
+            system2("zenity", args, stdout = TRUE, stderr = TRUE),
+            error = function(e) character()
+        )
+        status <- attr(res, "status")
+        if (identical(status, 1L)) return("CANCEL")
+        if (length(res) > 0 && (is.null(status) || identical(status, 0L))) {
+            return(trimws(res[1]))
+        }
+    } else if (nzchar(Sys.which("kdialog"))) {
+        args <- if (mode == "save") {
+            c("--getsavefilename", file.path(initial_dir, default_name), "*.csv", "--title", "Save gate CSV")
+        } else {
+            c("--getopenfilename", initial_dir, "*.csv", "--title", "Load gate CSV")
+        }
+        res <- tryCatch(
+            system2("kdialog", args, stdout = TRUE, stderr = TRUE),
+            error = function(e) character()
+        )
+        status <- attr(res, "status")
+        if (identical(status, 1L)) return("CANCEL")
+        if (length(res) > 0 && (is.null(status) || identical(status, 0L))) {
+            return(trimws(res[1]))
+        }
+    }
+    character()
+}
+
+gate_pick_csv_file <- function(mode = c("open", "save")) {
     mode <- match.arg(mode)
     initial_dir <- gate_working_dir()
-    selected <- ""
+    if (!dir.exists(initial_dir)) {
+        initial_dir <- gate_working_dir()
+    }
+    default_name <- basename(get_gate_file())
+    sysname <- Sys.info()[["sysname"]]
 
-    if (requireNamespace("rstudioapi", quietly = TRUE)) {
-        available <- tryCatch(rstudioapi::isAvailable(), error = function(e) FALSE)
-        if (isTRUE(available)) {
-            selected <- tryCatch(
-                rstudioapi::selectFile(
-                    caption = title,
-                    label = if (mode == "save") "Save" else "Load",
-                    path = initial_dir,
-                    filter = "CSV Files (*.csv)",
-                    existing = mode == "open"
-                ),
-                error = function(e) ""
+    if (identical(sysname, "Darwin")) {
+        if (nzchar(Sys.which("osascript"))) {
+            prompt <- if (mode == "save") "Save gate CSV" else "Load gate CSV"
+            action <- if (mode == "save") {
+                paste0(
+                    "choose file name with prompt ", gate_applescript_quote(prompt),
+                    " default name ", gate_applescript_quote(default_name),
+                    " default location defaultFolder"
+                )
+            } else {
+                paste0(
+                    "choose file with prompt ", gate_applescript_quote(prompt),
+                    " default location defaultFolder"
+                )
+            }
+            fallback_action <- if (mode == "save") {
+                paste0(
+                    "choose file name with prompt ", gate_applescript_quote(prompt),
+                    " default name ", gate_applescript_quote(default_name)
+                )
+            } else {
+                paste0(
+                    "choose file with prompt ", gate_applescript_quote(prompt)
+                )
+            }
+            script <- c(
+                "try",
+                paste0("  set defaultFolder to POSIX file ", gate_applescript_quote(paste0(initial_dir, "/")), " as alias"),
+                paste0("  set chosenPath to ", action),
+                "on error err number errNum",
+                "  if errNum is -128 then",
+                "    error number -128",
+                "  else",
+                paste0("    set chosenPath to ", fallback_action),
+                "  end if",
+                "end try",
+                "POSIX path of chosenPath"
             )
+            selected <- tryCatch(
+                system2("osascript", as.vector(rbind("-e", script)), stdout = TRUE, stderr = TRUE),
+                error = function(e) character()
+            )
+            status <- attr(selected, "status")
+            if (any(grepl("User canceled", selected, ignore.case = TRUE))) {
+                return("CANCEL")
+            }
+            if (length(selected) > 0 && (is.null(status) || identical(status, 0L))) {
+                path <- trimws(selected[length(selected)])
+                if (nzchar(path)) {
+                    return(normalizePath(path, mustWork = mode == "open"))
+                }
+            }
+            return("")
         }
     }
 
-    if (!nzchar(selected) && requireNamespace("tcltk", quietly = TRUE)) {
-        selected <- tryCatch({
-            if (mode == "save") {
-                as.character(tcltk::tkgetSaveFile(
-                    initialdir = initial_dir,
-                    initialfile = basename(get_gate_file()),
-                    defaultextension = ".csv",
-                    filetypes = gate_csv_filetypes(),
-                    title = title
-                ))
-            } else {
-                as.character(tcltk::tkgetOpenFile(
-                    initialdir = initial_dir,
-                    filetypes = gate_csv_filetypes(),
-                    title = title
-                ))
+    if (identical(sysname, "Windows")) {
+        if (nzchar(Sys.which("powershell"))) {
+            path <- gate_pick_csv_file_windows(mode, initial_dir, default_name)
+            if (identical(path, "CANCEL")) return("CANCEL")
+            if (nzchar(path)) {
+                return(normalizePath(path, mustWork = mode == "open"))
             }
-        }, error = function(e) "")
+            return("")
+        }
     }
 
-    selected <- trimws(as.character(selected)[1])
-    if (is.na(selected) || !nzchar(selected)) return("")
-    normalizePath(selected, mustWork = mode == "open")
+    if (identical(sysname, "Linux")) {
+        path <- gate_pick_csv_file_linux(mode, initial_dir, default_name)
+        if (identical(path, "CANCEL")) return("CANCEL")
+        if (nzchar(path)) {
+            return(normalizePath(path, mustWork = mode == "open"))
+        }
+        return("")
+    }
+
+    ""
 }
 
 gate_ensure_csv_extension <- function(path) {
@@ -259,7 +365,6 @@ gate_ensure_csv_extension <- function(path) {
 gate_write_config_csv <- function(rows, path) {
     rows <- gate_normalize_config_rows(rows)
     if (nrow(rows) == 0) rows <- gate_empty_config()
-    if (nrow(rows) > 0) rows$created_at <- as.character(Sys.time())
     path <- gate_ensure_csv_extension(path)
     dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
     tmp <- tempfile("gate_config_", tmpdir = dirname(path), fileext = ".csv")
@@ -295,7 +400,6 @@ gate_empty_config <- function() {
         vertex_index = integer(),
         x = numeric(),
         y = numeric(),
-        created_at = character(),
         stringsAsFactors = FALSE
     )
 }
@@ -319,7 +423,7 @@ gate_normalize_config_rows <- function(rows) {
     }
     rows <- rows[, colnames(template), drop = FALSE]
 
-    char_cols <- c("gate_type", "scope", "filename", "x_channel", "y_channel", "plot_mode", "created_at")
+    char_cols <- c("gate_type", "scope", "filename", "x_channel", "y_channel", "plot_mode")
     rows[char_cols] <- lapply(rows[char_cols], function(x) {
         x <- as.character(x)
         x[is.na(x)] <- ""
@@ -824,34 +928,40 @@ function(req) {
     list(success = TRUE, path = written$path, rows = written$rows)
 }
 
-#* Save gate CSV with file picker
+#* Save gate CSV with a system file picker
 #* @post /gate_config_save_dialog
 function(req) {
     body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
-    if (!gate_has_csv_file_picker()) {
-        return(list(success = FALSE, cancelled = FALSE, message = "No R file picker is available in this session."))
+    if (!gate_has_system_file_picker()) {
+        return(list(success = FALSE, cancelled = FALSE, fallback = TRUE, message = "No backend system file picker is available."))
     }
-    path <- gate_pick_csv_file(mode = "save", title = "Save gate CSV")
+    path <- gate_pick_csv_file(mode = "save")
+    if (identical(path, "CANCEL")) {
+        return(list(success = FALSE, cancelled = TRUE, fallback = FALSE, message = "Save cancelled."))
+    }
     if (!nzchar(path)) {
-        return(list(success = FALSE, cancelled = TRUE, message = "Save cancelled."))
+        return(list(success = FALSE, cancelled = FALSE, fallback = TRUE, message = "System file picker failed. Falling back to browser picker."))
     }
     written <- gate_write_config_csv(body$rows, path)
     set_gate_file(written$path)
     list(success = TRUE, cancelled = FALSE, path = written$path, rows = written$rows)
 }
 
-#* Load gate CSV with file picker
+#* Load gate CSV with a system file picker
 #* @get /gate_config_load_dialog
 function() {
-    if (!gate_has_csv_file_picker()) {
-        return(list(success = FALSE, cancelled = FALSE, message = "No R file picker is available in this session."))
+    if (!gate_has_system_file_picker()) {
+        return(list(success = FALSE, cancelled = FALSE, fallback = TRUE, message = "No backend system file picker is available."))
     }
-    path <- gate_pick_csv_file(mode = "open", title = "Load gate CSV")
+    path <- gate_pick_csv_file(mode = "open")
+    if (identical(path, "CANCEL")) {
+        return(list(success = FALSE, cancelled = TRUE, fallback = FALSE, message = "Load cancelled."))
+    }
     if (!nzchar(path)) {
-        return(list(success = FALSE, cancelled = TRUE, message = "Load cancelled."))
+        return(list(success = FALSE, cancelled = FALSE, fallback = TRUE, message = "System file picker failed. Falling back to browser picker."))
     }
     if (!file.exists(path)) {
-        return(list(success = FALSE, cancelled = FALSE, message = paste("File does not exist:", path)))
+        return(list(success = FALSE, cancelled = FALSE, fallback = FALSE, message = paste("File does not exist:", path)))
     }
     rows <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
     set_gate_file(path)
