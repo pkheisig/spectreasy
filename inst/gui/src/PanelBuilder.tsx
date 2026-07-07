@@ -552,6 +552,7 @@ const PanelBuilder = () => {
     const [importing, setImporting] = useState(false);
     const [hoveredFluor, setHoveredFluor] = useState<string | null>(null);
     const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('spectreasy_theme') as 'light' | 'dark') || 'light');
+    const [guiStateLoaded, setGuiStateLoaded] = useState(false);
 
     useEffect(() => {
         localStorage.setItem('spectreasy_cytometer', getCytometerName(cytometer));
@@ -572,6 +573,24 @@ const PanelBuilder = () => {
     useEffect(() => {
         localStorage.setItem('spectreasy_markers', JSON.stringify(markers));
     }, [markers]);
+
+    useEffect(() => {
+        if (!guiStateLoaded) return;
+        const timer = window.setTimeout(() => {
+            void axios.post(`${API_BASE}/gui_state`, {
+                module: 'panel_builder',
+                config_json: {
+                    cytometer: getCytometerName(cytometer),
+                    configuration: getCytometerName(configuration),
+                    theme,
+                    slots,
+                    markers,
+                    tab
+                }
+            }).catch(() => null);
+        }, 500);
+        return () => window.clearTimeout(timer);
+    }, [cytometer, configuration, theme, slots, markers, tab, guiStateLoaded]);
 
     const selected = useMemo(() => slots.filter(Boolean), [slots]);
 
@@ -678,16 +697,28 @@ const PanelBuilder = () => {
     useEffect(() => {
         const boot = async () => {
             try {
+                const stateRes = await axios.get(`${API_BASE}/gui_state?module=panel_builder`).catch(() => null);
+                const saved = stateRes?.data?.config || {};
+                const savedCytometer = typeof saved.cytometer === 'string' ? getCytometerName(saved.cytometer) : cytometer;
+                const savedConfiguration = typeof saved.configuration === 'string' ? getCytometerName(saved.configuration) : configuration;
+                const savedSlots = Array.isArray(saved.slots) ? saved.slots.map(String) : slots;
+                const savedMarkers = saved.markers && typeof saved.markers === 'object' ? saved.markers as Record<number, string> : markers;
+                if (saved.theme === 'light' || saved.theme === 'dark') setTheme(saved.theme);
+                if (saved.tab === 'panel' || saved.tab === 'similarity' || saved.tab === 'signatures') setTab(saved.tab);
+                setSlots(savedSlots);
+                slotsRef.current = savedSlots;
+                setMarkers(savedMarkers);
                 const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, {
-                    cytometer,
-                    configuration,
-                    fluorophores: slots.filter(Boolean),
+                    cytometer: savedCytometer,
+                    configuration: savedConfiguration,
+                    fluorophores: savedSlots.filter(Boolean),
                 });
                 if (res.data?.error) throw new Error(String(res.data.error));
                 const initial = res.data as PanelPayload;
                 setPayload(initial);
                 setCytometer(getCytometerName(initial.cytometer));
                 setConfiguration(getCytometerName(initial.configuration));
+                setGuiStateLoaded(true);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Could not load spectral libraries.');
             } finally {

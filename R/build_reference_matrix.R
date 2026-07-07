@@ -488,6 +488,7 @@
     out_path <- normalizePath(output_folder, mustWork = FALSE)
     if (isTRUE(save_qc_plots)) {
         dir.create(file.path(out_path, "fsc_ssc"), showWarnings = FALSE, recursive = TRUE)
+        dir.create(file.path(out_path, "singlet"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "histogram"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "intensity_scatter"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "spectrum"), showWarnings = FALSE, recursive = TRUE)
@@ -557,6 +558,165 @@
     }
 
     primary
+}
+
+.read_reference_manual_gates <- function(manual_gate_file = NULL) {
+    if (is.null(manual_gate_file) || length(manual_gate_file) == 0 || is.na(manual_gate_file[1])) return(NULL)
+    path <- normalizePath(as.character(manual_gate_file)[1], mustWork = FALSE)
+    if (!file.exists(path)) return(NULL)
+    df <- tryCatch(utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE), error = function(e) NULL)
+    required <- c("gate_type", "scope", "filename", "x_channel", "y_channel", "plot_mode", "vertex_index", "x", "y")
+    if (is.null(df) || nrow(df) == 0 || !all(required %in% colnames(df))) return(NULL)
+    keep <- df$gate_type != "setting" &
+        (df$plot_mode == "blocked" | (df$plot_mode != "missing" & suppressWarnings(as.integer(df$vertex_index)) > 0))
+    df <- df[keep, , drop = FALSE]
+    if (nrow(df) == 0) return(NULL)
+    split(df, paste(df$gate_type, df$scope, df$filename, sep = "\r"))
+}
+
+.reference_manual_gate_key <- function(gate_type, scope, filename = "") {
+    paste(gate_type, scope, filename, sep = "\r")
+}
+
+.reference_manual_gate <- function(manual_gates, gate_type, filename, sample_type) {
+    if (is.null(manual_gates)) return(NULL)
+    keys <- c(
+        .reference_manual_gate_key(gate_type, "file", filename),
+        .reference_manual_gate_key(gate_type, sample_type, ""),
+        .reference_manual_gate_key(gate_type, "cells", "")
+    )
+    hit <- keys[keys %in% names(manual_gates)][1]
+    if (is.na(hit) || !nzchar(hit)) return(NULL)
+    gate <- manual_gates[[hit]]
+    gate[order(suppressWarnings(as.integer(gate$vertex_index))), , drop = FALSE]
+}
+
+.reference_gate_vertices <- function(gate) {
+    if (is.null(gate) || nrow(gate) == 0) return(NULL)
+    out <- data.frame(
+        x = suppressWarnings(as.numeric(gate$x)),
+        y = suppressWarnings(as.numeric(gate$y))
+    )
+    out <- out[stats::complete.cases(out), , drop = FALSE]
+    if (nrow(out) == 0) return(NULL)
+    out
+}
+
+.reference_gate_channel <- function(gate, column, fallback, raw_data) {
+    channel <- if (!is.null(gate) && column %in% colnames(gate)) as.character(gate[[column]][1]) else fallback
+    if (is.na(channel) || !nzchar(channel) || !channel %in% colnames(raw_data)) fallback else channel
+}
+
+.apply_reference_manual_scatter_gates <- function(raw_data, sample_type, filename, manual_gates) {
+    scatter <- .resolve_reference_scatter_channels(raw_data)
+    if (is.null(scatter)) return(NULL)
+    fsc <- scatter$fsc
+    ssc <- scatter$ssc
+    fsc_h <- sub("-A$", "-H", fsc, ignore.case = TRUE)
+    if (!fsc_h %in% colnames(raw_data)) {
+        fsc_h <- grep("^FSC.*-H$", colnames(raw_data), value = TRUE, ignore.case = TRUE)[1]
+    }
+
+    keep <- rep(TRUE, nrow(raw_data))
+    final_gate <- NULL
+    cell_gate <- .reference_manual_gate(manual_gates, "cell", filename, sample_type)
+    cell_vertices <- .reference_gate_vertices(cell_gate)
+    cell_x <- fsc
+    cell_y <- ssc
+    if (!is.null(cell_vertices) && nrow(cell_vertices) >= 3) {
+        cell_x <- .reference_gate_channel(cell_gate, "x_channel", fsc, raw_data)
+        cell_y <- .reference_gate_channel(cell_gate, "y_channel", ssc, raw_data)
+        keep <- keep & sp::point.in.polygon(raw_data[, cell_x], raw_data[, cell_y], cell_vertices$x, cell_vertices$y) > 0
+        if (identical(cell_x, fsc) && identical(cell_y, ssc)) {
+            final_gate <- cell_vertices
+        }
+    }
+    singlet_gate <- .reference_manual_gate(manual_gates, "singlet", filename, sample_type)
+    singlet_vertices <- .reference_gate_vertices(singlet_gate)
+    manual_attempted <- !is.null(cell_gate) || !is.null(singlet_gate)
+    singlet_x <- fsc_h
+    singlet_y <- fsc
+    if (!is.null(singlet_vertices) && nrow(singlet_vertices) >= 3 && !is.na(fsc_h) && fsc_h %in% colnames(raw_data)) {
+        singlet_x <- .reference_gate_channel(singlet_gate, "x_channel", fsc_h, raw_data)
+        singlet_y <- .reference_gate_channel(singlet_gate, "y_channel", fsc, raw_data)
+        keep <- keep & sp::point.in.polygon(raw_data[, singlet_x], raw_data[, singlet_y], singlet_vertices$x, singlet_vertices$y) > 0
+    }
+    if (sum(keep, na.rm = TRUE) < 10) return(NULL)
+    if (all(keep) && !manual_attempted) return(NULL)
+    gated_data <- raw_data[keep, , drop = FALSE]
+    if (is.null(final_gate)) {
+        x_min <- min(gated_data[, fsc], na.rm = TRUE)
+        x_max <- max(gated_data[, fsc], na.rm = TRUE)
+        y_min <- min(gated_data[, ssc], na.rm = TRUE)
+        y_max <- max(gated_data[, ssc], na.rm = TRUE)
+        final_gate <- data.frame(
+            x = c(x_min, x_max, x_max, x_min, x_min),
+            y = c(y_min, y_min, y_max, y_max, y_min)
+        )
+    }
+    list(
+        gated_data = gated_data,
+        final_gate = final_gate,
+        fsc = fsc,
+        ssc = ssc,
+        fsc_max = stats::quantile(raw_data[, fsc], 0.98, na.rm = TRUE),
+        ssc_max = stats::quantile(raw_data[, ssc], 0.98, na.rm = TRUE),
+        manual = TRUE,
+        manual_gate_info = list(
+            cell = list(vertices = cell_vertices, x_channel = cell_x, y_channel = cell_y),
+            singlet = list(vertices = singlet_vertices, x_channel = singlet_x, y_channel = singlet_y)
+        )
+    )
+}
+
+.apply_reference_manual_positive_gate <- function(gated_data, peak_channel, filename, sample_type, manual_gates) {
+    gate <- .reference_manual_gate(manual_gates, "positive", filename, sample_type)
+    verts <- .reference_gate_vertices(gate)
+    if (is.null(gate) || is.null(verts) || nrow(verts) == 0) return(NULL)
+    mode <- as.character(gate$plot_mode[1])
+    peak_vals <- gated_data[, peak_channel]
+    keep <- NULL
+    if (identical(mode, "separator")) {
+        keep <- peak_vals >= verts$x[1]
+    } else if (identical(mode, "positive_1d") && nrow(verts) >= 2) {
+        lim <- range(verts$x, na.rm = TRUE)
+        keep <- peak_vals >= lim[1] & peak_vals <= lim[2]
+    } else if (nrow(verts) >= 3) {
+        x_channel <- as.character(gate$x_channel[1])
+        y_channel <- as.character(gate$y_channel[1])
+        if (!x_channel %in% colnames(gated_data)) x_channel <- peak_channel
+        if (!y_channel %in% colnames(gated_data)) {
+            scatter <- .resolve_reference_scatter_channels(gated_data)
+            y_channel <- if (!is.null(scatter)) scatter$fsc else peak_channel
+        }
+        keep <- sp::point.in.polygon(gated_data[, x_channel], gated_data[, y_channel], verts$x, verts$y) > 0
+    }
+    if (is.null(keep) || sum(keep, na.rm = TRUE) < 10) return(NULL)
+    vals_log <- log10(pmax(peak_vals, 1))
+    attr(vals_log, "gate_type") <- paste0("manual_", mode)
+    attr(vals_log, "gate_method") <- paste0("manual_", mode)
+    attr(vals_log, "positive_gate_present") <- TRUE
+    negative_gate <- .reference_manual_gate(manual_gates, "negative", filename, sample_type)
+    negative_verts <- .reference_gate_vertices(negative_gate)
+    if (!is.null(negative_gate) && !is.null(negative_verts) && nrow(negative_verts) >= 2) {
+        negative_mode <- as.character(negative_gate$plot_mode[1])
+        if (identical(negative_mode, "negative_1d")) {
+            negative_lim <- range(negative_verts$x, na.rm = TRUE)
+            if (all(is.finite(negative_lim)) && negative_lim[2] > negative_lim[1]) {
+                attr(vals_log, "negative_gate_present") <- TRUE
+                attr(vals_log, "neg_log_min") <- log10(max(negative_lim[1], 1))
+                attr(vals_log, "neg_log_max") <- log10(max(negative_lim[2], 1))
+            }
+        }
+    }
+    list(
+        final_gated_data = gated_data[keep, , drop = FALSE],
+        hist_info = list(
+            vals_log = vals_log,
+            gate_min = min(peak_vals[keep], na.rm = TRUE),
+            gate_max = max(peak_vals[keep], na.rm = TRUE)
+        )
+    )
 }
 
 # Computes the 2D ellipse coordinates at a given confidence level.
@@ -2657,6 +2817,57 @@
     )
 }
 
+.reference_qc_scatter_density_plot <- function(data,
+                                               x_channel,
+                                               y_channel,
+                                               pd,
+                                               gate_vertices = NULL,
+                                               title,
+                                               subtitle = NULL) {
+    x_desc <- .get_reference_axis_label(x_channel, pd)
+    y_desc <- .get_reference_axis_label(y_channel, pd)
+    x_vals <- data[, x_channel]
+    y_vals <- data[, y_channel]
+    x_max <- as.numeric(stats::quantile(x_vals, 0.998, na.rm = TRUE))
+    y_max <- as.numeric(stats::quantile(y_vals, 0.998, na.rm = TRUE))
+    max_xy <- max(x_max, y_max, 1, na.rm = TRUE) * 1.05
+    x_breaks <- seq(0, max_xy, length.out = 201)
+    y_breaks <- x_breaks
+    x_bin <- findInterval(x_vals, x_breaks)
+    y_bin <- findInterval(y_vals, y_breaks)
+    keep_bin <- x_bin >= 1 & x_bin <= 200 & y_bin >= 1 & y_bin <= 200
+    dt2d <- data.table::as.data.table(as.data.frame(table(
+        x_bin = x_bin[keep_bin],
+        y_bin = y_bin[keep_bin]
+    )))
+    data.table::setnames(dt2d, c("x_bin", "y_bin", "count"))
+    dt2d$x_bin <- as.integer(as.character(dt2d$x_bin))
+    dt2d$y_bin <- as.integer(as.character(dt2d$y_bin))
+    dt2d$count <- as.integer(as.character(dt2d$count))
+    dt2d <- dt2d[dt2d$count > 0, ]
+    dt2d$x <- x_breaks[dt2d$x_bin]
+    dt2d$y <- y_breaks[dt2d$y_bin]
+    dt2d$fill <- log10(dt2d$count + 1)
+    p <- ggplot2::ggplot(dt2d, ggplot2::aes(x, y, fill = fill)) +
+        ggplot2::geom_tile(width = diff(x_breaks)[1], height = diff(y_breaks)[1]) +
+        ggplot2::scale_fill_gradientn(colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"), guide = "none") +
+        ggplot2::labs(title = title, subtitle = subtitle, x = x_desc, y = y_desc) +
+        ggplot2::theme_minimal() +
+        ggplot2::theme(
+            legend.position = "none",
+            panel.grid = ggplot2::element_blank(),
+            panel.background = ggplot2::element_rect(fill = "white", color = NA),
+            axis.line = ggplot2::element_line(color = "black", linewidth = 0.35),
+            axis.ticks = ggplot2::element_line(color = "black", linewidth = 0.3),
+            plot.subtitle = ggplot2::element_text(size = 10.6)
+        ) +
+        ggplot2::coord_cartesian(xlim = c(0, max_xy), ylim = c(0, max_xy))
+    if (!is.null(gate_vertices) && nrow(gate_vertices) >= 3) {
+        p <- p + ggplot2::geom_path(data = gate_vertices, ggplot2::aes(x, y), inherit.aes = FALSE, color = "red", linewidth = 1)
+    }
+    p
+}
+
 # Generates and saves PDF quality control (QC) plots for a processed sample.
 # Produces three plots: a 2D density plot of FSC-SSC gating, a 1D density histogram of positive/negative
 # peak gating, and a spectral profile plot of the normalized signature.
@@ -2680,48 +2891,46 @@
                                      detector_labels,
                                      det_info,
                                      out_path,
-                                     use_scatter_gating = TRUE) {
-    fsc_desc <- .get_reference_axis_label(fsc, pd)
-    ssc_desc <- .get_reference_axis_label(ssc, pd)
-    dt_plot_gating <- data.table::data.table(x = raw_data[, fsc], y = raw_data[, ssc])
-    x_breaks <- seq(0, max(fsc_max, ssc_max) * 1.05, length.out = 201)
-    y_breaks <- x_breaks
-    x_bin <- findInterval(dt_plot_gating$x, x_breaks)
-    y_bin <- findInterval(dt_plot_gating$y, y_breaks)
-    keep_bin <- x_bin >= 1 & x_bin <= 200 & y_bin >= 1 & y_bin <= 200
-    dt2d <- data.table::as.data.table(as.data.frame(table(
-        x_bin = x_bin[keep_bin],
-        y_bin = y_bin[keep_bin]
-    )))
-    data.table::setnames(dt2d, c("x_bin", "y_bin", "count"))
-    dt2d$x_bin <- as.integer(as.character(dt2d$x_bin))
-    dt2d$y_bin <- as.integer(as.character(dt2d$y_bin))
-    dt2d$count <- as.integer(as.character(dt2d$count))
-    dt2d <- dt2d[dt2d$count > 0, ]
-    dt2d$x <- x_breaks[dt2d$x_bin]
-    dt2d$y <- y_breaks[dt2d$y_bin]
-    dt2d$fill <- log10(dt2d$count + 1)
-    p1 <- ggplot2::ggplot(dt2d, ggplot2::aes(x, y, fill = fill)) +
-        ggplot2::geom_tile(width = diff(x_breaks)[1], height = diff(y_breaks)[1]) +
-        ggplot2::scale_fill_gradientn(colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"), guide = "none") +
-        ggplot2::geom_path(data = final_gate, ggplot2::aes(x, y), inherit.aes = FALSE, color = "red", linewidth = 1) +
-        ggplot2::labs(
-            title = paste0(sn, " - FSC/SSC"),
-            subtitle = paste0(round(100 * nrow(gated_data) / nrow(raw_data), 1), "% gated"),
-            x = fsc_desc,
-            y = ssc_desc
-        ) +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(
-            legend.position = "none",
-            panel.grid = ggplot2::element_blank(),
-            panel.background = ggplot2::element_rect(fill = "white", color = NA),
-            axis.line = ggplot2::element_line(color = "black", linewidth = 0.35),
-            axis.ticks = ggplot2::element_line(color = "black", linewidth = 0.3),
-            plot.subtitle = ggplot2::element_text(size = 10.6)
-        ) +
-        ggplot2::coord_cartesian(xlim = c(0, max(fsc_max, ssc_max) * 1.05), ylim = c(0, max(fsc_max, ssc_max) * 1.05))
+                                     use_scatter_gating = TRUE,
+                                     manual_gate_info = NULL) {
+    cell_info <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$cell)) manual_gate_info$cell else NULL
+    cell_x <- if (!is.null(cell_info) && !is.null(cell_info$x_channel) && cell_info$x_channel %in% colnames(raw_data)) cell_info$x_channel else fsc
+    cell_y <- if (!is.null(cell_info) && !is.null(cell_info$y_channel) && cell_info$y_channel %in% colnames(raw_data)) cell_info$y_channel else ssc
+    cell_vertices <- if (!is.null(cell_info) && !is.null(cell_info$vertices)) cell_info$vertices else final_gate
+    p1 <- .reference_qc_scatter_density_plot(
+        data = raw_data,
+        x_channel = cell_x,
+        y_channel = cell_y,
+        pd = pd,
+        gate_vertices = cell_vertices,
+        title = paste0(sn, " - Cell Gate"),
+        subtitle = paste0(round(100 * nrow(gated_data) / nrow(raw_data), 1), "% gated")
+    )
     .save_reference_ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, sn, "FSC/SSC", width = 5, height = 5, dpi = 300)
+    fsc_desc <- .get_reference_axis_label(fsc, pd)
+
+    singlet_info <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$singlet)) manual_gate_info$singlet else NULL
+    singlet_vertices <- if (!is.null(singlet_info) && !is.null(singlet_info$vertices)) singlet_info$vertices else NULL
+    singlet_x <- if (!is.null(singlet_info) && !is.null(singlet_info$x_channel) && singlet_info$x_channel %in% colnames(raw_data)) singlet_info$x_channel else NA_character_
+    singlet_y <- if (!is.null(singlet_info) && !is.null(singlet_info$y_channel) && singlet_info$y_channel %in% colnames(raw_data)) singlet_info$y_channel else NA_character_
+    if (!is.null(singlet_vertices) && nrow(singlet_vertices) >= 3 && !is.na(singlet_x) && !is.na(singlet_y)) {
+        cell_keep <- if (!is.null(cell_vertices) && nrow(cell_vertices) >= 3 && cell_x %in% colnames(raw_data) && cell_y %in% colnames(raw_data)) {
+            sp::point.in.polygon(raw_data[, cell_x], raw_data[, cell_y], cell_vertices$x, cell_vertices$y) > 0
+        } else {
+            rep(TRUE, nrow(raw_data))
+        }
+        singlet_source <- raw_data[cell_keep, , drop = FALSE]
+        p_singlet <- .reference_qc_scatter_density_plot(
+            data = singlet_source,
+            x_channel = singlet_x,
+            y_channel = singlet_y,
+            pd = pd,
+            gate_vertices = singlet_vertices,
+            title = paste0(sn, " - Singlet Gate"),
+            subtitle = paste0(round(100 * nrow(gated_data) / max(nrow(singlet_source), 1), 1), "% gated")
+        )
+        .save_reference_ggsave(file.path(out_path, "singlet", paste0(sn, "_singlet.png")), p_singlet, sn, "singlet", width = 5, height = 5, dpi = 300)
+    }
 
     neg_log_min <- attr(vals_log, "neg_log_min")
     neg_log_max <- attr(vals_log, "neg_log_max")
@@ -2774,6 +2983,7 @@
     if (length(comp_means) > 0) {
         p2 <- p2 + ggplot2::geom_vline(xintercept = comp_means, color = "black", linetype = "dashed", alpha = 0.35, linewidth = 0.5)
     }
+    .save_reference_ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, sn, "histogram", width = 6.5, height = 4, dpi = 300)
     if (isTRUE(use_scatter_gating)) {
         scatter_x <- log10(pmax(peak_vals, 1))
         scatter_class <- ifelse(
@@ -2812,8 +3022,6 @@
             ggplot2::theme_minimal(base_size = 11) +
             ggplot2::theme(legend.position = "none")
         .save_reference_ggsave(file.path(out_path, "intensity_scatter", paste0(sn, "_intensity_scatter.png")), p2_scatter, sn, "intensity scatter", width = 6.5, height = 4, dpi = 300)
-    } else {
-        .save_reference_ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, sn, "histogram", width = 6.5, height = 4, dpi = 300)
     }
 
     log_mat <- log10(pmax(final_gated_data[, detector_names, drop = FALSE], 1e-3))
@@ -2915,19 +3123,27 @@
         return(NULL)
     }
 
-    scatter_info <- .compute_reference_scatter_gate(
+    scatter_info <- .apply_reference_manual_scatter_gates(
         raw_data = raw_data,
-        pd = pd,
         sample_type = sample_info$type,
-        outlier_percentile = config$outlier_percentile,
-        debris_percentile = config$debris_percentile,
-        subsample_n = config$subsample_n,
-        max_clusters = config$max_clusters,
-        min_cluster_proportion = config$min_cluster_proportion,
-        gate_contour_beads = config$gate_contour_beads,
-        gate_contour_cells = config$gate_contour_cells,
-        bead_gate_scale = config$bead_gate_scale
+        filename = sn_ext,
+        manual_gates = config$manual_gates
     )
+    if (is.null(scatter_info)) {
+        scatter_info <- .compute_reference_scatter_gate(
+            raw_data = raw_data,
+            pd = pd,
+            sample_type = sample_info$type,
+            outlier_percentile = config$outlier_percentile,
+            debris_percentile = config$debris_percentile,
+            subsample_n = config$subsample_n,
+            max_clusters = config$max_clusters,
+            min_cluster_proportion = config$min_cluster_proportion,
+            gate_contour_beads = config$gate_contour_beads,
+            gate_contour_cells = config$gate_contour_cells,
+            bead_gate_scale = config$bead_gate_scale
+        )
+    }
     if (is.null(scatter_info)) {
         return(NULL)
     }
@@ -2945,6 +3161,18 @@
 
     peak_vals <- scatter_info$gated_data[, peak_channel]
     if (isTRUE(.get_reference_config_value(config, "autospectral_scc_cleanup", FALSE))) {
+        autospectral_clean_data <- scatter_info$gated_data
+        autospectral_positive <- .apply_reference_manual_positive_gate(
+            gated_data = autospectral_clean_data,
+            peak_channel = peak_channel,
+            filename = sn_ext,
+            sample_type = sample_info$type,
+            manual_gates = config$manual_gates
+        )
+        if (!is.null(autospectral_positive)) {
+            autospectral_clean_data <- autospectral_positive$final_gated_data
+        }
+        autospectral_peak_vals <- autospectral_clean_data[, peak_channel]
         use_external_background <- isTRUE(.get_reference_config_value(config, "clean_scc_with_unstained", FALSE))
         bead_background <- attr(bead_negative, "scc_background", exact = TRUE)
         selected_background <- if (!isTRUE(use_external_background)) {
@@ -2964,7 +3192,7 @@
             NULL
         }
         extraction <- .compute_reference_autospectral_scc(
-            clean_data = scatter_info$gated_data,
+            clean_data = autospectral_clean_data,
             detector_names = metadata$detector_names,
             peak_channel = peak_channel,
             sample_type = sample_info$type,
@@ -2987,8 +3215,8 @@
             gate_max = extraction$gate_max
         )
 
-        selected_peak <- peak_vals[extraction$positive_idx]
-        neg_vals <- peak_vals[order(peak_vals, decreasing = FALSE)[seq_len(max(1L, floor(0.10 * length(peak_vals))))]]
+        selected_peak <- autospectral_peak_vals[extraction$positive_idx]
+        neg_vals <- autospectral_peak_vals[order(autospectral_peak_vals, decreasing = FALSE)[seq_len(max(1L, floor(0.10 * length(autospectral_peak_vals))))]]
         mfi_pos <- stats::median(selected_peak, na.rm = TRUE)
         mfi_neg <- stats::median(neg_vals, na.rm = TRUE)
         sd_neg <- stats::mad(neg_vals, na.rm = TRUE)
@@ -3018,7 +3246,8 @@
                 detector_labels = metadata$detector_labels,
                 det_info = metadata$det_info,
                 out_path = config$out_path,
-                use_scatter_gating = TRUE
+                use_scatter_gating = TRUE,
+                manual_gate_info = scatter_info$manual_gate_info
             )
         }
 
@@ -3056,24 +3285,36 @@
         ))
     }
 
-    gate_fun <- if (isTRUE(config$use_scatter_gating)) {
-        .compute_reference_scatter_intensity_gate
-    } else {
-        .compute_reference_histogram_gate
-    }
-    hist_info <- gate_fun(
-        peak_vals = peak_vals,
+    manual_positive <- .apply_reference_manual_positive_gate(
+        gated_data = scatter_info$gated_data,
+        peak_channel = peak_channel,
+        filename = sn_ext,
         sample_type = sample_info$type,
-        histogram_pct_beads = config$histogram_pct_beads,
-        histogram_direction_beads = config$histogram_direction_beads,
-        histogram_pct_cells = config$histogram_pct_cells,
-        histogram_direction_cells = config$histogram_direction_cells,
-        is_viability = nrow(row_info) > 0 &&
-            "is.viability" %in% colnames(row_info) &&
-            toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
+        manual_gates = config$manual_gates
     )
+    if (!is.null(manual_positive)) {
+        hist_info <- manual_positive$hist_info
+        final_gated_data <- manual_positive$final_gated_data
+    } else {
+        gate_fun <- if (isTRUE(config$use_scatter_gating)) {
+            .compute_reference_scatter_intensity_gate
+        } else {
+            .compute_reference_histogram_gate
+        }
+        hist_info <- gate_fun(
+            peak_vals = peak_vals,
+            sample_type = sample_info$type,
+            histogram_pct_beads = config$histogram_pct_beads,
+            histogram_direction_beads = config$histogram_direction_beads,
+            histogram_pct_cells = config$histogram_pct_cells,
+            histogram_direction_cells = config$histogram_direction_cells,
+            is_viability = nrow(row_info) > 0 &&
+                "is.viability" %in% colnames(row_info) &&
+                toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
+        )
 
-    final_gated_data <- scatter_info$gated_data[peak_vals >= hist_info$gate_min & peak_vals <= hist_info$gate_max, ]
+        final_gated_data <- scatter_info$gated_data[peak_vals >= hist_info$gate_min & peak_vals <= hist_info$gate_max, ]
+    }
     if (nrow(final_gated_data) < 10) {
         return(NULL)
     }
@@ -3133,7 +3374,8 @@
             detector_labels = metadata$detector_labels,
             det_info = metadata$det_info,
             out_path = config$out_path,
-            use_scatter_gating = config$use_scatter_gating
+            use_scatter_gating = config$use_scatter_gating,
+            manual_gate_info = scatter_info$manual_gate_info
         )
     }
 
@@ -3272,6 +3514,9 @@
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
 #'   use the legacy one-dimensional histogram gate.
+#' @param manual_gate_file Optional gate CSV from [gate_controls()]. When
+#'   provided, manual cell/singlet gates are used before automatic SCC spectrum
+#'   extraction, and manual positive gates are used for standard SCC extraction.
 #' @param histogram_pct_beads Quantile width for the bead histogram gate.
 #' @param histogram_direction_beads Histogram gate direction for beads: `"right"` starts at the median,
 #'   `"both"` centers on the median, and `"left"` ends at the median.
@@ -3340,6 +3585,7 @@ build_reference_matrix <- function(
   default_sample_type = "beads",
   cytometer = "auto",
   use_scatter_gating = TRUE,
+  manual_gate_file = NULL,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
@@ -3395,6 +3641,7 @@ build_reference_matrix <- function(
     }
 
     .with_optional_seed(seed)
+    manual_gates <- .read_reference_manual_gates(manual_gate_file)
 
     sample_patterns <- get_fluorophore_patterns()
     file_info <- .prepare_reference_file_set(input_folder = input_folder)
@@ -3413,6 +3660,7 @@ build_reference_matrix <- function(
         gate_contour_cells = gate_contour_cells,
         bead_gate_scale = bead_gate_scale,
         use_scatter_gating = use_scatter_gating,
+        manual_gates = manual_gates,
         histogram_pct_beads = histogram_pct_beads,
         histogram_direction_beads = histogram_direction_beads,
         histogram_pct_cells = histogram_pct_cells,

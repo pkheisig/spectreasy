@@ -28,6 +28,8 @@ type ViewConfig = {
     pointOpacity?: number;
     pointColor?: string;
     dragSensitivity?: number;
+    theme?: 'dark' | 'light';
+    pageScroll?: boolean;
 };
 
 const COLOR_PALETTES = {
@@ -111,6 +113,7 @@ const App = () => {
     const [isUnmixingMatrix, setIsUnmixingMatrix] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'loading'>('idle');
+    const [guiStateLoaded, setGuiStateLoaded] = useState(false);
 
     const [colorPalette, setColorPalette] = useState<keyof typeof COLOR_PALETTES>('default');
     const [showControls, setShowControls] = useState(true);
@@ -148,6 +151,14 @@ const App = () => {
             setCurrentConfig(list[0]);
         }
         return list;
+    };
+
+    const fetchUserGuiState = async () => {
+        const result = await axios.get(`${API_BASE}/gui_state?module=matrix_tuner`).catch(() => null);
+        if (result?.data?.config) {
+            applyConfig(result.data.config);
+        }
+        setGuiStateLoaded(true);
     };
 
     const fetchSampleData = async (sampleName: string, matrixData: MatrixRow[], filenameForType: string, detNames: string[]) => {
@@ -205,7 +216,7 @@ const App = () => {
     useEffect(() => {
         const init = async () => {
             const [mats, samples] = await Promise.all([fetchMatrices(), fetchSamples()]);
-            await fetchConfigs();
+            await Promise.all([fetchConfigs(), fetchUserGuiState()]);
             const firstMatrix = pickPreferredMatrix(mats, currentFile);
             const firstSample = samples[0] || '';
             if (firstSample) setCurrentSample(firstSample);
@@ -316,6 +327,8 @@ const App = () => {
         if (typeof viewConfig.dragSensitivity === 'number') {
             setDragSensitivity(Math.max(0, Math.min(0.3, viewConfig.dragSensitivity)));
         }
+        if (viewConfig.theme === 'dark' || viewConfig.theme === 'light') setTheme(viewConfig.theme);
+        if (typeof viewConfig.pageScroll === 'boolean') setPageScroll(viewConfig.pageScroll);
     };
 
     const buildConfig = () => ({
@@ -325,8 +338,22 @@ const App = () => {
         pointSize,
         pointOpacity,
         pointColor,
-        dragSensitivity
+        dragSensitivity,
+        theme,
+        pageScroll
     });
+
+    useEffect(() => {
+        if (!guiStateLoaded) return;
+        const timer = window.setTimeout(() => {
+            void axios.post(`${API_BASE}/gui_state`, {
+                module: 'matrix_tuner',
+                config_json: buildConfig()
+            }).catch(() => null);
+        }, 500);
+        return () => window.clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [colorPalette, showControls, residualCellSize, pointSize, pointOpacity, pointColor, dragSensitivity, theme, pageScroll, guiStateLoaded]);
 
     const saveViewConfig = async () => {
         const name = currentConfig.trim().length > 0 ? currentConfig.trim() : 'gui_config.json';

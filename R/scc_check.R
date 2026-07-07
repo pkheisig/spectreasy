@@ -160,25 +160,54 @@
     grid::grid.text(title, x = 0.05, y = 0.96, just = c("left", "top"), gp = grid::gpar(fontsize = 16, fontface = "bold"))
     grid::grid.text(subtitle, x = 0.05, y = 0.92, just = c("left", "top"), gp = grid::gpar(fontsize = 10))
 
-    .draw_report_image_panel(
-        file.path(report_plot_dir, "fsc_ssc", paste0(sample_id, "_fsc_ssc.png")),
-        "FSC/SSC Auto-Gate",
-        x = grid::unit(0.27, "npc"),
-        y = grid::unit(0.62, "npc"),
-        width = grid::unit(0.46, "npc"),
-        height = grid::unit(0.44, "npc")
-    )
-    gate_dir <- if (isTRUE(use_scatter_gating)) "intensity_scatter" else "histogram"
-    gate_suffix <- if (isTRUE(use_scatter_gating)) "_intensity_scatter.png" else "_histogram.png"
-    gate_title <- if (isTRUE(use_scatter_gating)) "Intensity-vs-FSC Scatter Gate" else "Peak-Channel Histogram Gate"
-    .draw_report_image_panel(
-        file.path(report_plot_dir, gate_dir, paste0(sample_id, gate_suffix)),
-        gate_title,
-        x = grid::unit(0.74, "npc"),
-        y = grid::unit(0.71, "npc"),
-        width = grid::unit(0.42, "npc"),
-        height = grid::unit(0.26, "npc")
-    )
+    singlet_png <- file.path(report_plot_dir, "singlet", paste0(sample_id, "_singlet.png"))
+    has_singlet_png <- file.exists(singlet_png)
+    if (has_singlet_png) {
+        .draw_report_image_panel(
+            file.path(report_plot_dir, "fsc_ssc", paste0(sample_id, "_fsc_ssc.png")),
+            "Cell Gate",
+            x = grid::unit(0.2, "npc"),
+            y = grid::unit(0.69, "npc"),
+            width = grid::unit(0.29, "npc"),
+            height = grid::unit(0.32, "npc")
+        )
+        .draw_report_image_panel(
+            singlet_png,
+            "Singlet Gate",
+            x = grid::unit(0.5, "npc"),
+            y = grid::unit(0.69, "npc"),
+            width = grid::unit(0.29, "npc"),
+            height = grid::unit(0.32, "npc")
+        )
+        .draw_report_image_panel(
+            file.path(report_plot_dir, "histogram", paste0(sample_id, "_histogram.png")),
+            "Histogram",
+            x = grid::unit(0.8, "npc"),
+            y = grid::unit(0.69, "npc"),
+            width = grid::unit(0.29, "npc"),
+            height = grid::unit(0.32, "npc")
+        )
+    } else {
+        .draw_report_image_panel(
+            file.path(report_plot_dir, "fsc_ssc", paste0(sample_id, "_fsc_ssc.png")),
+            "FSC/SSC Auto-Gate",
+            x = grid::unit(0.27, "npc"),
+            y = grid::unit(0.62, "npc"),
+            width = grid::unit(0.46, "npc"),
+            height = grid::unit(0.44, "npc")
+        )
+        gate_dir <- if (isTRUE(use_scatter_gating)) "intensity_scatter" else "histogram"
+        gate_suffix <- if (isTRUE(use_scatter_gating)) "_intensity_scatter.png" else "_histogram.png"
+        gate_title <- if (isTRUE(use_scatter_gating)) "Intensity-vs-FSC Scatter Gate" else "Peak-Channel Histogram Gate"
+        .draw_report_image_panel(
+            file.path(report_plot_dir, gate_dir, paste0(sample_id, gate_suffix)),
+            gate_title,
+            x = grid::unit(0.74, "npc"),
+            y = grid::unit(0.71, "npc"),
+            width = grid::unit(0.42, "npc"),
+            height = grid::unit(0.26, "npc")
+        )
+    }
     .draw_report_image_panel(
         file.path(report_plot_dir, "spectrum", paste0(sample_id, "_spectrum.png")),
         "Per-Event Spectrum Distribution",

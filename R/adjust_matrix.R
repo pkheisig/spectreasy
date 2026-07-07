@@ -81,6 +81,38 @@
     NULL
 }
 
+.default_gate_controls_scc_dir <- function() {
+    file.path(getwd(), "scc")
+}
+
+.normalize_gate_controls_paths <- function(scc_dir = "scc",
+                                           control_file = "fcs_mapping.csv",
+                                           gate_file = "ssc_gate_config.csv") {
+    scc_dir <- normalizePath(scc_dir, mustWork = TRUE)
+    control_file <- as.character(control_file)[1]
+    if (!is.na(control_file) && nzchar(trimws(control_file)) && !file.exists(control_file)) {
+        candidate <- file.path(dirname(scc_dir), basename(control_file))
+        if (file.exists(candidate)) {
+            control_file <- candidate
+        }
+    }
+    control_file <- normalizePath(control_file, mustWork = FALSE)
+
+    gate_file <- as.character(gate_file)[1]
+    if (is.na(gate_file) || !nzchar(trimws(gate_file))) {
+        gate_file <- "ssc_gate_config.csv"
+    }
+    if (!grepl("\\.csv$", gate_file, ignore.case = TRUE)) {
+        gate_file <- paste0(gate_file, ".csv")
+    }
+    if (!grepl("^(/|[A-Za-z]:)", gate_file)) {
+        gate_file <- file.path(getwd(), gate_file)
+    }
+    gate_file <- normalizePath(gate_file, mustWork = FALSE)
+
+    list(scc_dir = scc_dir, control_file = control_file, gate_file = gate_file)
+}
+
 .resolve_gui_frontend <- function(gui_path, dist_path, port, dev_mode = FALSE, npm_bin = Sys.which("npm")) {
     frontend_url <- paste0("http://127.0.0.1:", port)
 
@@ -140,7 +172,10 @@
                                    open_browser = TRUE,
                                    dev_mode = FALSE,
                                    mode = "tuner",
-                                   panel_cytometer = NULL) {
+                                   panel_cytometer = NULL,
+                                   gating_scc_dir = NULL,
+                                   gating_control_file = NULL,
+                                   gating_gate_file = NULL) {
     if (!requireNamespace("plumber", quietly = TRUE)) {
         stop(
             "Package 'plumber' is required for the spectreasy GUI. ",
@@ -150,10 +185,19 @@
     }
 
     paths <- .prepare_gui_paths()
-    if (is.null(matrix_dir)) {
+    if (identical(mode, "control-gating")) {
+        gate_paths <- .normalize_gate_controls_paths(
+            scc_dir = if (is.null(gating_scc_dir)) .default_gate_controls_scc_dir() else gating_scc_dir,
+            control_file = if (is.null(gating_control_file)) "fcs_mapping.csv" else gating_control_file,
+            gate_file = if (is.null(gating_gate_file)) "ssc_gate_config.csv" else gating_gate_file
+        )
+        dirs <- list(matrix_dir = getwd(), samples_dir = gate_paths$scc_dir)
+    } else if (is.null(matrix_dir)) {
         matrix_dir <- .default_adjust_matrix_matrix_dir()
+        dirs <- .normalize_gui_dirs(matrix_dir = matrix_dir, samples_dir = samples_dir)
+    } else {
+        dirs <- .normalize_gui_dirs(matrix_dir = matrix_dir, samples_dir = samples_dir)
     }
-    dirs <- .normalize_gui_dirs(matrix_dir = matrix_dir, samples_dir = samples_dir)
 
     options(
         spectreasy.matrix_dir = dirs$matrix_dir,
@@ -161,6 +205,13 @@
         spectreasy.gui_mode = mode,
         spectreasy.panel_cytometer = panel_cytometer
     )
+    if (identical(mode, "control-gating")) {
+        options(
+            spectreasy.gating_scc_dir = gate_paths$scc_dir,
+            spectreasy.gating_control_file = gate_paths$control_file,
+            spectreasy.gating_gate_file = gate_paths$gate_file
+        )
+    }
 
     frontend <- .resolve_gui_frontend(
         gui_path = paths$gui_path,
@@ -182,6 +233,11 @@
     message("Starting spectreasy API on port ", port)
     message("Matrix directory: ", dirs$matrix_dir)
     message("Samples directory: ", dirs$samples_dir)
+    if (identical(mode, "control-gating")) {
+        message("SCC directory: ", gate_paths$scc_dir)
+        message("Control mapping: ", gate_paths$control_file)
+        message("Gate CSV: ", gate_paths$gate_file)
+    }
     frontend_url <- paste0(frontend$frontend_url, "?mode=", utils::URLencode(mode, reserved = TRUE))
 
     message("Frontend: ", frontend_url)

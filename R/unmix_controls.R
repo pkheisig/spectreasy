@@ -350,6 +350,10 @@
 #'   use the legacy one-dimensional histogram gate. Ignored when
 #'   `unmixing_method = "AutoSpectral"` or `"Spectreasy"`; these methods use their own
 #'   post-FSC/SSC SCC spectral selector.
+#' @param manual_gating Logical; if `TRUE` (default), launch the manual control
+#'   gating GUI before building the SCC reference matrix.
+#' @param manual_gate_file Gate CSV written by [gate_controls()]. Relative paths
+#'   are resolved from the current working directory.
 #' @param clean_scc_with_unstained Logical; when `unmixing_method =
 #'   "AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative
 #'   background events before calculating SCC spectra.
@@ -414,6 +418,8 @@ unmix_controls <- function(
     save_qc_plots = FALSE,
     save_report = TRUE,
     use_scatter_gating = TRUE,
+    manual_gating = TRUE,
+    manual_gate_file = "ssc_gate_config.csv",
     clean_scc_with_unstained = TRUE,
     scc_background_method = c("scatter_knn", "none"),
     scc_background_k = 2L,
@@ -485,6 +491,22 @@ unmix_controls <- function(
         .stop_unmix_preflight(preflight, auto_unknown_fluor_policy = auto_unknown_fluor_policy)
     }
 
+    if (isTRUE(manual_gating)) {
+        if (!interactive()) {
+            warning("manual_gating = TRUE requires an interactive R session; continuing with automatic gating.", call. = FALSE)
+            manual_gate_file <- NULL
+        } else {
+            manual_gate_file <- gate_controls(
+                scc_dir = scc_dir,
+                control_file = control_file,
+                gate_file = manual_gate_file,
+                open_browser = TRUE
+            )
+        }
+    } else {
+        manual_gate_file <- NULL
+    }
+
     output_paths <- .unmix_output_paths(output_dir)
     qc_controls_dir <- NULL
     output_file <- NULL
@@ -511,6 +533,7 @@ unmix_controls <- function(
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
         use_scatter_gating = use_scatter_gating,
+        manual_gate_file = manual_gate_file,
         autospectral_scc_cleanup = use_autospectral,
         clean_scc_with_unstained = scc_background_args$enabled,
         scc_background_method = scc_background_args$method,

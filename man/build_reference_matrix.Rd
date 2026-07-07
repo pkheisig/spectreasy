@@ -17,6 +17,7 @@ build_reference_matrix(
   default_sample_type = "beads",
   cytometer = "auto",
   use_scatter_gating = TRUE,
+  manual_gate_file = NULL,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
   histogram_pct_cells = 0.35,
@@ -75,6 +76,10 @@ events required to keep a k-means AF cluster. The default `0.005` means
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,
 use the legacy one-dimensional histogram gate.}
+
+\item{manual_gate_file}{Optional gate CSV from [gate_controls()]. When
+provided, manual cell/singlet gates are used before automatic SCC spectrum
+extraction, and manual positive gates are used for standard SCC extraction.}
 
 \item{histogram_pct_beads}{Quantile width for the bead histogram gate.}
 

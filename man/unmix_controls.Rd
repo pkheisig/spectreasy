@@ -22,6 +22,8 @@ unmix_controls(
   save_qc_plots = FALSE,
   save_report = TRUE,
   use_scatter_gating = TRUE,
+  manual_gating = TRUE,
+  manual_gate_file = "ssc_gate_config.csv",
   clean_scc_with_unstained = TRUE,
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 2L,
@@ -94,6 +96,12 @@ scatter gate for final positive/negative population selection. If `FALSE`,
 use the legacy one-dimensional histogram gate. Ignored when
 `unmixing_method = "AutoSpectral"` or `"Spectreasy"`; these methods use their own
 post-FSC/SSC SCC spectral selector.}
+
+\item{manual_gating}{Logical; if `TRUE` (default), launch the manual control
+gating GUI before building the SCC reference matrix.}
+
+\item{manual_gate_file}{Gate CSV written by [gate_controls()]. Relative paths
+are resolved from the current working directory.}
 
 \item{clean_scc_with_unstained}{Logical; when `unmixing_method =
 "AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative

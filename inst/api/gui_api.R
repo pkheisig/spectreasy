@@ -149,6 +149,551 @@ raw_data_to_df <- function(raw_data_json) {
     as.data.frame(raw_data_json, check.names = FALSE)
 }
 
+get_user_gui_config_dir <- function() {
+    cfg_dir <- file.path(tools::R_user_dir("spectreasy", which = "config"), "gui_configs")
+    if (!dir.exists(cfg_dir)) {
+        dir.create(cfg_dir, recursive = TRUE, showWarnings = FALSE)
+    }
+    cfg_dir
+}
+
+normalize_gui_module <- function(module) {
+    module <- trimws(as.character(module)[1])
+    if (is.na(module) || !nzchar(module)) module <- "matrix_tuner"
+    module <- gsub("[^A-Za-z0-9_-]+", "_", module)
+    module
+}
+
+user_gui_config_path <- function(module) {
+    file.path(get_user_gui_config_dir(), paste0(normalize_gui_module(module), ".json"))
+}
+
+get_gate_scc_dir <- function() {
+    normalizePath(getOption("spectreasy.gating_scc_dir", file.path(getwd(), "scc")), mustWork = FALSE)
+}
+
+get_gate_control_file <- function() {
+    normalizePath(getOption("spectreasy.gating_control_file", file.path(getwd(), "fcs_mapping.csv")), mustWork = FALSE)
+}
+
+get_gate_file <- function() {
+    normalizePath(getOption("spectreasy.gating_gate_file", file.path(getwd(), "ssc_gate_config.csv")), mustWork = FALSE)
+}
+
+set_gate_file <- function(path) {
+    path <- normalizePath(path, mustWork = FALSE)
+    options(spectreasy.gating_gate_file = path)
+    path
+}
+
+gate_csv_filetypes <- function() {
+    "{{CSV files} {.csv}} {{All files} *}"
+}
+
+gate_working_dir <- function() {
+    normalizePath(getwd(), mustWork = FALSE)
+}
+
+gate_has_csv_file_picker <- function() {
+    rstudio_ok <- FALSE
+    if (requireNamespace("rstudioapi", quietly = TRUE)) {
+        rstudio_ok <- tryCatch(rstudioapi::isAvailable(), error = function(e) FALSE)
+    }
+    tcltk_ok <- requireNamespace("tcltk", quietly = TRUE) && isTRUE(capabilities("tcltk"))
+    isTRUE(rstudio_ok) || isTRUE(tcltk_ok)
+}
+
+gate_pick_csv_file <- function(mode = c("open", "save"), title = "Select gate CSV") {
+    mode <- match.arg(mode)
+    initial_dir <- gate_working_dir()
+    selected <- ""
+
+    if (requireNamespace("rstudioapi", quietly = TRUE)) {
+        available <- tryCatch(rstudioapi::isAvailable(), error = function(e) FALSE)
+        if (isTRUE(available)) {
+            selected <- tryCatch(
+                rstudioapi::selectFile(
+                    caption = title,
+                    label = if (mode == "save") "Save" else "Load",
+                    path = initial_dir,
+                    filter = "CSV Files (*.csv)",
+                    existing = mode == "open"
+                ),
+                error = function(e) ""
+            )
+        }
+    }
+
+    if (!nzchar(selected) && requireNamespace("tcltk", quietly = TRUE)) {
+        selected <- tryCatch({
+            if (mode == "save") {
+                as.character(tcltk::tkgetSaveFile(
+                    initialdir = initial_dir,
+                    initialfile = basename(get_gate_file()),
+                    defaultextension = ".csv",
+                    filetypes = gate_csv_filetypes(),
+                    title = title
+                ))
+            } else {
+                as.character(tcltk::tkgetOpenFile(
+                    initialdir = initial_dir,
+                    filetypes = gate_csv_filetypes(),
+                    title = title
+                ))
+            }
+        }, error = function(e) "")
+    }
+
+    selected <- trimws(as.character(selected)[1])
+    if (is.na(selected) || !nzchar(selected)) return("")
+    normalizePath(selected, mustWork = mode == "open")
+}
+
+gate_ensure_csv_extension <- function(path) {
+    if (!grepl("\\.csv$", path, ignore.case = TRUE)) {
+        path <- paste0(path, ".csv")
+    }
+    normalizePath(path, mustWork = FALSE)
+}
+
+gate_write_config_csv <- function(rows, path) {
+    rows <- gate_normalize_config_rows(rows)
+    if (nrow(rows) == 0) rows <- gate_empty_config()
+    if (nrow(rows) > 0) rows$created_at <- as.character(Sys.time())
+    path <- gate_ensure_csv_extension(path)
+    dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+    tmp <- tempfile("gate_config_", tmpdir = dirname(path), fileext = ".csv")
+    utils::write.csv(rows, tmp, row.names = FALSE, quote = TRUE)
+    if (!file.rename(tmp, path)) {
+        file.copy(tmp, path, overwrite = TRUE)
+        unlink(tmp)
+    }
+    list(path = path, rows = nrow(rows))
+}
+
+gate_empty_control_df <- function() {
+    data.frame(
+        filename = character(),
+        fluorophore = character(),
+        marker = character(),
+        channel = character(),
+        control.type = character(),
+        universal.negative = character(),
+        is.viability = character(),
+        stringsAsFactors = FALSE
+    )
+}
+
+gate_empty_config <- function() {
+    data.frame(
+        gate_type = character(),
+        scope = character(),
+        filename = character(),
+        x_channel = character(),
+        y_channel = character(),
+        plot_mode = character(),
+        vertex_index = integer(),
+        x = numeric(),
+        y = numeric(),
+        created_at = character(),
+        stringsAsFactors = FALSE
+    )
+}
+
+gate_normalize_config_rows <- function(rows) {
+    template <- gate_empty_config()
+    if (is.null(rows) || !is.data.frame(rows) || nrow(rows) == 0) return(template)
+
+    rows <- as.data.frame(rows, stringsAsFactors = FALSE, check.names = FALSE)
+    for (nm in colnames(rows)) {
+        if (is.list(rows[[nm]])) {
+            rows[[nm]] <- vapply(rows[[nm]], function(value) {
+                value <- unlist(value, recursive = TRUE, use.names = FALSE)
+                if (length(value) == 0 || is.null(value[1])) return(NA_character_)
+                as.character(value[1])
+            }, character(1))
+        }
+    }
+    for (nm in setdiff(colnames(template), colnames(rows))) {
+        rows[[nm]] <- NA
+    }
+    rows <- rows[, colnames(template), drop = FALSE]
+
+    char_cols <- c("gate_type", "scope", "filename", "x_channel", "y_channel", "plot_mode", "created_at")
+    rows[char_cols] <- lapply(rows[char_cols], function(x) {
+        x <- as.character(x)
+        x[is.na(x)] <- ""
+        x
+    })
+    rows$vertex_index <- suppressWarnings(as.integer(rows$vertex_index))
+    rows$x <- suppressWarnings(as.numeric(rows$x))
+    rows$y <- suppressWarnings(as.numeric(rows$y))
+
+    keep <- rows$plot_mode %in% c("missing", "blocked") |
+        rows$gate_type == "setting" |
+        (is.finite(rows$x) & is.finite(rows$y) & !is.na(rows$vertex_index) & rows$vertex_index > 0)
+    rows[keep, , drop = FALSE]
+}
+
+gate_safe_basename <- function(x) {
+    x <- basename(trimws(as.character(x)[1]))
+    if (!grepl("\\.fcs$", x, ignore.case = TRUE) && nzchar(x)) x <- paste0(x, ".fcs")
+    x
+}
+
+gate_read_fcs <- function(path) {
+    flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE)
+}
+
+gate_pick_channel <- function(col_names, prefix, suffix) {
+    normalized <- toupper(col_names)
+    exact <- grep(paste0("^", prefix, "[0-9]*-", suffix, "$"), normalized, value = TRUE)
+    if (length(exact) > 0) return(exact[1])
+    loose <- grep(paste0("^", prefix, ".*-", suffix, "$"), normalized, value = TRUE)
+    if (length(loose) > 0) return(loose[1])
+    fallback <- grep(paste0("^", prefix), normalized, value = TRUE)
+    if (length(fallback) > 0) return(fallback[1])
+    NA_character_
+}
+
+gate_paired_height_channel <- function(area_channel, col_names) {
+    candidate <- sub("-A$", "-H", area_channel, ignore.case = TRUE)
+    if (!is.na(candidate) && candidate %in% col_names) return(candidate)
+    gate_pick_channel(col_names, "FSC", "H")
+}
+
+gate_fcs_metadata <- function(path) {
+    ff <- gate_read_fcs(path)
+    expr <- flowCore::exprs(ff)
+    pd <- flowCore::pData(flowCore::parameters(ff))
+    fsc_a <- gate_pick_channel(colnames(expr), "FSC", "A")
+    ssc_a <- gate_pick_channel(colnames(expr), "SSC", "A")
+    fsc_h <- gate_paired_height_channel(fsc_a, colnames(expr))
+    desc <- setNames(as.character(pd$desc), as.character(pd$name))
+    list(
+        total_events = nrow(expr),
+        columns = colnames(expr),
+        labels = as.list(desc),
+        fsc_a = fsc_a,
+        fsc_h = fsc_h,
+        ssc_a = ssc_a
+    )
+}
+
+gate_guess_fcs_info <- function(filename) {
+    path <- file.path(get_gate_scc_dir(), filename)
+    ff <- tryCatch(gate_read_fcs(path), error = function(e) NULL)
+    if (is.null(ff)) {
+        return(list(fluorophore = "Unknown", marker = "Unknown", channel = ""))
+    }
+    pd <- flowCore::pData(flowCore::parameters(ff))
+    expr <- flowCore::exprs(ff)
+    det <- tryCatch(spectreasy::get_sorted_detectors(pd)$names, error = function(e) character())
+    det <- intersect(det, colnames(expr))
+    if (length(det) == 0) {
+        det <- grep("-A$", colnames(expr), value = TRUE)
+        det <- det[!grepl("^FSC|^SSC|^Time|^Event", det, ignore.case = TRUE)]
+    }
+    peak_channel <- if (length(det) > 0) {
+        vars <- apply(expr[, det, drop = FALSE], 2, stats::var, na.rm = TRUE)
+        names(vars)[which.max(vars)]
+    } else {
+        colnames(expr)[1]
+    }
+    desc <- pd$desc[match(peak_channel, pd$name)]
+    marker <- if (!is.na(desc) && nzchar(desc)) desc else peak_channel
+    fluorophore <- marker
+    fn_lower <- tolower(filename)
+    if (grepl("af_|unstained|autofluor", fn_lower)) {
+        fluorophore <- "AF"
+        marker <- "Autofluorescence"
+    }
+    list(fluorophore = fluorophore, marker = marker, channel = peak_channel)
+}
+
+gate_read_mapping <- function() {
+    path <- get_gate_control_file()
+    df <- if (file.exists(path)) {
+        utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+    } else {
+        gate_empty_control_df()
+    }
+    if (!all(c("filename", "fluorophore", "marker", "channel") %in% colnames(df))) {
+        df <- gate_empty_control_df()
+    }
+    df <- df[!startsWith(basename(df$filename), "._"), , drop = FALSE]
+    fcs_files <- list.files(get_gate_scc_dir(), pattern = "\\.fcs$", ignore.case = TRUE)
+    fcs_files <- fcs_files[!startsWith(fcs_files, "._")]
+    missing_files <- setdiff(fcs_files, df$filename)
+    if (length(missing_files) > 0) {
+        new_rows <- lapply(missing_files, function(f) {
+            info <- gate_guess_fcs_info(f)
+            data.frame(
+                filename = f,
+                fluorophore = info$fluorophore,
+                marker = info$marker,
+                channel = info$channel,
+                control.type = "cells",
+                universal.negative = "",
+                is.viability = "FALSE",
+                stringsAsFactors = FALSE
+            )
+        })
+        df <- rbind(df, do.call(rbind, new_rows))
+    }
+    df <- df[df$filename %in% fcs_files, , drop = FALSE]
+    if (!("control.type" %in% colnames(df))) df$control.type <- "cells"
+    if (!("universal.negative" %in% colnames(df))) df$universal.negative <- ""
+    if (!("is.viability" %in% colnames(df))) df$is.viability <- "FALSE"
+    df$file_exists <- TRUE
+    df$is_af <- grepl("^AF($|_|\\b)", df$fluorophore, ignore.case = TRUE) |
+        grepl("autofluorescence|background", df$marker, ignore.case = TRUE)
+    df$is_viability <- tolower(as.character(df$is.viability)) %in% c("true", "t", "1", "yes")
+    df$id <- tools::file_path_sans_ext(basename(df$filename))
+    df
+}
+
+gate_compute_extent <- function(v) {
+    finite <- v[is.finite(v)]
+    if (length(finite) == 0) return(c(0, 1))
+    val_max <- as.numeric(stats::quantile(finite, 0.998, na.rm = TRUE))
+    if (!is.finite(val_max) || val_max <= 0) val_max <- max(finite, na.rm = TRUE)
+    if (!is.finite(val_max) || val_max <= 0) val_max <- 1
+    c(0, val_max + val_max * 0.04)
+}
+
+gate_scatter_channels <- function(col_names) {
+    hits <- grep("^(FSC|SSC).*-(A|H|W)$", col_names, value = TRUE, ignore.case = TRUE)
+    unique(hits)
+}
+
+gate_plot_to_base64 <- function(plot, width = 11.5, height = 3.2, dpi = 180) {
+    tmp <- tempfile(fileext = ".png")
+    on.exit(unlink(tmp), add = TRUE)
+    ggplot2::ggsave(tmp, plot = plot, width = width, height = height, dpi = dpi, device = "png")
+    raw_bytes <- readBin(tmp, "raw", file.info(tmp)$size)
+    paste0("data:image/png;base64,", jsonlite::base64_enc(raw_bytes))
+}
+
+gate_point_in_polygon <- function(x, y, poly) {
+    n <- nrow(poly)
+    inside <- rep(FALSE, length(x))
+    if (n < 3) return(inside)
+    j <- n
+    for (i in seq_len(n)) {
+        xi <- poly[i, 1]
+        yi <- poly[i, 2]
+        xj <- poly[j, 1]
+        yj <- poly[j, 2]
+        intersect <- ((yi > y) != (yj > y)) & (x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi)
+        inside[intersect] <- !inside[intersect]
+        j <- i
+    }
+    inside
+}
+
+gate_vertices_matrix <- function(gate) {
+    if (is.null(gate$vertices) || length(gate$vertices) == 0) return(NULL)
+    verts <- do.call(rbind, lapply(gate$vertices, function(v) c(as.numeric(v$x), as.numeric(v$y))))
+    if (!is.matrix(verts) || nrow(verts) == 0 || ncol(verts) < 2) return(NULL)
+    verts[stats::complete.cases(verts), , drop = FALSE]
+}
+
+gate_value <- function(gate, primary, fallback = NULL) {
+    value <- gate[[primary]]
+    if (!is.null(value)) return(value)
+    alt <- switch(primary,
+        xChannel = "x_channel",
+        yChannel = "y_channel",
+        NULL
+    )
+    if (!is.null(alt) && !is.null(gate[[alt]])) return(gate[[alt]])
+    fallback
+}
+
+gate_cached_gate <- function(cache, gate_type, filename, control_type) {
+    if (is.null(cache)) return(NULL)
+    file_key <- paste0(gate_type, ":", filename)
+    global_key <- paste0(gate_type, ":", control_type)
+    if (file_key %in% names(cache)) return(cache[[file_key]])
+    if (global_key %in% names(cache)) return(cache[[global_key]])
+    NULL
+}
+
+gate_apply_polygon_gate <- function(expr, gate) {
+    verts <- gate_vertices_matrix(gate)
+    if (is.null(verts) || nrow(verts) < 3) return(expr)
+    x_channel <- as.character(gate_value(gate, "xChannel", ""))[1]
+    y_channel <- as.character(gate_value(gate, "yChannel", ""))[1]
+    if (!x_channel %in% colnames(expr) || !y_channel %in% colnames(expr)) return(expr)
+    keep <- gate_point_in_polygon(expr[, x_channel], expr[, y_channel], verts)
+    if (any(keep, na.rm = TRUE)) expr[keep, , drop = FALSE] else expr
+}
+
+gate_apply_positive_gate <- function(expr, gate, peak) {
+    if (is.null(gate) || !peak %in% colnames(expr)) return(expr)
+    verts <- gate_vertices_matrix(gate)
+    if (is.null(verts) || nrow(verts) == 0) return(expr)
+    mode <- as.character(gate_value(gate, "mode", ""))[1]
+    keep <- NULL
+    if (identical(mode, "separator")) {
+        keep <- expr[, peak] >= verts[1, 1]
+    } else if (identical(mode, "positive_1d") && nrow(verts) >= 2) {
+        lim <- range(verts[, 1], na.rm = TRUE)
+        keep <- expr[, peak] >= lim[1] & expr[, peak] <= lim[2]
+    } else if (nrow(verts) >= 3) {
+        x_channel <- as.character(gate_value(gate, "xChannel", peak))[1]
+        y_channel <- as.character(gate_value(gate, "yChannel", ""))[1]
+        if (!x_channel %in% colnames(expr)) x_channel <- peak
+        if (!y_channel %in% colnames(expr)) return(expr)
+        keep <- gate_point_in_polygon(expr[, x_channel], expr[, y_channel], verts)
+    }
+    if (!is.null(keep) && any(keep, na.rm = TRUE)) expr[keep, , drop = FALSE] else expr
+}
+
+gate_spectrum_for_file <- function(filename) {
+    df <- gate_read_mapping()
+    name <- gate_safe_basename(filename)
+    row <- df[df$filename == name, , drop = FALSE]
+    if (nrow(row) == 0) stop("File is not present in mapping: ", name, call. = FALSE)
+    path <- file.path(get_gate_scc_dir(), name)
+    ff <- gate_read_fcs(path)
+    expr <- flowCore::exprs(ff)
+    pd <- flowCore::pData(flowCore::parameters(ff))
+    det_info <- tryCatch(spectreasy::get_sorted_detectors(pd), error = function(e) NULL)
+    if (is.null(det_info) || length(det_info$names) == 0) return(NULL)
+    spec_channels <- intersect(det_info$names, colnames(expr))
+    if (length(spec_channels) == 0) return(NULL)
+
+    peak <- as.character(row$channel[1])
+    if (!peak %in% colnames(expr)) peak <- spec_channels[which.max(apply(expr[, spec_channels, drop = FALSE], 2, stats::var, na.rm = TRUE))]
+
+    cache_data <- getOption("spectreasy.gating_state_cache")
+    cache <- if (!is.null(cache_data)) cache_data$gates else NULL
+    control_type <- tolower(as.character(row$control.type[1]))
+    if (is.na(control_type) || !nzchar(control_type)) control_type <- "cells"
+
+    expr_filtered <- expr
+    expr_filtered <- gate_apply_polygon_gate(expr_filtered, gate_cached_gate(cache, "cell", name, control_type))
+    expr_filtered <- gate_apply_polygon_gate(expr_filtered, gate_cached_gate(cache, "singlet", name, control_type))
+    if (!isTRUE(row$is_af[1])) {
+        expr_filtered <- gate_apply_positive_gate(expr_filtered, gate_cached_gate(cache, "positive", name, control_type), peak)
+    }
+    if (nrow(expr_filtered) < 10) expr_filtered <- expr
+
+    log_mat <- log10(pmax(expr_filtered[, spec_channels, drop = FALSE], 1e-3))
+    min_y <- floor(min(log_mat, na.rm = TRUE))
+    max_y <- ceiling(max(log_mat, na.rm = TRUE))
+    breaks <- seq(min_y, max_y, length.out = 151)
+    bin_mid <- (breaks[-1] + breaks[-length(breaks)]) / 2
+    bin_height <- breaks[2] - breaks[1]
+    counts_mat <- vapply(seq_len(ncol(log_mat)), function(j) {
+        as.numeric(graphics::hist(log_mat[, j], breaks = breaks, plot = FALSE)$counts)
+    }, numeric(length(bin_mid)))
+    rownames(counts_mat) <- as.character(seq_along(bin_mid))
+    colnames(counts_mat) <- as.character(seq_len(ncol(log_mat)))
+    dt_c <- as.data.frame(as.table(counts_mat), stringsAsFactors = FALSE)
+    names(dt_c) <- c("bin_idx", "ch_idx", "count")
+    dt_c$bin_idx <- as.integer(dt_c$bin_idx)
+    dt_c$ch_idx <- as.integer(dt_c$ch_idx)
+    dt_c$y_orig <- bin_mid[dt_c$bin_idx]
+    dt_c$fill <- log10(dt_c$count + 1)
+    dt_c <- dt_c[dt_c$count >= 3, , drop = FALSE]
+    if (nrow(dt_c) == 0) return(NULL)
+    y_power <- 1.5
+    dt_c$y <- dt_c$y_orig^y_power
+    fill_lo <- min(dt_c$fill, na.rm = TRUE)
+    fill_hi <- stats::quantile(dt_c$fill, 0.96, na.rm = TRUE)
+    y_breaks_orig <- 0:ceiling(max_y)
+    y_breaks_trans <- y_breaks_orig^y_power
+    y_labels <- vapply(y_breaks_orig, function(x) paste0("10^", x), character(1))
+    labels <- det_info$labels[match(spec_channels, det_info$names)]
+    labels[is.na(labels) | !nzchar(labels)] <- spec_channels[is.na(labels) | !nzchar(labels)]
+
+    p_spec <- ggplot2::ggplot(dt_c, ggplot2::aes(ch_idx, y, fill = fill)) +
+        ggplot2::geom_tile(width = 0.7, height = bin_height * 3) +
+        ggplot2::scale_fill_gradientn(colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"), limits = c(fill_lo, fill_hi), oob = scales::squish) +
+        ggplot2::scale_x_continuous(breaks = seq_along(spec_channels), labels = labels) +
+        ggplot2::scale_y_continuous(limits = c(0, (max_y + 0.5)^y_power), breaks = y_breaks_trans, labels = y_labels) +
+        ggplot2::coord_cartesian(expand = FALSE) +
+        ggplot2::labs(title = NULL, x = NULL, y = "Intensity") +
+        ggplot2::theme_minimal() +
+        ggplot2::theme(
+            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+            legend.position = "none",
+            panel.background = ggplot2::element_rect(fill = "white", color = NA),
+            panel.grid.major = ggplot2::element_blank(),
+            panel.grid.minor = ggplot2::element_blank()
+        )
+    gate_plot_to_base64(p_spec)
+}
+
+gate_payload_for_file <- function(filename, max_points = 3000L) {
+    name <- gate_safe_basename(filename)
+    cache_key <- paste(name, max_points, sep = "::")
+    cache <- getOption("spectreasy.gating_payload_cache", list())
+    if (!is.null(cache[[cache_key]])) return(cache[[cache_key]])
+
+    df <- gate_read_mapping()
+    row <- df[df$filename == name, , drop = FALSE]
+    if (nrow(row) == 0) stop("File is not present in mapping: ", name, call. = FALSE)
+
+    path <- file.path(get_gate_scc_dir(), name)
+    ff <- gate_read_fcs(path)
+    expr <- flowCore::exprs(ff)
+    meta <- gate_fcs_metadata(path)
+    scatter_channels <- gate_scatter_channels(colnames(expr))
+    peak <- as.character(row$channel[1])
+    if (!peak %in% colnames(expr)) {
+        det <- tryCatch(spectreasy::get_sorted_detectors(flowCore::pData(flowCore::parameters(ff)))$names, error = function(e) colnames(expr))
+        det <- intersect(det, colnames(expr))
+        peak <- det[which.max(apply(expr[, det, drop = FALSE], 2, stats::var, na.rm = TRUE))]
+    }
+
+    n <- nrow(expr)
+    max_points <- suppressWarnings(as.integer(max_points[1]))
+    use_all <- is.finite(max_points) && !is.na(max_points) && max_points <= 0
+    if (!use_all && (!is.finite(max_points) || is.na(max_points) || max_points < 500)) max_points <- 3000L
+    if (!use_all && n > max_points) {
+        seed <- sum(utf8ToInt(name)) %% .Machine$integer.max
+        set.seed(seed)
+        idx <- sort(sample.int(n, max_points))
+    } else {
+        idx <- seq_len(n)
+    }
+    out <- data.frame(
+        event_index = idx,
+        fsc_a = as.numeric(expr[idx, meta$fsc_a]),
+        ssc_a = as.numeric(expr[idx, meta$ssc_a]),
+        fsc_h = as.numeric(expr[idx, meta$fsc_h]),
+        peak = as.numeric(expr[idx, peak]),
+        stringsAsFactors = FALSE
+    )
+    for (channel in setdiff(scatter_channels, colnames(out))) {
+        out[[channel]] <- as.numeric(expr[idx, channel])
+    }
+    out <- out[stats::complete.cases(out), , drop = FALSE]
+    scatter_domains <- stats::setNames(lapply(scatter_channels, function(channel) gate_compute_extent(out[[channel]])), scatter_channels)
+    payload <- list(
+        file = row[1, , drop = FALSE],
+        total_events = n,
+        returned_events = nrow(out),
+        channels = list(fsc_a = meta$fsc_a, fsc_h = meta$fsc_h, ssc_a = meta$ssc_a, peak = peak, scatter = scatter_channels),
+        labels = meta$labels,
+        domains = list(
+            fsc_a = gate_compute_extent(out$fsc_a),
+            ssc_a = gate_compute_extent(out$ssc_a),
+            fsc_h = gate_compute_extent(out$fsc_h),
+            peak = gate_compute_extent(out$peak),
+            scatter = scatter_domains
+        ),
+        events = out
+    )
+    cache[[cache_key]] <- payload
+    options(spectreasy.gating_payload_cache = cache)
+    payload
+}
+
 #* @filter logger
 function(req) {
     cat(as.character(Sys.time()), "-", req$REQUEST_METHOD, req$PATH_INFO, "\n")
@@ -182,6 +727,167 @@ function() {
         gui_mode = getOption("spectreasy.gui_mode", "tuner"),
         panel_cytometer = getOption("spectreasy.panel_cytometer", "aurora")
     ))
+}
+
+#* Load persistent GUI state for one GUI module
+#* @get /gui_state
+#* @param module
+function(module = "matrix_tuner") {
+    path <- user_gui_config_path(module)
+    if (!file.exists(path)) {
+        return(list(module = normalize_gui_module(module), path = path, config = list()))
+    }
+    cfg <- tryCatch(jsonlite::fromJSON(path, simplifyVector = TRUE), error = function(e) list())
+    list(module = normalize_gui_module(module), path = path, config = cfg)
+}
+
+#* Save persistent GUI state for one GUI module
+#* @post /gui_state
+function(req) {
+    body <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    module <- if (!is.null(body$module)) body$module else "matrix_tuner"
+    cfg <- if (!is.null(body$config_json)) body$config_json else list()
+    path <- user_gui_config_path(module)
+    jsonlite::write_json(cfg, path, auto_unbox = TRUE, pretty = TRUE, null = "null")
+    list(success = TRUE, module = normalize_gui_module(module), path = path)
+}
+
+#* List SCC control files for manual gating
+#* @get /gate_files
+function() {
+    df <- gate_read_mapping()
+    first <- df$filename[df$file_exists][1]
+    meta <- if (!is.na(first)) gate_fcs_metadata(file.path(get_gate_scc_dir(), first)) else list()
+    list(files = df, metadata = meta, gate_file = get_gate_file())
+}
+
+#* Load one downsampled SCC control payload
+#* @get /gate_events
+#* @param filename
+#* @param max_points
+function(filename, max_points = 3000) {
+    gate_payload_for_file(filename = filename, max_points = max_points)
+}
+
+#* Preload all downsampled SCC control payloads
+#* @get /gate_preload
+#* @param max_points
+function(max_points = 3000) {
+    df <- gate_read_mapping()
+    payloads <- lapply(df$filename, function(filename) {
+        tryCatch(gate_payload_for_file(filename = filename, max_points = max_points), error = function(e) {
+            list(error = conditionMessage(e), filename = filename)
+        })
+    })
+    list(payloads = payloads, max_points = as.integer(max_points))
+}
+
+#* Render selected SCC spectrum for the current gate cache
+#* @get /gate_spectrum
+#* @param filename
+function(filename) {
+    tryCatch(
+        list(spectrum = gate_spectrum_for_file(filename = filename)),
+        error = function(e) list(error = conditionMessage(e), spectrum = NULL)
+    )
+}
+
+#* List gate CSV files
+#* @get /gate_configs
+function() {
+    dir.create(dirname(get_gate_file()), recursive = TRUE, showWarnings = FALSE)
+    files <- list.files(dirname(get_gate_file()), pattern = "\\.csv$", full.names = FALSE, ignore.case = TRUE)
+    list(configs = sort(files), config_dir = dirname(get_gate_file()), active = basename(get_gate_file()))
+}
+
+#* Load gate CSV
+#* @get /gate_config
+#* @param filename
+function(filename = "") {
+    path <- if (is.null(filename) || !nzchar(trimws(as.character(filename)[1]))) {
+        get_gate_file()
+    } else {
+        file.path(dirname(get_gate_file()), basename(as.character(filename)[1]))
+    }
+    if (!file.exists(path)) {
+        return(list(path = path, rows = gate_empty_config()))
+    }
+    rows <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+    list(path = path, rows = rows)
+}
+
+#* Save gate CSV
+#* @post /gate_config
+function(req) {
+    body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
+    written <- gate_write_config_csv(body$rows, get_gate_file())
+    list(success = TRUE, path = written$path, rows = written$rows)
+}
+
+#* Save gate CSV with file picker
+#* @post /gate_config_save_dialog
+function(req) {
+    body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
+    if (!gate_has_csv_file_picker()) {
+        return(list(success = FALSE, cancelled = FALSE, message = "No R file picker is available in this session."))
+    }
+    path <- gate_pick_csv_file(mode = "save", title = "Save gate CSV")
+    if (!nzchar(path)) {
+        return(list(success = FALSE, cancelled = TRUE, message = "Save cancelled."))
+    }
+    written <- gate_write_config_csv(body$rows, path)
+    set_gate_file(written$path)
+    list(success = TRUE, cancelled = FALSE, path = written$path, rows = written$rows)
+}
+
+#* Load gate CSV with file picker
+#* @get /gate_config_load_dialog
+function() {
+    if (!gate_has_csv_file_picker()) {
+        return(list(success = FALSE, cancelled = FALSE, message = "No R file picker is available in this session."))
+    }
+    path <- gate_pick_csv_file(mode = "open", title = "Load gate CSV")
+    if (!nzchar(path)) {
+        return(list(success = FALSE, cancelled = TRUE, message = "Load cancelled."))
+    }
+    if (!file.exists(path)) {
+        return(list(success = FALSE, cancelled = FALSE, message = paste("File does not exist:", path)))
+    }
+    rows <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+    set_gate_file(path)
+    list(success = TRUE, cancelled = FALSE, path = path, rows = rows)
+}
+
+#* Load in-memory gate cache
+#* @get /gate_cache
+function() {
+    cache <- getOption("spectreasy.gating_state_cache")
+    if (is.null(cache)) {
+        return(list(gates = list(), pointSize = 1.5, maxPoints = 50000, histogramBins = 100, histogramTransform = "asinh", eventCountVersion = 2))
+    }
+    cache
+}
+
+#* Save in-memory gate cache
+#* @post /gate_cache
+function(req) {
+    body <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    options(spectreasy.gating_state_cache = list(
+        gates = body$gates,
+        pointSize = body$pointSize,
+        maxPoints = body$maxPoints,
+        histogramBins = body$histogramBins,
+        histogramTransform = body$histogramTransform,
+        eventCountVersion = body$eventCountVersion
+    ))
+    list(success = TRUE)
+}
+
+#* Shut down manual gating GUI
+#* @post /gate_shutdown
+function(req) {
+    later::later(function() httpuv::stopAllServers(), delay = 0.35)
+    list(success = TRUE, message = "Gate config saved. Manual gating GUI is shutting down.")
 }
 
 #* Spectral panel builder metadata and current selection
