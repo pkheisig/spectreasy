@@ -1000,10 +1000,10 @@ test_that("AF argument validation requires fixed numeric bands", {
 
 test_that("mapped SCC AF files are pooled into one AF bank size request", {
     detector_names <- c("B1-A", "YG1-A")
-    fcs_files <- file.path(tempdir(), paste0(c("Unstained_1", "Unstained_2", "Unstained_3"), ".fcs"))
+    fcs_files <- file.path(tempdir(), paste0(c("Unstained_1", "Unstained_2", "Unstained_3", "UnstainedDead"), ".fcs"))
     control_df <- data.frame(
         filename = basename(fcs_files),
-        fluorophore = c("AF", "AF_2", "AF_3"),
+        fluorophore = c("AF", "AF_2", "AF_3", "AF_Internal"),
         marker = "Autofluorescence",
         control.type = "cells",
         stringsAsFactors = FALSE
@@ -1063,6 +1063,29 @@ test_that("mapped SCC AF files are pooled into one AF bank size request", {
     expect_equal(out$af_bank_info$requested_bands, 3L)
     expect_equal(out$af_bank_info$mode, "pooled_af_sources")
     expect_equal(out$af_bank_info$sources$source_type, rep("mapped_unstained", 3))
+    expect_false("UnstainedDead.fcs" %in% out$af_bank_info$sources$file)
+})
+
+test_that("viability controls auto-use dead cell AF negatives", {
+    control_df <- data.frame(
+        filename = c(
+            "scc_cells_AF_Unstained.fcs",
+            "scc_cells_AF_UnstainedDead.fcs",
+            "scc_cells_eFluor780_LiveDead.fcs",
+            "scc_cells_FITC_CD4.fcs"
+        ),
+        fluorophore = c("AF", "AF_Internal", "eFluor 780", "FITC"),
+        marker = c("Autofluorescence", "Autofluorescence", "Live", "CD4"),
+        channel = c("FL13-A", "FL11-A", "FL44-A", "FL37-A"),
+        control.type = c("cells", "cells", "cells", "cells"),
+        is.viability = c("", "", "TRUE", ""),
+        stringsAsFactors = FALSE
+    )
+
+    normalized <- spectreasy:::.normalize_build_reference_control_df(control_df)
+
+    expect_equal(normalized$universal.negative[normalized$filename == "scc_cells_eFluor780_LiveDead.fcs"], "scc_cells_AF_UnstainedDead.fcs")
+    expect_equal(normalized$universal.negative[normalized$filename == "scc_cells_FITC_CD4.fcs"], "")
 })
 
 test_that("cell histogram gating keeps full middle negative mode for bright controls", {

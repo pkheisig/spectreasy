@@ -18,14 +18,61 @@
         if (!("channel" %in% colnames(control_df))) control_df$channel <- ""
         if (!("control.type" %in% colnames(control_df))) control_df$control.type <- ""
         if (!("universal.negative" %in% colnames(control_df))) control_df$universal.negative <- ""
+        if (!("is.viability" %in% colnames(control_df))) control_df$is.viability <- ""
 
         control_df$filename <- trimws(as.character(control_df$filename))
         control_df$fluorophore <- trimws(as.character(control_df$fluorophore))
         control_df$channel <- trimws(as.character(control_df$channel))
         control_df$control.type <- tolower(trimws(as.character(control_df$control.type)))
         control_df$universal.negative <- trimws(as.character(control_df$universal.negative))
+        control_df$is.viability <- trimws(as.character(control_df$is.viability))
+        if ("marker" %in% colnames(control_df)) {
+            control_df$marker <- trimws(as.character(control_df$marker))
+        }
+        for (col in c("filename", "fluorophore", "channel", "control.type", "universal.negative", "is.viability")) {
+            control_df[[col]][is.na(control_df[[col]])] <- ""
+        }
+        if ("marker" %in% colnames(control_df)) {
+            control_df$marker[is.na(control_df$marker)] <- ""
+        }
+        control_df <- .assign_reference_automatic_negatives(control_df)
     }
 
+    control_df
+}
+
+.assign_reference_automatic_negatives <- function(control_df) {
+    if (is.null(control_df) || !is.data.frame(control_df) || nrow(control_df) == 0) {
+        return(control_df)
+    }
+    if (!("universal.negative" %in% colnames(control_df))) control_df$universal.negative <- ""
+    if (!("is.viability" %in% colnames(control_df))) control_df$is.viability <- ""
+
+    dead_rows <- .is_dead_af_control_row(
+        fluorophore = if ("fluorophore" %in% colnames(control_df)) control_df$fluorophore else NULL,
+        marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
+        filename = control_df$filename,
+        control_type = if ("control.type" %in% colnames(control_df)) control_df$control.type else NULL
+    )
+    dead_files <- control_df$filename[dead_rows]
+    dead_files <- dead_files[nzchar(dead_files)]
+    if (length(dead_files) == 0) {
+        return(control_df)
+    }
+    control_df$fluorophore[dead_rows] <- "AF_dead"
+    if ("marker" %in% colnames(control_df)) {
+        control_df$marker[dead_rows] <- "Dead cell background"
+    }
+
+    viability_rows <- toupper(trimws(as.character(control_df$is.viability))) %in% c("TRUE", "T", "1", "YES", "Y")
+    control_type <- if ("control.type" %in% colnames(control_df)) {
+        tolower(trimws(as.character(control_df$control.type)))
+    } else {
+        rep("", nrow(control_df))
+    }
+    empty_negative <- !nzchar(trimws(as.character(control_df$universal.negative)))
+    target_rows <- viability_rows & !dead_rows & control_type != "beads" & empty_negative
+    control_df$universal.negative[target_rows] <- dead_files[1]
     control_df
 }
 
@@ -816,7 +863,7 @@
     af_fn <- NULL
     if (!is.null(control_df)) {
         af_rows <- if ("fluorophore" %in% colnames(control_df)) {
-            control_df[.is_af_control_row(
+            control_df[.is_primary_af_control_row(
                 fluorophore = control_df$fluorophore,
                 marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
                 filename = control_df$filename
@@ -978,7 +1025,7 @@
     af_source_types <- character()
     fcs_keys <- tools::file_path_sans_ext(basename(fcs_files_all))
     if (!is.null(control_df) && nrow(control_df) > 0) {
-        af_rows <- .is_af_control_row(
+        af_rows <- .is_primary_af_control_row(
             fluorophore = if ("fluorophore" %in% colnames(control_df)) control_df$fluorophore else NULL,
             marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
             filename = control_df$filename

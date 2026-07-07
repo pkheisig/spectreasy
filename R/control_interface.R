@@ -5,6 +5,7 @@
         marker = character(),
         channel = character(),
         control.type = character(),
+        universal.negative = character(),
         is.viability = character(),
         stringsAsFactors = FALSE
     )
@@ -580,6 +581,8 @@
     is_bead_negative <- .control_file_is_bead_negative_filename(fn)
     if (is_bead_negative) {
         fluor <- "AF_beads"
+    } else if (.is_dead_af_filename(fn)) {
+        fluor <- "AF_dead"
     } else if (grepl("Unstained|US_UT", fn, ignore.case = TRUE)) {
         fluor <- "AF_Internal"
     }
@@ -591,6 +594,8 @@
     )
     if (is_bead_negative) {
         marker <- "Bead background"
+    } else if (.is_dead_af_filename(fn)) {
+        marker <- "Dead cell background"
     }
     control_type <- .infer_control_type_from_filename(fn, fluor_guess = fluor, marker_guess = marker)
     viability_flag <- .infer_is_viability_from_filename(fn, fluor_guess = fluor, marker_guess = marker)
@@ -601,6 +606,7 @@
         marker = marker,
         channel = "",
         control.type = control_type,
+        universal.negative = "",
         is.viability = viability_flag,
         stringsAsFactors = FALSE
     )
@@ -824,10 +830,16 @@
 }
 
 .finalize_control_file_df <- function(df, scc_files, auto_af_files = character()) {
+    if (!("universal.negative" %in% colnames(df))) {
+        df$universal.negative <- ""
+    }
     bead_negative_files <- scc_files[vapply(scc_files, .control_file_is_bead_negative_filename, logical(1))]
     primary_af_candidates <- scc_files[grep("Unstained|US_UT", scc_files, ignore.case = TRUE)]
+    dead_af_files <- scc_files[.is_dead_af_filename(scc_files)]
     primary_af_candidates <- setdiff(primary_af_candidates, bead_negative_files)
+    primary_af_candidates <- setdiff(primary_af_candidates, dead_af_files)
     auto_af_files <- auto_af_files[!vapply(auto_af_files, .control_file_is_bead_negative_filename, logical(1))]
+    auto_af_files <- auto_af_files[!.is_dead_af_filename(auto_af_files)]
     auto_af_primary <- if (length(auto_af_files) > 0) auto_af_files[1] else ""
     primary_af_file <- if (length(primary_af_candidates) > 0) {
         primary_af_candidates[1]
@@ -855,7 +867,22 @@
         df$fluorophore[bead_negative_row] <- "AF_beads"
         df$marker[bead_negative_row] <- "Bead background"
         df$control.type[bead_negative_row] <- "beads"
+        df$universal.negative[bead_negative_row] <- ""
         df$is.viability[bead_negative_row] <- ""
+    }
+
+    dead_af_row <- .is_dead_af_control_row(
+        fluorophore = df$fluorophore,
+        marker = if ("marker" %in% colnames(df)) df$marker else NULL,
+        filename = df$filename,
+        control_type = df$control.type
+    )
+    if (any(dead_af_row)) {
+        df$fluorophore[dead_af_row] <- "AF_dead"
+        df$marker[dead_af_row] <- "Dead cell background"
+        df$control.type[dead_af_row] <- "cells"
+        df$is.viability[dead_af_row] <- ""
+        df$universal.negative[dead_af_row] <- ""
     }
 
     is_af_row <- grepl("^AF($|_)", as.character(df$fluorophore), ignore.case = TRUE) & !bead_negative_row
@@ -867,12 +894,21 @@
         df$control.type[df$filename == primary_af_file] <- "cells"
     }
 
+    dead_negative_file <- df$filename[dead_af_row]
+    dead_negative_file <- dead_negative_file[nzchar(dead_negative_file)]
+    if (length(dead_negative_file) > 0) {
+        viability_row <- df$is.viability == "TRUE" & !dead_af_row & df$control.type != "beads"
+        empty_negative <- !nzchar(trimws(as.character(df$universal.negative)))
+        df$universal.negative[viability_row & empty_negative] <- dead_negative_file[1]
+    }
+
     preferred_order <- c(
         "filename",
         "fluorophore",
         "marker",
         "channel",
         "control.type",
+        "universal.negative",
         "is.viability"
     )
     keep <- intersect(preferred_order, colnames(df))

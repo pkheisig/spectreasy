@@ -64,9 +64,34 @@ make_synthetic_workflow <- function(include_af = FALSE) {
 
 test_that("AF helper detects AF-like control rows", {
     expect_true(spectreasy:::.is_af_control_row(fluorophore = "AF"))
+    expect_true(spectreasy:::.is_af_control_row(fluorophore = "AF_Internal", marker = "Autofluorescence"))
     expect_true(spectreasy:::.is_af_control_row(marker = "Autofluorescence"))
     expect_true(spectreasy:::.is_af_control_row(filename = "Unstained (Cells).fcs"))
     expect_false(spectreasy:::.is_af_control_row(fluorophore = "FITC", filename = "FITC (Beads).fcs"))
+
+    expect_true(spectreasy:::.is_primary_af_control_row(fluorophore = "AF"))
+    expect_true(spectreasy:::.is_primary_af_control_row(fluorophore = "AF_2"))
+    expect_false(spectreasy:::.is_primary_af_control_row(
+        fluorophore = "AF_Internal",
+        marker = "Autofluorescence",
+        filename = "scc_cells_AF_UnstainedDead.fcs"
+    ))
+    expect_true(spectreasy:::.is_dead_af_control_row(
+        fluorophore = "AF_dead",
+        filename = "scc_cells_AF_UnstainedDead.fcs",
+        control_type = "cells"
+    ))
+    expect_true(spectreasy:::.is_dead_af_control_row(
+        fluorophore = "AF_Internal",
+        marker = "Autofluorescence",
+        filename = "scc_cells_AF_UnstainedDead.fcs",
+        control_type = "cells"
+    ))
+    expect_true(spectreasy:::.is_primary_af_control_row(
+        fluorophore = "",
+        marker = "Autofluorescence",
+        filename = "Unstained (Cells).fcs"
+    ))
 })
 
 test_that("validate_control_file_mapping validates synthetic SCC setup", {

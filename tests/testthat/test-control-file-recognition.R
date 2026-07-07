@@ -31,7 +31,8 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
         "Negative Beads.fcs",
         "Bead background.fcs",
         "BG CompBeads.fcs",
-        "Unstained (Cells).fcs"
+        "Unstained (Cells).fcs",
+        "scc_cells_AF_UnstainedDead.fcs"
     )
     created <- file.create(file.path(scc_dir, files))
     testthat::expect_true(all(created))
@@ -44,13 +45,13 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
 
     by_file <- split(df, df$filename)
 
-    testthat::expect_named(df, c("filename", "fluorophore", "marker", "channel", "control.type", "is.viability"))
-    testthat::expect_false("universal.negative" %in% colnames(df))
+    testthat::expect_named(df, c("filename", "fluorophore", "marker", "channel", "control.type", "universal.negative", "is.viability"))
     testthat::expect_false("large.gate" %in% colnames(df))
 
     testthat::expect_equal(by_file[["LIVE DEAD NIR (Cells).fcs"]]$fluorophore[[1]], "LIVE/DEAD NIR")
     testthat::expect_equal(by_file[["LIVE DEAD NIR (Cells).fcs"]]$control.type[[1]], "cells")
     testthat::expect_equal(by_file[["LIVE DEAD NIR (Cells).fcs"]]$is.viability[[1]], "TRUE")
+    testthat::expect_equal(by_file[["LIVE DEAD NIR (Cells).fcs"]]$universal.negative[[1]], "scc_cells_AF_UnstainedDead.fcs")
 
     testthat::expect_equal(by_file[["Alexa 647 (Beads).fcs"]]$fluorophore[[1]], "Alexa Fluor 647")
     testthat::expect_equal(by_file[["AF594 (Beads).fcs"]]$fluorophore[[1]], "Alexa Fluor 594")
@@ -118,6 +119,10 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
     testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$fluorophore[[1]], "AF")
     testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$marker[[1]], "Autofluorescence")
     testthat::expect_equal(by_file[["Unstained (Cells).fcs"]]$control.type[[1]], "cells")
+
+    testthat::expect_equal(by_file[["scc_cells_AF_UnstainedDead.fcs"]]$fluorophore[[1]], "AF_dead")
+    testthat::expect_equal(by_file[["scc_cells_AF_UnstainedDead.fcs"]]$marker[[1]], "Dead cell background")
+    testthat::expect_equal(by_file[["scc_cells_AF_UnstainedDead.fcs"]]$control.type[[1]], "cells")
 })
 
 testthat::test_that("detector fallback matches whole detector codes", {
