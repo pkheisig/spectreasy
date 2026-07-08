@@ -143,13 +143,13 @@ Clicking Confirm saves the gate CSV, closes the GUI server, and lets the same `u
 The control-stage run also writes visual checks for each single-color control with the gating plots from the GUI included in the control QC report. For one color, the summary below shows the broad FSC/SSC cleanup, the singlet gate, the positive/negative gate, and the per-event detector spectrum used to build the reference matrix:
 
 <p align="center">
-  <img src="man/figures/vignette_gating.png" width="100%" />
+  <img src="man/figures/vignette_gating.png" width="70%" />
 </p>
 
 The same run creates the NxN scatter matrix for the single-color controls. Each row is one control, and each column checks how much signal appears in the other unmixed markers.
 
 <p align="center">
-  <img src="man/figures/vignette_scatter_matrix.png" width="100%" />
+  <img src="man/figures/vignette_scatter_matrix.png" width="40%" />
 </p>
 
 ## 5. Unmix the experimental sample
@@ -331,7 +331,7 @@ plot_spectra(reference_matrix_no_af, output_file = NULL)
 ```
 
 <p align="center">
-  <img src="man/figures/vignette_spectra_scc.png" width="80%" />
+  <img src="man/figures/vignette_spectra_scc.png" width="75%" />
 </p>
 
 ```r
@@ -340,7 +340,7 @@ plot_spectra(fluor_reference_matrix[af_rows, , drop = FALSE], output_file = NULL
 ```
 
 <p align="center">
-  <img src="man/figures/vignette_spectra_af.png" width="80%" />
+  <img src="man/figures/vignette_spectra_af.png" width="75%" />
 </p>
 
 ```r
@@ -348,7 +348,7 @@ plot_similarity_matrix(calculate_similarity_matrix(reference_matrix_no_af), outp
 ```
 
 <p align="center">
-  <img src="man/figures/vignette_ssm.png" width="80%" />
+  <img src="man/figures/vignette_ssm.png" width="60%" />
 </p>
 
 ---
