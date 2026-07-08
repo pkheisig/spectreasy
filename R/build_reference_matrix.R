@@ -2922,7 +2922,7 @@
     max_points <- suppressWarnings(as.integer(max_points))
     if (!is.finite(max_points) || is.na(max_points) || max_points <= 0L) max_points <- 50000L
     if (n <= max_points) return(seq_len(n))
-    unique(pmax(1L, pmin(n, floor(seq(1, n, length.out = max_points)))))
+    pmax(1L, pmin(n, floor((seq_len(max_points) - 1L) * n / max_points) + 1L))
 }
 
 .reference_density_palette <- function(size = 64L) {
@@ -2972,6 +2972,17 @@
     out
 }
 
+.reference_gui_plot_aspect <- function() {
+    (520 - 54 - 18) / (420 - 18 - 46)
+}
+
+.reference_gui_coord_ratio <- function(x_lim, y_lim) {
+    x_span <- diff(as.numeric(x_lim[1:2]))
+    y_span <- diff(as.numeric(y_lim[1:2]))
+    if (!is.finite(x_span) || !is.finite(y_span) || x_span <= 0 || y_span <= 0) return(1)
+    x_span / (y_span * .reference_gui_plot_aspect())
+}
+
 .reference_qc_scatter_density_plot <- function(data,
                                                x_channel,
                                                y_channel,
@@ -2982,7 +2993,8 @@
                                                max_points = 50000L,
                                                point_size = 1.5,
                                                x_domain = NULL,
-                                               y_domain = NULL) {
+                                               y_domain = NULL,
+                                               sample_type = NULL) {
     x_desc <- .get_reference_axis_label(x_channel, pd)
     y_desc <- .get_reference_axis_label(y_channel, pd)
     x_vals <- data[, x_channel]
@@ -3011,6 +3023,7 @@
     if (!is.null(y_domain) && length(y_domain) >= 2L && all(is.finite(y_domain[1:2])) && y_domain[2] > y_domain[1]) {
         y_lim <- as.numeric(y_domain[1:2])
     }
+    coord_ratio <- .reference_gui_coord_ratio(x_lim, y_lim)
     point_size <- max(0.15, min(1.2, as.numeric(point_size) * 0.28))
     p <- ggplot2::ggplot(plot_df, ggplot2::aes(x, y)) +
         ggplot2::geom_point(color = plot_df$color, size = point_size, alpha = 0.95, stroke = 0) +
@@ -3029,12 +3042,15 @@
             plot.title = ggplot2::element_text(color = "#17201c", face = "plain", size = 14),
             plot.subtitle = ggplot2::element_text(color = "#69716b", size = 10.6)
         ) +
-        ggplot2::coord_cartesian(xlim = x_lim, ylim = y_lim, expand = FALSE)
+        ggplot2::coord_fixed(ratio = coord_ratio, xlim = x_lim, ylim = y_lim, expand = FALSE)
     if (!is.null(gate_vertices) && nrow(gate_vertices) >= 3) {
+        is_bead_gate <- identical(tolower(trimws(as.character(sample_type)[1])), "beads")
+        gate_color <- if (is_bead_gate) "#56b4e9" else "#d65238"
+        gate_alpha <- if (is_bead_gate) 0.16 else 0.16
         gate_closed <- rbind(gate_vertices, gate_vertices[1, , drop = FALSE])
         p <- p +
-            ggplot2::geom_polygon(data = gate_vertices, ggplot2::aes(x, y), inherit.aes = FALSE, fill = "#d65238", alpha = 0.12) +
-            ggplot2::geom_path(data = gate_closed, ggplot2::aes(x, y), inherit.aes = FALSE, color = "#d65238", linewidth = 1.05) +
+            ggplot2::geom_polygon(data = gate_vertices, ggplot2::aes(x, y), inherit.aes = FALSE, fill = gate_color, alpha = gate_alpha) +
+            ggplot2::geom_path(data = gate_closed, ggplot2::aes(x, y), inherit.aes = FALSE, color = gate_color, linewidth = 1.05) +
             ggplot2::geom_point(data = gate_vertices, ggplot2::aes(x, y), inherit.aes = FALSE, shape = 21, size = 2.4, stroke = 0.9, color = "#d65238", fill = "#fbfaf6")
     }
     p
@@ -3115,6 +3131,23 @@
     }, add = TRUE)
     set.seed(seed)
     sort(sample.int(n, max_points))
+}
+
+.reference_gui_display_data <- function(raw_data,
+                                        filename,
+                                        channels,
+                                        display_max_points,
+                                        preload_max_points = 100000L) {
+    if (is.null(raw_data) || nrow(raw_data) == 0L) return(raw_data[0, , drop = FALSE])
+    idx <- .reference_gui_payload_indices(filename, nrow(raw_data), max_points = preload_max_points)
+    payload <- raw_data[idx, , drop = FALSE]
+    channels <- unique(stats::na.omit(as.character(channels)))
+    channels <- intersect(channels[nzchar(channels)], colnames(payload))
+    if (length(channels) > 0L) {
+        payload <- payload[stats::complete.cases(payload[, channels, drop = FALSE]), , drop = FALSE]
+    }
+    display_idx <- .reference_even_indices(nrow(payload), max_points = display_max_points)
+    payload[display_idx, , drop = FALSE]
 }
 
 .reference_scatter_channels <- function(col_names) {
@@ -3202,6 +3235,8 @@
     x_labels <- .reference_pretty_k_label(.reference_histogram_inverse_values(x_breaks, transform = transform))
     curve <- .reference_histogram_density_curve(values_t, domain, bins = bins)
     ymax <- max(curve$y, 1, na.rm = TRUE)
+    y_lim <- c(0, ymax * 1.12)
+    coord_ratio <- .reference_gui_coord_ratio(domain, y_lim)
     x_desc <- .get_reference_axis_label(peak_channel, pd)
     p <- ggplot2::ggplot(curve, ggplot2::aes(x, y)) +
         ggplot2::geom_ribbon(ggplot2::aes(ymin = 0, ymax = y), fill = "#263f73", alpha = 0.28) +
@@ -3221,18 +3256,22 @@
             plot.title = ggplot2::element_text(color = "#17201c", face = "plain", size = 14),
             plot.margin = ggplot2::margin(5.5, 24, 5.5, 5.5)
         ) +
-        ggplot2::coord_cartesian(xlim = domain, ylim = c(0, ymax * 1.08), expand = FALSE, clip = "off")
+        ggplot2::coord_fixed(ratio = coord_ratio, xlim = domain, ylim = y_lim, expand = FALSE, clip = "off")
     if (isTRUE(attr(vals_log, "negative_gate_present")) && scalar_finite(neg_min) && scalar_finite(neg_max) && neg_max > neg_min) {
         neg_t <- .reference_histogram_transform_values(c(neg_min, neg_max), transform = transform)
+        neg_handles <- data.frame(x = neg_t, y = rep(ymax * 0.5, length(neg_t)))
         p <- p +
             ggplot2::annotate("rect", xmin = min(neg_t), xmax = max(neg_t), ymin = -Inf, ymax = Inf, alpha = 0.13, fill = "#263f73") +
-            ggplot2::geom_vline(xintercept = neg_t, color = "#263f73", linewidth = 1)
+            ggplot2::geom_vline(xintercept = neg_t, color = "#263f73", linewidth = 1) +
+            ggplot2::geom_point(data = neg_handles, ggplot2::aes(x, y), inherit.aes = FALSE, shape = 21, size = 2.4, stroke = 0.9, color = "#263f73", fill = "#fbfaf6")
     }
     if (isTRUE(attr(vals_log, "positive_gate_present")) && scalar_finite(pos_min) && scalar_finite(pos_max) && pos_max > pos_min) {
         pos_t <- .reference_histogram_transform_values(c(pos_min, pos_max), transform = transform)
+        pos_handles <- data.frame(x = pos_t, y = rep(ymax * 0.5, length(pos_t)))
         p <- p +
             ggplot2::annotate("rect", xmin = min(pos_t), xmax = max(pos_t), ymin = -Inf, ymax = Inf, alpha = 0.13, fill = "#d65238") +
-            ggplot2::geom_vline(xintercept = pos_t, color = "#d65238", linewidth = 1)
+            ggplot2::geom_vline(xintercept = pos_t, color = "#d65238", linewidth = 1) +
+            ggplot2::geom_point(data = pos_handles, ggplot2::aes(x, y), inherit.aes = FALSE, shape = 21, size = 2.4, stroke = 0.9, color = "#d65238", fill = "#fbfaf6")
     }
     p
 }
@@ -3264,48 +3303,62 @@
                                      manual_gate_info = NULL,
                                      hist_info = NULL,
                                      gui_scatter_domains = NULL,
-                                     histogram_domain = NULL) {
+                                     histogram_domain = NULL,
+                                     source_filename = NULL,
+                                     sample_type = NULL) {
     gate_settings <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$settings)) {
         manual_gate_info$settings
     } else {
         .reference_manual_gate_settings(NULL)
     }
+    if (is.null(source_filename) || !nzchar(as.character(source_filename)[1])) {
+        source_filename <- paste0(sn, ".fcs")
+    }
     cell_info <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$cell)) manual_gate_info$cell else NULL
+    singlet_info <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$singlet)) manual_gate_info$singlet else NULL
     cell_x <- if (!is.null(cell_info) && !is.null(cell_info$x_channel) && cell_info$x_channel %in% colnames(raw_data)) cell_info$x_channel else fsc
     cell_y <- if (!is.null(cell_info) && !is.null(cell_info$y_channel) && cell_info$y_channel %in% colnames(raw_data)) cell_info$y_channel else ssc
     cell_vertices <- if (!is.null(cell_info) && !is.null(cell_info$vertices)) cell_info$vertices else final_gate
+    singlet_vertices <- if (!is.null(singlet_info) && !is.null(singlet_info$vertices)) singlet_info$vertices else NULL
+    singlet_x <- if (!is.null(singlet_info) && !is.null(singlet_info$x_channel) && singlet_info$x_channel %in% colnames(raw_data)) singlet_info$x_channel else NA_character_
+    singlet_y <- if (!is.null(singlet_info) && !is.null(singlet_info$y_channel) && singlet_info$y_channel %in% colnames(raw_data)) singlet_info$y_channel else NA_character_
+    display_data <- .reference_gui_display_data(
+        raw_data = raw_data,
+        filename = source_filename,
+        channels = c(cell_x, cell_y, singlet_x, singlet_y, peak_channel),
+        display_max_points = gate_settings$max_points,
+        preload_max_points = 100000L
+    )
     cell_keep_count <- if (!is.null(cell_info) && !is.null(cell_info$keep_count) && is.finite(cell_info$keep_count)) {
         as.numeric(cell_info$keep_count)
     } else {
         nrow(gated_data)
     }
     p1 <- .reference_qc_scatter_density_plot(
-        data = raw_data,
+        data = display_data,
         x_channel = cell_x,
         y_channel = cell_y,
         pd = pd,
         gate_vertices = cell_vertices,
         title = paste0(sn, " - Cell Gate"),
         subtitle = paste0(round(100 * cell_keep_count / nrow(raw_data), 1), "% gated"),
-        max_points = gate_settings$max_points,
+        max_points = nrow(display_data),
         point_size = gate_settings$point_size,
         x_domain = .reference_gui_domain_for_channel(gui_scatter_domains, cell_x, raw_data[, cell_x]),
-        y_domain = .reference_gui_domain_for_channel(gui_scatter_domains, cell_y, raw_data[, cell_y])
+        y_domain = .reference_gui_domain_for_channel(gui_scatter_domains, cell_y, raw_data[, cell_y]),
+        sample_type = sample_type
     )
-    .save_reference_ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, sn, "FSC/SSC", width = 5, height = 5, dpi = 300)
+    .save_reference_ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, sn, "FSC/SSC", width = 5.2, height = 4.2, dpi = 300)
     fsc_desc <- .get_reference_axis_label(fsc, pd)
 
-    singlet_info <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$singlet)) manual_gate_info$singlet else NULL
-    singlet_vertices <- if (!is.null(singlet_info) && !is.null(singlet_info$vertices)) singlet_info$vertices else NULL
-    singlet_x <- if (!is.null(singlet_info) && !is.null(singlet_info$x_channel) && singlet_info$x_channel %in% colnames(raw_data)) singlet_info$x_channel else NA_character_
-    singlet_y <- if (!is.null(singlet_info) && !is.null(singlet_info$y_channel) && singlet_info$y_channel %in% colnames(raw_data)) singlet_info$y_channel else NA_character_
+    cell_keep_display <- if (!is.null(cell_vertices) && nrow(cell_vertices) >= 3 && cell_x %in% colnames(display_data) && cell_y %in% colnames(display_data)) {
+        sp::point.in.polygon(display_data[, cell_x], display_data[, cell_y], cell_vertices$x, cell_vertices$y) > 0
+    } else {
+        rep(TRUE, nrow(display_data))
+    }
+    histogram_source <- display_data[cell_keep_display, , drop = FALSE]
     if (!is.null(singlet_vertices) && nrow(singlet_vertices) >= 3 && !is.na(singlet_x) && !is.na(singlet_y)) {
-        cell_keep <- if (!is.null(cell_vertices) && nrow(cell_vertices) >= 3 && cell_x %in% colnames(raw_data) && cell_y %in% colnames(raw_data)) {
-            sp::point.in.polygon(raw_data[, cell_x], raw_data[, cell_y], cell_vertices$x, cell_vertices$y) > 0
-        } else {
-            rep(TRUE, nrow(raw_data))
-        }
-        singlet_source <- raw_data[cell_keep, , drop = FALSE]
+        singlet_source <- histogram_source
         singlet_keep_count <- if (!is.null(singlet_info$keep_count) && is.finite(singlet_info$keep_count)) {
             as.numeric(singlet_info$keep_count)
         } else {
@@ -3324,12 +3377,19 @@
             gate_vertices = singlet_vertices,
             title = paste0(sn, " - Singlet Gate"),
             subtitle = paste0(round(100 * singlet_keep_count / max(singlet_source_count, 1), 1), "% gated"),
-            max_points = gate_settings$max_points,
+            max_points = nrow(singlet_source),
             point_size = gate_settings$point_size,
             x_domain = .reference_gui_domain_for_channel(gui_scatter_domains, singlet_x, raw_data[, singlet_x]),
-            y_domain = .reference_gui_domain_for_channel(gui_scatter_domains, singlet_y, raw_data[, singlet_y])
+            y_domain = .reference_gui_domain_for_channel(gui_scatter_domains, singlet_y, raw_data[, singlet_y]),
+            sample_type = sample_type
         )
-        .save_reference_ggsave(file.path(out_path, "singlet", paste0(sn, "_singlet.png")), p_singlet, sn, "singlet", width = 5, height = 5, dpi = 300)
+        .save_reference_ggsave(file.path(out_path, "singlet", paste0(sn, "_singlet.png")), p_singlet, sn, "singlet", width = 5.2, height = 4.2, dpi = 300)
+        if (singlet_x %in% colnames(histogram_source) && singlet_y %in% colnames(histogram_source)) {
+            singlet_keep_display <- sp::point.in.polygon(histogram_source[, singlet_x], histogram_source[, singlet_y], singlet_vertices$x, singlet_vertices$y) > 0
+            histogram_source <- histogram_source[singlet_keep_display, , drop = FALSE]
+        } else {
+            histogram_source <- histogram_source[0, , drop = FALSE]
+        }
     }
 
     neg_log_min <- attr(vals_log, "neg_log_min")
@@ -3344,8 +3404,13 @@
         is.finite(gate_min) &&
         is.finite(gate_max) &&
         gate_max > gate_min
+    histogram_peak_vals <- if (peak_channel %in% colnames(histogram_source)) {
+        histogram_source[, peak_channel]
+    } else {
+        numeric()
+    }
     p2 <- .reference_qc_histogram_gui_plot(
-        peak_vals = peak_vals,
+        peak_vals = histogram_peak_vals,
         pd = pd,
         peak_channel = peak_channel,
         vals_log = vals_log,
@@ -3584,6 +3649,11 @@
             gate_min = extraction$gate_min,
             gate_max = extraction$gate_max
         )
+        qc_hist_info <- if (!is.null(autospectral_positive) && !is.null(autospectral_positive$hist_info)) {
+            autospectral_positive$hist_info
+        } else {
+            hist_info
+        }
 
         selected_peak <- autospectral_peak_vals[extraction$positive_idx]
         neg_vals <- autospectral_peak_vals[order(autospectral_peak_vals, decreasing = FALSE)[seq_len(max(1L, floor(0.10 * length(autospectral_peak_vals))))]]
@@ -3607,10 +3677,10 @@
                 fsc_max = scatter_info$fsc_max,
                 ssc_max = scatter_info$ssc_max,
                 final_gate = scatter_info$final_gate,
-                vals_log = hist_info$vals_log,
+                vals_log = qc_hist_info$vals_log,
                 peak_vals = peak_vals,
-                gate_min = hist_info$gate_min,
-                gate_max = hist_info$gate_max,
+                gate_min = qc_hist_info$gate_min,
+                gate_max = qc_hist_info$gate_max,
                 peak_channel = peak_channel,
                 detector_names = metadata$detector_names,
                 detector_labels = metadata$detector_labels,
@@ -3618,9 +3688,11 @@
                 out_path = config$out_path,
                 use_scatter_gating = TRUE,
                 manual_gate_info = scatter_info$manual_gate_info,
-                hist_info = hist_info,
+                hist_info = qc_hist_info,
                 gui_scatter_domains = config$gui_scatter_domains,
-                histogram_domain = .reference_gui_channel_extent(raw_data, peak_channel, sn_ext, max_points = 100000L)
+                histogram_domain = .reference_gui_channel_extent(raw_data, peak_channel, sn_ext, max_points = 100000L),
+                source_filename = sn_ext,
+                sample_type = sample_info$type
             )
         }
 
@@ -3751,7 +3823,9 @@
             manual_gate_info = scatter_info$manual_gate_info,
             hist_info = hist_info,
             gui_scatter_domains = config$gui_scatter_domains,
-            histogram_domain = .reference_gui_channel_extent(raw_data, peak_channel, sn_ext, max_points = 100000L)
+            histogram_domain = .reference_gui_channel_extent(raw_data, peak_channel, sn_ext, max_points = 100000L),
+            source_filename = sn_ext,
+            sample_type = sample_info$type
         )
     }
 

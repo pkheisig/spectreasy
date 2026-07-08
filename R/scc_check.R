@@ -12,30 +12,42 @@
     list(plot_dir = plot_dir, cleanup_dir = plot_dir, retained_qc_plot_dir = NULL)
 }
 
-.read_report_png_grob <- function(path) {
+.read_report_png <- function(path) {
     if (!file.exists(path)) {
         return(NULL)
     }
-    img <- png::readPNG(path)
-    grid::rasterGrob(img, interpolate = TRUE)
+    png::readPNG(path)
 }
 
 .draw_report_image_panel <- function(path, title, x, y, width, height) {
-    grob <- .read_report_png_grob(path)
+    img <- .read_report_png(path)
     grid::grid.text(
         title,
         x = x,
         y = y + height / 2 + grid::unit(4, "mm"),
         gp = grid::gpar(fontsize = 11, fontface = "bold")
     )
-    if (is.null(grob)) {
+    if (is.null(img)) {
         grid::grid.rect(x = x, y = y, width = width, height = height, gp = grid::gpar(col = "grey75", fill = NA))
         grid::grid.text("Plot not available", x = x, y = y, gp = grid::gpar(col = "grey40", fontsize = 10))
     } else {
+        img_aspect <- dim(img)[2] / dim(img)[1]
+        panel_w <- grid::convertWidth(width, "npc", valueOnly = TRUE)
+        panel_h <- grid::convertHeight(height, "npc", valueOnly = TRUE)
+        panel_aspect <- panel_w / panel_h
+        draw_width <- width
+        draw_height <- height
+        if (is.finite(img_aspect) && is.finite(panel_aspect) && img_aspect > 0 && panel_aspect > 0) {
+            if (img_aspect > panel_aspect) {
+                draw_height <- grid::unit(panel_w / img_aspect, "npc")
+            } else {
+                draw_width <- grid::unit(panel_h * img_aspect, "npc")
+            }
+        }
         grid::grid.draw(
             grid::editGrob(
-                grob,
-                vp = grid::viewport(x = x, y = y, width = width, height = height)
+                grid::rasterGrob(img, interpolate = TRUE),
+                vp = grid::viewport(x = x, y = y, width = draw_width, height = draw_height)
             )
         )
     }
