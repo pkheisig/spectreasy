@@ -1,12 +1,13 @@
-# spectreasy: Full Spectrum Flow Cytometry Quality Control
+# spectreasy: Spectral Flow Cytometry Umixing and Quality Control
 
 `spectreasy` is an R package for reviewing single-color controls, building spectral reference matrices, unmixing experimental samples, and more.
 
 ## Key Features
 
-- **Manual or Automated Control Gating**: Review SCC gates in a browser GUI by default, or fall back to automated GMM gating for scripted runs
+- **Control Gating**: Gate reference control files in a browser GUI with gates being automatically transferred into the unmixing function
 - **Reference Background Handling**: Use unstained cell controls for AF extraction and unstained bead controls as bead backgrounds when present
-- **Advanced Unmixing Algorithms**: Spectreasy builds on the AutoSpectral idea with per-cell AF matching, spectral variants, and marker reweighting
+- **Advanced Unmixing Algorithms**: Spectreasy builds on the `AutoSpectral` idea with per-cell AF matching and spectral variants. In addition, it ajusts AF extraction for each marker, depending on the AF's influence on it.
+- **Other Unmixing Algorithms**: OLS, NNLS, WLS and RWLS (robust WLS) are supported
 - **SCC Diagnostics & Visualization**: Generate PDF reports to inspect SCC spectra, gating plots, and various QC metrics
 - **Browser Tools**: Interactive control gating, spectral panel builder, and manual matrix adjustment modules
 - **Bioconductor-Native In-Memory Workflows**: `unmix_samples()` accepts `flowSet` and `SingleCellExperiment`, and can return either container
@@ -18,30 +19,30 @@
 Install with:
 
 ```r
-remotes::install_github("pkheisig/spectreasy@dev")
+remotes::install_github("pkheisig/spectreasy")
 
 # alternatively
-devtools::install_github("pkheisig/spectreasy@dev")
+devtools::install_github("pkheisig/spectreasy")
 ```
 
 ---
 
 # Example workflow
 
-This walkthrough demonstrates the primary `spectreasy` workflow on the example dataset. The example project contains:
+The example project contains:
 
 - single-color controls in `scc/`
 - one experimental sample in `samples/sample.fcs`
 
 Summary of the workflow:
 
-1. download the example data into a project directory (or use your own -> by default, SCCs go into /scc and samples into /samples)
-2. run `unmix_controls()`
-3. review and supplement the generated `fcs_mapping.csv`
-4. confirm the mapping file by typing `y` in the console
-5. review and confirm the browser-based SCC gates
-6. run `unmix_samples()`
-7. review the QC reports that are generated during unmixing
+1. Download the example data into a project directory (or use your own -> by default, SCCs go into /scc and samples into /samples)
+2. Run `unmix_controls()`
+3. Review and supplement the generated `fcs_mapping.csv`
+4. Confirm the mapping file by typing `y` in the console
+5. Perform gating on unstianed and single-color control files via the browser GUI
+6. Run `unmix_samples()`
+7. Review the QC reports that are generated during unmixing
 
 ## 1. Download the example data
 
@@ -120,9 +121,9 @@ Once `fcs_mapping.csv` has been reviewed and saved, return to the console where 
 y
 ```
 
-The gating GUI then opens in your browser. It shows the controls file by file with a population gate, a singlet gate, and a positive/negative gate where appropriate. Gates can be global across files or made file-specific from the right-click gate menu. Save and Load use the operating-system file picker, starting from the R working directory, and write/read a gate CSV such as `ssc_gate_config.csv`.
+The gating GUI then opens in your browser. It shows the controls file by file with a population gate, a singlet gate, and a positive/negative gate where appropriate. Gates can be global across files or made file-specific from the right-click gate menu. Save and Load buttons write/read a gate CSV such as `ssc_gate_config.csv`.
 
-Clicking Confirm saves the gate CSV, closes the GUI server, and lets the same `unmix_controls()` call continue. Confirm stays disabled until all required gates are present and contain enough events, so problems are caught at the gating step instead of later in the unmixing run.
+Clicking Confirm saves the gate CSV, closes the GUI server, and lets the same `unmix_controls()` call continue (you need to manually switch back to your IDE).
 
 1) Key outputs from this step include:
 - `spectreasy_outputs/unmix_controls/unmixed_fcs/*.fcs` -> your unmixed SCC and unstained control files
@@ -130,7 +131,7 @@ Clicking Confirm saves the gate CSV, closes the GUI server, and lets the same `u
 - `ssc_gate_config.csv` -> manual SCC gate definitions when the gating GUI is used
 - `spectreasy_outputs/unmix_controls/qc_controls_report.pdf` -> PDF report with SCC overview and QC plots (see details below)
 
-2) These are already part of qc_controls_report.pdf and only saved separately when save_qc_plots = TRUE so you can use the plot somewhere separately. 
+2) These are already part of qc_controls_report.pdf and only saved separately when save_qc_plots = TRUE so you can use the plot somewhere as a standalone PNG file. 
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
 - `spectreasy_outputs/unmix_controls/scc_spectra.png`
 - `spectreasy_outputs/unmix_controls/fsc_ssc/*.png` 
@@ -138,7 +139,7 @@ Clicking Confirm saves the gate CSV, closes the GUI server, and lets the same `u
 - `spectreasy_outputs/unmix_controls/spectrum/*.png`
 
 
-The control-stage run also writes visual checks for each single-color control. When manual gates are used, the gating plots from the GUI are included in the control QC report. For one color, the three plots below show the broad FSC/SSC cleanup, the scatter gate, and the detector spectrum used to build the reference matrix:
+The control-stage run also writes visual checks for each single-color control with the gating plots from the GUI included in the control QC report. For one color, the three plots below show the broad FSC/SSC cleanup, the scatter gate, and the detector spectrum used to build the reference matrix:
 
 <p align="center">
   <img src="man/figures/vignette_fsc_ssc.png" width="48%" />
@@ -194,7 +195,7 @@ You can also generate the QC report with a standalone function after unmixing:
 ```r
 qc_controls(
   scc_dir = "scc",
-  cytometer = "Aurora",
+  cytometer = "auto",
   seed = 1
 )
 ```
@@ -220,21 +221,24 @@ The sections below are for understanding, tuning, or reusing pieces of the workf
 
 ## Unmixing in spectreasy
 
-By default, `spectreasy` uses `unmixing_method = "Spectreasy"` for unmixing. The approach builds on AutoSpectral: it keeps the useful control-cleanup and spectral-variant ideas, adds manual SCC gating when needed, and performs per-event AF matching before the final marker estimate.
+By default, `spectreasy` uses `unmixing_method = "Spectreasy"`. The approach builds on AutoSpectral which performs per-event AF matching based on minimizing overall marker leakage, as well as per-event SCC spectral variant matching. For more information, visit [AutoSpectral](https://github.com/DrCytometer/AutoSpectral). The SCC event-selection and variant-detection design is inspired by [Spectracle](https://github.com/nlaniewski/spectracle)
 
 The extra Spectreasy step is marker reweighting. For markers that are strongly affected by AF shape, the method leans more on the AutoSpectral-style AF-aware fit. For markers that are relatively clean, it leans more on a marker-only OLS anchor. In practice, this is meant to keep the AF correction helpful without letting it overcorrect clean marker channels.
 
-When you choose `unmixing_method = "RWLS"`, `spectreasy` uses WLS under the hood and, in addition, adjusts the weights after calculating the residuals after unmixing. It does that a number of times specified by the `rwls_max_iter = X` parameter where X is an integer >= 1 (default is 1).
+The Spectreasy blend weight for each marker is calculated from how strongly the AF bank projects through the marker decoder, using a soft-saturation scale controlled by `spectreasy_weight_quantile` (default `0.9`). 
 
-The Spectreasy blend weight for each marker is calculated from how strongly the AF bank projects through the marker decoder, using a soft-saturation scale controlled by `spectreasy_weight_quantile` (default `0.9`). `Spectreasy` uses the standard k-means AF bank controlled by `af_n_bands`.
+
+## Other unmixing methods
+
+When you choose `unmixing_method = "RWLS"`, `spectreasy` uses WLS under the hood and, in addition, adjusts the weights after calculating the residuals after unmixing. It does that a number of times specified by the `rwls_max_iter = X` parameter where X is an integer >= 1 (default is 1).
 
 The regular `OLS` and `NNLS` methods remain available as separate methods. They are established algorithms for unmixing and one can find numerous sources on the web for further reading, if desired. 
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-By default, `unmix_controls()` uses `af_n_bands = 100` to build a broad AF bank from pooled unstained/AF control events. With one AF band, the AF row is the median normalized AF shape; with multiple AF bands, k-means-derived AF rows represent common AF shapes seen in the unstained cells. During unmixing, each event chooses one AF profile before the final fit.
+`Spectreasy` constructs an AF bank using k-means controlled by `af_n_bands`. By default, `unmix_controls()` uses `af_n_bands = 100` to build a broad AF bank from pooled unstained/AF control events. With one AF band, the AF row is the median normalized AF shape; with multiple AF bands, k-means-derived AF rows represent common AF shapes seen in the unstained cells. During unmixing, each event chooses one AF profile before the final fit.
 
-Most users should leave the AF settings at their defaults. To use multiple unstained sources, put each unstained cell `.fcs` file in `scc/`. The automapper will identify them as separate AF controls and use one AF row per file in `fcs_mapping.csv`. The events from those files are pooled before AF extraction; `af_n_bands` controls how many AF basis spectra are learned from the pooled events.
+To use multiple unstained sources, put each unstained cell `.fcs` file in `scc/`. The automapper will identify them as separate AF controls and use one AF row per file in `fcs_mapping.csv`. The events from those files are pooled before AF extraction; `af_n_bands` controls how many AF basis spectra are learned from the pooled events. When using several unstained cell control files (with many events in total) and encountering unmixing issues, one might consider trying a higher value for `af_n_bands`. Note, this can strongly increase the computation time of the unmixing algorithm.
 
 ```r
 ctrl_multi_af <- unmix_controls(
@@ -247,8 +251,7 @@ ctrl_multi_af <- unmix_controls(
 )
 ```
 
-Then pass the saved control-stage matrix to `unmix_samples()`. `unmix_samples()` does not rebuild missing matrices from SCC files; if the matrix is absent, run `unmix_controls()` first.
-
+Then pass the saved control-stage matrix to `unmix_samples()`.
 ```r
 unmixed_multi_af <- unmix_samples(
   sample_dir = "sample",
@@ -256,8 +259,6 @@ unmixed_multi_af <- unmix_samples(
   output_dir = "spectreasy_outputs/unmix_samples_multi_af"
 )
 ```
-
-This per-cell AF matching layer follows the idea of matching AF at the event level, while keeping AF signatures separate from fluorophore spectra in the `spectreasy` reference matrix.
 
 
 ## AF Profile Library
@@ -279,43 +280,31 @@ M_with_saved_af <- add_af_profile(ctrl$M, saved_af)
 
 Profiles are stored under `af_profile_dir()`, which defaults to the user-level `spectreasy` data directory. Use `plot_af_profile()` to inspect a saved profile and `delete_af_profile()` to remove one.
 
-## Use a reviewed control CSV in non-interactive workflows
+## Use a reviewed control CSV and gating set in non-interactive workflows
 
-For scripts, reports, or CI jobs, you can supply a pre-existing, reviewed control CSV file via `control_file` to `unmix_controls()` to skip the mapping confirmation prompt.
+For re-runs (e.g., testing different `af_n_bands` or `unmixing_method`), you can supply pre-existing `fcs_mapping.csv` and `ssc_gate_config.csv` files via the parameters `control_file` and `gating_file` to `unmix_controls()`. This will skip the mapping confirmation prompt and interactive gating GUI.
 
 ```r
 control_file <- file.path(project_dir, "fcs_mapping.csv")
+gating_file = file.path(project_dir, "ssc_gate_config.csv"),
 
 ctrl_noninteractive <- unmix_controls(
   scc_dir = file.path(project_dir, "scc"),
   control_file = control_file,
-  cytometer = "Aurora",
+  gating_file = gating_file,
+  manual_gating = FALSE,
+  cytometer = "auto",
   output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls_noninteractive"),
   seed = 1
 )
 
-dim(ctrl_noninteractive$M)
-#> [1] 9 64
-```
-
-You can also reuse a saved manual gate CSV. This is useful when rerunning the same dataset: set `manual_gating = FALSE` and pass the saved file with `gating_file`. If `gating_file` is omitted, `unmix_controls()` looks for `ssc_gate_config.csv` in the working directory and uses it when present; otherwise it falls back to automated GMM gating.
-
-```r
-ctrl_rerun <- unmix_controls(
-  scc_dir = file.path(project_dir, "scc"),
-  control_file = file.path(project_dir, "fcs_mapping.csv"),
-  manual_gating = FALSE,
-  gating_file = file.path(project_dir, "ssc_gate_config.csv"),
-  cytometer = "Aurora",
-  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls_rerun")
-)
 ```
 
 ## Pass the in-memory reference matrix directly
 
 You can pass the in-memory reference matrix returned by `unmix_controls()` directly to `unmix_samples()` instead of loading it from the saved CSV file.
 
-For WLS, `unmix_samples()` will also load `scc_detector_noise.csv` beside the saved reference matrix when it is available.
+For `unmixing_method` WLS and RWLS, `unmix_samples()` will also load `scc_detector_noise.csv` beside the saved reference matrix when it is available.
 
 ```r
 fluor_reference_matrix <- ctrl$M
@@ -339,8 +328,6 @@ names(unmixed_direct)
 
 ## Inspect quick QC plots
 
-Reference spectra should be interpreted in fluorophore space, so the original fluorophore-labeled control matrix is used here.
-
 ```r
 reference_matrix_no_af <- fluor_reference_matrix[!grepl("^AF($|_)", rownames(fluor_reference_matrix), ignore.case = TRUE), , drop = FALSE]
 
@@ -362,17 +349,7 @@ plot_nps(calculate_nps(sample_results), output_file = NULL)
 
 ---
 
-## Appendix: Browser Tools
-
-### Manual control gating
-
-`gate_controls()` opens the same SCC gating GUI used by `unmix_controls()`, but as a standalone step. It looks for controls in `scc/` by default and saves gate CSV files to the R working directory.
-
-```r
-gate_controls(scc_dir = "scc")
-```
-
-The GUI preloads downsampled events for responsive file switching, supports adjustable FSC/SSC parameter choices, histogram or scatter gating for positive/negative controls, and remembers GUI preferences automatically. Manual gating preferences, matrix-adjustment preferences, and panel-builder preferences are stored as one JSON file per GUI module in the user's package config area, so settings such as light/dark mode and selected cytometer reload for future datasets.
+## Appendix: Other Browser Tools
 
 ### Spectral panel builder
 
