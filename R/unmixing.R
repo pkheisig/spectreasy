@@ -575,11 +575,33 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
 #'   falls back to the built-in scalar noise floor.
 #' @param unmixing_method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`,
-#'   `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses
+#'   `"NNLS"`, `"AutoSpectral"`, `"Spectreasy"`, or `"TRU_Spectreasy"`). `AutoSpectral` uses
 #'   per-event AF assignment with marker + selected-AF OLS, plus SCC-derived
 #'   spectral-variant optimization when available. `Spectreasy` uses the same
 #'   AutoSpectral-style fit, then blends marker abundances with a marker-only
-#'   OLS anchor using decoder-projected AF impact weights.
+#'   OLS anchor using decoder-projected AF impact weights. `TRU_Spectreasy`
+#'   adds TRU-aware active marker selection and requires a TRU calibration.
+#' @param tru_calibration_file Optional path to a TRU calibration RDS file. When
+#'   omitted, `unmix_samples()` looks for calibration on `M`, then for
+#'   `scc_tru_calibration.rds` beside `unmixing_matrix_file`.
+#' @param tru_cutoff_quantile Optional quantile used to recompute TRU marker
+#'   cutoffs when null distributions are stored in the calibration.
+#' @param tru_af_score_mode AF scoring mode for TRU marker selection.
+#' @param tru_af_score_power Power used for thresholded TRU excess scores.
+#' @param tru_af_score_positive_only Logical; if `TRUE`, only positive marker
+#'   abundance above the null cutoff contributes to TRU AF scoring.
+#' @param tru_af_score_tiebreak Tie-break behavior for equal TRU AF scores.
+#' @param tru_prune_iterative Logical; iteratively remove active markers whose
+#'   active-set refit falls below their TRU cutoff.
+#' @param tru_max_iter Maximum active-set pruning iterations.
+#' @param tru_active_margin Multiplier applied to TRU marker cutoffs.
+#' @param tru_min_active_markers Minimum number of markers retained per event.
+#' @param tru_protected_markers Marker names that should not be pruned by TRU.
+#' @param tru_gamma_mode Spectreasy blend gamma mode for TRU active sets.
+#' @param tru_display Display behavior for inactive markers. `"ucm"` maps
+#'   dropped markers into the stored unstained-control null distribution.
+#' @param write_tru_diagnostics Logical; attach TRU active-count and refit
+#'   diagnostics to returned results.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
@@ -587,7 +609,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
 #' @param spectral_variant_library Optional in-memory AutoSpectral
 #'   spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`
-#'   or `"Spectreasy"`.
+#'   or `"Spectreasy"`; currently disabled for `"TRU_Spectreasy"`.
 #' @param spectral_variant_library_file Optional RDS path to an AutoSpectral
 #'   spectral-variant library. When omitted, `unmix_samples()` looks for
 #'   `scc_spectral_variants.rds` beside `unmixing_matrix_file`.
@@ -602,7 +624,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   improvement required before accepting a cell-specific AutoSpectral
 #'   variant refit.
 #' @param spectreasy_weight_quantile Numeric in `[0, 1]`; only accepted when
-#'   `unmixing_method = "Spectreasy"`. Controls the quantile of
+#'   `unmixing_method = "Spectreasy"` or `"TRU_Spectreasy"`. Controls the quantile of
 #'   decoder-projected AF impacts used as the soft-saturation scale for
 #'   marker-specific AutoSpectral mixing. The default is `0.9`.
 #' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
@@ -678,6 +700,20 @@ unmix_samples <- function(sample_dir = "samples",
                           unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
                           detector_noise_file = NULL,
                           unmixing_method = "Spectreasy", 
+                          tru_calibration_file = NULL,
+                          tru_cutoff_quantile = NULL,
+                          tru_af_score_mode = c("thresholded_excess", "current"),
+                          tru_af_score_power = 2,
+                          tru_af_score_positive_only = TRUE,
+                          tru_af_score_tiebreak = c("current_leakage", "none"),
+                          tru_prune_iterative = TRUE,
+                          tru_max_iter = 5L,
+                          tru_active_margin = 1.0,
+                          tru_min_active_markers = 0L,
+                          tru_protected_markers = character(0),
+                          tru_gamma_mode = c("global", "event_specific"),
+                          tru_display = "ucm",
+                          write_tru_diagnostics = FALSE,
                           rwls_max_iter = 1L,
                           n_threads = 1L,
                           spectral_variant_library = NULL,
@@ -737,12 +773,16 @@ unmix_samples <- function(sample_dir = "samples",
     }
 
     method <- .normalize_unmix_method(unmixing_method)
+    tru_af_score_mode <- match.arg(tru_af_score_mode)
+    tru_af_score_tiebreak <- match.arg(tru_af_score_tiebreak)
+    tru_gamma_mode <- .normalize_tru_gamma_mode(tru_gamma_mode)
+    tru_display <- .normalize_tru_display(tru_display)
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(n_threads)
-    if (!identical(method, "Spectreasy") && !spectreasy_weight_quantile_missing) {
-        stop("spectreasy_weight_quantile is only accepted when unmixing_method = \"Spectreasy\".", call. = FALSE)
+    if (!(method %in% c("Spectreasy", "TRU_Spectreasy")) && !spectreasy_weight_quantile_missing) {
+        stop("spectreasy_weight_quantile is only accepted when unmixing_method = \"Spectreasy\" or \"TRU_Spectreasy\".", call. = FALSE)
     }
-    if (identical(method, "Spectreasy")) {
+    if (method %in% c("Spectreasy", "TRU_Spectreasy")) {
         spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
     }
     estimate_af <- isTRUE(estimate_af)
@@ -765,7 +805,7 @@ unmix_samples <- function(sample_dir = "samples",
         )
     }
 
-    spectral_variant_library_resolved <- if (.is_autospectral_style_method(method)) {
+    spectral_variant_library_resolved <- if (.is_autospectral_style_method(method) && !identical(method, "TRU_Spectreasy")) {
         .resolve_spectral_variant_library_for_unmixing(
             M = M,
             spectral_variant_library = spectral_variant_library,
@@ -774,6 +814,15 @@ unmix_samples <- function(sample_dir = "samples",
         )
     } else {
         NULL
+    }
+    tru_calibration_resolved <- NULL
+    if (identical(method, "TRU_Spectreasy")) {
+        tru_calibration_resolved <- .resolve_tru_calibration_for_unmixing(
+            M = M,
+            tru_calibration_file = tru_calibration_file,
+            unmixing_matrix_file = unmixing_matrix_file
+        )
+        attr(M, "tru_calibration") <- tru_calibration_resolved
     }
 
     results <- list()
@@ -803,6 +852,20 @@ unmix_samples <- function(sample_dir = "samples",
             flow_frame = ff,
             M = M,
             method = method,
+            tru_calibration = tru_calibration_resolved,
+            tru_cutoff_quantile = tru_cutoff_quantile,
+            tru_af_score_mode = tru_af_score_mode,
+            tru_af_score_power = tru_af_score_power,
+            tru_af_score_positive_only = tru_af_score_positive_only,
+            tru_af_score_tiebreak = tru_af_score_tiebreak,
+            tru_prune_iterative = tru_prune_iterative,
+            tru_max_iter = tru_max_iter,
+            tru_active_margin = tru_active_margin,
+            tru_min_active_markers = tru_min_active_markers,
+            tru_protected_markers = tru_protected_markers,
+            tru_gamma_mode = tru_gamma_mode,
+            tru_display = tru_display,
+            write_tru_diagnostics = write_tru_diagnostics,
             file_name = sn,
             rwls_max_iter = rwls_max_iter,
             n_threads = n_threads,
@@ -813,7 +876,7 @@ unmix_samples <- function(sample_dir = "samples",
             spectral_variant_min_improvement = spectral_variant_min_improvement,
             return_residuals = TRUE
         )
-        if (identical(method, "Spectreasy")) {
+        if (method %in% c("Spectreasy", "TRU_Spectreasy")) {
             calc_args$spectreasy_weight_quantile <- spectreasy_weight_quantile
         }
         res_obj <- do.call(calc_residuals, calc_args)
@@ -859,6 +922,7 @@ unmix_samples <- function(sample_dir = "samples",
     attr(results, "method") <- method
     attr(results, "reference_matrix") <- M
     attr(results, "spectral_variant_library") <- spectral_variant_library_resolved
+    attr(results, "tru_calibration") <- tru_calibration_resolved
     attr(results, "blind_af_info") <- attr(M, "blind_af_info")
     attr(results, "qc_report_file") <- NULL
     attr(results, "qc_samples_dir") <- NULL

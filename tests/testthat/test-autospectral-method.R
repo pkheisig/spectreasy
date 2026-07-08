@@ -283,7 +283,7 @@ test_that("unmix_controls accepts refine only for AutoSpectral", {
     )
 })
 
-test_that("spectreasy_weight_quantile is accepted only for Spectreasy", {
+test_that("spectreasy_weight_quantile is accepted only for Spectreasy-style methods", {
     M <- matrix(c(1, 0.1, 0.2, 1), nrow = 2, byrow = TRUE)
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B1-A", "YG1-A")
@@ -302,7 +302,7 @@ test_that("spectreasy_weight_quantile is accepted only for Spectreasy", {
             write_fcs = FALSE,
             save_report = FALSE
         ),
-        "unmixing_method = \"Spectreasy\""
+        "TRU_Spectreasy"
     )
     expect_error(
         spectreasy::unmix_controls(
@@ -311,7 +311,7 @@ test_that("spectreasy_weight_quantile is accepted only for Spectreasy", {
             spectreasy_weight_quantile = 0.9,
             save_report = FALSE
         ),
-        "unmixing_method = \"Spectreasy\""
+        "TRU_Spectreasy"
     )
 })
 

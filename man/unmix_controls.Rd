@@ -34,6 +34,12 @@ unmix_controls(
   spectral_variant_max_variants = 8L,
   spectral_variant_min_events = 50L,
   spectreasy_weight_quantile = 0.9,
+  save_tru_calibration = TRUE,
+  tru_cutoff_quantile = 0.995,
+  tru_min_null_events = 500L,
+  tru_calibration_max_events = 50000L,
+  tru_ns_correction = TRUE,
+  tru_store_null_distributions = TRUE,
   autospectral_n_candidates = 1000L,
   autospectral_n_spectral = 200L,
   autospectral_min_events = 10L,
@@ -58,12 +64,15 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 \item{output_dir}{Output directory for SCC workflow artifacts.}
 
 \item{unmixing_method}{SCC unmixing method (`"WLS"`, `"RWLS"`,
-`"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
+`"OLS"`, `"NNLS"`, `"AutoSpectral"`, `"Spectreasy"`, or
+`"TRU_Spectreasy"`).
 `AutoSpectral` keeps the existing k-means AF bank controlled by
 `af_n_bands`, then uses OLS unmixing plus AutoSpectral-style SCC cleanup
 and spectral variants. `Spectreasy` uses the same cleanup and variant
 machinery, then blends the AutoSpectral-style marker fit with a marker-only
-OLS anchor using decoder-projected AF impact weights.}
+OLS anchor using decoder-projected AF impact weights. `TRU_Spectreasy`
+adds TRU-aware active marker selection and requires an unstained/AF
+calibration.}
 
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
 
@@ -137,9 +146,26 @@ fluorophore.}
 required to learn variants for one fluorophore.}
 
 \item{spectreasy_weight_quantile}{Numeric in `[0, 1]`; only accepted when
-`unmixing_method = "Spectreasy"`. Controls the quantile of
+`unmixing_method = "Spectreasy"` or `"TRU_Spectreasy"`. Controls the quantile of
 decoder-projected AF impacts used as the soft-saturation scale for
 marker-specific AutoSpectral mixing. The default is `0.9`.}
+
+\item{save_tru_calibration}{Logical; if `TRUE`, compute and save TRU marker
+cutoffs from usable unstained/AF control events when available.}
+
+\item{tru_cutoff_quantile}{Quantile used for TRU marker cutoffs.}
+
+\item{tru_min_null_events}{Minimum unstained/AF events required to build a
+TRU calibration.}
+
+\item{tru_calibration_max_events}{Maximum unstained/AF events used to build
+a TRU calibration.}
+
+\item{tru_ns_correction}{Logical; store and use a nonspecific detector-space
+correction vector in TRU calibration.}
+
+\item{tru_store_null_distributions}{Logical; store marker null abundance
+distributions in the TRU calibration RDS so cutoffs can be recomputed later.}
 
 \item{autospectral_n_candidates}{Number of peak-bright SCC candidate events
 considered by the AutoSpectral-style selector.}

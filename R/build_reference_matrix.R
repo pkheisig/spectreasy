@@ -3700,6 +3700,9 @@
     if (!is.null(af_bank_info)) {
         attr(M, "af_bank_info") <- af_bank_info
     }
+    if (!is.null(af_bank_info) && !is.null(af_bank_info$pooled_events)) {
+        attr(M, "reference_af_event_count") <- af_bank_info$pooled_events
+    }
     if (length(scc_positive_events) > 0L && any(has_scc_positive_events)) {
         attr(M, "scc_positive_events") <- scc_positive_events[has_scc_positive_events]
     }
@@ -4013,6 +4016,10 @@ build_reference_matrix <- function(
             }
             message("AF refinement did not produce usable refined signatures; keeping the base AF bank.")
         }
+    }
+    if (!is.null(af_profiles$af_events) && nrow(af_profiles$af_events) > 0L) {
+        attr(M, "reference_af_events") <- af_profiles$af_events
+        attr(M, "reference_af_event_count") <- nrow(af_profiles$af_events)
     }
     .attach_estimated_wls_detector_noise(
         M = M,

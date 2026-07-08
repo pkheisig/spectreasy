@@ -9,6 +9,20 @@ calc_residuals(
   M,
   file_name = NULL,
   method = "Spectreasy",
+  tru_calibration = NULL,
+  tru_cutoff_quantile = NULL,
+  tru_af_score_mode = c("thresholded_excess", "current"),
+  tru_af_score_power = 2,
+  tru_af_score_positive_only = TRUE,
+  tru_af_score_tiebreak = c("current_leakage", "none"),
+  tru_prune_iterative = TRUE,
+  tru_max_iter = 5L,
+  tru_active_margin = 1,
+  tru_min_active_markers = 0L,
+  tru_protected_markers = character(0),
+  tru_gamma_mode = c("global", "event_specific"),
+  tru_display = "ucm",
+  write_tru_diagnostics = FALSE,
   return_residuals = FALSE,
   background_noise = .default_wls_background_noise(),
   wls_signal_scale = .default_wls_signal_scale(),
@@ -31,12 +45,48 @@ calc_residuals(
 \item{file_name}{Optional file name to add to output}
 
 \item{method}{Unmixing method: `"Spectreasy"` (default), `"WLS"`, `"RWLS"`, `"OLS"`,
-`"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`. `AutoSpectral` assigns the best AF
+`"NNLS"`, `"AutoSpectral"`, or `"TRU_Spectreasy"`. `AutoSpectral` assigns the best AF
 spectrum per event with the AutoSpectral fluorophore-leakage score, refits
 marker + selected-AF OLS, and applies spectral-variant optimization when a
 variant library is supplied. `Spectreasy` uses the same AutoSpectral-style
 fit, then blends marker abundances with a marker-only OLS anchor using
-decoder-projected AF-impact weights derived from the reference matrix.}
+decoder-projected AF-impact weights derived from the reference matrix.
+`TRU_Spectreasy` adds TRU-aware active marker selection to that Spectreasy
+blend and requires a TRU calibration.}
+
+\item{tru_calibration}{Optional TRU calibration object created from an
+unstained/AF control.}
+
+\item{tru_cutoff_quantile}{Optional quantile used to recompute TRU marker
+cutoffs when null distributions are stored in the calibration.}
+
+\item{tru_af_score_mode}{AF scoring mode for TRU marker selection.}
+
+\item{tru_af_score_power}{Power used for thresholded TRU excess scores.}
+
+\item{tru_af_score_positive_only}{Logical; if `TRUE`, only positive marker
+abundance above the null cutoff contributes to TRU AF scoring.}
+
+\item{tru_af_score_tiebreak}{Tie-break behavior for equal TRU AF scores.}
+
+\item{tru_prune_iterative}{Logical; iteratively remove active markers whose
+active-set refit falls below their TRU cutoff.}
+
+\item{tru_max_iter}{Maximum active-set pruning iterations.}
+
+\item{tru_active_margin}{Multiplier applied to TRU marker cutoffs.}
+
+\item{tru_min_active_markers}{Minimum number of markers retained per event.}
+
+\item{tru_protected_markers}{Marker names that should not be pruned by TRU.}
+
+\item{tru_gamma_mode}{Spectreasy blend gamma mode for TRU active sets.}
+
+\item{tru_display}{Display behavior for inactive markers. `"ucm"` maps
+dropped markers into the stored unstained-control null distribution.}
+
+\item{write_tru_diagnostics}{Logical; attach TRU active-count and refit
+diagnostics to returned results.}
 
 \item{return_residuals}{Logical. If TRUE, returns a list containing the unmixed
 data and the detector residual matrix.}
@@ -59,7 +109,8 @@ multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
 
 \item{spectral_variant_library}{Optional per-fluorophore spectral-variant
 library learned from single-color controls. Used only with
-`method = "AutoSpectral"` or `"Spectreasy"`.}
+`method = "AutoSpectral"` or `"Spectreasy"`; currently disabled for
+`"TRU_Spectreasy"`.}
 
 \item{spectral_variant_top_k}{Number of best variant candidates to test per
 positive fluorophore.}
@@ -74,7 +125,7 @@ as a fraction of the event's strongest fluorophore abundance.}
 improvement required before accepting a cell-specific variant refit.}
 
 \item{spectreasy_weight_quantile}{Numeric in `[0, 1]`; only accepted when
-`method = "Spectreasy"`. Controls the quantile of decoder-projected AF
+`method = "Spectreasy"` or `"TRU_Spectreasy"`. Controls the quantile of decoder-projected AF
 impacts used as the soft-saturation scale for marker-specific AutoSpectral
 mixing. The default, `0.9`, uses the 90th percentile of marker AF impacts.}
 }

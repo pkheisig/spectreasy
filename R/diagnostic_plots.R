@@ -283,7 +283,7 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
     if (is.null(method)) {
         return("OLS")
     }
-    .normalize_unmix_method(method, choices = c("AutoSpectral", "Spectreasy", "OLS", "NNLS", "WLS", "RWLS"))
+    .normalize_unmix_method(method, choices = c("AutoSpectral", "Spectreasy", "TRU_Spectreasy", "OLS", "NNLS", "WLS", "RWLS"))
 }
 
 .resolve_residual_metric_matrix <- function(results, M = NULL) {

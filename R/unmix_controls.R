@@ -178,6 +178,8 @@
         detector_noise_csv = file.path(output_dir, "scc_detector_noise.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
         spectral_variant_library_rds = file.path(output_dir, "scc_spectral_variants.rds"),
+        tru_calibration_rds = file.path(output_dir, "scc_tru_calibration.rds"),
+        tru_marker_cutoffs_csv = file.path(output_dir, "scc_tru_marker_cutoffs.csv"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
         qc_report_pdf = file.path(output_dir, "qc_controls", "qc_controls_report.pdf")
     )
@@ -321,12 +323,15 @@
 #'   when creating controls (`"by_channel"`, `"empty"`, `"filename"`).
 #' @param output_dir Output directory for SCC workflow artifacts.
 #' @param unmixing_method SCC unmixing method (`"WLS"`, `"RWLS"`,
-#'   `"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
+#'   `"OLS"`, `"NNLS"`, `"AutoSpectral"`, `"Spectreasy"`, or
+#'   `"TRU_Spectreasy"`).
 #'   `AutoSpectral` keeps the existing k-means AF bank controlled by
 #'   `af_n_bands`, then uses OLS unmixing plus AutoSpectral-style SCC cleanup
 #'   and spectral variants. `Spectreasy` uses the same cleanup and variant
 #'   machinery, then blends the AutoSpectral-style marker fit with a marker-only
-#'   OLS anchor using decoder-projected AF impact weights.
+#'   OLS anchor using decoder-projected AF impact weights. `TRU_Spectreasy`
+#'   adds TRU-aware active marker selection and requires an unstained/AF
+#'   calibration.
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
 #' @param af_n_bands Number of AF basis signatures to extract from pooled
@@ -378,9 +383,20 @@
 #' @param spectral_variant_min_events Minimum cleaned positive SCC events
 #'   required to learn variants for one fluorophore.
 #' @param spectreasy_weight_quantile Numeric in `[0, 1]`; only accepted when
-#'   `unmixing_method = "Spectreasy"`. Controls the quantile of
+#'   `unmixing_method = "Spectreasy"` or `"TRU_Spectreasy"`. Controls the quantile of
 #'   decoder-projected AF impacts used as the soft-saturation scale for
 #'   marker-specific AutoSpectral mixing. The default is `0.9`.
+#' @param save_tru_calibration Logical; if `TRUE`, compute and save TRU marker
+#'   cutoffs from usable unstained/AF control events when available.
+#' @param tru_cutoff_quantile Quantile used for TRU marker cutoffs.
+#' @param tru_min_null_events Minimum unstained/AF events required to build a
+#'   TRU calibration.
+#' @param tru_calibration_max_events Maximum unstained/AF events used to build
+#'   a TRU calibration.
+#' @param tru_ns_correction Logical; store and use a nonspecific detector-space
+#'   correction vector in TRU calibration.
+#' @param tru_store_null_distributions Logical; store marker null abundance
+#'   distributions in the TRU calibration RDS so cutoffs can be recomputed later.
 #' @param autospectral_n_candidates Number of peak-bright SCC candidate events
 #'   considered by the AutoSpectral-style selector.
 #' @param autospectral_n_spectral Number of least-background-like SCC events
@@ -436,6 +452,12 @@ unmix_controls <- function(
     spectral_variant_max_variants = 8L,
     spectral_variant_min_events = 50L,
     spectreasy_weight_quantile = 0.9,
+    save_tru_calibration = TRUE,
+    tru_cutoff_quantile = 0.995,
+    tru_min_null_events = 500L,
+    tru_calibration_max_events = 50000L,
+    tru_ns_correction = TRUE,
+    tru_store_null_distributions = TRUE,
     autospectral_n_candidates = 1000L,
     autospectral_n_spectral = 200L,
     autospectral_min_events = 10L,
@@ -453,10 +475,10 @@ unmix_controls <- function(
     if (isTRUE(refine) && !use_refine) {
         stop("refine = TRUE is only accepted when unmixing_method = \"AutoSpectral\".", call. = FALSE)
     }
-    if (!identical(unmixing_method, "Spectreasy") && !spectreasy_weight_quantile_missing) {
-        stop("spectreasy_weight_quantile is only accepted when unmixing_method = \"Spectreasy\".", call. = FALSE)
+    if (!(unmixing_method %in% c("Spectreasy", "TRU_Spectreasy")) && !spectreasy_weight_quantile_missing) {
+        stop("spectreasy_weight_quantile is only accepted when unmixing_method = \"Spectreasy\" or \"TRU_Spectreasy\".", call. = FALSE)
     }
-    if (identical(unmixing_method, "Spectreasy")) {
+    if (unmixing_method %in% c("Spectreasy", "TRU_Spectreasy")) {
         spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
     }
     scc_background_args <- .validate_scc_background_args(
@@ -580,9 +602,33 @@ unmix_controls <- function(
     M <- do.call(build_reference_matrix, build_args)
     if (is.null(M) || nrow(M) == 0) stop("No valid spectra found while building reference matrix.")
 
+    tru_calibration <- NULL
+    tru_calibration_file <- NULL
+    tru_marker_cutoffs_file <- NULL
+    if (isTRUE(save_tru_calibration)) {
+        tru_calibration <- .build_tru_calibration(
+            M = M,
+            unstained_events = attr(M, "reference_af_events"),
+            cutoff_quantile = tru_cutoff_quantile,
+            min_null_events = tru_min_null_events,
+            max_events = tru_calibration_max_events,
+            ns_correction = tru_ns_correction,
+            store_null_distributions = tru_store_null_distributions
+        )
+        if (is.null(tru_calibration)) {
+            message("TRU marker calibration skipped: no usable unstained/AF control events were available.")
+        } else {
+            attr(M, "tru_calibration") <- tru_calibration
+            .save_tru_calibration(tru_calibration, output_paths$tru_calibration_rds)
+            .write_tru_cutoffs_csv(tru_calibration, output_paths$tru_marker_cutoffs_csv)
+            tru_calibration_file <- output_paths$tru_calibration_rds
+            tru_marker_cutoffs_file <- output_paths$tru_marker_cutoffs_csv
+        }
+    }
+
     spectral_variant_library <- NULL
     spectral_variant_library_file <- NULL
-    if (use_autospectral) {
+    if (use_autospectral && !identical(unmixing_method, "TRU_Spectreasy")) {
         spectral_variant_library <- tryCatch(
             .learn_spectral_variant_library(
                 M = M,
@@ -649,7 +695,7 @@ unmix_controls <- function(
         write_fcs = TRUE,
         save_report = FALSE
     )
-    if (identical(unmixing_method, "Spectreasy")) {
+    if (unmixing_method %in% c("Spectreasy", "TRU_Spectreasy")) {
         unmix_sample_args$spectreasy_weight_quantile <- spectreasy_weight_quantile
     }
     unmixed_list <- do.call(unmix_samples, unmix_sample_args)
@@ -714,6 +760,9 @@ unmix_controls <- function(
         unmixed_list = unmixed_list,
         reference_matrix_file = output_paths$reference_matrix_csv,
         detector_noise_file = output_paths$detector_noise_csv,
+        tru_calibration = tru_calibration,
+        tru_calibration_file = tru_calibration_file,
+        tru_marker_cutoffs_file = tru_marker_cutoffs_file,
         spectral_variant_library = spectral_variant_library,
         spectral_variant_library_file = spectral_variant_library_file,
         spectral_variant_info = if (!is.null(spectral_variant_library)) spectral_variant_library$info else NULL,
