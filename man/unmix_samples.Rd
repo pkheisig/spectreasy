@@ -57,7 +57,7 @@ falls back to the built-in scalar noise floor.}
 `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses
 per-event AF assignment with marker + selected-AF OLS, plus SCC-derived
 spectral-variant optimization when available. `Spectreasy` uses the same
-AutoSpectral-style fit, then blends marker abundances with a marker-only
+AutoSpectral-style OLS fit, then blends marker abundances with a marker-only
 OLS anchor using decoder-projected AF impact weights.}
 
 \item{rwls_max_iter}{Positive integer; number of robust reweighting

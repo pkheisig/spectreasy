@@ -30,13 +30,14 @@ calc_residuals(
 
 \item{file_name}{Optional file name to add to output}
 
-\item{method}{Unmixing method: `"Spectreasy"` (default), `"WLS"`, `"RWLS"`, `"OLS"`,
-`"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`. `AutoSpectral` assigns the best AF
+\item{method}{Unmixing method: `"Spectreasy"` (default), `"WLS"`, `"RWLS"`,
+`"OLS"`, `"NNLS"`, or `"AutoSpectral"`. `AutoSpectral` assigns the best AF
 spectrum per event with the AutoSpectral fluorophore-leakage score, refits
-marker + selected-AF OLS, and applies spectral-variant optimization when a
-variant library is supplied. `Spectreasy` uses the same AutoSpectral-style
-fit, then blends marker abundances with a marker-only OLS anchor using
-decoder-projected AF-impact weights derived from the reference matrix.}
+marker + selected-AF rows with OLS, and applies spectral-variant
+optimization when a variant library is supplied. `Spectreasy` uses the same
+AutoSpectral-style OLS fit, then blends marker abundances with a marker-only
+OLS anchor using decoder-projected AF-impact weights derived from the
+reference matrix.}
 
 \item{return_residuals}{Logical. If TRUE, returns a list containing the unmixed
 data and the detector residual matrix.}

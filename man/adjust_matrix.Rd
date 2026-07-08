@@ -9,7 +9,8 @@ adjust_matrix(
   samples_dir = NULL,
   port = 8000,
   open_browser = TRUE,
-  dev_mode = FALSE
+  dev_mode = FALSE,
+  unmixing_method = "Spectreasy"
 )
 }
 \arguments{
@@ -31,6 +32,9 @@ directory when it exists, then falls back to
 \item{dev_mode}{Logical. If `FALSE` (default), serves bundled GUI assets from the
 installed package and requires no Node.js/npm on user machines. If `TRUE`, starts
 the Vite dev server (`npm run dev`) from the packaged GUI source folder.}
+
+\item{unmixing_method}{Method used by the preview unmixing backend. Defaults
+to `"Spectreasy"` and accepts the same values as [unmix_samples()].}
 }
 \value{
 Invisibly returns NULL. This function blocks while the API is running.

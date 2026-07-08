@@ -634,7 +634,7 @@ test_that("unmix_samples supports in-memory subsampling via subsample_n", {
     unmixed_df <- as.data.frame(unmixed)
     expect_equal(nrow(unmixed_df), 10)
 
-    fcs_path <- file.path(tmp_dir, "Sample1_unmixed.fcs")
+    fcs_path <- file.path(tmp_dir, "Sample1_OLS-0AF.fcs")
     expect_true(file.exists(fcs_path))
     ff_written <- flowCore::read.FCS(fcs_path, transformation = FALSE, truncate_max_range = FALSE)
     expect_equal(nrow(flowCore::exprs(ff_written)), 50)
@@ -672,7 +672,7 @@ test_that("unmix_samples excludes secondary AF bands from written FCS files", {
         write_fcs = TRUE
     )
 
-    fcs_path <- file.path(tmp_dir, "Sample1_unmixed.fcs")
+    fcs_path <- file.path(tmp_dir, "Sample1_OLS-2AF.fcs")
     expect_true(file.exists(fcs_path))
     ff_written <- flowCore::read.FCS(fcs_path, transformation = FALSE, truncate_max_range = FALSE)
     written_exprs <- flowCore::exprs(ff_written)

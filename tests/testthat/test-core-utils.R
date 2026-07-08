@@ -259,9 +259,11 @@ test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_true("samples_dir" %in% names(formals(spectreasy::unmix_samples)))
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_controls)))
     expect_true("estimate_af" %in% names(formals(spectreasy::unmix_samples)))
+    expect_true("unmixing_method" %in% names(formals(spectreasy::adjust_matrix)))
     expect_false(formals(spectreasy::unmix_samples)$estimate_af)
     expect_equal(formals(spectreasy::calc_residuals)$method, "Spectreasy")
     expect_equal(formals(spectreasy::unmix_samples)$unmixing_method, "Spectreasy")
+    expect_equal(formals(spectreasy::adjust_matrix)$unmixing_method, "Spectreasy")
 })
 
 test_that("calc_residuals multi-AF RWLS honors rwls_max_iter", {
@@ -582,7 +584,7 @@ test_that("unmix_samples writes unmixed FCS with passthrough acquisition paramet
     expect_setequal(colnames(unmixed$sample1$data), c("FITC", "PE", "Time", "FSC-A", "FSC-H", "SSC-A", "SSC-W", "File"))
 
     unmixed_ff <- flowCore::read.FCS(
-        file.path(output_dir, "sample1_unmixed.fcs"),
+        file.path(output_dir, "sample1_OLS-0AF.fcs"),
         transformation = FALSE,
         truncate_max_range = FALSE
     )
@@ -612,7 +614,7 @@ test_that("unmix_samples uses safe output filenames and supports flowSet return"
     output_dir <- tempfile("spectreasy_test_safe_unmixed_")
     dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
-    flowCore::write.FCS(ff, file.path(output_dir, "sample1_unmixed.fcs"))
+    flowCore::write.FCS(ff, file.path(output_dir, "sample1_OLS-0AF.fcs"))
 
     unmixed_fs <- spectreasy::unmix_samples(
         sample_dir = fs,
@@ -625,9 +627,9 @@ test_that("unmix_samples uses safe output filenames and supports flowSet return"
 
     expect_s4_class(unmixed_fs, "flowSet")
     expect_setequal(flowCore::sampleNames(unmixed_fs), c("sample1", "sample2"))
-    expect_true(file.exists(file.path(output_dir, "sample1_unmixed.fcs")))
-    expect_true(file.exists(file.path(output_dir, "sample1_unmixed_2.fcs")))
-    expect_true(file.exists(file.path(output_dir, "sample2_unmixed.fcs")))
+    expect_true(file.exists(file.path(output_dir, "sample1_OLS-0AF.fcs")))
+    expect_true(file.exists(file.path(output_dir, "sample1_OLS-0AF_2.fcs")))
+    expect_true(file.exists(file.path(output_dir, "sample2_OLS-0AF.fcs")))
 
     residuals_attr <- attr(unmixed_fs, "spectreasy_residuals")
     expect_true(is.list(residuals_attr))
@@ -685,6 +687,47 @@ test_that("unmix_samples supports SingleCellExperiment input and output", {
 
     residual_alt <- SingleCellExperiment::altExp(unmixed_sce, "detector_residuals")
     expect_setequal(rownames(residual_alt), c("B1-A", "YG1-A"))
+})
+
+test_that("SingleCellExperiment sample basenames remain unique", {
+    skip_if_not_installed("SingleCellExperiment")
+    skip_if_not_installed("SummarizedExperiment")
+
+    M <- matrix(c(
+        1, 0.2,
+        0.1, 1
+    ), nrow = 2, byrow = TRUE)
+    rownames(M) <- c("FITC", "PE")
+    colnames(M) <- c("B1-A", "YG1-A")
+
+    assay_mat <- matrix(c(
+        100, 20, 90, 30,
+        120, 15, 110, 25
+    ), nrow = 2, byrow = TRUE)
+    rownames(assay_mat) <- c("B1-A", "YG1-A")
+    colnames(assay_mat) <- paste0("cell_", seq_len(ncol(assay_mat)))
+    toy_sce <- suppressWarnings(
+        SingleCellExperiment::SingleCellExperiment(
+            assays = list(counts = assay_mat),
+            colData = S4Vectors::DataFrame(
+                sample_id = rep(c("run1/sample.fcs", "run2/sample.fcs"), each = 2),
+                row.names = colnames(assay_mat)
+            )
+        )
+    )
+
+    out <- suppressWarnings(
+        spectreasy::unmix_samples(
+            sample_dir = toy_sce,
+            M = M,
+            unmixing_method = "OLS",
+            write_fcs = FALSE,
+            save_report = FALSE
+        )
+    )
+
+    expect_equal(names(out), c("sample", "sample.1"))
+    expect_length(out, 2)
 })
 
 test_that(".compute_reference_spectrum computes detector spectrum", {

@@ -1572,6 +1572,7 @@
         clip_x = if (sample_type %in% c("cells", "unstained")) fsc_upper_limit else Inf,
         clip_y = if (sample_type %in% c("cells", "unstained")) ssc_upper_limit else Inf
     )
+    if (is.null(final_gate) || nrow(final_gate) == 0) return(NULL)
     if (sample_type %in% c("cells", "unstained")) {
         final_gate$x <- pmax(fsc_lower_limit, final_gate$x)
         if (nrow(final_gate) > 0 && (final_gate$x[1] != final_gate$x[nrow(final_gate)] || final_gate$y[1] != final_gate$y[nrow(final_gate)])) {

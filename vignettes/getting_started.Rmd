@@ -14,7 +14,8 @@ knitr::opts_chunk$set(
   fig.width = 7,
   fig.height = 4.5,
   warning = FALSE,
-  message = FALSE
+  message = FALSE,
+  eval = FALSE
 )
 ```
 
@@ -263,7 +264,7 @@ unmixed <- unmix_samples(
 
 For the example dataset, this writes:
 
-- `spectreasy_outputs/unmix_samples/sample_unmixed.fcs`
+- `spectreasy_outputs/unmix_samples/sample_Spectreasy-100AF.fcs`
 
 and returns a named list with one element per sample.
 
@@ -279,7 +280,7 @@ knitr::kable(utils::head(sample_results[, preview_cols, drop = FALSE]))
 ```
 
 ```{r, echo = FALSE}
-file.exists(file.path(project_dir, "spectreasy_outputs", "unmix_samples", "sample_unmixed.fcs"))
+file.exists(file.path(project_dir, "spectreasy_outputs", "unmix_samples", "sample_Spectreasy-100AF.fcs"))
 ```
 
 ## 6. Generate quality control reports (optional)
@@ -288,10 +289,10 @@ After unmixing, you can generate comprehensive PDF reports to inspect the qualit
 
 ### Single-Color Control (SCC) Report
 
-The SCC report reviews gating, peak channels, and signal distributions for each control file. By default, it writes the report to `"spectreasy_outputs/unmix_samples/qc_controls_report.pdf"`.
+The SCC report reviews gating, peak channels, and signal distributions for each control file. By default, it writes the report to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.
 
 ```{r}
-scc_report_file <- file.path(project_dir, "spectreasy_outputs", "unmix_samples", "qc_controls_report.pdf")
+scc_report_file <- file.path(project_dir, "spectreasy_outputs", "unmix_controls", "qc_controls_report.pdf")
 
 # qc_controls(scc_dir = file.path(project_dir, "scc"), cytometer = "Aurora", seed = 1)
 qc_controls(

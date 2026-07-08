@@ -18,7 +18,7 @@
                                     choices = c("AutoSpectral", "Spectreasy", "OLS", "NNLS", "WLS", "RWLS")) {
     method_raw <- toupper(trimws(as.character(method[1])))
     if (length(method_raw) == 0 || is.na(method_raw) || !nzchar(method_raw)) {
-        method_raw <- "AUTOSPECTRAL"
+        method_raw <- "SPECTREASY"
     }
     method_raw <- gsub("[_-]", "", method_raw)
     lookup <- c(
@@ -274,13 +274,14 @@
 #' @param flow_frame A flowFrame object with raw fluorescence data
 #' @param M Reference matrix (fluorophores x detectors)
 #' @param file_name Optional file name to add to output
-#' @param method Unmixing method: `"Spectreasy"` (default), `"WLS"`, `"RWLS"`, `"OLS"`,
-#'   `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`. `AutoSpectral` assigns the best AF
+#' @param method Unmixing method: `"Spectreasy"` (default), `"WLS"`, `"RWLS"`,
+#'   `"OLS"`, `"NNLS"`, or `"AutoSpectral"`. `AutoSpectral` assigns the best AF
 #'   spectrum per event with the AutoSpectral fluorophore-leakage score, refits
-#'   marker + selected-AF OLS, and applies spectral-variant optimization when a
-#'   variant library is supplied. `Spectreasy` uses the same AutoSpectral-style
-#'   fit, then blends marker abundances with a marker-only OLS anchor using
-#'   decoder-projected AF-impact weights derived from the reference matrix.
+#'   marker + selected-AF rows with OLS, and applies spectral-variant
+#'   optimization when a variant library is supplied. `Spectreasy` uses the same
+#'   AutoSpectral-style OLS fit, then blends marker abundances with a marker-only
+#'   OLS anchor using decoder-projected AF-impact weights derived from the
+#'   reference matrix.
 #' @param return_residuals Logical. If TRUE, returns a list containing the unmixed
 #'   data and the detector residual matrix.
 #' @param background_noise Scalar or detector-length vector used as the WLS noise

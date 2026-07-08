@@ -227,7 +227,7 @@
 .compute_qc_report_detector_rms <- function(res_list, M = NULL, pd = NULL, unmixing_method = NULL) {
     detector_names <- if (!is.null(M)) colnames(.as_reference_matrix(M, "M")) else NULL
     method <- .resolve_residual_metric_method(res_list, unmixing_method = unmixing_method)
-    metric_name <- if (method %in% c("WLS", "RWLS")) "wls_weighted_rms" else "raw_rms"
+    metric_name <- if (.uses_wls_residual_metric(method)) "wls_weighted_rms" else "raw_rms"
     residuals <- .collect_report_residual_metric_matrix(
         res_list,
         M = M,
@@ -262,14 +262,14 @@
     }
     M_mat <- .resolve_residual_metric_matrix(res_list, M = M)
     method <- .resolve_residual_metric_method(res_list, unmixing_method = unmixing_method)
-    metric_name <- if (method %in% c("WLS", "RWLS")) "wls_weighted_rms" else "raw_rms"
+    metric_name <- if (.uses_wls_residual_metric(method)) "wls_weighted_rms" else "raw_rms"
     rows <- lapply(names(res_list), function(sn) {
         res_obj <- res_list[[sn]]
         if (!is.list(res_obj) || is.null(res_obj$residuals)) {
             return(NULL)
         }
         residuals <- as.matrix(res_obj$residuals)
-        weights <- if (method %in% c("WLS", "RWLS")) .residual_metric_weights(res_obj, M = M_mat, unmixing_method = method) else NULL
+        weights <- if (.uses_wls_residual_metric(method)) .residual_metric_weights(res_obj, M = M_mat, unmixing_method = method) else NULL
         if (!is.null(weights)) {
             common <- intersect(colnames(residuals), colnames(weights))
             if (length(common) > 0) {
@@ -986,8 +986,9 @@
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param output_file Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.
-#' @param unmixing_method Unmixing method used to create `results` (`"AutoSpectral"`,
-#'   `"Spectreasy"`, `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
+#' @param unmixing_method Unmixing method used to create `results`
+#'   (`"AutoSpectral"`, `"Spectreasy"`, `"OLS"`, `"WLS"`, `"RWLS"`, or
+#'   `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
 #'   because constrained NNLS results are non-negative by construction.
 #' @param res_list Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.
 #' @param pd Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.
@@ -1070,7 +1071,7 @@ qc_samples <- function(results,
     sample_nxn_transform <- match.arg(sample_nxn_transform)
     method_attr <- attr(results, "method")
     if (is.null(unmixing_method)) {
-        unmixing_method <- if (!is.null(method_attr)) method_attr else "AutoSpectral"
+        unmixing_method <- if (!is.null(method_attr)) method_attr else "Spectreasy"
     }
     unmixing_method <- .normalize_unmix_method(unmixing_method)
 

@@ -49,19 +49,21 @@
 
     sample_ids <- .resolve_sce_sample_column(sample_input)
     sample_levels <- unique(sample_ids)
+    sample_keys <- make.unique(tools::file_path_sans_ext(basename(sample_levels)))
     cell_names <- colnames(sample_input)
     if (is.null(cell_names) || any(cell_names == "")) {
         cell_names <- paste0("cell_", seq_len(ncol(sample_input)))
     }
 
-    lapply(sample_levels, function(sample_id) {
+    lapply(seq_along(sample_levels), function(i) {
+        sample_id <- sample_levels[[i]]
         idx <- which(sample_ids == sample_id)
         expr_mat <- t(as.matrix(assay_mat[, idx, drop = FALSE]))
         storage.mode(expr_mat) <- "numeric"
         colnames(expr_mat) <- rownames(assay_mat)
         ff <- flowCore::flowFrame(expr_mat)
         list(
-            sample_name = make.unique(tools::file_path_sans_ext(basename(sample_id)))[[1]],
+            sample_name = sample_keys[[i]],
             source_name = sample_id,
             flow_frame = ff,
             cell_ids = cell_names[idx]
@@ -348,6 +350,27 @@
     }
 }
 
+.unmix_method_file_label <- function(method) {
+    method <- .normalize_unmix_method(method)
+    gsub("[^A-Za-z0-9]+", "", method)
+}
+
+.reference_af_band_count <- function(M) {
+    M <- .as_reference_matrix(M, "M")
+    sum(grepl("^AF($|_)", rownames(M), ignore.case = TRUE))
+}
+
+.unmixed_fcs_filename <- function(sample_name, method, M) {
+    paste0(
+        sample_name,
+        "_",
+        .unmix_method_file_label(method),
+        "-",
+        .reference_af_band_count(M),
+        "AF.fcs"
+    )
+}
+
 .next_safe_output_dir <- function(path) {
     if (!dir.exists(path)) {
         return(path)
@@ -578,7 +601,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses
 #'   per-event AF assignment with marker + selected-AF OLS, plus SCC-derived
 #'   spectral-variant optimization when available. `Spectreasy` uses the same
-#'   AutoSpectral-style fit, then blends marker abundances with a marker-only
+#'   AutoSpectral-style OLS fit, then blends marker abundances with a marker-only
 #'   OLS anchor using decoder-projected AF impact weights.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
@@ -836,8 +859,9 @@ unmix_samples <- function(sample_dir = "samples",
                 secondary_label_map = secondary_label_map
             )
 
-            output_path <- .next_safe_output_path(file.path(output_dir, paste0(sn, "_unmixed.fcs")))
-            if (!identical(output_path, file.path(output_dir, paste0(sn, "_unmixed.fcs")))) {
+            target_output_path <- file.path(output_dir, .unmixed_fcs_filename(sn, method, M))
+            output_path <- .next_safe_output_path(target_output_path)
+            if (!identical(output_path, target_output_path)) {
                 message("    Existing output detected; writing to safe path: ", basename(output_path))
             }
             flowCore::write.FCS(new_ff, output_path)

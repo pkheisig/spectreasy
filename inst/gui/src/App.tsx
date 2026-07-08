@@ -20,6 +20,8 @@ interface MatrixRow {
 
 type DataRow = Record<string, string | number | null | undefined>;
 type MatrixPayload = Record<string, Record<string, string | number | null | undefined>>;
+const UNMIXING_METHODS = ['Spectreasy', 'AutoSpectral', 'OLS', 'WLS', 'RWLS', 'NNLS'] as const;
+type UnmixingMethod = typeof UNMIXING_METHODS[number];
 type ViewConfig = {
     colorPalette?: string;
     showControls?: boolean;
@@ -79,6 +81,11 @@ const asScalarString = (value: unknown, fallback = '') => {
     return String(value);
 };
 
+const asUnmixingMethod = (value: unknown): UnmixingMethod => {
+    const text = asScalarString(value, 'Spectreasy');
+    return UNMIXING_METHODS.includes(text as UnmixingMethod) ? text as UnmixingMethod : 'Spectreasy';
+};
+
 const alignDetectorLabels = (detNames: string[], payload: Record<string, unknown>) => {
     const rawNames = Array.isArray(payload.detector_names) ? payload.detector_names.map(v => String(v)) : [];
     const rawLabels = Array.isArray(payload.detector_labels) ? payload.detector_labels.map(v => String(v)) : [];
@@ -114,6 +121,7 @@ const App = () => {
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [configStatus, setConfigStatus] = useState<'idle' | 'saving' | 'saved' | 'loading'>('idle');
     const [guiStateLoaded, setGuiStateLoaded] = useState(false);
+    const [unmixingMethod, setUnmixingMethod] = useState<UnmixingMethod>('Spectreasy');
 
     const [colorPalette, setColorPalette] = useState<keyof typeof COLOR_PALETTES>('default');
     const [showControls, setShowControls] = useState(true);
@@ -128,6 +136,7 @@ const App = () => {
     const [pageScroll, setPageScroll] = useState(true);
     const [hoveredSignature, setHoveredSignature] = useState<string | null>(null);
     const sampleFileInputRef = useRef<HTMLInputElement>(null);
+    const unmixingMethodRef = useRef<UnmixingMethod>('Spectreasy');
 
     const fetchMatrices = async () => {
         const res = await axios.get(`${API_BASE}/matrices`);
@@ -151,6 +160,14 @@ const App = () => {
             setCurrentConfig(list[0]);
         }
         return list;
+    };
+
+    const fetchStatus = async () => {
+        const result = await axios.get(`${API_BASE}/status`).catch(() => null);
+        const method = asUnmixingMethod(result?.data?.unmixing_method);
+        unmixingMethodRef.current = method;
+        setUnmixingMethod(method);
+        return method;
     };
 
     const fetchUserGuiState = async () => {
@@ -215,6 +232,7 @@ const App = () => {
 
     useEffect(() => {
         const init = async () => {
+            await fetchStatus();
             const [mats, samples] = await Promise.all([fetchMatrices(), fetchSamples()]);
             await Promise.all([fetchConfigs(), fetchUserGuiState()]);
             const firstMatrix = pickPreferredMatrix(mats, currentFile);
@@ -252,7 +270,7 @@ const App = () => {
             raw_data_json: currentRaw,
             type: useType,
             matrix_filename: typeof filename === 'string' ? filename : currentFile,
-            method: 'WLS'
+            method: unmixingMethodRef.current
         });
         if (Array.isArray(res.data)) {
             setUnmixedData(res.data as DataRow[]);
@@ -267,6 +285,14 @@ const App = () => {
             setUnmixedData([]);
         }
         return false;
+    };
+
+    const handleUnmixingMethodChange = (method: UnmixingMethod) => {
+        unmixingMethodRef.current = method;
+        setUnmixingMethod(method);
+        if (matrix.length > 0 && rawData.length > 0) {
+            void runUnmix(matrix, rawData, isUnmixingMatrix);
+        }
     };
 
     const sampleHasDetectorChannels = (sampleRows = rawData) => {
@@ -767,6 +793,27 @@ const App = () => {
                                     {sampleImportMessage}
                                 </span>
                             )}
+                        </div>
+
+                        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <h3 style={{ fontSize: 10, fontWeight: 700, color: g.textMuted, letterSpacing: '0.15em', textTransform: 'uppercase', margin: 0 }}>Unmixing Method</h3>
+                            <select
+                                value={unmixingMethod}
+                                onChange={e => handleUnmixingMethodChange(asUnmixingMethod(e.target.value))}
+                                style={{
+                                    width: '100%',
+                                    background: g.inputBg,
+                                    color: g.text,
+                                    border: `1px solid ${g.glassBorder}`,
+                                    borderRadius: 8,
+                                    padding: '8px 10px',
+                                    fontSize: 12
+                                }}
+                            >
+                                {UNMIXING_METHODS.map(method => (
+                                    <option key={method} value={method}>{method}</option>
+                                ))}
+                            </select>
                         </div>
 
                         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>

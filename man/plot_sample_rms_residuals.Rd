@@ -25,8 +25,8 @@ plot_sample_rms_residuals(
 \item{height}{Height of plot in mm}
 
 \item{unmixing_method}{Optional unmixing method used to score residuals.
-When `"WLS"` or `"RWLS"`, residual RMS values use the WLS detector-noise
-weights; otherwise raw detector residuals are used.}
+When the selected solver is WLS/RWLS, residual RMS values use the WLS
+detector-noise weights; otherwise raw detector residuals are used.}
 }
 \value{
 A `ggplot` object.

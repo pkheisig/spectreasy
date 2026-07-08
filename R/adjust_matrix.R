@@ -226,6 +226,7 @@
                                    port = 8000,
                                    open_browser = TRUE,
                                    dev_mode = FALSE,
+                                   unmixing_method = "Spectreasy",
                                    mode = "tuner",
                                    panel_cytometer = NULL,
                                    gating_scc_dir = NULL,
@@ -245,6 +246,7 @@
             call. = FALSE
         )
     }
+    unmixing_method <- .normalize_unmix_method(unmixing_method)
 
     paths <- .prepare_gui_paths()
     if (identical(mode, "control-gating")) {
@@ -264,6 +266,7 @@
     options(
         spectreasy.matrix_dir = dirs$matrix_dir,
         spectreasy.samples_dir = dirs$samples_dir,
+        spectreasy.unmixing_method = unmixing_method,
         spectreasy.gui_mode = mode,
         spectreasy.panel_cytometer = panel_cytometer
     )
@@ -339,6 +342,8 @@
 #' @param dev_mode Logical. If `FALSE` (default), serves bundled GUI assets from the
 #'   installed package and requires no Node.js/npm on user machines. If `TRUE`, starts
 #'   the Vite dev server (`npm run dev`) from the packaged GUI source folder.
+#' @param unmixing_method Method used by the preview unmixing backend. Defaults
+#'   to `"Spectreasy"` and accepts the same values as [unmix_samples()].
 #' @return Invisibly returns NULL. This function blocks while the API is running.
 #' @export
 #' @examples
@@ -347,13 +352,19 @@
 #'   adjust_matrix(matrix_dir = "/path/to/my/matrices", open_browser = FALSE)
 #'   adjust_matrix(dev_mode = TRUE, open_browser = FALSE)
 #' }
-adjust_matrix <- function(matrix_dir = NULL, samples_dir = NULL, port = 8000, open_browser = TRUE, dev_mode = FALSE) {
+adjust_matrix <- function(matrix_dir = NULL,
+                          samples_dir = NULL,
+                          port = 8000,
+                          open_browser = TRUE,
+                          dev_mode = FALSE,
+                          unmixing_method = "Spectreasy") {
     .launch_spectreasy_gui(
         matrix_dir = matrix_dir,
         samples_dir = samples_dir,
         port = port,
         open_browser = open_browser,
         dev_mode = dev_mode,
+        unmixing_method = unmixing_method,
         mode = "tuner"
     )
     invisible(NULL)

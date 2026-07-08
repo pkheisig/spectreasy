@@ -543,6 +543,7 @@ const PanelBuilder = () => {
             return {};
         }
     });
+    const bootDefaultsRef = useRef({ cytometer, configuration, slots, markers });
     const [queries, setQueries] = useState<Record<number, string>>({});
     const [activeSlot, setActiveSlot] = useState<number | null>(null);
     const [tab, setTab] = useState<TabId>('panel');
@@ -699,10 +700,11 @@ const PanelBuilder = () => {
             try {
                 const stateRes = await axios.get(`${API_BASE}/gui_state?module=panel_builder`).catch(() => null);
                 const saved = stateRes?.data?.config || {};
-                const savedCytometer = typeof saved.cytometer === 'string' ? getCytometerName(saved.cytometer) : cytometer;
-                const savedConfiguration = typeof saved.configuration === 'string' ? getCytometerName(saved.configuration) : configuration;
-                const savedSlots = Array.isArray(saved.slots) ? saved.slots.map(String) : slots;
-                const savedMarkers = saved.markers && typeof saved.markers === 'object' ? saved.markers as Record<number, string> : markers;
+                const defaults = bootDefaultsRef.current;
+                const savedCytometer = typeof saved.cytometer === 'string' ? getCytometerName(saved.cytometer) : defaults.cytometer;
+                const savedConfiguration = typeof saved.configuration === 'string' ? getCytometerName(saved.configuration) : defaults.configuration;
+                const savedSlots = Array.isArray(saved.slots) ? saved.slots.map(String) : defaults.slots;
+                const savedMarkers = saved.markers && typeof saved.markers === 'object' ? saved.markers as Record<number, string> : defaults.markers;
                 if (saved.theme === 'light' || saved.theme === 'dark') setTheme(saved.theme);
                 if (saved.tab === 'panel' || saved.tab === 'similarity' || saved.tab === 'signatures') setTab(saved.tab);
                 setSlots(savedSlots);

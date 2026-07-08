@@ -46,7 +46,7 @@ testthat::test_that("unmix_samples writes secondary feature names from control m
     )
 
     out_ff <- flowCore::read.FCS(
-        file.path(output_dir, "sample1_unmixed.fcs"),
+        file.path(output_dir, "sample1_OLS-0AF.fcs"),
         transformation = FALSE,
         truncate_max_range = FALSE
     )

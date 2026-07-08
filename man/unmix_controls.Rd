@@ -59,11 +59,11 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 
 \item{unmixing_method}{SCC unmixing method (`"WLS"`, `"RWLS"`,
 `"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
-`AutoSpectral` keeps the existing k-means AF bank controlled by
-`af_n_bands`, then uses OLS unmixing plus AutoSpectral-style SCC cleanup
-and spectral variants. `Spectreasy` uses the same cleanup and variant
-machinery, then blends the AutoSpectral-style marker fit with a marker-only
-OLS anchor using decoder-projected AF impact weights.}
+`AutoSpectral` keeps the k-means AF bank controlled by `af_n_bands`,
+then uses OLS after AF matching plus AutoSpectral-style SCC cleanup and
+spectral variants. `Spectreasy` uses the same cleanup and variant
+machinery, then blends the AutoSpectral-style OLS marker fit with a
+marker-only OLS anchor using decoder-projected AF impact weights.}
 
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
 
@@ -95,8 +95,8 @@ automatically after controls are unmixed. Defaults to `TRUE`.}
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,
 use the legacy one-dimensional histogram gate. Ignored when
-`unmixing_method = "AutoSpectral"` or `"Spectreasy"`; these methods use their own
-post-FSC/SSC SCC spectral selector.}
+`unmixing_method = "AutoSpectral"` or `"Spectreasy"`; these methods use
+their own post-FSC/SSC SCC spectral selector.}
 
 \item{manual_gating}{Logical; if `TRUE` (default), launch the manual control
 gating GUI before building the SCC reference matrix. If `FALSE`, the GUI is
@@ -112,7 +112,7 @@ example `file.path(getwd(), "ssc_gate_config.csv")`. If supplied explicitly,
 the file must exist. Defaults to `manual_gate_file`.}
 
 \item{clean_scc_with_unstained}{Logical; when `unmixing_method =
-"AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative
+`"AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative
 background events before calculating SCC spectra.}
 
 \item{scc_background_method}{Background subtraction method for AutoSpectral

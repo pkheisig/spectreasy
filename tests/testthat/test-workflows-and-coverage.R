@@ -303,7 +303,7 @@ test_that("unmix_controls tolerates output_dir pointing at unmixed_fcs and sampl
 
     expect_true(file.exists(file.path(project_dir, "unmix_controls", "scc_reference_matrix.csv")))
     expect_equal(normalizePath(ctrl$reference_matrix_file), normalizePath(file.path(project_dir, "unmix_controls", "scc_reference_matrix.csv")))
-    expect_true(file.exists(file.path(project_dir, "unmix_controls", "unmixed_fcs", "FITC (Beads)_unmixed.fcs")))
+    expect_true(file.exists(file.path(project_dir, "unmix_controls", "unmixed_fcs", "FITC (Beads)_OLS-0AF.fcs")))
 
     unmixed <- spectreasy::unmix_samples(
         sample_dir = sample_dir,
@@ -343,7 +343,7 @@ test_that("unmix_controls handles WLS output with AF controls", {
     expect_false(is.null(attr(ctrl$M, "detector_noise")))
     expect_true(any(grepl("^AF($|_)", rownames(ctrl$M), ignore.case = TRUE)))
     expect_true(any(grepl("Unstained", names(ctrl$unmixed_list), ignore.case = TRUE)))
-    expect_true(file.exists(file.path(output_dir, "unmixed_fcs", "Unstained (Cells)_unmixed.fcs")))
+    expect_true(file.exists(file.path(output_dir, "unmixed_fcs", "Unstained (Cells)_WLS-1AF.fcs")))
     expect_false(any(grepl("scc_report_plots_", list.dirs(output_dir, recursive = TRUE, full.names = FALSE))))
     expect_equal(sum(grepl("^Found 2 spectral detectors", messages)), 1L)
     expect_equal(sum(grepl("^Processing SCC:", messages)), 2L)
@@ -404,7 +404,7 @@ test_that("unmix_samples runs WLS from a saved reference matrix without variance
     )
 
     expect_s3_class(res, "spectreasy_unmixed_results")
-    expect_true(file.exists(file.path(output_dir, "sample_unmixed.fcs")))
+    expect_true(file.exists(file.path(output_dir, "sample_WLS-0AF.fcs")))
 })
 
 test_that("unmix_samples writes FCS files by default and returns invisibly", {
@@ -435,8 +435,8 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
 
     expect_false(call_result$visible)
     expect_setequal(names(call_result$value), c("sample_a", "sample_b"))
-    expect_true(file.exists(file.path(output_dir, "sample_a_unmixed.fcs")))
-    expect_true(file.exists(file.path(output_dir, "sample_b_unmixed.fcs")))
+    expect_true(file.exists(file.path(output_dir, "sample_a_OLS-0AF.fcs")))
+    expect_true(file.exists(file.path(output_dir, "sample_b_OLS-0AF.fcs")))
 })
 
 test_that("unmix_samples accepts samples_dir as an alias for sample_dir", {
@@ -464,7 +464,7 @@ test_that("unmix_samples accepts samples_dir as an alias for sample_dir", {
     )
 
     expect_s3_class(unmixed, "spectreasy_unmixed_results")
-    expect_true(file.exists(file.path(output_dir, "sample_alias_unmixed.fcs")))
+    expect_true(file.exists(file.path(output_dir, "sample_alias_OLS-0AF.fcs")))
 })
 
 test_that("qc_controls writes a PDF from synthetic SCC files", {
@@ -558,7 +558,8 @@ test_that("adjust_matrix starts packaged GUI on localhost", {
             matrix_dir = tmp_matrix_dir,
             open_browser = FALSE,
             dev_mode = FALSE,
-            port = port
+            port = port,
+            unmixing_method = "AutoSpectral"
         )
     })
 
@@ -575,4 +576,5 @@ test_that("adjust_matrix starts packaged GUI on localhost", {
 
     expect_true(length(resp) > 0)
     expect_true(any(grepl("ok", resp, fixed = TRUE)))
+    expect_true(any(grepl("AutoSpectral", resp, fixed = TRUE)))
 })

@@ -10,6 +10,11 @@ get_samples_dir <- function() {
     normalizePath(getOption("spectreasy.samples_dir", default_samples), mustWork = FALSE)
 }
 
+get_unmixing_method <- function() {
+    method <- getOption("spectreasy.unmixing_method", "Spectreasy")
+    spectreasy:::.normalize_unmix_method(method)
+}
+
 get_config_dir <- function() {
     cfg_dir <- file.path(get_matrix_dir(), "gui_configs")
     if (!dir.exists(cfg_dir)) {
@@ -828,6 +833,7 @@ function() {
         wd = getwd(),
         matrix_dir = get_matrix_dir(),
         samples_dir = get_samples_dir(),
+        unmixing_method = get_unmixing_method(),
         gui_mode = getOption("spectreasy.gui_mode", "tuner"),
         panel_cytometer = getOption("spectreasy.panel_cytometer", "aurora")
     ))
@@ -1344,7 +1350,7 @@ function(res) {
 #* @param matrix_json The matrix (M or W)
 #* @param raw_data_json The raw data
 #* @param type "reference" (M) or "unmixing" (W)
-function(matrix_json, raw_data_json, type = "reference", matrix_filename = "", method = "WLS") {
+function(matrix_json, raw_data_json, type = "reference", matrix_filename = "", method = "") {
     # matrix_json format: {MarkerName: {det1: val, det2: val, ...}, ...}
     markers <- names(matrix_json)
     detectors <- names(matrix_json[[1]])
@@ -1391,13 +1397,16 @@ function(matrix_json, raw_data_json, type = "reference", matrix_filename = "", m
         # Unmixed = Raw * t(W)
         unmixed <- Y_sub %*% t(mat_sub)
     } else {
-        method_upper <- toupper(trimws(as.character(method)[1]))
-        if (!method_upper %in% c("WLS", "OLS", "NNLS")) {
-            method_upper <- "WLS"
+        method_resolved <- tryCatch(
+            spectreasy:::.normalize_unmix_method(if (!nzchar(trimws(as.character(method)[1]))) get_unmixing_method() else method),
+            error = function(e) e
+        )
+        if (inherits(method_resolved, "error")) {
+            return(list(error = conditionMessage(method_resolved)))
         }
         ff <- flowCore::flowFrame(Y_sub)
         res <- tryCatch(
-            spectreasy::calc_residuals(ff, mat_sub, method = method_upper),
+            spectreasy::calc_residuals(ff, mat_sub, method = method_resolved),
             error = function(e) {
                 return(list(error = conditionMessage(e)))
             }

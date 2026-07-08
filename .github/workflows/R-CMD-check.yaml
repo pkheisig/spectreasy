@@ -32,6 +32,21 @@ jobs:
           r-version: ${{ matrix.r }}
           use-public-rspm: true
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: inst/gui/package-lock.json
+
+      - name: Check bundled GUI source
+        shell: bash
+        working-directory: inst/gui
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run lint
+          npm run build
+
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           extra-packages: |

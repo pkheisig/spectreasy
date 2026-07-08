@@ -286,6 +286,10 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
     .normalize_unmix_method(method, choices = c("AutoSpectral", "Spectreasy", "OLS", "NNLS", "WLS", "RWLS"))
 }
 
+.uses_wls_residual_metric <- function(method) {
+    .solver_method_for_unmix(method) %in% c("WLS", "RWLS")
+}
+
 .resolve_residual_metric_matrix <- function(results, M = NULL) {
     if (!is.null(M)) {
         return(.as_reference_matrix(M, "M"))
@@ -320,7 +324,7 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
 
 .residual_metric_weights <- function(res_obj, M, unmixing_method = NULL) {
     method <- .resolve_residual_metric_method(list(res_obj), unmixing_method = unmixing_method)
-    if (!(method %in% c("WLS", "RWLS")) || is.null(M)) {
+    if (!.uses_wls_residual_metric(method) || is.null(M)) {
         return(NULL)
     }
     Y <- .reconstruct_residual_raw_signal(res_obj, M)
@@ -347,7 +351,7 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
         if (!is.list(res_obj) || is.null(res_obj$residuals)) return(NULL)
         R <- as.matrix(res_obj$residuals)
         if (nrow(R) == 0 || ncol(R) == 0) return(NULL)
-        if (method %in% c("WLS", "RWLS") && !is.null(M)) {
+        if (.uses_wls_residual_metric(method) && !is.null(M)) {
             weights <- .residual_metric_weights(res_obj, M = M, unmixing_method = method)
             if (!is.null(weights)) {
                 common <- intersect(colnames(R), colnames(weights))
@@ -417,7 +421,7 @@ plot_detector_rms_residuals <- function(results, M = NULL, pd = NULL, output_fil
         return(NULL)
     }
 
-    y_label <- if (method %in% c("WLS", "RWLS")) "WLS-weighted RMS residual" else "RMS residual (raw detector units)"
+    y_label <- if (.uses_wls_residual_metric(method)) "WLS-weighted RMS residual" else "RMS residual (raw detector units)"
     separators <- which(plot_df$Laser[-1] != plot_df$Laser[-nrow(plot_df)]) + 0.5
     p <- ggplot2::ggplot(plot_df, ggplot2::aes(DetectorIndex, RMS)) +
         ggplot2::geom_col(width = 0.82, fill = "grey35", color = "grey25", linewidth = 0.15) +
@@ -457,8 +461,8 @@ plot_detector_rms_residuals <- function(results, M = NULL, pd = NULL, output_fil
 #' @param width Width of plot in mm
 #' @param height Height of plot in mm
 #' @param unmixing_method Optional unmixing method used to score residuals.
-#'   When `"WLS"` or `"RWLS"`, residual RMS values use the WLS detector-noise
-#'   weights; otherwise raw detector residuals are used.
+#'   When the selected solver is WLS/RWLS, residual RMS values use the WLS
+#'   detector-noise weights; otherwise raw detector residuals are used.
 #' @return A `ggplot` object.
 #' @export
 plot_sample_rms_residuals <- function(results, M = NULL, output_file = NULL, width = 225, height = 125, unmixing_method = NULL) {
@@ -467,14 +471,14 @@ plot_sample_rms_residuals <- function(results, M = NULL, output_file = NULL, wid
     }
     M_mat <- .resolve_residual_metric_matrix(results, M = M)
     method <- .resolve_residual_metric_method(results, unmixing_method = unmixing_method)
-    y_label <- if (method %in% c("WLS", "RWLS")) "WLS-weighted RMS residual per cell" else "RMS residual per cell"
+    y_label <- if (.uses_wls_residual_metric(method)) "WLS-weighted RMS residual per cell" else "RMS residual per cell"
     
     sample_dfs <- list()
     for (sn in names(results)) {
         res_obj <- results[[sn]]
         if (is.list(res_obj) && !is.null(res_obj$residuals)) {
             residuals <- as.matrix(res_obj$residuals)
-            weights <- if (method %in% c("WLS", "RWLS")) .residual_metric_weights(res_obj, M = M_mat, unmixing_method = method) else NULL
+            weights <- if (.uses_wls_residual_metric(method)) .residual_metric_weights(res_obj, M = M_mat, unmixing_method = method) else NULL
             if (!is.null(weights)) {
                 common <- intersect(colnames(residuals), colnames(weights))
                 if (length(common) > 0) {
