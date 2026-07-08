@@ -636,7 +636,8 @@ gate_apply_polygon_gate <- function(expr, gate) {
     y_channel <- as.character(gate_value(gate, "yChannel", ""))[1]
     if (!x_channel %in% colnames(expr) || !y_channel %in% colnames(expr)) return(expr)
     keep <- gate_point_in_polygon(expr[, x_channel], expr[, y_channel], verts)
-    if (any(keep, na.rm = TRUE)) expr[keep, , drop = FALSE] else expr
+    keep <- !is.na(keep) & keep
+    expr[keep, , drop = FALSE]
 }
 
 gate_apply_positive_gate <- function(expr, gate, peak) {
@@ -657,7 +658,9 @@ gate_apply_positive_gate <- function(expr, gate, peak) {
         if (!y_channel %in% colnames(expr)) return(expr)
         keep <- gate_point_in_polygon(expr[, x_channel], expr[, y_channel], verts)
     }
-    if (!is.null(keep) && any(keep, na.rm = TRUE)) expr[keep, , drop = FALSE] else expr
+    if (is.null(keep)) return(expr)
+    keep <- !is.na(keep) & keep
+    expr[keep, , drop = FALSE]
 }
 
 gate_spectrum_for_file <- function(filename) {
@@ -688,7 +691,7 @@ gate_spectrum_for_file <- function(filename) {
     if (!isTRUE(row$is_af[1])) {
         expr_filtered <- gate_apply_positive_gate(expr_filtered, gate_cached_gate(cache, "positive", name, control_type), peak)
     }
-    if (nrow(expr_filtered) < 10) expr_filtered <- expr
+    if (nrow(expr_filtered) == 0) return(NULL)
 
     log_mat <- log10(pmax(expr_filtered[, spec_channels, drop = FALSE], 1e-3))
     min_y <- floor(min(log_mat, na.rm = TRUE))

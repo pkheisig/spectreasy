@@ -38,3 +38,42 @@ testthat::test_that("GUI matrix listing recurses and only shows matrix-named CSV
     )
     testthat::expect_error(api_env$matrix_path("../escape_matrix.csv"), "Invalid matrix filename")
 })
+
+testthat::test_that("GUI spectrum gating keeps zero-event gate results empty", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) {
+        api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    }
+    testthat::skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+
+    expr <- data.frame(
+        `FSC-A` = c(10, 20, 30),
+        `SSC-A` = c(10, 20, 30),
+        `Peak-A` = c(100, 200, 300),
+        check.names = FALSE
+    )
+    empty_scatter_gate <- list(
+        xChannel = "FSC-A",
+        yChannel = "SSC-A",
+        vertices = list(
+            list(x = 1000, y = 1000),
+            list(x = 1100, y = 1000),
+            list(x = 1100, y = 1100),
+            list(x = 1000, y = 1100)
+        )
+    )
+    empty_positive_gate <- list(
+        mode = "positive_1d",
+        xChannel = "Peak-A",
+        vertices = list(
+            list(x = 1000, y = 0),
+            list(x = 1100, y = 0)
+        )
+    )
+
+    testthat::expect_equal(nrow(api_env$gate_apply_polygon_gate(expr, empty_scatter_gate)), 0L)
+    testthat::expect_equal(nrow(api_env$gate_apply_positive_gate(expr, empty_positive_gate, "Peak-A")), 0L)
+})
