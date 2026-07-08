@@ -1179,6 +1179,54 @@ test_that("scatter intensity gating separates nearest negative and bright positi
     expect_lt(log10(gate$gate_max), 5.6)
 })
 
+test_that("manual positive gates use raw detector coordinates", {
+    gate_csv <- tempfile(fileext = ".csv")
+    rows <- data.frame(
+        gate_type = c("setting", "positive", "positive", "negative", "negative"),
+        scope = c("global", "file", "file", "file", "file"),
+        filename = c("", "sample.fcs", "sample.fcs", "sample.fcs", "sample.fcs"),
+        x_channel = c("histogram_transform", "Peak-A", "Peak-A", "Peak-A", "Peak-A"),
+        y_channel = c("", "", "", "", ""),
+        plot_mode = c("setting", "positive_1d", "positive_1d", "negative_1d", "negative_1d"),
+        vertex_index = c(0, 1, 2, 1, 2),
+        x = c("asinh", "100", "200", "1", "20"),
+        y = c("", "0", "0", "0", "0"),
+        stringsAsFactors = FALSE
+    )
+    utils::write.csv(rows, gate_csv, row.names = FALSE, quote = TRUE)
+
+    manual_gates <- spectreasy:::.read_reference_manual_gates(gate_csv)
+    gated_data <- data.frame(`Peak-A` = 1:300, check.names = FALSE)
+    out <- spectreasy:::.apply_reference_manual_positive_gate(
+        gated_data = gated_data,
+        peak_channel = "Peak-A",
+        filename = "sample.fcs",
+        sample_type = "beads",
+        manual_gates = manual_gates
+    )
+
+    expect_equal(range(out$final_gated_data[["Peak-A"]]), c(100L, 200L))
+    expect_equal(nrow(out$final_gated_data), 101L)
+    expect_equal(out$hist_info$positive_raw_min, 100)
+    expect_equal(out$hist_info$positive_raw_max, 200)
+    expect_equal(out$hist_info$negative_raw_min, 1)
+    expect_equal(out$hist_info$negative_raw_max, 20)
+})
+
+test_that("QC histogram ticks are drawn in transform space but labeled as raw values", {
+    raw_domain <- c(0, 277000)
+    plot_domain <- spectreasy:::.reference_histogram_transform_values(raw_domain, transform = "asinh")
+    breaks <- spectreasy:::.reference_gui_ticks(plot_domain, 5L)
+    labels <- spectreasy:::.reference_pretty_k_label(
+        spectreasy:::.reference_histogram_inverse_values(breaks, transform = "asinh")
+    )
+
+    expect_equal(labels[1], "0")
+    expect_equal(labels[2], "575")
+    expect_true(grepl("K$", labels[5]))
+    expect_false(any(labels %in% c("2", "4", "6", "8")))
+})
+
 test_that("histogram gating cutoff detection extends right gate leftwards", {
     # 1. Test .compute_reference_histogram_gate density-based cutoff
     set.seed(42)

@@ -72,9 +72,14 @@
 }
 
 .prepare_unmix_samples_input_from_directory <- function(sample_input) {
-    sample_dir_resolved <- normalizePath(sample_input, mustWork = TRUE)
+    if (!dir.exists(sample_input)) {
+        .spectreasy_stop_missing_directory(sample_input, label = "sample_dir")
+    }
+    sample_dir_resolved <- normalizePath(sample_input, mustWork = FALSE)
     fcs_files <- list.files(sample_dir_resolved, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-    if (length(fcs_files) == 0) stop("No FCS files found in ", sample_dir_resolved)
+    if (length(fcs_files) == 0) {
+        .spectreasy_stop_empty_fcs_directory(sample_dir_resolved, label = "sample_dir")
+    }
 
     lapply(fcs_files, function(f) {
         list(
@@ -103,7 +108,7 @@
     }
 
     if (!is.character(sample_input) || length(sample_input) != 1 || is.na(sample_input)) {
-        stop("sample_dir must be either a directory path, a flowCore::flowSet, or a SingleCellExperiment.")
+        stop("sample_dir must be either a directory path, a flowCore::flowSet, or a SingleCellExperiment.", call. = FALSE)
     }
 
     .prepare_unmix_samples_input_from_directory(sample_input)
@@ -119,9 +124,14 @@
 }
 
 .read_unmixing_matrix_csv <- function(path) {
-    if (!file.exists(path)) stop("unmixing_matrix_file not found: ", path)
-    df <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
-    if (ncol(df) < 2) stop("Invalid unmixing matrix CSV: expected at least 2 columns in ", path)
+    if (!file.exists(path)) .spectreasy_stop_missing_file(path, label = "unmixing_matrix_file")
+    df <- tryCatch(
+        utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE),
+        error = function(e) {
+            stop("Could not read unmixing_matrix_file: ", path, call. = FALSE)
+        }
+    )
+    if (ncol(df) < 2) stop("Invalid unmixing_matrix_file: expected at least 2 columns in ", path, call. = FALSE)
 
     first_name <- tolower(trimws(colnames(df)[1]))
     first_col <- df[[1]]
@@ -721,6 +731,7 @@ unmix_samples <- function(sample_dir = "samples",
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
                           verbose = TRUE) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
+    unmixing_matrix_file_missing <- missing(unmixing_matrix_file)
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
     scc_dir <- NULL
@@ -729,6 +740,10 @@ unmix_samples <- function(sample_dir = "samples",
             stop("Use only one of sample_dir or samples_dir.", call. = FALSE)
         }
         sample_dir <- samples_dir
+    }
+    sample_entries <- .prepare_unmix_samples_input(sample_dir)
+    if (!is.null(unmixing_matrix_file) && !unmixing_matrix_file_missing && !file.exists(unmixing_matrix_file)) {
+        .spectreasy_stop_missing_file(unmixing_matrix_file, label = "unmixing_matrix_file")
     }
     unmixing_matrix_file <- .resolve_unmixing_matrix_file_for_samples(
         unmixing_matrix_file = unmixing_matrix_file,
@@ -770,11 +785,19 @@ unmix_samples <- function(sample_dir = "samples",
     }
     estimate_af <- isTRUE(estimate_af)
 
-    sample_entries <- .prepare_unmix_samples_input(sample_dir)
+    if (isTRUE(verbose)) {
+        .spectreasy_console_header("unmix_samples")
+        .spectreasy_console_field("Samples", length(sample_entries))
+        .spectreasy_console_field("Method", method)
+        .spectreasy_console_field("AF bands", .reference_af_band_count(M))
+        if (isTRUE(write_fcs)) {
+            .spectreasy_console_field("Output", .spectreasy_console_path(output_dir))
+        }
+    }
 
     if (estimate_af) {
         if (isTRUE(verbose)) {
-            message("  estimate_af = TRUE: estimating AF from stained samples.")
+            .spectreasy_console_step("Estimate AF", "from stained samples")
         }
         M <- .estimate_blind_af_reference(
             M = M,
@@ -815,11 +838,11 @@ unmix_samples <- function(sample_dir = "samples",
 
     for (entry in sample_entries) {
         sn <- entry$sample_name
-        if (isTRUE(verbose)) message("  Unmixing sample: ", sn)
+        if (isTRUE(verbose)) .spectreasy_console_field("Sample", sn)
         ff <- if (inherits(entry$flow_frame, "flowFrame")) {
             entry$flow_frame
         } else {
-            flowCore::read.FCS(entry$file_path, transformation = FALSE, truncate_max_range = FALSE)
+            .spectreasy_read_fcs(entry$file_path, label = "sample FCS file")
         }
 
         calc_args <- list(
@@ -862,7 +885,7 @@ unmix_samples <- function(sample_dir = "samples",
             target_output_path <- file.path(output_dir, .unmixed_fcs_filename(sn, method, M))
             output_path <- .next_safe_output_path(target_output_path)
             if (!identical(output_path, target_output_path)) {
-                message("    Existing output detected; writing to safe path: ", basename(output_path))
+                .spectreasy_console_step("Safe output", basename(output_path))
             }
             flowCore::write.FCS(new_ff, output_path)
         }
@@ -892,7 +915,7 @@ unmix_samples <- function(sample_dir = "samples",
     if (isTRUE(save_report)) {
         qc_samples_dir <- .next_safe_output_dir(.default_unmix_samples_report_dir(output_dir))
         output_file <- file.path(qc_samples_dir, "qc_samples_report.pdf")
-        message("Automatic sample QC report enabled: ", output_file)
+        .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
         report_res <- qc_samples(
             results = results,
             M = M,

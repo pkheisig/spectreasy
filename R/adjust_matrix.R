@@ -24,7 +24,10 @@
 }
 
 .normalize_gui_dirs <- function(matrix_dir, samples_dir = NULL) {
-    matrix_dir <- normalizePath(matrix_dir, mustWork = TRUE)
+    if (!dir.exists(matrix_dir)) {
+        .spectreasy_stop_missing_directory(matrix_dir, label = "matrix_dir")
+    }
+    matrix_dir <- normalizePath(matrix_dir, mustWork = FALSE)
     if (is.null(samples_dir)) {
         samples_dir <- .default_adjust_matrix_samples_dir(matrix_dir = matrix_dir)
         if (is.null(samples_dir)) {
@@ -88,7 +91,10 @@
 .normalize_gate_controls_paths <- function(scc_dir = "scc",
                                            control_file = "fcs_mapping.csv",
                                            gate_file = "ssc_gate_config.csv") {
-    scc_dir <- normalizePath(scc_dir, mustWork = TRUE)
+    if (!dir.exists(scc_dir)) {
+        .spectreasy_stop_missing_directory(scc_dir, label = "scc_dir")
+    }
+    scc_dir <- normalizePath(scc_dir, mustWork = FALSE)
     control_file <- as.character(control_file)[1]
     if (!is.na(control_file) && nzchar(trimws(control_file)) && !file.exists(control_file)) {
         candidate <- file.path(dirname(scc_dir), basename(control_file))
@@ -149,7 +155,7 @@
 }
 
 .start_gui_dev_server <- function(gui_path, port, npm_bin) {
-    message("Starting frontend (npm run dev)...")
+    .spectreasy_console_field("Frontend", "starting npm dev server")
     old_wd <- getwd()
     on.exit(setwd(old_wd), add = TRUE)
     setwd(gui_path)
@@ -173,11 +179,7 @@
 }
 
 .spectreasy_gui_display_path <- function(path) {
-    if (is.null(path) || length(path) == 0 || is.na(path[1]) || !nzchar(path[1])) return("")
-    path <- as.character(path[1])
-    path <- normalizePath(path, mustWork = FALSE)
-    wd <- normalizePath(getwd(), mustWork = FALSE)
-    if (identical(dirname(path), wd)) basename(path) else path
+    .spectreasy_console_path(path)
 }
 
 .message_spectreasy_gui_startup <- function(mode,
@@ -185,19 +187,16 @@
                                             frontend_url,
                                             asset_mode = "bundled",
                                             gate_file = NULL) {
-    line <- strrep("-", 58)
-    message("\n", line)
-    message("Spectreasy ", .spectreasy_gui_mode_label(mode))
-    message(line)
-    message("Frontend : ", frontend_url)
-    message("API port : ", port)
-    message("Assets   : ", asset_mode)
+    .spectreasy_console_header(.spectreasy_gui_mode_label(mode))
+    .spectreasy_console_field("Frontend", frontend_url)
+    .spectreasy_console_field("API port", port)
+    .spectreasy_console_field("Assets", asset_mode)
     gate_file_display <- .spectreasy_gui_display_path(gate_file)
     if (nzchar(gate_file_display)) {
-        message("Gate CSV : ", gate_file_display)
+        .spectreasy_console_field("Gate CSV", gate_file_display)
     }
-    message("INFO     : Press Ctrl + C in this R console to terminate the GUI app.")
-    message(line, "\n")
+    .spectreasy_console_field("INFO", "Press Ctrl + C in this R console to terminate the GUI app.")
+    .spectreasy_console_footer()
 }
 
 .run_gui_until_shutdown <- function(pr, port, host = "127.0.0.1", quiet = FALSE, announce = TRUE) {
@@ -213,7 +212,7 @@
     }, add = TRUE)
 
     if (isTRUE(announce)) {
-        message("Running spectreasy GUI API at http://", host, ":", port)
+        .spectreasy_console_field("API", paste0("http://", host, ":", port))
     }
     while (!isTRUE(getOption("spectreasy.gui_shutdown_requested", FALSE))) {
         httpuv::service(timeout = 250)
@@ -317,7 +316,7 @@
     if (identical(mode, "control-gating")) {
         .run_gui_until_shutdown(pr, port = port, host = "127.0.0.1", announce = FALSE)
     } else {
-        pr$run(port = port, host = "127.0.0.1")
+        pr$run(port = port, host = "127.0.0.1", docs = FALSE, quiet = TRUE)
     }
 
     invisible(NULL)

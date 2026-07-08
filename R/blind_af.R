@@ -81,7 +81,7 @@
     ff <- if (inherits(entry$flow_frame, "flowFrame")) {
         entry$flow_frame
     } else {
-        flowCore::read.FCS(entry$file_path, transformation = FALSE, truncate_max_range = FALSE)
+        .spectreasy_read_fcs(entry$file_path, label = "sample FCS file")
     }
     .sample_blind_af_training_frame(ff, max_events = max_events, seed = seed)
 }
@@ -119,7 +119,7 @@
     ff <- if (inherits(entry$flow_frame, "flowFrame")) {
         entry$flow_frame
     } else {
-        flowCore::read.FCS(entry$file_path, transformation = FALSE, truncate_max_range = FALSE)
+        .spectreasy_read_fcs(entry$file_path, label = "sample FCS file")
     }
     .blind_af_split_frame(
         ff,
@@ -436,12 +436,9 @@
     attr(out, "blind_af_info") <- info
 
     if (isTRUE(verbose)) {
-        message(
-            "  Estimated ",
-            sum(.blind_af_row_mask(out)),
-            " AF signature(s) from stained sample residuals using ",
-            selected_id,
-            "."
+        .spectreasy_console_field(
+            "AF estimate",
+            paste0(sum(.blind_af_row_mask(out)), " signature(s) from stained residuals using ", selected_id)
         )
     }
 

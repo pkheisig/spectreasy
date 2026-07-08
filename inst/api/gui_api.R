@@ -805,7 +805,9 @@ gate_payload_for_file <- function(filename, max_points = 3000L) {
 
 #* @filter logger
 function(req) {
-    cat(as.character(Sys.time()), "-", req$REQUEST_METHOD, req$PATH_INFO, "\n")
+    if (isTRUE(getOption("spectreasy.gui_request_log", FALSE))) {
+        cat(as.character(Sys.time()), "-", req$REQUEST_METHOD, req$PATH_INFO, "\n")
+    }
     plumber::forward()
 }
 

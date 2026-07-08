@@ -1075,13 +1075,14 @@ qc_samples <- function(results,
     }
     unmixing_method <- .normalize_unmix_method(unmixing_method)
 
-    message("Generating spectreasy Summary Report...")
+    .spectreasy_console_header("sample QC report")
+    .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
 
     if (!is.null(M)) {
         M <- .as_reference_matrix(M, "M")
     } else if (!is.null(unmixing_matrix_file)) {
         if (!file.exists(unmixing_matrix_file)) {
-            stop("unmixing_matrix_file not found: ", unmixing_matrix_file)
+            .spectreasy_stop_missing_file(unmixing_matrix_file, label = "unmixing_matrix_file")
         }
         .stop_if_static_unmixing_matrix_path(unmixing_matrix_file, arg_name = "unmixing_matrix_file")
         M <- .read_unmixing_matrix_csv(unmixing_matrix_file)
@@ -1154,10 +1155,9 @@ qc_samples <- function(results,
     }
 
     if (!is.null(max_events_per_sample) && any(as.numeric(file_counts) > as.numeric(max_events_per_sample)[1], na.rm = TRUE)) {
-        message(
-            "  - Report diagnostics capped at ",
-            as.integer(max_events_per_sample[1]),
-            " events per sample. Set max_events_per_sample = NULL to use all events."
+        .spectreasy_console_step(
+            "Event cap",
+            paste0(as.integer(max_events_per_sample[1]), " events per sample")
         )
     }
 
@@ -1181,7 +1181,7 @@ qc_samples <- function(results,
         }
     }
 
-    message("  - Adding spectra overlay...")
+    .spectreasy_console_step("Spectra overlay")
     if (nrow(M_no_af) > 0) {
         spectra_plot <- plot_spectra(M_no_af, pd = pd, output_file = NULL)
         .save_qc_report_png(spectra_plot, retained_qc_plot_dir, "spectra_overlay.png")
@@ -1189,7 +1189,7 @@ qc_samples <- function(results,
     }
 
     if (nrow(M_no_af) > 1) {
-        message("  - Adding Fluorophore Similarity Matrix...")
+        .spectreasy_console_step("Similarity matrix")
         sim_mat <- calculate_similarity_matrix(M_no_af)
         .write_qc_report_matrix_metric(
             sim_mat,
@@ -1210,9 +1210,9 @@ qc_samples <- function(results,
     }
 
     if (identical(unmixing_method, "NNLS")) {
-        message("  - Skipping NPS diagnostics for NNLS...")
+        .spectreasy_console_step("NPS diagnostics", "skipped for NNLS")
     } else {
-        message("  - Adding NPS diagnostics...")
+        .spectreasy_console_step("NPS diagnostics")
         nps_scores <- calculate_nps(results_df)
         nps_scores <- nps_scores[!grepl("^AF($|_)", nps_scores$Marker, ignore.case = TRUE), , drop = FALSE]
         if (nrow(nps_scores) > 0) {
@@ -1232,7 +1232,7 @@ qc_samples <- function(results,
         }
     }
 
-    message("  - Adding per-sample NxN scatter pages...")
+    .spectreasy_console_step("Sample NxN scatter")
     sample_markers <- setdiff(colnames(results_df), .get_result_metadata_columns(colnames(results_df)))
     sample_markers <- sample_markers[!grepl("^AF($|_)", sample_markers, ignore.case = TRUE)]
     scatter_pages <- .build_qc_report_sample_scatter_pages(
@@ -1252,7 +1252,7 @@ qc_samples <- function(results,
     }
 
     if (!is.null(res_list)) {
-        message("  - Adding RMS residual per detector page...")
+        .spectreasy_console_step("Detector RMS")
         detector_rms <- .compute_qc_report_detector_rms(res_list, M = M, pd = pd, unmixing_method = unmixing_method)
         if (!is.null(detector_rms) && !is.null(qc_metrics_dir)) {
             .write_qc_report_csv(
@@ -1270,7 +1270,7 @@ qc_samples <- function(results,
             )
         }
 
-        message("  - Adding detector reconstruction error...")
+        .spectreasy_console_step("Reconstruction")
         sample_rms <- .compute_qc_report_sample_rms(res_list, M = M, unmixing_method = unmixing_method)
         if (!is.null(sample_rms) && !is.null(qc_metrics_dir)) {
             .write_qc_report_csv(
@@ -1295,6 +1295,7 @@ qc_samples <- function(results,
         }
     }
 
-    message("Report saved to: ", output_file)
+    .spectreasy_console_field("Saved", .spectreasy_console_path(output_file))
+    .spectreasy_console_footer(blank = FALSE)
     invisible(list(output_file = output_file, qc_plot_dir = retained_qc_plot_dir, qc_metrics_dir = qc_metrics_dir))
 }

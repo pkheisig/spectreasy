@@ -84,7 +84,9 @@
 #' @export
 af_profile_dir <- function(create = TRUE) {
     dir_path <- .af_profile_dir_path(create = create)
-    message("spectreasy AF profiles are stored at:\n", dir_path)
+    .spectreasy_console_header("AF profile library")
+    .spectreasy_console_field("Directory", .spectreasy_console_path(dir_path))
+    .spectreasy_console_footer(blank = FALSE)
     invisible(dir_path)
 }
 
@@ -120,7 +122,9 @@ extract_af_profile <- function(fcs_file,
     }
 
     if (isTRUE(verbose)) {
-        message("Extracting AF profile from: ", basename(fcs_file))
+        .spectreasy_console_header("extract AF profile")
+        .spectreasy_console_field("File", basename(fcs_file))
+        .spectreasy_console_field("AF bands", af_n_bands)
     }
     af_args <- .validate_build_reference_af_args(
         af_n_bands = af_n_bands,
@@ -131,12 +135,12 @@ extract_af_profile <- function(fcs_file,
     .with_optional_seed(seed)
 
     if (isTRUE(verbose)) {
-        message("  Detecting spectral detectors...")
+        .spectreasy_console_step("Detect detectors")
     }
     metadata <- .prepare_reference_detector_info(fcs_file)
     if (isTRUE(verbose)) {
-        message("  Found ", length(metadata$detector_names), " spectral detector(s).")
-        message("  Scatter-gating AF events...")
+        .spectreasy_console_field("Detectors", paste0(length(metadata$detector_names), " spectral channel(s)"))
+        .spectreasy_console_step("Scatter gate")
     }
     config <- list(
         outlier_percentile = 0.02,
@@ -158,11 +162,7 @@ extract_af_profile <- function(fcs_file,
     }
 
     if (isTRUE(verbose)) {
-        message(
-            "  Building k-means AF bank",
-            paste0(" with ", af_args$af_n_bands, " band(s)"),
-            "..."
-        )
+        .spectreasy_console_step("Build AF bank", paste0(af_args$af_n_bands, " band(s)"))
     }
     af_profiles <- withCallingHandlers(
         .extract_reference_af_profiles(
@@ -184,7 +184,7 @@ extract_af_profile <- function(fcs_file,
     }
 
     if (isTRUE(verbose)) {
-        message("  Building AF spectra plot...")
+        .spectreasy_console_step("Spectra plot")
     }
     p <- .build_af_profile_plot(af_profiles$signatures, pd = metadata$pd_meta)
     out <- .new_af_profile_object(
@@ -204,13 +204,11 @@ extract_af_profile <- function(fcs_file,
         print(out$plot)
     }
     if (isTRUE(verbose)) {
-        message(
-            "Done. Extracted ",
-            nrow(out$profile),
-            " AF band(s) from ",
-            nrow(gated$events),
-            " scatter-gated event(s)."
+        .spectreasy_console_field(
+            "Extracted",
+            paste0(nrow(out$profile), " AF band(s) from ", nrow(gated$events), " scatter-gated event(s)")
         )
+        .spectreasy_console_footer(blank = FALSE)
     }
     out
 }
@@ -252,11 +250,12 @@ save_af_profile <- function(name, x, overwrite = FALSE) {
         extraction = extraction
     )
     saveRDS(out, file = file_path, version = 3)
-    message(
-        "Saved AF profile '", name, "' with ",
-        nrow(profile), " band(s) and ", ncol(profile), " detector(s) to:\n",
-        file_path
-    )
+    .spectreasy_console_header("save AF profile")
+    .spectreasy_console_field("Profile", name)
+    .spectreasy_console_field("Bands", nrow(profile))
+    .spectreasy_console_field("Detectors", ncol(profile))
+    .spectreasy_console_field("Saved", .spectreasy_console_path(file_path))
+    .spectreasy_console_footer(blank = FALSE)
     invisible(file_path)
 }
 
@@ -349,7 +348,7 @@ delete_af_profile <- function(name) {
     if (!isTRUE(ok)) {
         stop("Could not delete AF profile: ", name, call. = FALSE)
     }
-    message("Deleted AF profile '", name, "'.")
+    .spectreasy_console_field("Deleted", paste0("AF profile '", name, "'"))
     invisible(TRUE)
 }
 

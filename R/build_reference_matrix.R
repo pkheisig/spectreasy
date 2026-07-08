@@ -4,7 +4,7 @@
 # Returns a standardized data.frame or NULL/empty data.frame.
 .normalize_build_reference_control_df <- function(control_df) {
     if (is.character(control_df) && length(control_df) == 1 && !is.na(control_df)) {
-        if (!file.exists(control_df)) stop("control_df file not found: ", control_df)
+        if (!file.exists(control_df)) .spectreasy_stop_missing_file(control_df, label = "control_df file")
         control_df <- utils::read.csv(control_df, stringsAsFactors = FALSE, check.names = FALSE)
     } else if (!is.null(control_df) && !is.data.frame(control_df)) {
         stop("control_df must be either a data.frame or a single CSV path.")
@@ -259,7 +259,7 @@
     }
 
     if (isTRUE(verbose)) {
-        message("Refining AF basis signatures with AutoSpectral-style unstained residual modulation.")
+        .spectreasy_console_step("AF refine", "AutoSpectral-style unstained residual modulation")
     }
     assignments <- .autospectral_assign_af_fluorophores(
         Y = af_events,
@@ -474,8 +474,13 @@
 # Locates FCS files in the input folder.
 # Returns a list containing 'fcs_files' and 'fcs_files_all'.
 .prepare_reference_file_set <- function(input_folder) {
+    if (!dir.exists(input_folder)) {
+        .spectreasy_stop_missing_directory(input_folder, label = "input_folder")
+    }
     fcs_files_all <- list.files(input_folder, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-    if (length(fcs_files_all) == 0) stop("No FCS files found in ", input_folder)
+    if (length(fcs_files_all) == 0) {
+        .spectreasy_stop_empty_fcs_directory(input_folder, label = "input_folder")
+    }
 
     list(fcs_files = fcs_files_all, fcs_files_all = fcs_files_all)
 }
@@ -534,7 +539,7 @@
 # Reads the file metadata to determine detector names, labels, and channel mappings.
 # Returns a list containing the parameter data table (pd_meta), sorted detector info, and alias map.
 .prepare_reference_detector_info <- function(first_fcs_file) {
-    ff_meta <- flowCore::read.FCS(first_fcs_file, transformation = FALSE, truncate_max_range = FALSE)
+    ff_meta <- .spectreasy_read_fcs(first_fcs_file, label = "SCC FCS file")
     pd_meta <- flowCore::pData(flowCore::parameters(ff_meta))
     det_info <- get_sorted_detectors(pd_meta)
 
@@ -671,6 +676,8 @@
     }
 
     keep <- rep(TRUE, nrow(raw_data))
+    cell_keep <- rep(TRUE, nrow(raw_data))
+    singlet_keep <- rep(TRUE, nrow(raw_data))
     final_gate <- NULL
     cell_gate <- .reference_manual_gate(manual_gates, "cell", filename, sample_type)
     cell_vertices <- .reference_gate_vertices(cell_gate)
@@ -679,7 +686,8 @@
     if (!is.null(cell_vertices) && nrow(cell_vertices) >= 3) {
         cell_x <- .reference_gate_channel(cell_gate, "x_channel", fsc, raw_data)
         cell_y <- .reference_gate_channel(cell_gate, "y_channel", ssc, raw_data)
-        keep <- keep & sp::point.in.polygon(raw_data[, cell_x], raw_data[, cell_y], cell_vertices$x, cell_vertices$y) > 0
+        cell_keep <- sp::point.in.polygon(raw_data[, cell_x], raw_data[, cell_y], cell_vertices$x, cell_vertices$y) > 0
+        keep <- keep & cell_keep
         if (identical(cell_x, fsc) && identical(cell_y, ssc)) {
             final_gate <- cell_vertices
         }
@@ -692,7 +700,8 @@
     if (!is.null(singlet_vertices) && nrow(singlet_vertices) >= 3 && !is.na(fsc_h) && fsc_h %in% colnames(raw_data)) {
         singlet_x <- .reference_gate_channel(singlet_gate, "x_channel", fsc_h, raw_data)
         singlet_y <- .reference_gate_channel(singlet_gate, "y_channel", fsc, raw_data)
-        keep <- keep & sp::point.in.polygon(raw_data[, singlet_x], raw_data[, singlet_y], singlet_vertices$x, singlet_vertices$y) > 0
+        singlet_keep <- sp::point.in.polygon(raw_data[, singlet_x], raw_data[, singlet_y], singlet_vertices$x, singlet_vertices$y) > 0
+        keep <- keep & singlet_keep
     }
     if (sum(keep, na.rm = TRUE) < 10) return(NULL)
     if (all(keep) && !manual_attempted) return(NULL)
@@ -716,8 +725,14 @@
         ssc_max = stats::quantile(raw_data[, ssc], 0.98, na.rm = TRUE),
         manual = TRUE,
         manual_gate_info = list(
-            cell = list(vertices = cell_vertices, x_channel = cell_x, y_channel = cell_y),
-            singlet = list(vertices = singlet_vertices, x_channel = singlet_x, y_channel = singlet_y),
+            cell = list(vertices = cell_vertices, x_channel = cell_x, y_channel = cell_y, keep_count = sum(cell_keep, na.rm = TRUE)),
+            singlet = list(
+                vertices = singlet_vertices,
+                x_channel = singlet_x,
+                y_channel = singlet_y,
+                source_count = sum(cell_keep, na.rm = TRUE),
+                keep_count = sum(cell_keep & singlet_keep, na.rm = TRUE)
+            ),
             settings = .reference_manual_gate_settings(manual_gates)
         )
     )
@@ -1208,7 +1223,7 @@
         bead_gate_scale = .get_reference_config_value(config, "bead_gate_scale", 1.3)
     )
     if (is.null(scatter_info)) {
-        message("  Skipping AF control ", basename(fcs_file), ": scatter gate found too few valid cells.")
+        .spectreasy_console_step("Skip AF", paste0(basename(fcs_file), " has too few scatter-gated cells"))
         return(NULL)
     }
 
@@ -1346,7 +1361,10 @@
             } else {
                 ""
             }
-            message("Derived ", nrow(af_signatures_norm), " AF basis signature(s) from ", msg, selection_msg, ".")
+            .spectreasy_console_field(
+                "AF bank",
+                paste0(nrow(af_signatures_norm), " signature(s) from ", msg, selection_msg)
+            )
         }
     }
 
@@ -1365,17 +1383,17 @@
 # Returns TRUE if valid, otherwise FALSE.
 .validate_reference_raw_data <- function(raw_data, sn) {
     if (any(is.infinite(raw_data))) {
-        message("  Skipping ", sn, ": Contains infinite values.")
+        .spectreasy_console_step("Skip SCC", paste0(sn, " has infinite values"))
         return(FALSE)
     }
     na_prop <- sum(is.na(raw_data)) / length(raw_data)
     if (na_prop > 0.1) {
-        message("  Skipping ", sn, ": Too many NAs (", round(na_prop * 100, 1), "%).")
+        .spectreasy_console_step("Skip SCC", paste0(sn, " has too many NAs (", round(na_prop * 100, 1), "%)"))
         return(FALSE)
     }
     max_val <- max(raw_data, na.rm = TRUE)
     if (max_val > 1e9) {
-        message("  Skipping ", sn, ": Extreme values detected (max > 1e9). File may be corrupted.")
+        .spectreasy_console_step("Skip SCC", paste0(sn, " has extreme values (max > 1e9)"))
         return(FALSE)
     }
     TRUE
@@ -2762,7 +2780,7 @@
                     scatter_names = c(scatter_info$fsc, scatter_info$ssc)
                 )
             }
-            message("Using unstained bead control for bead SCC subtraction: ", basename(fcs_file))
+            .spectreasy_console_field("Bead neg", basename(fcs_file))
         }
     }
 
@@ -2850,7 +2868,7 @@
 
         neg_data <- if (!is.null(scatter_info)) scatter_info$gated_data else raw_data
         out[[key]] <- apply(neg_data[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
-        message("Using universal negative file for SCC subtraction: ", basename(fcs_file))
+        .spectreasy_console_field("Negative", basename(fcs_file))
     }
 
     out
@@ -2947,7 +2965,11 @@
 }
 
 .reference_pretty_k_label <- function(x) {
-    ifelse(abs(x) >= 1000, paste0(round(x / 1000), "K"), as.character(round(x)))
+    x <- as.numeric(x)
+    out <- ifelse(is.finite(x), ifelse(abs(x) >= 1000, paste0(round(x / 1000), "K"), as.character(round(x))), "")
+    million <- is.finite(x) & abs(x) >= 1000000
+    out[million] <- paste0(sub("\\.0$", "", sprintf("%.1f", x[million] / 1000000)), "M")
+    out
 }
 
 .reference_qc_scatter_density_plot <- function(data,
@@ -2958,7 +2980,9 @@
                                                title,
                                                subtitle = NULL,
                                                max_points = 50000L,
-                                               point_size = 1.5) {
+                                               point_size = 1.5,
+                                               x_domain = NULL,
+                                               y_domain = NULL) {
     x_desc <- .get_reference_axis_label(x_channel, pd)
     y_desc <- .get_reference_axis_label(y_channel, pd)
     x_vals <- data[, x_channel]
@@ -2970,16 +2994,23 @@
     plot_df <- data.frame(x = x_vals[idx], y = y_vals[idx])
     density <- .reference_point_density(plot_df$x, plot_df$y)
     palette <- .reference_density_palette()
-    bucket <- if (length(density) > 0 && max(density, na.rm = TRUE) > 0) {
-        pmax(1L, pmin(length(palette), floor((density / max(density, na.rm = TRUE)) * (length(palette) - 1L)) + 1L))
+    density[!is.finite(density)] <- 0
+    max_density <- if (length(density) > 0) max(density, na.rm = TRUE) else 0
+    bucket <- if (length(density) > 0 && is.finite(max_density) && max_density > 0) {
+        pmax(1L, pmin(length(palette), floor((density / max_density) * (length(palette) - 1L)) + 1L))
     } else {
         rep(1L, nrow(plot_df))
     }
+    bucket[!is.finite(bucket) | is.na(bucket)] <- 1L
     plot_df$color <- palette[bucket]
-    x_lim <- range(c(0, stats::quantile(x_vals, 0.998, na.rm = TRUE), if (!is.null(gate_vertices)) gate_vertices$x), na.rm = TRUE)
-    y_lim <- range(c(0, stats::quantile(y_vals, 0.998, na.rm = TRUE), if (!is.null(gate_vertices)) gate_vertices$y), na.rm = TRUE)
-    x_lim[2] <- max(x_lim[2] * 1.04, 1)
-    y_lim[2] <- max(y_lim[2] * 1.04, 1)
+    x_lim <- .reference_gui_extent(x_vals)
+    y_lim <- .reference_gui_extent(y_vals)
+    if (!is.null(x_domain) && length(x_domain) >= 2L && all(is.finite(x_domain[1:2])) && x_domain[2] > x_domain[1]) {
+        x_lim <- as.numeric(x_domain[1:2])
+    }
+    if (!is.null(y_domain) && length(y_domain) >= 2L && all(is.finite(y_domain[1:2])) && y_domain[2] > y_domain[1]) {
+        y_lim <- as.numeric(y_domain[1:2])
+    }
     point_size <- max(0.15, min(1.2, as.numeric(point_size) * 0.28))
     p <- ggplot2::ggplot(plot_df, ggplot2::aes(x, y)) +
         ggplot2::geom_point(color = plot_df$color, size = point_size, alpha = 0.95, stroke = 0) +
@@ -3024,6 +3055,97 @@
     values
 }
 
+.reference_histogram_inverse_values <- function(values, transform = "asinh") {
+    transform <- tolower(trimws(as.character(transform)[1]))
+    values <- as.numeric(values)
+    if (identical(transform, "log10")) {
+        return(10^values)
+    }
+    if (identical(transform, "asinh")) {
+        return(sinh(values) * 150)
+    }
+    if (identical(transform, "biexponential")) {
+        return(sign(values) * 50 * (10^abs(values) - 1))
+    }
+    values
+}
+
+.reference_gui_extent <- function(values) {
+    finite <- as.numeric(values[is.finite(values)])
+    if (length(finite) == 0L) return(c(0, 1))
+    val_max <- as.numeric(stats::quantile(finite, 0.998, na.rm = TRUE, names = FALSE))
+    if (!is.finite(val_max) || val_max <= 0) val_max <- max(finite, na.rm = TRUE)
+    if (!is.finite(val_max) || val_max <= 0) val_max <- 1
+    c(0, val_max + val_max * 0.04)
+}
+
+.reference_gui_ticks <- function(domain, count = 5L) {
+    domain <- as.numeric(domain[1:2])
+    if (!all(is.finite(domain))) return(c(0, 1))
+    if (domain[1] == domain[2]) return(domain[1])
+    seq(domain[1], domain[2], length.out = count)
+}
+
+.reference_gui_domain_for_channel <- function(domains, channel, fallback_values = NULL) {
+    if (!is.null(domains) && !is.null(channel) && nzchar(channel) && !is.null(domains[[channel]])) {
+        domain <- as.numeric(domains[[channel]][1:2])
+        if (length(domain) >= 2L && all(is.finite(domain)) && domain[2] > domain[1]) return(domain)
+    }
+    .reference_gui_extent(fallback_values)
+}
+
+.reference_gui_channel_extent <- function(raw_data, channel, filename, max_points = 100000L) {
+    if (is.null(channel) || !nzchar(channel) || !channel %in% colnames(raw_data)) return(c(0, 1))
+    idx <- .reference_gui_payload_indices(filename, nrow(raw_data), max_points = max_points)
+    .reference_gui_extent(as.numeric(raw_data[idx, channel]))
+}
+
+.reference_gui_payload_indices <- function(filename, n, max_points = 100000L) {
+    if (!is.finite(n) || n <= 0L) return(integer())
+    max_points <- suppressWarnings(as.integer(max_points[1]))
+    if (!is.finite(max_points) || is.na(max_points) || max_points <= 0L || n <= max_points) return(seq_len(n))
+    seed <- sum(utf8ToInt(basename(filename))) %% .Machine$integer.max
+    old_seed <- if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) get(".Random.seed", envir = .GlobalEnv) else NULL
+    on.exit({
+        if (is.null(old_seed)) {
+            if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) rm(".Random.seed", envir = .GlobalEnv)
+        } else {
+            assign(".Random.seed", old_seed, envir = .GlobalEnv)
+        }
+    }, add = TRUE)
+    set.seed(seed)
+    sort(sample.int(n, max_points))
+}
+
+.reference_scatter_channels <- function(col_names) {
+    unique(grep("^(FSC|SSC).*-(A|H|W)$", col_names, value = TRUE, ignore.case = TRUE))
+}
+
+.reference_compute_gui_scatter_domains <- function(fcs_files, max_points = 100000L) {
+    domains <- list()
+    for (fcs_file in fcs_files) {
+        ff <- tryCatch(.spectreasy_read_fcs(fcs_file, label = "SCC FCS file"), error = function(e) NULL)
+        if (is.null(ff)) next
+        expr <- flowCore::exprs(ff)
+        idx <- .reference_gui_payload_indices(basename(fcs_file), nrow(expr), max_points = max_points)
+        channels <- .reference_scatter_channels(colnames(expr))
+        for (channel in channels) {
+            if (!channel %in% colnames(expr)) next
+            values <- as.numeric(expr[idx, channel])
+            domain <- .reference_gui_extent(values[is.finite(values)])
+            if (is.null(domains[[channel]])) {
+                domains[[channel]] <- domain
+            } else {
+                domains[[channel]] <- c(
+                    min(domains[[channel]][1], domain[1], na.rm = TRUE),
+                    max(domains[[channel]][2], domain[2], na.rm = TRUE)
+                )
+            }
+        }
+    }
+    domains
+}
+
 .reference_histogram_density_curve <- function(values, domain, bins = 100L) {
     bins <- suppressWarnings(as.integer(bins))
     if (!is.finite(bins) || is.na(bins)) bins <- 100L
@@ -3053,7 +3175,8 @@
                                              gate_min,
                                              gate_max,
                                              settings,
-                                             hist_info = NULL) {
+                                             hist_info = NULL,
+                                             x_domain = NULL) {
     transform <- settings$histogram_transform
     bins <- settings$histogram_bins
     values_t <- .reference_histogram_transform_values(peak_vals, transform = transform)
@@ -3068,12 +3191,15 @@
     neg_log_max <- attr(vals_log, "neg_log_max")
     if (!scalar_finite(neg_min) && scalar_finite(neg_log_min)) neg_min <- 10^neg_log_min
     if (!scalar_finite(neg_max) && scalar_finite(neg_log_max)) neg_max <- 10^neg_log_max
-    gate_raw <- c(pos_min, pos_max, neg_min, neg_max)
-    gate_t <- .reference_histogram_transform_values(gate_raw[is.finite(gate_raw)], transform = transform)
-    domain <- range(c(values_t, gate_t), na.rm = TRUE)
+    raw_domain <- if (!is.null(x_domain) && length(x_domain) >= 2L && all(is.finite(x_domain[1:2])) && x_domain[2] > x_domain[1]) {
+        as.numeric(x_domain[1:2])
+    } else {
+        .reference_gui_extent(peak_vals)
+    }
+    domain <- .reference_histogram_transform_values(raw_domain, transform = transform)
     if (!all(is.finite(domain)) || domain[2] <= domain[1]) domain <- c(0, 1)
-    pad <- max((domain[2] - domain[1]) * 0.025, 1e-6)
-    domain <- c(domain[1] - pad, domain[2] + pad)
+    x_breaks <- .reference_gui_ticks(domain, 5L)
+    x_labels <- .reference_pretty_k_label(.reference_histogram_inverse_values(x_breaks, transform = transform))
     curve <- .reference_histogram_density_curve(values_t, domain, bins = bins)
     ymax <- max(curve$y, 1, na.rm = TRUE)
     x_desc <- .get_reference_axis_label(peak_channel, pd)
@@ -3081,6 +3207,7 @@
         ggplot2::geom_ribbon(ggplot2::aes(ymin = 0, ymax = y), fill = "#263f73", alpha = 0.28) +
         ggplot2::geom_line(color = "#263f73", linewidth = 0.85) +
         ggplot2::labs(title = "Histogram", x = x_desc, y = "Events per bin") +
+        ggplot2::scale_x_continuous(breaks = x_breaks, labels = x_labels) +
         ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.08))) +
         ggplot2::theme_minimal(base_size = 12) +
         ggplot2::theme(
@@ -3091,9 +3218,10 @@
             axis.ticks = ggplot2::element_line(color = "#6c746f", linewidth = 0.3),
             axis.title = ggplot2::element_text(color = "#626a65", face = "bold"),
             axis.text = ggplot2::element_text(color = "#626a65", face = "bold"),
-            plot.title = ggplot2::element_text(color = "#17201c", face = "plain", size = 14)
+            plot.title = ggplot2::element_text(color = "#17201c", face = "plain", size = 14),
+            plot.margin = ggplot2::margin(5.5, 24, 5.5, 5.5)
         ) +
-        ggplot2::coord_cartesian(xlim = domain, ylim = c(0, ymax * 1.08), expand = FALSE)
+        ggplot2::coord_cartesian(xlim = domain, ylim = c(0, ymax * 1.08), expand = FALSE, clip = "off")
     if (isTRUE(attr(vals_log, "negative_gate_present")) && scalar_finite(neg_min) && scalar_finite(neg_max) && neg_max > neg_min) {
         neg_t <- .reference_histogram_transform_values(c(neg_min, neg_max), transform = transform)
         p <- p +
@@ -3134,7 +3262,9 @@
                                      out_path,
                                      use_scatter_gating = TRUE,
                                      manual_gate_info = NULL,
-                                     hist_info = NULL) {
+                                     hist_info = NULL,
+                                     gui_scatter_domains = NULL,
+                                     histogram_domain = NULL) {
     gate_settings <- if (!is.null(manual_gate_info) && !is.null(manual_gate_info$settings)) {
         manual_gate_info$settings
     } else {
@@ -3144,6 +3274,11 @@
     cell_x <- if (!is.null(cell_info) && !is.null(cell_info$x_channel) && cell_info$x_channel %in% colnames(raw_data)) cell_info$x_channel else fsc
     cell_y <- if (!is.null(cell_info) && !is.null(cell_info$y_channel) && cell_info$y_channel %in% colnames(raw_data)) cell_info$y_channel else ssc
     cell_vertices <- if (!is.null(cell_info) && !is.null(cell_info$vertices)) cell_info$vertices else final_gate
+    cell_keep_count <- if (!is.null(cell_info) && !is.null(cell_info$keep_count) && is.finite(cell_info$keep_count)) {
+        as.numeric(cell_info$keep_count)
+    } else {
+        nrow(gated_data)
+    }
     p1 <- .reference_qc_scatter_density_plot(
         data = raw_data,
         x_channel = cell_x,
@@ -3151,9 +3286,11 @@
         pd = pd,
         gate_vertices = cell_vertices,
         title = paste0(sn, " - Cell Gate"),
-        subtitle = paste0(round(100 * nrow(gated_data) / nrow(raw_data), 1), "% gated"),
+        subtitle = paste0(round(100 * cell_keep_count / nrow(raw_data), 1), "% gated"),
         max_points = gate_settings$max_points,
-        point_size = gate_settings$point_size
+        point_size = gate_settings$point_size,
+        x_domain = .reference_gui_domain_for_channel(gui_scatter_domains, cell_x, raw_data[, cell_x]),
+        y_domain = .reference_gui_domain_for_channel(gui_scatter_domains, cell_y, raw_data[, cell_y])
     )
     .save_reference_ggsave(file.path(out_path, "fsc_ssc", paste0(sn, "_fsc_ssc.png")), p1, sn, "FSC/SSC", width = 5, height = 5, dpi = 300)
     fsc_desc <- .get_reference_axis_label(fsc, pd)
@@ -3169,6 +3306,16 @@
             rep(TRUE, nrow(raw_data))
         }
         singlet_source <- raw_data[cell_keep, , drop = FALSE]
+        singlet_keep_count <- if (!is.null(singlet_info$keep_count) && is.finite(singlet_info$keep_count)) {
+            as.numeric(singlet_info$keep_count)
+        } else {
+            nrow(gated_data)
+        }
+        singlet_source_count <- if (!is.null(singlet_info$source_count) && is.finite(singlet_info$source_count)) {
+            as.numeric(singlet_info$source_count)
+        } else {
+            nrow(singlet_source)
+        }
         p_singlet <- .reference_qc_scatter_density_plot(
             data = singlet_source,
             x_channel = singlet_x,
@@ -3176,9 +3323,11 @@
             pd = pd,
             gate_vertices = singlet_vertices,
             title = paste0(sn, " - Singlet Gate"),
-            subtitle = paste0(round(100 * nrow(gated_data) / max(nrow(singlet_source), 1), 1), "% gated"),
+            subtitle = paste0(round(100 * singlet_keep_count / max(singlet_source_count, 1), 1), "% gated"),
             max_points = gate_settings$max_points,
-            point_size = gate_settings$point_size
+            point_size = gate_settings$point_size,
+            x_domain = .reference_gui_domain_for_channel(gui_scatter_domains, singlet_x, raw_data[, singlet_x]),
+            y_domain = .reference_gui_domain_for_channel(gui_scatter_domains, singlet_y, raw_data[, singlet_y])
         )
         .save_reference_ggsave(file.path(out_path, "singlet", paste0(sn, "_singlet.png")), p_singlet, sn, "singlet", width = 5, height = 5, dpi = 300)
     }
@@ -3203,7 +3352,8 @@
         gate_min = gate_min,
         gate_max = gate_max,
         settings = gate_settings,
-        hist_info = hist_info
+        hist_info = hist_info,
+        x_domain = histogram_domain
     )
     .save_reference_ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, sn, "histogram", width = 6.5, height = 4, dpi = 300)
     if (isTRUE(use_scatter_gating)) {
@@ -3267,9 +3417,7 @@
     dt_c$y <- dt_c$y_orig^y_power
 
     if (nrow(dt_c) == 0) {
-        message("  Note: dt_c is empty for ", sn, ". Max count: ", max(counts_mat, na.rm = TRUE))
-    } else {
-        message("  Plotting ", nrow(dt_c), " bins for ", sn)
+        .spectreasy_console_step("QC plot", paste0(sn, " spectrum histogram is empty"))
     }
 
     vlines <- which(diff(det_info$laser_nm) != 0) + 0.5
@@ -3336,8 +3484,7 @@
         return(NULL)
     }
 
-    message("Processing SCC: ", fluor_name, " (", sn, ")")
-    ff <- flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE)
+    ff <- .spectreasy_read_fcs(fcs_file, label = "SCC FCS file")
     pd <- flowCore::pData(flowCore::parameters(ff))
     raw_data <- flowCore::exprs(ff)
 
@@ -3380,7 +3527,7 @@
         cytometer = config$cytometer
     )
     peak_channel <- peak_info$peak_channel
-    message("  Peak channel: ", peak_channel)
+    .spectreasy_console_field("SCC", paste0(fluor_name, " (", sn, ") -> ", peak_channel))
 
     peak_vals <- scatter_info$gated_data[, peak_channel]
     if (isTRUE(.get_reference_config_value(config, "autospectral_scc_cleanup", FALSE))) {
@@ -3471,7 +3618,9 @@
                 out_path = config$out_path,
                 use_scatter_gating = TRUE,
                 manual_gate_info = scatter_info$manual_gate_info,
-                hist_info = hist_info
+                hist_info = hist_info,
+                gui_scatter_domains = config$gui_scatter_domains,
+                histogram_domain = .reference_gui_channel_extent(raw_data, peak_channel, sn_ext, max_points = 100000L)
             )
         }
 
@@ -3600,7 +3749,9 @@
             out_path = config$out_path,
             use_scatter_gating = config$use_scatter_gating,
             manual_gate_info = scatter_info$manual_gate_info,
-            hist_info = hist_info
+            hist_info = hist_info,
+            gui_scatter_domains = config$gui_scatter_domains,
+            histogram_domain = .reference_gui_channel_extent(raw_data, peak_channel, sn_ext, max_points = 100000L)
         )
     }
 
@@ -3873,6 +4024,11 @@ build_reference_matrix <- function(
     out_path <- .prepare_reference_output_path(output_folder = output_folder, save_qc_plots = save_qc_plots)
     metadata <- .prepare_reference_detector_info(file_info$fcs_files[1])
     cytometer <- .resolve_cytometer_from_pd(cytometer, metadata$pd_meta)
+    gui_scatter_domains <- if (isTRUE(save_qc_plots)) {
+        .reference_compute_gui_scatter_domains(file_info$fcs_files_all, max_points = 100000L)
+    } else {
+        NULL
+    }
 
     config <- list(
         default_sample_type = default_sample_type,
@@ -3902,10 +4058,11 @@ build_reference_matrix <- function(
         autospectral_n_candidates = autospectral_n_candidates,
         autospectral_n_spectral = autospectral_n_spectral,
         autospectral_min_events = autospectral_min_events,
-        refine = refine
+        refine = refine,
+        gui_scatter_domains = gui_scatter_domains
     )
 
-    message("Found ", length(metadata$detector_names), " spectral detectors. Sorting by laser...")
+    .spectreasy_console_field("Detectors", paste0(length(metadata$detector_names), " spectral channel(s), sorted by laser"))
     .validate_reference_detector_consistency(
         fcs_files = file_info$fcs_files_all,
         detector_names = metadata$detector_names
@@ -4004,7 +4161,7 @@ build_reference_matrix <- function(
                 af_signatures_norm = refined_af$signatures,
                 af_bank_info = af_bank_info
             )
-            message("Refined ", nrow(refined_af$signatures), " fixed AF basis signature(s).")
+            .spectreasy_console_field("AF refine", paste0(nrow(refined_af$signatures), " fixed signature(s)"))
         } else {
             af_bank_info <- attr(M, "af_bank_info")
             if (!is.null(af_bank_info)) {
@@ -4012,7 +4169,7 @@ build_reference_matrix <- function(
                 af_bank_info$refine_reason <- "no_refined_af_candidates"
                 attr(M, "af_bank_info") <- af_bank_info
             }
-            message("AF refinement did not produce usable refined signatures; keeping the base AF bank.")
+            .spectreasy_console_field("AF refine", "kept base AF bank")
         }
     }
     .attach_estimated_wls_detector_noise(

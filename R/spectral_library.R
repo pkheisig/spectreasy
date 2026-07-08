@@ -1007,11 +1007,11 @@
 #' @export
 #' @examples
 #' if (interactive()) {
-#'   build_spectral_panel(open_browser = FALSE)
+#'   build_panel(open_browser = FALSE)
 #' }
-build_spectral_panel <- function(port = 8000,
-                                 open_browser = TRUE,
-                                 dev_mode = FALSE) {
+build_panel <- function(port = 8000,
+                        open_browser = TRUE,
+                        dev_mode = FALSE) {
     .launch_spectreasy_gui(
         matrix_dir = NULL,
         samples_dir = NULL,

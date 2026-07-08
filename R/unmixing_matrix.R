@@ -99,7 +99,10 @@ save_unmixing_matrix <- function(W, file = "unmixing_matrix.csv") {
     W_df$Marker <- rownames(W)
     W_df <- W_df[, c("Marker", setdiff(colnames(W_df), "Marker"))]
     utils::write.csv(W_df, file, row.names = FALSE, quote = TRUE)
-    message("Unmixing matrix (", nrow(W), "x", ncol(W), ") saved to: ", file)
+    .spectreasy_console_field(
+        "Matrix",
+        paste0(.spectreasy_console_path(file), " (", nrow(W), " x ", ncol(W), ")")
+    )
 }
 
 #' Plot Unmixing Matrix

@@ -21,7 +21,10 @@
         )
     }
 
-    message(msg)
+    .spectreasy_console_header("control file created")
+    .spectreasy_console_field("File", .spectreasy_console_path(path))
+    .spectreasy_console_field("Review", "marker, fluorophore, channel, and control.type columns")
+    .spectreasy_console_footer(blank = FALSE)
     repeat {
         ans <- tolower(trimws(readline("Proceed with unmix_controls now? [y/n]: ")))
         if (ans %in% c("y", "yes")) return(invisible(TRUE))
@@ -43,15 +46,15 @@
                                          control_file,
                                          cytometer,
                                          auto_unknown_fluor_policy) {
-    message("Control file not found: ", control_file)
-    message("Auto-generating control file from SCC filenames and peak channels...")
+    .spectreasy_console_field("Controls", paste0(.spectreasy_console_path(control_file), " not found"))
+    .spectreasy_console_step("Create mapping", "from SCC filenames and peak channels")
     create_control_file(
         input_folder = scc_dir,
         cytometer = cytometer,
         unknown_fluor_policy = auto_unknown_fluor_policy,
         output_file = control_file
     )
-    message("Auto-generated control file: ", control_file, " (please review marker/fluorophore/channel columns).")
+    .spectreasy_console_field("Controls", paste0(.spectreasy_console_path(control_file), " created"))
     invisible(control_file)
 }
 
@@ -122,10 +125,8 @@
     }
 
     if (isTRUE(emit_message)) {
-        message(
-            "AF/unstained control file(s) are missing; building a marker-only reference matrix. ",
-            "Use unmix_samples(estimate_af = TRUE) to estimate AF from stained samples."
-        )
+        .spectreasy_console_step("AF controls", "missing; building marker-only reference matrix")
+        .spectreasy_console_step("Next option", "use unmix_samples(estimate_af = TRUE) for stained-sample AF")
     }
     control_df[!missing_af, , drop = FALSE]
 }
@@ -207,11 +208,14 @@
 }
 
 .read_unmix_metadata_pd <- function(scc_dir) {
+    if (!dir.exists(scc_dir)) {
+        .spectreasy_stop_missing_directory(scc_dir, label = "scc_dir")
+    }
     fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     if (length(fcs_files) == 0) {
-        stop("No FCS files found in scc_dir: ", scc_dir)
+        .spectreasy_stop_empty_fcs_directory(scc_dir, label = "scc_dir")
     }
-    ff_meta <- flowCore::read.FCS(fcs_files[1], transformation = FALSE, truncate_max_range = FALSE)
+    ff_meta <- .spectreasy_read_fcs(fcs_files[1], label = "SCC FCS file")
     list(fcs_files = fcs_files, pd = flowCore::pData(flowCore::parameters(ff_meta)))
 }
 
@@ -481,7 +485,7 @@ unmix_controls <- function(
             dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
         }
     }
-    if (!dir.exists(scc_dir)) stop("scc_dir not found: ", scc_dir)
+    if (!dir.exists(scc_dir)) .spectreasy_stop_missing_directory(scc_dir, label = "scc_dir")
 
     control_info <- .prepare_unmix_control_df(
         control_file = control_file,
@@ -503,6 +507,13 @@ unmix_controls <- function(
     if (!preflight$ok) {
         .stop_unmix_preflight(preflight, auto_unknown_fluor_policy = auto_unknown_fluor_policy)
     }
+
+    .spectreasy_console_header("unmix_controls")
+    .spectreasy_console_field("SCC dir", .spectreasy_console_path(scc_dir))
+    .spectreasy_console_field("Controls", .spectreasy_console_path(control_file))
+    .spectreasy_console_field("Output", .spectreasy_console_path(output_dir))
+    .spectreasy_console_field("Method", unmixing_method)
+    .spectreasy_console_field("AF bands", af_n_bands)
 
     if (isTRUE(manual_gating)) {
         if (!interactive()) {
@@ -535,7 +546,7 @@ unmix_controls <- function(
                 }
                 manual_gate_file <- NULL
             } else {
-                message("Using manual gate CSV: ", manual_gate_file)
+                .spectreasy_console_field("Gate CSV", .spectreasy_console_path(manual_gate_file))
             }
         }
     }
@@ -546,7 +557,7 @@ unmix_controls <- function(
     if (isTRUE(save_report)) {
         qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
         output_file <- file.path(qc_controls_dir, "qc_controls_report.pdf")
-        message("Automatic SCC QC report enabled: ", output_file)
+        .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
     }
     build_qc_plots <- isTRUE(save_qc_plots) || isTRUE(save_report)
     build_output_folder <- if (isTRUE(save_qc_plots)) {
@@ -652,6 +663,8 @@ unmix_controls <- function(
     if (identical(unmixing_method, "Spectreasy")) {
         unmix_sample_args$spectreasy_weight_quantile <- spectreasy_weight_quantile
     }
+    .spectreasy_console_field("Unmixing", paste0(length(meta_info$fcs_files), " control file(s)"))
+    unmix_sample_args$verbose <- FALSE
     unmixed_list <- do.call(unmix_samples, unmix_sample_args)
 
     static_info <- .derive_unmix_static_matrix(M, fcs_files = meta_info$fcs_files, unmixing_method = unmixing_method)

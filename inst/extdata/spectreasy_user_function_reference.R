@@ -189,7 +189,7 @@
         dev_mode = FALSE
     )
 
-    build_spectral_panel(
+    build_panel(
         port = 8000,
         open_browser = TRUE,
         dev_mode = FALSE

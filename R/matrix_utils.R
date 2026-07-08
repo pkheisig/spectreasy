@@ -195,7 +195,7 @@
         stop("detectors must contain at least one detector name.")
     }
     if (!dir.exists(scc_dir)) {
-        stop("scc_dir not found: ", scc_dir)
+        .spectreasy_stop_missing_directory(scc_dir, label = "scc_dir")
     }
 
     tail_fraction <- suppressWarnings(as.numeric(tail_fraction)[1])
@@ -210,12 +210,12 @@
 
     fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     if (length(fcs_files) == 0) {
-        stop("No FCS files found in scc_dir: ", scc_dir)
+        .spectreasy_stop_empty_fcs_directory(scc_dir, label = "scc_dir")
     }
 
     per_file <- list()
     for (path in fcs_files) {
-        ff <- flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE)
+        ff <- .spectreasy_read_fcs(path, label = "SCC FCS file")
         expr <- flowCore::exprs(ff)
         missing <- setdiff(detectors, colnames(expr))
         if (length(missing) > 0) {

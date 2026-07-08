@@ -384,7 +384,8 @@ qc_controls <- function(
     extra_args <- list(...)
     unmixing_method <- .normalize_unmix_method(unmixing_method)
 
-    message("Generating SCC QC report...")
+    .spectreasy_console_header("control QC report")
+    .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
     out_dir <- dirname(output_file)
     if (!is.na(out_dir) && nzchar(out_dir) && out_dir != ".") {
         dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
@@ -463,11 +464,14 @@ qc_controls <- function(
     }
 
     if (is.null(pd)) {
+        if (!dir.exists(scc_dir)) {
+            .spectreasy_stop_missing_directory(scc_dir, label = "scc_dir")
+        }
         fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
         if (length(fcs_files) == 0) {
-            stop("No FCS files found in scc_dir: ", scc_dir)
+            .spectreasy_stop_empty_fcs_directory(scc_dir, label = "scc_dir")
         }
-        ff_meta <- flowCore::read.FCS(fcs_files[1], transformation = FALSE, truncate_max_range = FALSE)
+        ff_meta <- .spectreasy_read_fcs(fcs_files[1], label = "SCC FCS file")
         pd <- flowCore::pData(flowCore::parameters(ff_meta))
     }
 
@@ -603,7 +607,8 @@ qc_controls <- function(
         }
     }
 
-    message("SCC report saved to: ", output_file)
+    .spectreasy_console_field("Saved", .spectreasy_console_path(output_file))
+    .spectreasy_console_footer(blank = FALSE)
     invisible(list(
         M = M_built,
         qc_summary = qc_summary,

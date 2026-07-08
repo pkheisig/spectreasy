@@ -254,6 +254,38 @@ test_that("unmix_controls errors early for an explicit missing gating file", {
     )
 })
 
+test_that("common missing path errors are user friendly", {
+    missing_sample_dir <- tempfile("missing_samples_")
+    expect_error(
+        spectreasy::unmix_samples(sample_dir = missing_sample_dir),
+        regexp = "sample_dir not found:"
+    )
+
+    empty_sample_dir <- tempfile("empty_samples_")
+    dir.create(empty_sample_dir, recursive = TRUE)
+    expect_error(
+        spectreasy::unmix_samples(sample_dir = empty_sample_dir, M = matrix(1, nrow = 1, dimnames = list("FITC", "B1-A"))),
+        regexp = "No FCS files found in sample_dir:"
+    )
+
+    wf <- make_synthetic_workflow()
+    missing_matrix <- tempfile(fileext = ".csv")
+    expect_error(
+        spectreasy::unmix_samples(sample_dir = wf$scc_dir, unmixing_matrix_file = missing_matrix),
+        regexp = "unmixing_matrix_file not found:"
+    )
+
+    missing_scc_dir <- tempfile("missing_scc_")
+    expect_error(
+        spectreasy::build_reference_matrix(input_folder = missing_scc_dir),
+        regexp = "input_folder not found:"
+    )
+    expect_error(
+        spectreasy::create_control_file(input_folder = missing_scc_dir),
+        regexp = "input_folder not found:"
+    )
+})
+
 test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     wf <- make_synthetic_workflow()
     output_dir <- tempfile("spectreasy_covr_auto_")
@@ -345,9 +377,9 @@ test_that("unmix_controls handles WLS output with AF controls", {
     expect_true(any(grepl("Unstained", names(ctrl$unmixed_list), ignore.case = TRUE)))
     expect_true(file.exists(file.path(output_dir, "unmixed_fcs", "Unstained (Cells)_WLS-1AF.fcs")))
     expect_false(any(grepl("scc_report_plots_", list.dirs(output_dir, recursive = TRUE, full.names = FALSE))))
-    expect_equal(sum(grepl("^Found 2 spectral detectors", messages)), 1L)
-    expect_equal(sum(grepl("^Processing SCC:", messages)), 2L)
-    expect_equal(sum(grepl("^Derived 1 AF basis", messages)), 1L)
+    expect_equal(sum(grepl("^Detectors\\s*: 2 spectral channel", messages)), 1L)
+    expect_equal(sum(grepl("^SCC\\s*:", messages)), 2L)
+    expect_equal(sum(grepl("^AF bank\\s*: 1 signature", messages)), 1L)
 })
 
 test_that("unmix_controls tolerates a missing unstained mapping row", {
@@ -546,7 +578,7 @@ test_that("adjust_matrix starts packaged GUI on localhost", {
 
     expect_error(
         spectreasy::adjust_matrix(matrix_dir = tempfile("spectreasy_missing_matrix_"), open_browser = FALSE),
-        regexp = "cannot be found|No such file|mustWork"
+        regexp = "matrix_dir not found:"
     )
 
     tmp_matrix_dir <- tempfile("spectreasy_gui_matrix_")

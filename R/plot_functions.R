@@ -173,8 +173,8 @@ plot_spectra <- function(ref_matrix,
         
         if (length(common) == 0) {
             warning("No matching detectors found between reference matrix and provided metadata. Ignoring metadata.")
-            message("Ref Matrix cols (first 5): ", paste(utils::head(detectors, 5), collapse=", "))
-            message("Metadata names (first 5): ", paste(utils::head(det_info$names, 5), collapse=", "))
+            .spectreasy_console_field("Ref cols", paste(utils::head(detectors, 5), collapse = ", "))
+            .spectreasy_console_field("Metadata", paste(utils::head(det_info$names, 5), collapse = ", "))
 
             # Fallback to numerical sort
             nums <- as.numeric(gsub("[^0-9]", "", detectors))

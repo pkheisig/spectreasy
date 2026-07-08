@@ -998,9 +998,14 @@ create_control_file <- function(input_folder = "scc",
                                 output_file = "fcs_mapping.csv",
                                 custom_fluorophores = NULL) {
     unknown_fluor_policy <- match.arg(unknown_fluor_policy)
+    if (!dir.exists(input_folder)) {
+        .spectreasy_stop_missing_directory(input_folder, label = "input_folder")
+    }
     scc_files <- list.files(input_folder, pattern = "\\.fcs$", full.names = FALSE, ignore.case = TRUE)
 
-    if (length(scc_files) == 0) stop("No FCS files found in ", input_folder)
+    if (length(scc_files) == 0) {
+        .spectreasy_stop_empty_fcs_directory(input_folder, label = "input_folder")
+    }
 
     cytometer_resolved <- .resolve_cytometer_from_files(
         cytometer,
@@ -1061,7 +1066,7 @@ get_control_spectra <- function(flow_frame,
 
     control_file <- .resolve_control_file_path(control_file)
 
-    message("  - Extracting reference signatures from single-color controls...")
+    .spectreasy_console_step("Reference matrix", "from single-color controls")
     control_df <- utils::read.csv(control_file, stringsAsFactors = FALSE, check.names = FALSE)
     M_scc <- build_reference_matrix(input_folder = control_dir, control_df = control_df, cytometer = cytometer_resolved)
     M_scc[, detector_names, drop = FALSE]
