@@ -16,7 +16,23 @@
     if (!file.exists(path)) {
         return(NULL)
     }
-    png::readPNG(path)
+    img <- png::readPNG(path)
+    if (length(dim(img)) < 3L || dim(img)[1] < 10L || dim(img)[2] < 10L) {
+        return(img)
+    }
+    rgb <- img[, , seq_len(min(3L, dim(img)[3])), drop = FALSE]
+    non_white <- rgb[, , 1] < 0.992
+    if (dim(rgb)[3] >= 2L) non_white <- non_white | rgb[, , 2] < 0.992
+    if (dim(rgb)[3] >= 3L) non_white <- non_white | rgb[, , 3] < 0.992
+    rows <- which(rowSums(non_white) > 0L)
+    cols <- which(colSums(non_white) > 0L)
+    if (length(rows) == 0L || length(cols) == 0L) {
+        return(img)
+    }
+    pad <- 8L
+    row_range <- max(1L, min(rows) - pad):min(dim(img)[1], max(rows) + pad)
+    col_range <- max(1L, min(cols) - pad):min(dim(img)[2], max(cols) + pad)
+    img[row_range, col_range, , drop = FALSE]
 }
 
 .draw_report_image_panel <- function(path, title, x, y, width, height) {
@@ -178,26 +194,26 @@
         .draw_report_image_panel(
             file.path(report_plot_dir, "fsc_ssc", paste0(sample_id, "_fsc_ssc.png")),
             "Cell Gate",
-            x = grid::unit(0.2, "npc"),
-            y = grid::unit(0.69, "npc"),
-            width = grid::unit(0.29, "npc"),
-            height = grid::unit(0.32, "npc")
+            x = grid::unit(0.265, "npc"),
+            y = grid::unit(0.65, "npc"),
+            width = grid::unit(0.42, "npc"),
+            height = grid::unit(0.38, "npc")
         )
         .draw_report_image_panel(
             singlet_png,
             "Singlet Gate",
-            x = grid::unit(0.5, "npc"),
-            y = grid::unit(0.69, "npc"),
-            width = grid::unit(0.29, "npc"),
-            height = grid::unit(0.32, "npc")
+            x = grid::unit(0.735, "npc"),
+            y = grid::unit(0.65, "npc"),
+            width = grid::unit(0.42, "npc"),
+            height = grid::unit(0.38, "npc")
         )
         .draw_report_image_panel(
             file.path(report_plot_dir, "histogram", paste0(sample_id, "_histogram.png")),
             "Histogram",
-            x = grid::unit(0.8, "npc"),
-            y = grid::unit(0.69, "npc"),
-            width = grid::unit(0.29, "npc"),
-            height = grid::unit(0.32, "npc")
+            x = grid::unit(0.25, "npc"),
+            y = grid::unit(0.24, "npc"),
+            width = grid::unit(0.38, "npc"),
+            height = grid::unit(0.28, "npc")
         )
     } else {
         .draw_report_image_panel(
@@ -223,10 +239,10 @@
     .draw_report_image_panel(
         file.path(report_plot_dir, "spectrum", paste0(sample_id, "_spectrum.png")),
         "Per-Event Spectrum Distribution",
-        x = grid::unit(0.5, "npc"),
-        y = grid::unit(0.23, "npc"),
-        width = grid::unit(0.9, "npc"),
-        height = grid::unit(0.32, "npc")
+        x = if (has_singlet_png) grid::unit(0.69, "npc") else grid::unit(0.5, "npc"),
+        y = if (has_singlet_png) grid::unit(0.23, "npc") else grid::unit(0.2, "npc"),
+        width = if (has_singlet_png) grid::unit(0.56, "npc") else grid::unit(0.9, "npc"),
+        height = grid::unit(0.3, "npc")
     )
 
     invisible(NULL)

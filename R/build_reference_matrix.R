@@ -2949,17 +2949,17 @@
     bx <- pmax(0L, pmin(num_bins, floor(((x - min_x) / rx) * num_bins)))
     by <- pmax(0L, pmin(num_bins, floor(((y - min_y) / ry) * num_bins)))
     grid <- tabulate(by * grid_side + bx + 1L, nbins = grid_side * grid_side)
-    dim(grid) <- c(grid_side, grid_side)
     radius <- 5L
     sigma <- 2
     offsets <- expand.grid(dx = -radius:radius, dy = -radius:radius)
     offsets$weight <- exp(-(offsets$dx^2 + offsets$dy^2) / (2 * sigma^2))
     densities <- numeric(n)
     for (i in seq_len(n)) {
-        nx <- bx[i] + offsets$dx + 1L
-        ny <- by[i] + offsets$dy + 1L
-        ok <- nx >= 1L & nx <= grid_side & ny >= 1L & ny <= grid_side
-        densities[i] <- sum(grid[cbind(ny[ok], nx[ok])] * offsets$weight[ok])
+        nx <- bx[i] + offsets$dx
+        ny <- by[i] + offsets$dy
+        ok <- nx >= 0L & nx <= num_bins & ny >= 0L & ny <= num_bins
+        grid_idx <- ny[ok] * grid_side + nx[ok] + 1L
+        densities[i] <- sum(grid[grid_idx] * offsets$weight[ok])
     }
     densities
 }
@@ -3024,7 +3024,7 @@
         y_lim <- as.numeric(y_domain[1:2])
     }
     coord_ratio <- .reference_gui_coord_ratio(x_lim, y_lim)
-    point_size <- max(0.15, min(1.2, as.numeric(point_size) * 0.28))
+    point_size <- max(0.3, min(1.8, as.numeric(point_size) * 0.55))
     p <- ggplot2::ggplot(plot_df, ggplot2::aes(x, y)) +
         ggplot2::geom_point(color = plot_df$color, size = point_size, alpha = 0.95, stroke = 0) +
         ggplot2::labs(title = title, subtitle = subtitle, x = x_desc, y = y_desc) +
@@ -3409,6 +3409,11 @@
     } else {
         numeric()
     }
+    spectrum_plot_data <- if (positive_gate_valid && peak_channel %in% colnames(histogram_source)) {
+        histogram_source[histogram_peak_vals >= gate_min & histogram_peak_vals <= gate_max, , drop = FALSE]
+    } else {
+        final_gated_data
+    }
     p2 <- .reference_qc_histogram_gui_plot(
         peak_vals = histogram_peak_vals,
         pd = pd,
@@ -3461,9 +3466,17 @@
         .save_reference_ggsave(file.path(out_path, "intensity_scatter", paste0(sn, "_intensity_scatter.png")), p2_scatter, sn, "intensity scatter", width = 6.5, height = 4, dpi = 300)
     }
 
-    log_mat <- log10(pmax(final_gated_data[, detector_names, drop = FALSE], 1e-3))
-    min_y <- floor(min(log_mat, na.rm = TRUE))
-    max_y <- ceiling(max(log_mat, na.rm = TRUE))
+    if (nrow(spectrum_plot_data) > 0L && all(detector_names %in% colnames(spectrum_plot_data))) {
+        log_mat <- log10(pmax(spectrum_plot_data[, detector_names, drop = FALSE], 1e-3))
+    } else {
+        log_mat <- matrix(numeric(), nrow = 0L, ncol = length(detector_names), dimnames = list(NULL, detector_names))
+    }
+    finite_log <- log_mat[is.finite(log_mat)]
+    if (length(finite_log) == 0L) {
+        finite_log <- c(0, 1)
+    }
+    min_y <- floor(min(finite_log, na.rm = TRUE))
+    max_y <- ceiling(max(finite_log, na.rm = TRUE))
     breaks <- seq(min_y, max_y, length.out = 151)
     bin_mid <- (breaks[-1] + breaks[-length(breaks)]) / 2
     bin_height <- breaks[2] - breaks[1]
@@ -3488,6 +3501,10 @@
     vlines <- which(diff(det_info$laser_nm) != 0) + 0.5
     fill_lo <- min(dt_c$fill, na.rm = TRUE)
     fill_hi <- quantile(dt_c$fill, 0.96, na.rm = TRUE)
+    if (!is.finite(fill_lo) || !is.finite(fill_hi) || fill_hi <= fill_lo) {
+        fill_lo <- 0
+        fill_hi <- 1
+    }
     y_breaks_orig <- 0:ceiling(max_y)
     y_breaks_trans <- y_breaks_orig^y_power
     y_labels <- vapply(y_breaks_orig, function(x) paste0("10^", x), character(1))
