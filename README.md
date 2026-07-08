@@ -134,20 +134,16 @@ Clicking Confirm saves the gate CSV, closes the GUI server, and lets the same `u
 2) These are already part of qc_controls_report.pdf and only saved separately when save_qc_plots = TRUE so you can use the plot somewhere as a standalone PNG file. 
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
 - `spectreasy_outputs/unmix_controls/scc_spectra.png`
+- `spectreasy_outputs/unmix_controls/scc_af_spectra.png`
 - `spectreasy_outputs/unmix_controls/fsc_ssc/*.png` 
 - `spectreasy_outputs/unmix_controls/intensity_scatter/*.png`
 - `spectreasy_outputs/unmix_controls/spectrum/*.png`
 
 
-The control-stage run also writes visual checks for each single-color control with the gating plots from the GUI included in the control QC report. For one color, the three plots below show the broad FSC/SSC cleanup, the scatter gate, and the detector spectrum used to build the reference matrix:
+The control-stage run also writes visual checks for each single-color control with the gating plots from the GUI included in the control QC report. For one color, the summary below shows the broad FSC/SSC cleanup, the singlet gate, the positive/negative gate, and the per-event detector spectrum used to build the reference matrix:
 
 <p align="center">
-  <img src="man/figures/vignette_fsc_ssc.png" width="48%" />
-  <img src="man/figures/vignette_intensity_scatter.png" width="48%" />
-</p>
-
-<p align="center">
-  <img src="man/figures/vignette_spectrum.png" width="100%" />
+  <img src="man/figures/vignette_gating.png" width="100%" />
 </p>
 
 The same run creates the NxN scatter matrix for the single-color controls. Each row is one control, and each column checks how much signal appears in the other unmixed markers.
@@ -335,16 +331,24 @@ plot_spectra(reference_matrix_no_af, output_file = NULL)
 ```
 
 <p align="center">
-  <img src="man/figures/vignette_spectra.png" width="80%" />
+  <img src="man/figures/vignette_spectra_scc.png" width="80%" />
 </p>
 
 ```r
-sample_results <- do.call(rbind, lapply(unmixed, function(x) x$data))
-plot_nps(calculate_nps(sample_results), output_file = NULL)
+af_rows <- grepl("^AF($|_)", rownames(fluor_reference_matrix), ignore.case = TRUE)
+plot_spectra(fluor_reference_matrix[af_rows, , drop = FALSE], output_file = NULL)
 ```
 
 <p align="center">
-  <img src="man/figures/vignette_nps.png" width="80%" />
+  <img src="man/figures/vignette_spectra_af.png" width="80%" />
+</p>
+
+```r
+plot_similarity_matrix(calculate_similarity_matrix(reference_matrix_no_af), output_file = NULL)
+```
+
+<p align="center">
+  <img src="man/figures/vignette_ssm.png" width="80%" />
 </p>
 
 ---
