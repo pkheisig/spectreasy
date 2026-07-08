@@ -663,6 +663,84 @@ gate_apply_positive_gate <- function(expr, gate, peak) {
     expr[keep, , drop = FALSE]
 }
 
+gate_detector_labels <- function(det_info, spec_channels) {
+    labels <- det_info$labels[match(spec_channels, det_info$names)]
+    labels[is.na(labels) | !nzchar(labels)] <- spec_channels[is.na(labels) | !nzchar(labels)]
+    labels
+}
+
+gate_build_spectrum_plot <- function(expr_filtered, spec_channels, det_info) {
+    labels <- gate_detector_labels(det_info, spec_channels)
+    y_power <- 1.5
+    if (nrow(expr_filtered) == 0) {
+        max_y <- 6
+        y_breaks_orig <- 0:max_y
+        y_breaks_trans <- y_breaks_orig^y_power
+        y_labels <- vapply(y_breaks_orig, function(x) paste0("10^", x), character(1))
+        p_empty <- ggplot2::ggplot(data.frame(ch_idx = seq_along(spec_channels), y = 0), ggplot2::aes(ch_idx, y)) +
+            ggplot2::scale_x_continuous(breaks = seq_along(spec_channels), labels = labels) +
+            ggplot2::scale_y_continuous(limits = c(0, (max_y + 0.5)^y_power), breaks = y_breaks_trans, labels = y_labels) +
+            ggplot2::coord_cartesian(expand = FALSE) +
+            ggplot2::labs(title = NULL, x = NULL, y = "Intensity") +
+            ggplot2::theme_minimal() +
+            ggplot2::theme(
+                axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+                legend.position = "none",
+                panel.background = ggplot2::element_rect(fill = "white", color = NA),
+                panel.grid.major = ggplot2::element_blank(),
+                panel.grid.minor = ggplot2::element_blank()
+            )
+        return(gate_plot_to_base64(p_empty))
+    }
+
+    log_mat <- log10(pmax(expr_filtered[, spec_channels, drop = FALSE], 1e-3))
+    min_y <- floor(min(log_mat, na.rm = TRUE))
+    max_y <- ceiling(max(log_mat, na.rm = TRUE))
+    breaks <- seq(min_y, max_y, length.out = 151)
+    bin_mid <- (breaks[-1] + breaks[-length(breaks)]) / 2
+    bin_height <- breaks[2] - breaks[1]
+    counts_mat <- vapply(seq_len(ncol(log_mat)), function(j) {
+        as.numeric(graphics::hist(log_mat[, j], breaks = breaks, plot = FALSE)$counts)
+    }, numeric(length(bin_mid)))
+    rownames(counts_mat) <- as.character(seq_along(bin_mid))
+    colnames(counts_mat) <- as.character(seq_len(ncol(log_mat)))
+    dt_c <- as.data.frame(as.table(counts_mat), stringsAsFactors = FALSE)
+    names(dt_c) <- c("bin_idx", "ch_idx", "count")
+    dt_c$bin_idx <- as.integer(dt_c$bin_idx)
+    dt_c$ch_idx <- as.integer(dt_c$ch_idx)
+    dt_c$y_orig <- bin_mid[dt_c$bin_idx]
+    dt_c$fill <- log10(dt_c$count + 1)
+    min_bin_count <- if (nrow(expr_filtered) <= 3000) 1 else 3
+    dt_c <- dt_c[dt_c$count >= min_bin_count, , drop = FALSE]
+    if (nrow(dt_c) == 0) {
+        empty_expr <- expr_filtered[0, , drop = FALSE]
+        return(gate_build_spectrum_plot(empty_expr, spec_channels, det_info))
+    }
+    dt_c$y <- dt_c$y_orig^y_power
+    fill_lo <- min(dt_c$fill, na.rm = TRUE)
+    fill_hi <- stats::quantile(dt_c$fill, 0.96, na.rm = TRUE)
+    y_breaks_orig <- 0:ceiling(max_y)
+    y_breaks_trans <- y_breaks_orig^y_power
+    y_labels <- vapply(y_breaks_orig, function(x) paste0("10^", x), character(1))
+
+    p_spec <- ggplot2::ggplot(dt_c, ggplot2::aes(ch_idx, y, fill = fill)) +
+        ggplot2::geom_tile(width = 0.7, height = bin_height * 3) +
+        ggplot2::scale_fill_gradientn(colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"), limits = c(fill_lo, fill_hi), oob = scales::squish) +
+        ggplot2::scale_x_continuous(breaks = seq_along(spec_channels), labels = labels) +
+        ggplot2::scale_y_continuous(limits = c(0, (max_y + 0.5)^y_power), breaks = y_breaks_trans, labels = y_labels) +
+        ggplot2::coord_cartesian(expand = FALSE) +
+        ggplot2::labs(title = NULL, x = NULL, y = "Intensity") +
+        ggplot2::theme_minimal() +
+        ggplot2::theme(
+            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+            legend.position = "none",
+            panel.background = ggplot2::element_rect(fill = "white", color = NA),
+            panel.grid.major = ggplot2::element_blank(),
+            panel.grid.minor = ggplot2::element_blank()
+        )
+    gate_plot_to_base64(p_spec)
+}
+
 gate_spectrum_for_file <- function(filename) {
     df <- gate_read_mapping()
     name <- gate_safe_basename(filename)
@@ -691,53 +769,7 @@ gate_spectrum_for_file <- function(filename) {
     if (!isTRUE(row$is_af[1])) {
         expr_filtered <- gate_apply_positive_gate(expr_filtered, gate_cached_gate(cache, "positive", name, control_type), peak)
     }
-    if (nrow(expr_filtered) == 0) return(NULL)
-
-    log_mat <- log10(pmax(expr_filtered[, spec_channels, drop = FALSE], 1e-3))
-    min_y <- floor(min(log_mat, na.rm = TRUE))
-    max_y <- ceiling(max(log_mat, na.rm = TRUE))
-    breaks <- seq(min_y, max_y, length.out = 151)
-    bin_mid <- (breaks[-1] + breaks[-length(breaks)]) / 2
-    bin_height <- breaks[2] - breaks[1]
-    counts_mat <- vapply(seq_len(ncol(log_mat)), function(j) {
-        as.numeric(graphics::hist(log_mat[, j], breaks = breaks, plot = FALSE)$counts)
-    }, numeric(length(bin_mid)))
-    rownames(counts_mat) <- as.character(seq_along(bin_mid))
-    colnames(counts_mat) <- as.character(seq_len(ncol(log_mat)))
-    dt_c <- as.data.frame(as.table(counts_mat), stringsAsFactors = FALSE)
-    names(dt_c) <- c("bin_idx", "ch_idx", "count")
-    dt_c$bin_idx <- as.integer(dt_c$bin_idx)
-    dt_c$ch_idx <- as.integer(dt_c$ch_idx)
-    dt_c$y_orig <- bin_mid[dt_c$bin_idx]
-    dt_c$fill <- log10(dt_c$count + 1)
-    dt_c <- dt_c[dt_c$count >= 3, , drop = FALSE]
-    if (nrow(dt_c) == 0) return(NULL)
-    y_power <- 1.5
-    dt_c$y <- dt_c$y_orig^y_power
-    fill_lo <- min(dt_c$fill, na.rm = TRUE)
-    fill_hi <- stats::quantile(dt_c$fill, 0.96, na.rm = TRUE)
-    y_breaks_orig <- 0:ceiling(max_y)
-    y_breaks_trans <- y_breaks_orig^y_power
-    y_labels <- vapply(y_breaks_orig, function(x) paste0("10^", x), character(1))
-    labels <- det_info$labels[match(spec_channels, det_info$names)]
-    labels[is.na(labels) | !nzchar(labels)] <- spec_channels[is.na(labels) | !nzchar(labels)]
-
-    p_spec <- ggplot2::ggplot(dt_c, ggplot2::aes(ch_idx, y, fill = fill)) +
-        ggplot2::geom_tile(width = 0.7, height = bin_height * 3) +
-        ggplot2::scale_fill_gradientn(colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"), limits = c(fill_lo, fill_hi), oob = scales::squish) +
-        ggplot2::scale_x_continuous(breaks = seq_along(spec_channels), labels = labels) +
-        ggplot2::scale_y_continuous(limits = c(0, (max_y + 0.5)^y_power), breaks = y_breaks_trans, labels = y_labels) +
-        ggplot2::coord_cartesian(expand = FALSE) +
-        ggplot2::labs(title = NULL, x = NULL, y = "Intensity") +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(
-            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
-            legend.position = "none",
-            panel.background = ggplot2::element_rect(fill = "white", color = NA),
-            panel.grid.major = ggplot2::element_blank(),
-            panel.grid.minor = ggplot2::element_blank()
-        )
-    gate_plot_to_base64(p_spec)
+    gate_build_spectrum_plot(expr_filtered, spec_channels, det_info)
 }
 
 gate_payload_for_file <- function(filename, max_points = 3000L) {

@@ -77,3 +77,24 @@ testthat::test_that("GUI spectrum gating keeps zero-event gate results empty", {
     testthat::expect_equal(nrow(api_env$gate_apply_polygon_gate(expr, empty_scatter_gate)), 0L)
     testthat::expect_equal(nrow(api_env$gate_apply_positive_gate(expr, empty_positive_gate, "Peak-A")), 0L)
 })
+
+testthat::test_that("GUI spectrum renderer keeps an empty plot for zero events", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) {
+        api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    }
+    testthat::skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+
+    det_info <- list(
+        names = c("B1-A", "YG1-A"),
+        labels = c("B1-A", "YG1-A")
+    )
+    expr <- data.frame(`B1-A` = numeric(), `YG1-A` = numeric(), check.names = FALSE)
+    image <- api_env$gate_build_spectrum_plot(expr, c("B1-A", "YG1-A"), det_info)
+
+    testthat::expect_true(is.character(image))
+    testthat::expect_match(image, "^data:image/png;base64,")
+})
