@@ -738,7 +738,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   events per sample. The full unsampled unmixed data will still be written
 #'   to the FCS files. When omitted with `write_fcs = TRUE`,
 #'   `return_type = "list"`, and `save_report = TRUE`, `unmix_samples()`
-#'   automatically keeps 1000 events per sample in memory to avoid large-report
+#'   automatically keeps 10000 events per sample in memory to avoid large-report
 #'   memory crashes. Set `subsample_n = NULL` explicitly to keep all events in
 #'   the returned object.
 #' @param chunk_size Integer number of events unmixed at a time per sample.
@@ -880,7 +880,7 @@ unmix_samples <- function(sample_dir = "samples",
         identical(return_type, "list") &&
         isTRUE(subsample_n_missing)
     if (auto_subsample_for_report) {
-        subsample_n <- 1000L
+        subsample_n <- 10000L
     }
     subsample_n <- .normalize_unmix_subsample_n(subsample_n)
 

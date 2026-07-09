@@ -120,7 +120,7 @@ in `qc_plot_dir` while creating the PDF report.}
 in-memory results and automatic QC report input to at most `subsample_n`
 events per sample. The full unsampled unmixed data will still be written to
 the FCS files. If omitted while `write_fcs = TRUE`, `return_type = "list"`, and
-`save_report = TRUE`, `unmix_samples()` automatically keeps 1000 events per
+`save_report = TRUE`, `unmix_samples()` automatically keeps 10000 events per
 sample in memory to avoid large-report memory use. Pass `subsample_n = NULL`
 explicitly to keep all events in the returned object.}
 
