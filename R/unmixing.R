@@ -392,15 +392,15 @@
     chunk_size
 }
 
-.normalize_unmix_subsample_n <- function(subsample_n) {
-    if (is.null(subsample_n)) {
+.normalize_unmix_plot_n_events <- function(plot_n_events) {
+    if (is.null(plot_n_events)) {
         return(NULL)
     }
-    subsample_n <- suppressWarnings(as.integer(subsample_n[1]))
-    if (!is.finite(subsample_n) || is.na(subsample_n) || subsample_n < 1L) {
-        stop("subsample_n must be NULL or an integer >= 1.", call. = FALSE)
+    plot_n_events <- suppressWarnings(as.integer(plot_n_events[1]))
+    if (!is.finite(plot_n_events) || is.na(plot_n_events) || plot_n_events < 1L) {
+        stop("plot_n_events must be NULL or an integer >= 1.", call. = FALSE)
     }
-    subsample_n
+    plot_n_events
 }
 
 .unmix_chunk_indices <- function(n_events, chunk_size) {
@@ -411,11 +411,11 @@
     lapply(starts, function(start) seq.int(start, min(n_events, start + chunk_size - 1L)))
 }
 
-.unmix_sample_keep_indices <- function(n_events, subsample_n = NULL) {
-    if (is.null(subsample_n) || n_events <= subsample_n) {
+.unmix_sample_keep_indices <- function(n_events, plot_n_events = NULL) {
+    if (is.null(plot_n_events) || n_events <= plot_n_events) {
         return(seq_len(n_events))
     }
-    sort(sample.int(n_events, subsample_n))
+    sort(sample.int(n_events, plot_n_events))
 }
 
 .merge_unmix_variant_info <- function(infos) {
@@ -733,14 +733,11 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   in `qc_plot_dir` while creating the PDF report.
 #' @param qc_plot_dir Directory for sample QC report PNG files when
 #'   `save_qc_plots = TRUE`.
-#' @param subsample_n Optional integer; if provided, subsample the returned
-#'   in-memory results and automatic QC report input to at most `subsample_n`
-#'   events per sample. The full unsampled unmixed data will still be written
-#'   to the FCS files. When omitted with `write_fcs = TRUE`,
-#'   `return_type = "list"`, and `save_report = TRUE`, `unmix_samples()`
-#'   automatically keeps 10000 events per sample in memory to avoid large-report
-#'   memory crashes. Set `subsample_n = NULL` explicitly to keep all events in
-#'   the returned object.
+#' @param plot_n_events Optional integer; number of events per sample retained
+#'   for automatic QC report plots and returned in-memory results. The full
+#'   unsampled unmixed data will still be written to FCS files. Defaults to
+#'   10000. Set `plot_n_events = NULL` to keep all events in the returned
+#'   object and report input.
 #' @param chunk_size Integer number of events unmixed at a time per sample.
 #'   Defaults to 50000 to reduce peak memory use for large FCS files. Set
 #'   `chunk_size = NULL` to process each sample in one chunk.
@@ -814,14 +811,13 @@ unmix_samples <- function(sample_dir = "samples",
                           save_report = TRUE,
                           save_qc_plots = FALSE,
                           qc_plot_dir = NULL,
-                          subsample_n = NULL,
+                          plot_n_events = 10000L,
                           chunk_size = 50000L,
                           seed = NULL,
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
                           verbose = TRUE) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     unmixing_matrix_file_missing <- missing(unmixing_matrix_file)
-    subsample_n_missing <- missing(subsample_n)
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
     scc_dir <- NULL
@@ -875,14 +871,7 @@ unmix_samples <- function(sample_dir = "samples",
     }
     estimate_af <- isTRUE(estimate_af)
     chunk_size <- .normalize_unmix_chunk_size(chunk_size)
-    auto_subsample_for_report <- isTRUE(write_fcs) &&
-        isTRUE(save_report) &&
-        identical(return_type, "list") &&
-        isTRUE(subsample_n_missing)
-    if (auto_subsample_for_report) {
-        subsample_n <- 10000L
-    }
-    subsample_n <- .normalize_unmix_subsample_n(subsample_n)
+    plot_n_events <- .normalize_unmix_plot_n_events(plot_n_events)
 
     if (isTRUE(verbose)) {
         .spectreasy_console_header("unmix_samples")
@@ -892,12 +881,9 @@ unmix_samples <- function(sample_dir = "samples",
         if (is.finite(chunk_size)) {
             .spectreasy_console_field("Chunk", paste0(format(chunk_size, big.mark = ","), " events"))
         }
-        if (!is.null(subsample_n)) {
-            label <- paste0(format(subsample_n, big.mark = ","), " events/sample")
-            if (auto_subsample_for_report) {
-                label <- paste0(label, " for in-memory QC")
-            }
-            .spectreasy_console_field("Memory", label)
+        if (!is.null(plot_n_events)) {
+            label <- paste0(format(plot_n_events, big.mark = ","), " events/sample for plots")
+            .spectreasy_console_field("Plot data", label)
         }
         if (isTRUE(write_fcs)) {
             .spectreasy_console_field("Output", .spectreasy_console_path(output_dir))
@@ -955,7 +941,7 @@ unmix_samples <- function(sample_dir = "samples",
         }
         n_events <- nrow(flowCore::exprs(ff))
         chunk_indices <- .unmix_chunk_indices(n_events, chunk_size = chunk_size)
-        keep_global <- .unmix_sample_keep_indices(n_events, subsample_n = subsample_n)
+        keep_global <- .unmix_sample_keep_indices(n_events, plot_n_events = plot_n_events)
         marker_source_all <- rownames(M)
         marker_source_for_output <- marker_source_all[!grepl("^AF_", marker_source_all, ignore.case = TRUE)]
 

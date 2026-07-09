@@ -599,7 +599,7 @@ test_that("Plumber gui_api load_matrix and save_matrix filter and merge AF rows"
     expect_true("AF" %in% colnames(preview))
 })
 
-test_that("unmix_samples supports in-memory subsampling via subsample_n", {
+test_that("unmix_samples supports in-memory subsampling via plot_n_events", {
     M <- matrix(c(
         1.0, 0.2,
         0.1, 1.0
@@ -627,7 +627,7 @@ test_that("unmix_samples supports in-memory subsampling via subsample_n", {
         unmixing_method = "OLS",
         output_dir = tmp_dir,
         write_fcs = TRUE,
-        subsample_n = 10,
+        plot_n_events = 10,
         chunk_size = 13,
         seed = 42
     )

@@ -27,7 +27,7 @@ unmix_samples(
   save_report = TRUE,
   save_qc_plots = FALSE,
   qc_plot_dir = NULL,
-  subsample_n = NULL,
+  plot_n_events = 10000L,
   chunk_size = 50000L,
   seed = NULL,
   return_type = c("list", "flowSet", "SingleCellExperiment"),
@@ -116,13 +116,11 @@ in `qc_plot_dir` while creating the PDF report.}
 \item{qc_plot_dir}{Directory for sample QC report PNG files when
 `save_qc_plots = TRUE`.}
 
-\item{subsample_n}{Optional integer; if provided, subsample the returned
-in-memory results and automatic QC report input to at most `subsample_n`
-events per sample. The full unsampled unmixed data will still be written to
-the FCS files. If omitted while `write_fcs = TRUE`, `return_type = "list"`, and
-`save_report = TRUE`, `unmix_samples()` automatically keeps 10000 events per
-sample in memory to avoid large-report memory use. Pass `subsample_n = NULL`
-explicitly to keep all events in the returned object.}
+\item{plot_n_events}{Optional integer; number of events per sample retained
+for automatic QC report plots and returned in-memory results. The full
+unsampled unmixed data will still be written to FCS files. Defaults to
+10000. Set `plot_n_events = NULL` to keep all events in the returned object
+and report input.}
 
 \item{chunk_size}{Integer number of events unmixed at a time per sample.
 The default, 50000, lowers peak memory use on large FCS files. Pass
