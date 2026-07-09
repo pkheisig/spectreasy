@@ -381,6 +381,86 @@
     )
 }
 
+.normalize_unmix_chunk_size <- function(chunk_size) {
+    if (is.null(chunk_size)) {
+        return(Inf)
+    }
+    chunk_size <- suppressWarnings(as.integer(chunk_size[1]))
+    if (!is.finite(chunk_size) || is.na(chunk_size) || chunk_size < 1L) {
+        stop("chunk_size must be NULL or an integer >= 1.", call. = FALSE)
+    }
+    chunk_size
+}
+
+.normalize_unmix_subsample_n <- function(subsample_n) {
+    if (is.null(subsample_n)) {
+        return(NULL)
+    }
+    subsample_n <- suppressWarnings(as.integer(subsample_n[1]))
+    if (!is.finite(subsample_n) || is.na(subsample_n) || subsample_n < 1L) {
+        stop("subsample_n must be NULL or an integer >= 1.", call. = FALSE)
+    }
+    subsample_n
+}
+
+.unmix_chunk_indices <- function(n_events, chunk_size) {
+    if (!is.finite(chunk_size) || n_events <= chunk_size) {
+        return(list(seq_len(n_events)))
+    }
+    starts <- seq.int(1L, n_events, by = chunk_size)
+    lapply(starts, function(start) seq.int(start, min(n_events, start + chunk_size - 1L)))
+}
+
+.unmix_sample_keep_indices <- function(n_events, subsample_n = NULL) {
+    if (is.null(subsample_n) || n_events <= subsample_n) {
+        return(seq_len(n_events))
+    }
+    sort(sample.int(n_events, subsample_n))
+}
+
+.merge_unmix_variant_info <- function(infos) {
+    infos <- infos[!vapply(infos, is.null, logical(1))]
+    if (length(infos) == 0) {
+        return(NULL)
+    }
+    changed_events <- sum(vapply(infos, function(x) {
+        val <- x$changed_events
+        if (is.null(val) || !is.finite(val)) 0 else as.integer(val)
+    }, integer(1)))
+    changed_fraction <- mean(vapply(infos, function(x) {
+        val <- x$changed_fraction
+        if (is.null(val) || !is.finite(val)) 0 else as.numeric(val)
+    }, numeric(1)), na.rm = TRUE)
+    out <- infos[[1]]
+    out$changed_events <- changed_events
+    out$changed_fraction <- changed_fraction
+    out
+}
+
+.combine_unmix_result_chunks <- function(data_chunks,
+                                         residual_chunks,
+                                         method,
+                                         M,
+                                         variant_infos = list(),
+                                         spectreasy_decoder_weights = NULL) {
+    data_chunks <- data_chunks[!vapply(data_chunks, is.null, logical(1))]
+    residual_chunks <- residual_chunks[!vapply(residual_chunks, is.null, logical(1))]
+    out <- list(
+        data = if (length(data_chunks) > 0) do.call(rbind, data_chunks) else data.frame(),
+        residuals = if (length(residual_chunks) > 0) do.call(rbind, residual_chunks) else NULL
+    )
+    variant_info <- .merge_unmix_variant_info(variant_infos)
+    if (!is.null(variant_info)) {
+        out$spectral_variant_info <- variant_info
+    }
+    if (!is.null(spectreasy_decoder_weights)) {
+        out$spectreasy_decoder_weights <- spectreasy_decoder_weights
+    }
+    attr(out, "method") <- method
+    attr(out, "reference_matrix") <- M
+    out
+}
+
 .next_safe_output_dir <- function(path) {
     if (!dir.exists(path)) {
         return(path)
@@ -653,9 +733,17 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   in `qc_plot_dir` while creating the PDF report.
 #' @param qc_plot_dir Directory for sample QC report PNG files when
 #'   `save_qc_plots = TRUE`.
-#' @param subsample_n Optional integer; if provided, subsample the returned in-memory
-#'   results to at most `subsample_n` events per sample. The full unsampled unmixed
-#'   data will still be written to the FCS files.
+#' @param subsample_n Optional integer; if provided, subsample the returned
+#'   in-memory results and automatic QC report input to at most `subsample_n`
+#'   events per sample. The full unsampled unmixed data will still be written
+#'   to the FCS files. When omitted with `write_fcs = TRUE`,
+#'   `return_type = "list"`, and `save_report = TRUE`, `unmix_samples()`
+#'   automatically keeps 1000 events per sample in memory to avoid large-report
+#'   memory crashes. Set `subsample_n = NULL` explicitly to keep all events in
+#'   the returned object.
+#' @param chunk_size Integer number of events unmixed at a time per sample.
+#'   Defaults to 50000 to reduce peak memory use for large FCS files. Set
+#'   `chunk_size = NULL` to process each sample in one chunk.
 #' @param seed Optional integer seed for deterministic subsampling.
 #' @param return_type Return format: `"list"` (default), `"flowSet"`, or
 #'   `"SingleCellExperiment"`. When `"flowSet"`, detector residuals are attached
@@ -727,11 +815,13 @@ unmix_samples <- function(sample_dir = "samples",
                           save_qc_plots = FALSE,
                           qc_plot_dir = NULL,
                           subsample_n = NULL,
+                          chunk_size = 50000L,
                           seed = NULL,
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
                           verbose = TRUE) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     unmixing_matrix_file_missing <- missing(unmixing_matrix_file)
+    subsample_n_missing <- missing(subsample_n)
     return_type <- match.arg(return_type)
     .with_optional_seed(seed)
     scc_dir <- NULL
@@ -784,12 +874,31 @@ unmix_samples <- function(sample_dir = "samples",
         spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
     }
     estimate_af <- isTRUE(estimate_af)
+    chunk_size <- .normalize_unmix_chunk_size(chunk_size)
+    auto_subsample_for_report <- isTRUE(write_fcs) &&
+        isTRUE(save_report) &&
+        identical(return_type, "list") &&
+        isTRUE(subsample_n_missing)
+    if (auto_subsample_for_report) {
+        subsample_n <- 1000L
+    }
+    subsample_n <- .normalize_unmix_subsample_n(subsample_n)
 
     if (isTRUE(verbose)) {
         .spectreasy_console_header("unmix_samples")
         .spectreasy_console_field("Samples", length(sample_entries))
         .spectreasy_console_field("Method", method)
         .spectreasy_console_field("AF bands", .reference_af_band_count(M))
+        if (is.finite(chunk_size)) {
+            .spectreasy_console_field("Chunk", paste0(format(chunk_size, big.mark = ","), " events"))
+        }
+        if (!is.null(subsample_n)) {
+            label <- paste0(format(subsample_n, big.mark = ","), " events/sample")
+            if (auto_subsample_for_report) {
+                label <- paste0(label, " for in-memory QC")
+            }
+            .spectreasy_console_field("Memory", label)
+        }
         if (isTRUE(write_fcs)) {
             .spectreasy_console_field("Output", .spectreasy_console_path(output_dir))
         }
@@ -844,36 +953,73 @@ unmix_samples <- function(sample_dir = "samples",
         } else {
             .spectreasy_read_fcs(entry$file_path, label = "sample FCS file")
         }
+        n_events <- nrow(flowCore::exprs(ff))
+        chunk_indices <- .unmix_chunk_indices(n_events, chunk_size = chunk_size)
+        keep_global <- .unmix_sample_keep_indices(n_events, subsample_n = subsample_n)
+        marker_source_all <- rownames(M)
+        marker_source_for_output <- marker_source_all[!grepl("^AF_", marker_source_all, ignore.case = TRUE)]
 
-        calc_args <- list(
-            flow_frame = ff,
-            M = M,
-            method = method,
-            file_name = sn,
-            rwls_max_iter = rwls_max_iter,
-            n_threads = n_threads,
-            spectral_variant_library = spectral_variant_library_resolved,
-            spectral_variant_top_k = spectral_variant_top_k,
-            spectral_variant_min_abundance = spectral_variant_min_abundance,
-            spectral_variant_positive_fraction = spectral_variant_positive_fraction,
-            spectral_variant_min_improvement = spectral_variant_min_improvement,
-            return_residuals = TRUE
-        )
-        if (identical(method, "Spectreasy")) {
-            calc_args$spectreasy_weight_quantile <- spectreasy_weight_quantile
+        write_chunks <- if (isTRUE(write_fcs)) vector("list", length(chunk_indices)) else list()
+        data_chunks <- list()
+        residual_chunks <- list()
+        variant_infos <- list()
+        spectreasy_decoder_weights <- NULL
+        markers_to_keep <- character()
+
+        for (chunk_i in seq_along(chunk_indices)) {
+            event_idx <- chunk_indices[[chunk_i]]
+            chunk_ff <- if (length(chunk_indices) == 1L) ff else ff[event_idx, ]
+            calc_args <- list(
+                flow_frame = chunk_ff,
+                M = M,
+                method = method,
+                file_name = sn,
+                rwls_max_iter = rwls_max_iter,
+                n_threads = n_threads,
+                spectral_variant_library = spectral_variant_library_resolved,
+                spectral_variant_top_k = spectral_variant_top_k,
+                spectral_variant_min_abundance = spectral_variant_min_abundance,
+                spectral_variant_positive_fraction = spectral_variant_positive_fraction,
+                spectral_variant_min_improvement = spectral_variant_min_improvement,
+                return_residuals = TRUE
+            )
+            if (identical(method, "Spectreasy")) {
+                calc_args$spectreasy_weight_quantile <- spectreasy_weight_quantile
+            }
+            res_chunk <- do.call(calc_residuals, calc_args)
+
+            if (isTRUE(write_fcs)) {
+                write_data <- .aggregate_af_columns_for_output(res_chunk$data, marker_source = marker_source_all)
+                markers_to_keep <- intersect(colnames(write_data), marker_source_for_output)
+                autospectral_cols <- if (.is_autospectral_style_method(method) && "AF Index" %in% colnames(write_data)) "AF Index" else character()
+                passthrough_cols <- .get_passthrough_parameter_names(colnames(write_data))
+                cols_to_write <- unique(c(markers_to_keep, autospectral_cols, passthrough_cols))
+                write_chunks[[chunk_i]] <- as.matrix(write_data[, cols_to_write, drop = FALSE])
+            }
+
+            local_keep <- which(event_idx %in% keep_global)
+            if (length(local_keep) > 0L) {
+                data_chunks[[length(data_chunks) + 1L]] <- res_chunk$data[local_keep, , drop = FALSE]
+                if (!is.null(res_chunk$residuals)) {
+                    residual_chunks[[length(residual_chunks) + 1L]] <- res_chunk$residuals[local_keep, , drop = FALSE]
+                }
+            }
+            if (!is.null(res_chunk$spectral_variant_info)) {
+                variant_infos[[length(variant_infos) + 1L]] <- res_chunk$spectral_variant_info
+            }
+            if (is.null(spectreasy_decoder_weights) && !is.null(res_chunk$spectreasy_decoder_weights)) {
+                spectreasy_decoder_weights <- res_chunk$spectreasy_decoder_weights
+            }
+
+            rm(res_chunk, chunk_ff)
+            if (chunk_i %% 5L == 0L) {
+                gc(verbose = FALSE)
+            }
         }
-        res_obj <- do.call(calc_residuals, calc_args)
-        
+
         if (isTRUE(write_fcs)) {
-            marker_source <- rownames(M)
-            write_data <- .aggregate_af_columns_for_output(res_obj$data, marker_source = marker_source)
-            marker_source <- marker_source[!grepl("^AF_", marker_source, ignore.case = TRUE)]
-            markers_to_keep <- intersect(colnames(write_data), marker_source)
-            autospectral_cols <- if (.is_autospectral_style_method(method) && "AF Index" %in% colnames(write_data)) "AF Index" else character()
-            passthrough_cols <- .get_passthrough_parameter_names(colnames(write_data))
-            cols_to_write <- unique(c(markers_to_keep, autospectral_cols, passthrough_cols))
-            unmixed_exprs <- as.matrix(write_data[, cols_to_write, drop = FALSE])
-            
+            unmixed_exprs <- do.call(rbind, write_chunks)
+            storage.mode(unmixed_exprs) <- "numeric"
             new_ff <- flowCore::flowFrame(unmixed_exprs)
             new_ff <- .apply_feature_secondary_labels(
                 target_ff = new_ff,
@@ -888,18 +1034,19 @@ unmix_samples <- function(sample_dir = "samples",
                 .spectreasy_console_step("Safe output", basename(output_path))
             }
             flowCore::write.FCS(new_ff, output_path)
+            rm(write_chunks, unmixed_exprs, new_ff)
         }
-        if (!is.null(subsample_n)) {
-            n_events <- nrow(res_obj$data)
-            if (n_events > subsample_n) {
-                idx <- sample.int(n_events, subsample_n)
-                res_obj$data <- res_obj$data[idx, , drop = FALSE]
-                if (!is.null(res_obj$residuals)) {
-                    res_obj$residuals <- res_obj$residuals[idx, , drop = FALSE]
-                }
-            }
-        }
-        results[[sn]] <- res_obj
+
+        results[[sn]] <- .combine_unmix_result_chunks(
+            data_chunks = data_chunks,
+            residual_chunks = residual_chunks,
+            method = method,
+            M = M,
+            variant_infos = variant_infos,
+            spectreasy_decoder_weights = spectreasy_decoder_weights
+        )
+        rm(ff, data_chunks, residual_chunks, variant_infos)
+        gc(verbose = FALSE)
     }
 
     class(results) <- c("spectreasy_unmixed_results", "list")

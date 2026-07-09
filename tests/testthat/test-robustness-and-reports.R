@@ -628,11 +628,14 @@ test_that("unmix_samples supports in-memory subsampling via subsample_n", {
         output_dir = tmp_dir,
         write_fcs = TRUE,
         subsample_n = 10,
+        chunk_size = 13,
         seed = 42
     )
 
     unmixed_df <- as.data.frame(unmixed)
     expect_equal(nrow(unmixed_df), 10)
+    expect_equal(nrow(unmixed$Sample1$data), 10)
+    expect_equal(nrow(unmixed$Sample1$residuals), 10)
 
     fcs_path <- file.path(tmp_dir, "Sample1_OLS-0AF.fcs")
     expect_true(file.exists(fcs_path))
