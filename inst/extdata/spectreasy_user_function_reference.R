@@ -43,7 +43,7 @@
         manual_gate_file = "ssc_gate_config.csv",
         gating_file = manual_gate_file,
         rwls_max_iter = 1L,
-        unmix_threads = 1L,
+        n_threads = 1L,
         save_qc_plots = FALSE,
         save_report = TRUE,
         use_scatter_gating = TRUE,

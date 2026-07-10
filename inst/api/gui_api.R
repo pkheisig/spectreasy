@@ -1809,7 +1809,7 @@ function(req) {
             gate_contour_cells = gui_workflow_number(body, "gate_contour_cells", 0.9, minimum = 0),
             subsample_n = gui_workflow_number(body, "subsample_n", 5000, integer = TRUE, minimum = 1),
             rwls_max_iter = gui_workflow_number(body, "rwls_max_iter", 1, integer = TRUE, minimum = 1),
-            unmix_threads = gui_workflow_number(body, "unmix_threads", 1, integer = TRUE, minimum = 1),
+            n_threads = gui_workflow_number(body, "unmix_threads", 1, integer = TRUE, minimum = 1),
             save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
             use_scatter_gating = gui_workflow_bool(body, "use_scatter_gating", TRUE),

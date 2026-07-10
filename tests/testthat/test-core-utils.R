@@ -262,6 +262,8 @@ test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_true("plot_n_events" %in% names(formals(spectreasy::unmix_samples)))
     expect_false("subsample_n" %in% names(formals(spectreasy::unmix_samples)))
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_controls)))
+    expect_true("n_threads" %in% names(formals(spectreasy::unmix_controls)))
+    expect_true("unmix_threads" %in% names(formals(spectreasy::unmix_controls)))
     expect_true("estimate_af" %in% names(formals(spectreasy::unmix_samples)))
     expect_true("unmixing_method" %in% names(formals(spectreasy::adjust_matrix)))
     expect_false(formals(spectreasy::unmix_samples)$estimate_af)
@@ -269,6 +271,17 @@ test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_equal(formals(spectreasy::unmix_samples)$unmixing_method, "Spectreasy")
     expect_equal(formals(spectreasy::unmix_samples)$plot_n_events, 10000L)
     expect_equal(formals(spectreasy::adjust_matrix)$unmixing_method, "Spectreasy")
+})
+
+test_that("unmix_controls validates canonical and compatibility thread arguments", {
+    expect_error(
+        spectreasy::unmix_controls(scc_dir = tempfile(), n_threads = 0),
+        "n_threads must be an integer >= 1"
+    )
+    expect_error(
+        spectreasy::unmix_controls(scc_dir = tempfile(), n_threads = 2, unmix_threads = 3),
+        "n_threads and unmix_threads must match"
+    )
 })
 
 test_that("calc_residuals multi-AF RWLS honors rwls_max_iter", {

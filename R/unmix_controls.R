@@ -343,7 +343,7 @@
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
-#' @param unmix_threads Positive integer; number of threads to use for event-wise
+#' @param n_threads Positive integer; number of threads to use for event-wise
 #'   multi-AF WLS/RWLS SCC unmixing. The default, 1, keeps execution single-threaded.
 #' @param save_qc_plots Logical; whether to write per-control FSC/SSC,
 #'   intensity-gate, and spectrum PNGs under `output_dir`.
@@ -394,6 +394,8 @@
 #' @param refine Logical; when `unmixing_method = "AutoSpectral"`, refine the
 #'   fixed-size k-means AF bank with native AutoSpectral-style unstained residual
 #'   modulation. `TRUE` is rejected for all other unmixing methods.
+#' @param unmix_threads Deprecated compatibility alias for `n_threads`. New code
+#'   should use `n_threads`.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #'
 #' @return List with `M`, `W`, `unmixed_list`, and key output file paths,
@@ -424,7 +426,7 @@ unmix_controls <- function(
     af_min_cluster_events = 20,
     af_min_cluster_proportion = 0.005,
     rwls_max_iter = 1L,
-    unmix_threads = 1L,
+    n_threads = 1L,
     save_qc_plots = FALSE,
     save_report = TRUE,
     use_scatter_gating = TRUE,
@@ -444,11 +446,20 @@ unmix_controls <- function(
     autospectral_n_spectral = 200L,
     autospectral_min_events = 10L,
     refine = FALSE,
+    unmix_threads = NULL,
     ...
 ) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     manual_gate_file_missing <- missing(manual_gate_file)
     gating_file_missing <- missing(gating_file)
+    n_threads_missing <- missing(n_threads)
+    if (!is.null(unmix_threads)) {
+        if (!n_threads_missing && !identical(as.integer(n_threads[1]), as.integer(unmix_threads[1]))) {
+            stop("n_threads and unmix_threads must match when both are supplied.", call. = FALSE)
+        }
+        n_threads <- unmix_threads
+    }
+    n_threads <- .normalize_unmix_threads(n_threads)
     auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
     unmixing_method <- .normalize_unmix_method(unmixing_method)
     use_autospectral <- .is_autospectral_style_method(unmixing_method)
@@ -653,7 +664,7 @@ unmix_controls <- function(
         M = M,
         unmixing_method = unmixing_method,
         rwls_max_iter = rwls_max_iter,
-        n_threads = unmix_threads,
+        n_threads = n_threads,
         spectral_variant_library = spectral_variant_library,
         spectral_variant_top_k = spectral_variant_top_k,
         output_dir = output_paths$unmixed_dir,
