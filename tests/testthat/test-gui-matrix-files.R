@@ -78,6 +78,57 @@ testthat::test_that("GUI spectrum gating keeps zero-event gate results empty", {
     testthat::expect_equal(nrow(api_env$gate_apply_positive_gate(expr, empty_positive_gate, "Peak-A")), 0L)
 })
 
+testthat::test_that("GUI histogram autogating creates positive and negative intervals with package defaults", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) {
+        api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    }
+    testthat::skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+
+    captured <- NULL
+    fake_compute <- function(peak_vals,
+                             sample_type,
+                             histogram_pct_beads,
+                             histogram_direction_beads,
+                             histogram_pct_cells,
+                             histogram_direction_cells,
+                             is_viability) {
+        captured <<- list(
+            sample_type = sample_type,
+            histogram_pct_beads = histogram_pct_beads,
+            histogram_direction_beads = histogram_direction_beads,
+            histogram_pct_cells = histogram_pct_cells,
+            histogram_direction_cells = histogram_direction_cells,
+            is_viability = is_viability
+        )
+        vals_log <- log10(pmax(peak_vals, 1))
+        attr(vals_log, "neg_log_min") <- 1
+        attr(vals_log, "neg_log_max") <- 2
+        attr(vals_log, "negative_gate_present") <- TRUE
+        list(vals_log = vals_log, gate_min = 1000, gate_max = 10000)
+    }
+
+    ranges <- api_env$gate_histogram_autogate_ranges(
+        peak_vals = seq_len(100),
+        sample_type = "cells",
+        is_viability = TRUE,
+        compute_fun = fake_compute
+    )
+
+    testthat::expect_equal(ranges$positive, c(1000, 10000))
+    testthat::expect_equal(ranges$negative, c(10, 100))
+    testthat::expect_equal(api_env$gate_normalize_control_type("bead"), "beads")
+    testthat::expect_equal(api_env$gate_normalize_control_type("cell"), "cells")
+    testthat::expect_equal(captured$histogram_pct_beads, 0.98)
+    testthat::expect_equal(captured$histogram_direction_beads, "right")
+    testthat::expect_equal(captured$histogram_pct_cells, 0.35)
+    testthat::expect_equal(captured$histogram_direction_cells, "right")
+    testthat::expect_true(captured$is_viability)
+})
+
 testthat::test_that("GUI spectrum renderer keeps an empty plot for zero events", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) {

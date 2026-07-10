@@ -14,6 +14,7 @@ import {
   Sun,
   Moon,
   Settings,
+  WandSparkles,
 } from 'lucide-react'
 import './GatingGui.css'
 
@@ -233,7 +234,8 @@ function histogramGateKey(type, filename) {
 }
 
 function fileControlType(file) {
-  return (file?.['control.type'] || 'cells').toLowerCase()
+  const value = String(file?.['control.type'] || 'cells').toLowerCase()
+  return value.startsWith('bead') ? 'beads' : 'cells'
 }
 
 function displayEventsForLimit(events, maxPoints) {
@@ -1164,7 +1166,7 @@ function GatePlot({
     return `M${firstX},${baseline} L${pointsStr.join(' L')} L${lastX},${baseline} Z`
   }, [densityCurve, xScale, yScale, mode])
 
-  const gateClass = isBead && (title === 'Cells' || title === 'Singlets')
+  const gateClass = isBead && !isPositivePlot
     ? 'gate-path-bead'
     : 'gate-path'
 
@@ -1501,6 +1503,7 @@ function App() {
   const [contextMenu, setContextMenu] = useState(null)
   const [configs, setConfigs] = useState([])
   const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [showAutogateConfirmModal, setShowAutogateConfirmModal] = useState(false)
   const [showConfirmIssues, setShowConfirmIssues] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [drawActive, setDrawActive] = useState(false)
@@ -1512,6 +1515,7 @@ function App() {
   const [guiStateLoaded, setGuiStateLoaded] = useState(false)
   const [preloadComplete, setPreloadComplete] = useState(false)
   const [gatesLoaded, setGatesLoaded] = useState(false)
+  const [histogramAutogating, setHistogramAutogating] = useState(false)
   const [axisSettings, setAxisSettings] = useState({ cell: {}, singlet: {} })
   const [spectrum, setSpectrum] = useState(null)
   const [spectrumCache, setSpectrumCache] = useState({})
@@ -1636,7 +1640,7 @@ function App() {
   useEffect(() => {
     if (!selected || !gatesLoaded) return
     const selectedFile = files.find((file) => file.filename === selected) || {}
-    const selectedControlType = (selectedFile?.['control.type'] || 'cells').toLowerCase()
+    const selectedControlType = fileControlType(selectedFile)
     const relevantGates = {
       cell: gates[`cell:${selected}`] || gates[`cell:${selectedControlType}`] || null,
       singlet: gates[`singlet:${selected}`] || gates[`singlet:${selectedControlType}`] || null,
@@ -1744,7 +1748,7 @@ function App() {
     return fallback || [0, 1]
   }
 
-  const controlType = (currentFile?.['control.type'] || 'cells').toLowerCase()
+  const controlType = fileControlType(currentFile)
   const isBead = controlType === 'beads'
   const activeKey = gateKey(activeGate, selected, controlType)
 
@@ -1807,6 +1811,14 @@ function App() {
   const confirmIssues = useMemo(() => (
     files.flatMap((file) => validateFileForConfirm(file, payloadCache[file.filename], gates))
   ), [files, payloadCache, gates])
+  const histogramAutogateTargets = useMemo(() => files.filter((file) => !file.is_af), [files])
+  const histogramAutogateMissing = useMemo(() => (
+    histogramAutogateTargets.filter((file) => (
+      !gateIsFinalized(resolveGateForFile(gates, 'cell', file)) ||
+      !gateIsFinalized(resolveGateForFile(gates, 'singlet', file))
+    ))
+  ), [histogramAutogateTargets, gates])
+  const canAutogateHistograms = gatesLoaded && histogramAutogateTargets.length > 0 && histogramAutogateMissing.length === 0 && !histogramAutogating
   const canConfirm = confirmIssues.length === 0
   const confirmIssueLines = useMemo(() => formatConfirmIssues(confirmIssues), [confirmIssues])
   const initialLoading = !status.startsWith('Could not') && (!gatesLoaded || (files.length > 0 && (!preloadComplete || !payload)))
@@ -1892,7 +1904,7 @@ function App() {
     setGates((prev) => {
       const next = { ...prev }
       files
-        .filter((file) => (file?.['control.type'] || 'cells').toLowerCase() === targetType)
+        .filter((file) => fileControlType(file) === targetType)
         .forEach((file) => {
           next[gateKey(source.type, file.filename, targetType, true)] = {
             ...source,
@@ -1915,7 +1927,7 @@ function App() {
     setGates((prev) => {
       const next = { ...prev }
       files
-        .filter((file) => (file?.['control.type'] || 'cells').toLowerCase() === controlType)
+        .filter((file) => fileControlType(file) === controlType)
         .forEach((file) => {
           delete next[gateKey(source.type, file.filename, controlType, true)]
         })
@@ -2070,8 +2082,29 @@ function App() {
     }
   }
 
+  async function autogateHistograms() {
+    if (!canAutogateHistograms) return
+    setHistogramAutogating(true)
+    setStatus('Auto-generating histogram gates')
+    try {
+      const result = await useApi('/gate_histogram_autogate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gates }),
+      })
+      if (result.success === false) throw new Error(result.error || 'Histogram autogating failed')
+      setGates((previous) => ({ ...previous, ...(result.gates || {}) }))
+      setSpectrumCache({})
+      setStatus(`Auto-generated positive and negative histogram gates for ${result.files_processed} controls`)
+    } catch (err) {
+      setStatus(`Could not auto-generate histogram gates: ${err.message}`)
+    } finally {
+      setHistogramAutogating(false)
+    }
+  }
+
   return (
-    <main className={`app-shell ${initialLoading ? 'is-initial-loading' : ''}`}>
+    <main className={`app-shell ${initialLoading || histogramAutogating ? 'is-initial-loading' : ''}`}>
       <aside className="sidebar">
         <div className="brand">
           <ScatterChart size={26} />
@@ -2095,8 +2128,8 @@ function App() {
       </aside>
 
       <section className="workspace">
-        <header className="topbar">
-          <div>
+        <header className="gating-topbar">
+          <div className="control-heading">
             <h1>
               {currentFile.fluorophore} <span>{currentFile.marker}</span>
               {payload?.total_events && (
@@ -2105,13 +2138,27 @@ function App() {
                 </span>
               )}
             </h1>
+            <div className="control-navigation" aria-label="Control navigation">
+              <button title="Previous file" aria-label="Previous file" className="icon-button" disabled={!canGoPrevious} onClick={() => selectRelativeFile(-1)}>
+                <ChevronLeft size={18} />
+              </button>
+              <button title="Next file" aria-label="Next file" className="icon-button" disabled={!canGoNext} onClick={() => selectRelativeFile(1)}>
+                <ChevronRight size={18} />
+              </button>
+            </div>
           </div>
           <div className="actions">
-            <button title="Previous file" aria-label="Previous file" className="icon-button" disabled={!canGoPrevious} onClick={() => selectRelativeFile(-1)}>
-              <ChevronLeft size={18} />
-            </button>
-            <button title="Next file" aria-label="Next file" className="icon-button" disabled={!canGoNext} onClick={() => selectRelativeFile(1)}>
-              <ChevronRight size={18} />
+            <button
+              className="auto-histogram-button"
+              title={canAutogateHistograms
+                ? 'Auto-generate positive and negative histogram gates'
+                : histogramAutogateMissing.length > 0
+                  ? 'Complete FSC/SSC and singlet gates for all non-AF controls first'
+                  : 'No non-AF single-color controls are available'}
+              disabled={!canAutogateHistograms}
+              onClick={() => { if (canAutogateHistograms) setShowAutogateConfirmModal(true) }}
+            >
+              <WandSparkles size={17} /> Auto-gate histograms
             </button>
             <button title="Settings" onClick={() => setShowSettingsModal(true)}>
               <Settings size={17} />
@@ -2154,7 +2201,7 @@ function App() {
 
         <div className="plot-grid">
           <GatePlot
-            title="Cells"
+            title={isBead ? 'Beads' : 'Cells'}
             subtitle={`${channelTitle(cellAxes.x)} / ${channelTitle(cellAxes.y)} population gate`}
             events={events}
             xField={cellAxes.x}
@@ -2431,11 +2478,43 @@ function App() {
         </div>
       )}
 
+      {showAutogateConfirmModal && (
+        <div className="confirm-modal-overlay">
+          <div className="confirm-modal">
+            <h2>Auto-generate Histogram Gates?</h2>
+            <div className="confirm-modal-actions">
+              <button className="cancel-btn" onClick={() => setShowAutogateConfirmModal(false)}>Cancel</button>
+              <button
+                className="confirm-btn"
+                disabled={!canAutogateHistograms}
+                onClick={() => {
+                  if (!canAutogateHistograms) return
+                  setShowAutogateConfirmModal(false)
+                  autogateHistograms()
+                }}
+              >
+                Generate Gates
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {initialLoading && (
         <div className="initial-loading-overlay" role="status" aria-live="polite" aria-label="Loading files">
           <div className="initial-loading-card">
             <div className="initial-loading-spinner" aria-hidden="true" />
             <strong>Loading files...</strong>
+          </div>
+        </div>
+      )}
+
+      {histogramAutogating && (
+        <div className="initial-loading-overlay" role="status" aria-live="polite" aria-label="Auto-generating histogram gates">
+          <div className="initial-loading-card">
+            <div className="initial-loading-spinner" aria-hidden="true" />
+            <strong>Generating histogram gates...</strong>
+            <span>Positive + negative · {histogramAutogateTargets.length} controls</span>
           </div>
         </div>
       )}

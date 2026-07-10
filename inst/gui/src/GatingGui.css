@@ -166,8 +166,8 @@ body.dark .initial-loading-overlay {
 
 .brand h1,
 .brand p,
-.topbar h1,
-.topbar p,
+.gating-topbar h1,
+.gating-topbar p,
 .plot-head h2,
 .plot-head p {
   margin: 0;
@@ -242,7 +242,7 @@ body.dark .initial-loading-overlay {
   height: 0;
 }
 
-.topbar {
+.gating-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -258,15 +258,31 @@ body.dark .initial-loading-overlay {
   font-weight: 800;
 }
 
-.topbar h1 {
+.gating-topbar h1 {
   font-size: clamp(19px, 2vw, 27px);
   letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 
-.topbar h1 span {
+.gating-topbar h1 span {
   color: var(--muted);
   font-weight: 500;
+}
+
+.control-heading,
+.control-navigation {
+  display: flex;
+  align-items: center;
+}
+
+.control-heading {
+  min-width: 0;
+  gap: 12px;
+}
+
+.control-navigation {
+  flex: 0 0 auto;
+  gap: 8px;
 }
 
 .actions,
@@ -285,6 +301,30 @@ body.dark .initial-loading-overlay {
 .icon-button {
   width: 36px;
   padding: 0;
+}
+
+.auto-histogram-button {
+  margin-right: 10px;
+  border-color: rgba(31, 122, 109, 0.5);
+  background: var(--selected-bg);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.auto-histogram-button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.auto-histogram-button:disabled {
+  border-color: var(--line);
+  background: #d6d4ce;
+  color: #777d79;
+  opacity: 0.72;
+}
+
+body.dark .auto-histogram-button:disabled {
+  background: #343b38;
+  color: #8e9894;
 }
 
 .confirm {
@@ -914,14 +954,22 @@ button.btn-negative-gate.on {
     border-bottom: 1px solid var(--line);
   }
 
-  .topbar {
+  .gating-topbar {
     align-items: flex-start;
     flex-direction: column;
     gap: 12px;
   }
 
+  .control-heading {
+    flex-wrap: wrap;
+  }
+
   .actions {
     justify-content: flex-start;
+  }
+
+  .auto-histogram-button {
+    margin-right: 0;
   }
 
   .plot-grid {

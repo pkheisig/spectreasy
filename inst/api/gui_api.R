@@ -537,6 +537,11 @@ gate_guess_fcs_info <- function(filename) {
     list(fluorophore = fluorophore, marker = marker, channel = peak_channel)
 }
 
+gate_normalize_control_type <- function(value) {
+    clean <- tolower(trimws(as.character(value)[1]))
+    if (startsWith(clean, "bead")) "beads" else "cells"
+}
+
 gate_read_mapping <- function() {
     path <- get_gate_control_file()
     df <- if (file.exists(path)) {
@@ -569,6 +574,7 @@ gate_read_mapping <- function() {
     }
     df <- df[df$filename %in% fcs_files, , drop = FALSE]
     if (!("control.type" %in% colnames(df))) df$control.type <- "cells"
+    df$control.type <- vapply(df$control.type, gate_normalize_control_type, character(1))
     if (!("universal.negative" %in% colnames(df))) df$universal.negative <- ""
     if (!("is.viability" %in% colnames(df))) df$is.viability <- "FALSE"
     df$file_exists <- TRUE
@@ -680,6 +686,132 @@ gate_apply_positive_gate <- function(expr, gate, peak) {
     expr[keep, , drop = FALSE]
 }
 
+gate_is_finalized_polygon <- function(gate) {
+    if (is.null(gate) || identical(as.character(gate_value(gate, "mode", ""))[1], "blocked")) {
+        return(FALSE)
+    }
+    verts <- gate_vertices_matrix(gate)
+    !is.null(verts) && nrow(verts) >= 3 && all(is.finite(verts))
+}
+
+gate_histogram_autogate_ranges <- function(peak_vals,
+                                           sample_type,
+                                           is_viability = FALSE,
+                                           compute_fun = NULL) {
+    peak_vals <- as.numeric(peak_vals)
+    peak_vals <- peak_vals[is.finite(peak_vals)]
+    if (length(peak_vals) < 10L) {
+        stop("Too few gated events to auto-generate histogram gates.", call. = FALSE)
+    }
+    if (is.null(compute_fun)) {
+        compute_fun <- get(".compute_reference_histogram_gate", envir = asNamespace("spectreasy"))
+    }
+    opts <- spectreasy::gating_options()
+    result <- compute_fun(
+        peak_vals = peak_vals,
+        sample_type = sample_type,
+        histogram_pct_beads = opts$histogram_pct_beads,
+        histogram_direction_beads = opts$histogram_direction_beads,
+        histogram_pct_cells = opts$histogram_pct_cells,
+        histogram_direction_cells = opts$histogram_direction_cells,
+        is_viability = isTRUE(is_viability)
+    )
+    positive <- sort(as.numeric(c(result$gate_min, result$gate_max)))
+    negative <- sort(10^as.numeric(c(
+        attr(result$vals_log, "neg_log_min"),
+        attr(result$vals_log, "neg_log_max")
+    )))
+    if (length(positive) != 2L || any(!is.finite(positive)) || positive[2] <= positive[1]) {
+        stop("The histogram autogater did not produce a valid positive interval.", call. = FALSE)
+    }
+    if (!isTRUE(attr(result$vals_log, "negative_gate_present")) ||
+        length(negative) != 2L || any(!is.finite(negative)) || negative[2] <= negative[1]) {
+        stop("The histogram autogater did not produce a valid negative interval.", call. = FALSE)
+    }
+    list(positive = positive, negative = negative)
+}
+
+gate_histogram_interval <- function(type, filename, peak, limits) {
+    list(
+        type = type,
+        scope = "file",
+        filename = filename,
+        xChannel = peak,
+        yChannel = "",
+        mode = paste0(type, "_1d"),
+        vertices = list(
+            list(x = unname(limits[1]), y = 0),
+            list(x = unname(limits[2]), y = 0)
+        )
+    )
+}
+
+gate_autogenerate_histograms <- function(gates) {
+    df <- gate_read_mapping()
+    targets <- df[!df$is_af, , drop = FALSE]
+    if (nrow(targets) == 0) {
+        stop("No non-AF single-color controls are available for histogram autogating.", call. = FALSE)
+    }
+
+    resolved <- lapply(seq_len(nrow(targets)), function(i) {
+        row <- targets[i, , drop = FALSE]
+        filename <- as.character(row$filename[1])
+        control_type <- gate_normalize_control_type(row$control.type[1])
+        cell_gate <- gate_cached_gate(gates, "cell", filename, control_type)
+        singlet_gate <- gate_cached_gate(gates, "singlet", filename, control_type)
+        list(
+            row = row,
+            filename = filename,
+            control_type = control_type,
+            cell_gate = cell_gate,
+            singlet_gate = singlet_gate,
+            ready = gate_is_finalized_polygon(cell_gate) && gate_is_finalized_polygon(singlet_gate)
+        )
+    })
+    missing <- vapply(resolved, function(item) if (item$ready) "" else item$filename, character(1))
+    missing <- missing[nzchar(missing)]
+    if (length(missing) > 0) {
+        stop(
+            "Complete FSC/SSC and singlet gates before histogram autogating: ",
+            paste(missing, collapse = ", "),
+            call. = FALSE
+        )
+    }
+
+    generated <- list()
+    for (item in resolved) {
+        path <- file.path(get_gate_scc_dir(), item$filename)
+        ff <- gate_read_fcs(path)
+        expr <- flowCore::exprs(ff)
+        peak <- as.character(item$row$channel[1])
+        if (!peak %in% colnames(expr)) {
+            detectors <- tryCatch(
+                spectreasy::get_sorted_detectors(flowCore::pData(flowCore::parameters(ff)))$names,
+                error = function(e) colnames(expr)
+            )
+            detectors <- intersect(detectors, colnames(expr))
+            if (length(detectors) == 0) {
+                stop("Could not resolve a peak channel for ", item$filename, ".", call. = FALSE)
+            }
+            peak <- detectors[which.max(apply(expr[, detectors, drop = FALSE], 2, stats::var, na.rm = TRUE))]
+        }
+        gated <- gate_apply_polygon_gate(expr, item$cell_gate)
+        gated <- gate_apply_polygon_gate(gated, item$singlet_gate)
+        ranges <- gate_histogram_autogate_ranges(
+            gated[, peak],
+            sample_type = item$control_type,
+            is_viability = isTRUE(item$row$is_viability[1])
+        )
+        generated[[paste0("positive:", item$filename)]] <- gate_histogram_interval(
+            "positive", item$filename, peak, ranges$positive
+        )
+        generated[[paste0("negative:", item$filename)]] <- gate_histogram_interval(
+            "negative", item$filename, peak, ranges$negative
+        )
+    }
+    list(gates = generated, files_processed = nrow(targets))
+}
+
 gate_detector_labels <- function(det_info, spec_channels) {
     labels <- det_info$labels[match(spec_channels, det_info$names)]
     labels[is.na(labels) | !nzchar(labels)] <- spec_channels[is.na(labels) | !nzchar(labels)]
@@ -777,8 +909,7 @@ gate_spectrum_for_file <- function(filename) {
 
     cache_data <- getOption("spectreasy.gating_state_cache")
     cache <- if (!is.null(cache_data)) cache_data$gates else NULL
-    control_type <- tolower(as.character(row$control.type[1]))
-    if (is.na(control_type) || !nzchar(control_type)) control_type <- "cells"
+    control_type <- gate_normalize_control_type(row$control.type[1])
 
     expr_filtered <- expr
     expr_filtered <- gate_apply_polygon_gate(expr_filtered, gate_cached_gate(cache, "cell", name, control_type))
@@ -979,6 +1110,22 @@ function(max_points = 3000) {
         })
     })
     list(payloads = payloads, max_points = as.integer(max_points))
+}
+
+#* Auto-generate positive and negative histogram gates for all non-AF controls
+#* @post /gate_histogram_autogate
+function(req) {
+    tryCatch({
+        body <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+        result <- gate_autogenerate_histograms(body$gates)
+        list(
+            success = TRUE,
+            gates = result$gates,
+            files_processed = result$files_processed
+        )
+    }, error = function(e) {
+        list(success = FALSE, error = conditionMessage(e))
+    })
 }
 
 #* Render selected SCC spectrum for the current gate cache
