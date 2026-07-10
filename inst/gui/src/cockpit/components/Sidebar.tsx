@@ -2,7 +2,6 @@ import { ChevronDown, ChevronRight, CircleDot, FileCode2, Folder, Gauge, Layers3
 import type { LucideIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { Artifact, ProjectState, SectionId } from '../types'
-import { StatusPill } from './StatusPill'
 
 type SidebarProps = {
   project: ProjectState
@@ -83,11 +82,6 @@ export function Sidebar({ project, activeSection, onSectionChange, selectedArtif
           )
         })}
       </div>
-      <div className="sidebar-footer">
-        <div className="storage-meter"><span className="storage-meter-fill" /><span>Project cache · 1.8 GB</span></div>
-        <StatusPill state="offline" label="Local files stay on this machine" compact />
-      </div>
     </aside>
   )
 }
-

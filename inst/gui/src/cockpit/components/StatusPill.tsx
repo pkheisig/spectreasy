@@ -20,7 +20,7 @@ const labels: Record<string, string> = {
   missing: 'Missing',
   unknown: 'Unknown',
   connected: 'Connected',
-  offline: 'Preview mode',
+  offline: 'Not connected',
 }
 
 const icons = {
@@ -48,4 +48,3 @@ export function StatusPill({ state, label, compact = false }: StatusPillProps) {
     </span>
   )
 }
-
