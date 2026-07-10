@@ -237,6 +237,44 @@ body.dark .initial-loading-overlay {
   -ms-overflow-style: none;
 }
 
+.gating-status-banner {
+  display: grid;
+  gap: 5px;
+  margin: 18px 22px 0;
+  padding: 13px 15px;
+  color: #5d4a21;
+  border: 1px solid #e4ca83;
+  border-radius: 8px;
+  background: #fff8df;
+}
+
+.gating-status-banner.is-error {
+  color: #7d302c;
+  border-color: #e7aaa4;
+  background: #fff0ee;
+}
+
+.gating-status-banner strong {
+  font-size: 13px;
+}
+
+.gating-status-banner span {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+body.dark .gating-status-banner {
+  color: #f2d894;
+  border-color: #6f5b29;
+  background: #302918;
+}
+
+body.dark .gating-status-banner.is-error {
+  color: #ffc2bc;
+  border-color: #75413c;
+  background: #33201f;
+}
+
 .workspace::-webkit-scrollbar {
   width: 0;
   height: 0;

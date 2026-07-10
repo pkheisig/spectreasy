@@ -135,7 +135,7 @@
     validate_control_file_mapping(
         control_df = control_df,
         scc_dir = scc_dir,
-        require_all_scc_mapped = TRUE,
+        require_all_scc_mapped = FALSE,
         require_channels = TRUE,
         stop_on_error = FALSE
     )
@@ -207,13 +207,17 @@
     invisible(path)
 }
 
-.read_unmix_metadata_pd <- function(scc_dir) {
+.read_unmix_metadata_pd <- function(scc_dir, control_df = NULL) {
     if (!dir.exists(scc_dir)) {
         .spectreasy_stop_missing_directory(scc_dir, label = "scc_dir")
     }
     fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     if (length(fcs_files) == 0) {
         .spectreasy_stop_empty_fcs_directory(scc_dir, label = "scc_dir")
+    }
+    fcs_files <- .control_validation_select_scc_files(control_df, fcs_files)
+    if (length(fcs_files) == 0) {
+        stop("None of the FCS files listed in the control file were found in scc_dir.", call. = FALSE)
     }
     ff_meta <- .spectreasy_read_fcs(fcs_files[1], label = "SCC FCS file")
     list(fcs_files = fcs_files, pd = flowCore::pData(flowCore::parameters(ff_meta)))
@@ -347,8 +351,10 @@
 #'   multi-AF WLS/RWLS SCC unmixing. The default, 1, keeps execution single-threaded.
 #' @param save_qc_plots Logical; whether to write per-control FSC/SSC,
 #'   intensity-gate, and spectrum PNGs under `output_dir`.
-#' @param save_report Logical; if `TRUE`, write the SCC QC PDF report
+#' @param save_report Logical; if `TRUE`, write the SCC QC report
 #'   automatically after controls are unmixed. Defaults to `TRUE`.
+#' @param output_format Report format, either `"pdf"` (the backward-compatible
+#'   default) or `"html"`. Only the selected format is written.
 #' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
 #'   scatter gate for final positive/negative population selection. If `FALSE`,
 #'   use the legacy one-dimensional histogram gate. Ignored when
@@ -429,6 +435,7 @@ unmix_controls <- function(
     n_threads = 1L,
     save_qc_plots = FALSE,
     save_report = TRUE,
+    output_format = c("pdf", "html"),
     use_scatter_gating = TRUE,
     manual_gating = TRUE,
     manual_gate_file = "ssc_gate_config.csv",
@@ -453,6 +460,7 @@ unmix_controls <- function(
     manual_gate_file_missing <- missing(manual_gate_file)
     gating_file_missing <- missing(gating_file)
     n_threads_missing <- missing(n_threads)
+    output_format <- match.arg(output_format)
     if (!is.null(unmix_threads)) {
         if (!n_threads_missing && !identical(as.integer(n_threads[1]), as.integer(unmix_threads[1]))) {
             stop("n_threads and unmix_threads must match when both are supplied.", call. = FALSE)
@@ -567,7 +575,7 @@ unmix_controls <- function(
     output_file <- NULL
     if (isTRUE(save_report)) {
         qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
-        output_file <- file.path(qc_controls_dir, "qc_controls_report.pdf")
+        output_file <- file.path(qc_controls_dir, paste0("qc_controls_report.", output_format))
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
     }
     build_qc_plots <- isTRUE(save_qc_plots) || isTRUE(save_report)
@@ -634,7 +642,7 @@ unmix_controls <- function(
 
     .save_reference_matrix_csv(M, output_paths$reference_matrix_csv)
     .save_detector_noise_csv(attr(M, "detector_noise"), output_paths$detector_noise_csv)
-    meta_info <- .read_unmix_metadata_pd(scc_dir)
+    meta_info <- .read_unmix_metadata_pd(scc_dir, control_df = control_df)
 
     # Split M into fluorophore rows and AF/autofluorescence rows to plot separately
     af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
@@ -660,7 +668,7 @@ unmix_controls <- function(
     }
 
     unmix_sample_args <- list(
-        sample_dir = scc_dir,
+        sample_dir = meta_info$fcs_files,
         M = M,
         unmixing_method = unmixing_method,
         rwls_max_iter = rwls_max_iter,
@@ -676,7 +684,10 @@ unmix_controls <- function(
     }
     .spectreasy_console_field("Unmixing", paste0(length(meta_info$fcs_files), " control file(s)"))
     unmix_sample_args$verbose <- FALSE
-    unmixed_list <- do.call(unmix_samples, unmix_sample_args)
+    unmixed_list <- withr::with_options(
+        list(spectreasy.control_file = control_file),
+        do.call(unmix_samples, unmix_sample_args)
+    )
 
     static_info <- .derive_unmix_static_matrix(M, fcs_files = meta_info$fcs_files, unmixing_method = unmixing_method)
     W <- static_info$W
@@ -724,7 +735,29 @@ unmix_controls <- function(
                 use_scatter_gating = use_scatter_gating,
                 unmix_scatter_max_points = 1000,
                 seed = seed,
-                unmixing_matrix_file = output_paths$reference_matrix_csv
+                unmixing_matrix_file = output_paths$reference_matrix_csv,
+                output_format = output_format,
+                overwrite = "overwrite",
+                report_plots = list(spectra = p_spectra, af = p_af_spectra, unmixing_scatter = p_scatter),
+                report_artifact_paths = list(
+                    reference_matrix = output_paths$reference_matrix_csv,
+                    detector_noise = output_paths$detector_noise_csv,
+                    spectral_variant_library = spectral_variant_library_file,
+                    unmixing_matrix = output_paths$unmixing_matrix_csv,
+                    gate_file = manual_gate_file
+                ),
+                report_run_settings = list(
+                    af_n_bands = af_n_bands,
+                    af_min_cluster_events = af_min_cluster_events,
+                    af_min_cluster_proportion = af_min_cluster_proportion,
+                    rwls_max_iter = rwls_max_iter,
+                    n_threads = n_threads,
+                    clean_scc_with_unstained = clean_scc_with_unstained,
+                    scc_background_method = scc_background_method,
+                    scc_background_k = scc_background_k,
+                    spectral_variant_top_k = spectral_variant_top_k,
+                    spectreasy_weight_quantile = spectreasy_weight_quantile
+                )
             )
         )
         if (!file.exists(output_file)) {
@@ -746,6 +779,7 @@ unmix_controls <- function(
         qc_controls_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
         qc_metrics_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
         qc_report = qc_report,
+        qc_report_data = if (is.list(qc_report)) qc_report$report_data else NULL,
         spectra_file = if (isTRUE(save_qc_plots)) output_paths$spectra_file else NULL,
         af_spectra_file = if (isTRUE(save_qc_plots) && nrow(M_af) > 0) output_paths$af_spectra_file else NULL,
         unmixing_scatter_file = if (isTRUE(save_qc_plots)) output_paths$unmixing_scatter_png else NULL,

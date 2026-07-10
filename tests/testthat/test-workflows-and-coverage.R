@@ -116,6 +116,21 @@ test_that("validate_control_file_mapping validates synthetic SCC setup", {
     expect_true(any(grepl("Invalid channel", preflight_bad$errors)))
 })
 
+test_that("unmix preflight treats the control file as an inclusion list", {
+    wf <- make_synthetic_workflow()
+    extra_file <- file.path(wf$scc_dir, "Unmapped extra control.fcs")
+    expect_true(file.copy(file.path(wf$scc_dir, wf$control_df$filename[1]), extra_file))
+
+    preflight_extra <- spectreasy:::.run_unmix_preflight(wf$control_df, wf$scc_dir)
+    expect_true(preflight_extra$ok)
+    expect_true(any(grepl("Ignoring SCC files not listed in control file", preflight_extra$warnings)))
+
+    file.remove(file.path(wf$scc_dir, wf$control_df$filename[1]))
+    preflight_missing <- spectreasy:::.run_unmix_preflight(wf$control_df, wf$scc_dir)
+    expect_false(preflight_missing$ok)
+    expect_true(any(grepl("Control files missing from scc_dir", preflight_missing$errors)))
+})
+
 test_that("build_reference_matrix works on synthetic SCC files", {
     wf <- make_synthetic_workflow()
 
@@ -288,6 +303,8 @@ test_that("common missing path errors are user friendly", {
 
 test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     wf <- make_synthetic_workflow()
+    extra_file <- file.path(wf$scc_dir, "Unmapped extra control.fcs")
+    expect_true(file.copy(file.path(wf$scc_dir, wf$control_df$filename[1]), extra_file))
     output_dir <- tempfile("spectreasy_covr_auto_")
     control_csv <- tempfile(fileext = ".csv")
     utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
@@ -311,6 +328,7 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     expect_true(file.exists(ctrl$unmixing_scatter_file))
     expect_s3_class(ctrl$unmixing_scatter_plot, "ggplot")
     expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))
+    expect_false(file.exists(file.path(output_dir, "unmixed_fcs", "Unmapped extra control_OLS-0AF.fcs")))
 })
 
 test_that("unmix_controls tolerates output_dir pointing at unmixed_fcs and samples infer paired matrix", {

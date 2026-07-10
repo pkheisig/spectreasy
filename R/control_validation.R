@@ -6,6 +6,10 @@
     out
 }
 
+.control_validation_file_key <- function(x) {
+    tolower(tools::file_path_sans_ext(basename(.control_validation_as_chr(x))))
+}
+
 .control_validation_normalize_channel <- function(x) {
     out <- toupper(gsub("\\s+", "", trimws(as.character(x))))
     out <- gsub("([A-Z]+)-([0-9])", "\\1\\2", out, perl = TRUE)
@@ -93,6 +97,18 @@
     if (length(dup_filenames) > 0) {
         errors <- c(errors, paste0("Duplicate filename entries in control file: ", paste(dup_filenames, collapse = ", ")))
     }
+    filename_keys <- .control_validation_file_key(df$filename)
+    dup_filename_keys <- unique(filename_keys[nzchar(filename_keys) & duplicated(filename_keys)])
+    if (length(dup_filename_keys) > 0) {
+        duplicate_rows <- df$filename[filename_keys %in% dup_filename_keys]
+        errors <- c(
+            errors,
+            paste0(
+                "Duplicate filename stems in control file (case and .fcs extension are ignored): ",
+                paste(unique(duplicate_rows), collapse = ", ")
+            )
+        )
+    }
 
     if (any(df$fluorophore == "" | is.na(df$fluorophore))) {
         bad <- which(df$fluorophore == "" | is.na(df$fluorophore))
@@ -125,23 +141,58 @@
     list(scc_files = scc_files, known_files = unique(scc_files))
 }
 
+.control_validation_select_scc_files <- function(control_df, fcs_files) {
+    if (is.null(control_df) || !is.data.frame(control_df) ||
+        nrow(control_df) == 0 || !("filename" %in% colnames(control_df))) {
+        return(fcs_files)
+    }
+
+    mapped <- .control_validation_as_chr(control_df$filename)
+    if ("universal.negative" %in% colnames(control_df)) {
+        universal_negatives <- .control_validation_as_chr(control_df$universal.negative)
+        universal_negatives <- universal_negatives[
+            nzchar(universal_negatives) &
+                !(toupper(universal_negatives) %in% c("TRUE", "FALSE", "AF"))
+        ]
+        mapped <- c(mapped, universal_negatives)
+    }
+    mapped <- unique(mapped[nzchar(mapped)])
+
+    file_keys <- .control_validation_file_key(fcs_files)
+    mapped_keys <- unique(.control_validation_file_key(mapped))
+    ambiguous <- intersect(unique(file_keys[duplicated(file_keys)]), mapped_keys)
+    if (length(ambiguous) > 0L) {
+        stop(
+            "Multiple FCS files match the same mapped filename stem: ",
+            paste(basename(fcs_files[file_keys %in% ambiguous]), collapse = ", "),
+            call. = FALSE
+        )
+    }
+    fcs_files[file_keys %in% mapped_keys]
+}
+
 .validate_control_file_mapping_coverage <- function(df, known_files, scc_files, require_all_scc_mapped = TRUE) {
     errors <- character()
     warnings <- character()
 
-    unknown_in_control <- setdiff(df$filename, known_files)
+    control_keys <- .control_validation_file_key(df$filename)
+    known_keys <- .control_validation_file_key(known_files)
+    scc_keys <- .control_validation_file_key(scc_files)
+    unknown_in_control <- df$filename[!(control_keys %in% known_keys)]
     if (length(unknown_in_control) > 0) {
-        warnings <- c(warnings, paste0("Ignoring control rows for files not found in scc_dir: ", paste(unknown_in_control, collapse = ", ")))
+        errors <- c(errors, paste0("Control files missing from scc_dir: ", paste(unknown_in_control, collapse = ", ")))
     }
 
-    if (isTRUE(require_all_scc_mapped)) {
-        unmapped_scc <- setdiff(scc_files, df$filename)
-        if (length(unmapped_scc) > 0) {
+    unmapped_scc <- scc_files[!(scc_keys %in% control_keys)]
+    if (length(unmapped_scc) > 0) {
+        if (isTRUE(require_all_scc_mapped)) {
             errors <- c(errors, paste0("SCC files missing from control file: ", paste(unmapped_scc, collapse = ", ")))
+        } else {
+            warnings <- c(warnings, paste0("Ignoring SCC files not listed in control file: ", paste(unmapped_scc, collapse = ", ")))
         }
     }
 
-    active_rows <- df$filename %in% scc_files
+    active_rows <- control_keys %in% scc_keys
     list(errors = errors, warnings = warnings, active_rows = active_rows)
 }
 
@@ -149,13 +200,10 @@
     errors <- character()
     uv_vals <- df$universal.negative[active_rows]
     keyword_vals <- c("", "TRUE", "FALSE", "AF")
-    known_keys <- unique(c(
-        known_files,
-        tools::file_path_sans_ext(basename(known_files))
-    ))
-    uv_keys <- tools::file_path_sans_ext(basename(uv_vals))
+    known_keys <- unique(.control_validation_file_key(known_files))
+    uv_keys <- .control_validation_file_key(uv_vals)
     uv_upper <- toupper(uv_vals)
-    unresolved_uv <- uv_vals[!(uv_upper %in% keyword_vals) & !(uv_vals %in% known_keys) & !(uv_keys %in% known_keys)]
+    unresolved_uv <- uv_vals[!(uv_upper %in% keyword_vals) & !(uv_keys %in% known_keys)]
     if (length(unresolved_uv) > 0) {
         errors <- c(errors, paste0("universal.negative points to unknown files for active controls: ", paste(unique(unresolved_uv), collapse = ", ")))
     }
@@ -167,8 +215,10 @@
     files_to_check <- unique(df$filename[active_rows])
 
     for (fn in files_to_check) {
-        path <- file.path(scc_dir, fn)
-        if (!file.exists(path)) next
+        file_idx <- match(.control_validation_file_key(fn), .control_validation_file_key(scc_files))
+        if (is.na(file_idx)) next
+        actual_name <- scc_files[[file_idx]]
+        path <- file.path(scc_dir, actual_name)
         ff <- tryCatch(
             suppressWarnings(flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE)),
             error = function(e) NULL
@@ -180,7 +230,9 @@
         pd <- flowCore::pData(flowCore::parameters(ff))
         det_names <- .control_validation_as_chr(pd$name)
         alias_map <- .build_channel_alias_map_from_pd(pd)
-        ch_vals <- unique(df$channel[active_rows & df$filename == fn])
+        ch_vals <- unique(df$channel[
+            active_rows & .control_validation_file_key(df$filename) == .control_validation_file_key(fn)
+        ])
         ch_vals <- ch_vals[nzchar(ch_vals) & !is.na(ch_vals)]
         if (length(ch_vals) == 0) next
         missing_channels <- ch_vals[!vapply(

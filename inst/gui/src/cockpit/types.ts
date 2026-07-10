@@ -131,6 +131,7 @@ export type ControlSettings = {
   seed: number
   saveQcPlots: boolean
   saveReport: boolean
+  outputFormat: 'html' | 'pdf'
   useScatterGating: boolean
   cleanSccWithUnstained: boolean
   sccBackgroundMethod: 'scatter_knn' | 'none'
@@ -164,6 +165,7 @@ export type SampleSettings = {
   estimateAf: boolean
   writeFcs: boolean
   saveReport: boolean
+  outputFormat: 'html' | 'pdf'
   saveQcPlots: boolean
   plotNEvents: number
   chunkSize: number
@@ -224,6 +226,7 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       seed: 1,
       saveQcPlots: true,
       saveReport: true,
+      outputFormat: 'html',
       useScatterGating: true,
       cleanSccWithUnstained: true,
       sccBackgroundMethod: 'scatter_knn',
@@ -256,6 +259,7 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       estimateAf: false,
       writeFcs: true,
       saveReport: true,
+      outputFormat: 'html',
       saveQcPlots: true,
       plotNEvents: 10000,
       chunkSize: 50000,

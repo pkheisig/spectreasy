@@ -400,6 +400,7 @@ export default function CockpitApp() {
             seed: control.seed,
             save_qc_plots: control.saveQcPlots,
             save_report: control.saveReport,
+            output_format: control.outputFormat,
             use_scatter_gating: control.useScatterGating,
             clean_scc_with_unstained: control.cleanSccWithUnstained,
             scc_background_method: control.sccBackgroundMethod,
@@ -438,6 +439,7 @@ export default function CockpitApp() {
               estimate_af: sample.estimateAf,
               write_fcs: sample.writeFcs,
               save_report: sample.saveReport,
+              output_format: sample.outputFormat,
               save_qc_plots: sample.saveQcPlots,
               plot_n_events: sample.plotNEvents,
               chunk_size: sample.chunkSize,
@@ -456,7 +458,23 @@ export default function CockpitApp() {
                 af_min_cluster_proportion: af.afMinClusterProportion,
                 seed: af.seed,
               }
-            : { projectPath: settings.projectPath, report_type: "control" };
+            : {
+                projectPath: settings.projectPath,
+                report_type: "control",
+                output_format: control.outputFormat,
+                overwrite: window.prompt(
+                  "Existing report behavior: version (recommended), overwrite, or cancel",
+                  "version",
+                ) ?? "cancel",
+              };
+    if (
+      action === "report" &&
+      (payload as Record<string, unknown>).overwrite === "cancel"
+    ) {
+      setJob(emptyJob);
+      setToast("Report generation cancelled. No file was changed.");
+      return;
+    }
     const response = await attemptWorkflowAction(action, payload);
     setToast(response.message);
     if (response.connected) {

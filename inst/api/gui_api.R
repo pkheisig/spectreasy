@@ -577,7 +577,7 @@ gate_read_mapping <- function() {
     df$control.type <- vapply(df$control.type, gate_normalize_control_type, character(1))
     if (!("universal.negative" %in% colnames(df))) df$universal.negative <- ""
     if (!("is.viability" %in% colnames(df))) df$is.viability <- "FALSE"
-    df$file_exists <- TRUE
+    df$file_exists <- rep(TRUE, nrow(df))
     df$is_af <- grepl("^AF($|_|\\b)", df$fluorophore, ignore.case = TRUE) |
         grepl("autofluorescence|background", df$marker, ignore.case = TRUE)
     df$is_viability <- tolower(as.character(df$is.viability)) %in% c("true", "t", "1", "yes")
@@ -1852,6 +1852,59 @@ function(project_path = "") {
     gui_project_scan(root)
 }
 
+gui_project_relative_path <- function(path, root) {
+    root_pattern <- gsub("([.|(){}+*?^$\\[\\]\\\\])", "\\\\\\1", normalizePath(root, mustWork = FALSE))
+    gsub("\\\\", "/", sub(paste0("^", root_pattern, "[/\\\\]?"), "", path))
+}
+
+gui_project_report_files <- function(root, files = NULL) {
+    root <- normalizePath(root, mustWork = FALSE)
+    if (is.null(files)) {
+        files <- if (dir.exists(root)) {
+            list.files(root, recursive = TRUE, full.names = TRUE, all.files = FALSE)
+        } else {
+            character()
+        }
+    }
+    relative_files <- gui_project_relative_path(files, root)
+    files[
+        grepl("\\.(html?|pdf)$", relative_files, ignore.case = TRUE) &
+            grepl("(^|/)(reports|spectreasy_outputs)/", relative_files, ignore.case = TRUE, perl = TRUE)
+    ]
+}
+
+#* Discover report artifacts and compare them with upstream project files
+#* @get /project/reports
+function(project_path = "") {
+    root <- if (is.null(project_path) || !nzchar(trimws(as.character(project_path)[1]))) get_matrix_dir() else as.character(project_path)[1]
+    root <- normalizePath(root, mustWork = FALSE)
+    files <- if (dir.exists(root)) list.files(root, recursive = TRUE, full.names = TRUE, all.files = FALSE) else character()
+    reports <- gui_project_report_files(root, files = files)
+    if (length(reports) == 0L) return(list(reports = data.frame()))
+    relative <- function(path) gui_project_relative_path(path, root)
+    rows <- lapply(reports, function(report) {
+        is_sample <- grepl("sample|qc_samples", report, ignore.case = TRUE)
+        is_panel <- grepl("panel", report, ignore.case = TRUE)
+        source_pattern <- if (is_sample) {
+            "(^|/)(samples?/.*\\.fcs$|.*reference_matrix.*\\.csv$|.*detector_noise.*\\.csv$|.*spectral_variant.*\\.rds$)"
+        } else {
+            "(^|/)(scc/.*\\.fcs$|fcs_mapping\\.csv$|.*gate.*\\.csv$|.*reference_matrix.*\\.csv$|.*detector_noise.*\\.csv$)"
+        }
+        source_files <- files[grepl(source_pattern, relative(files), ignore.case = TRUE, perl = TRUE)]
+        source_files <- setdiff(source_files, report)
+        stale <- length(source_files) > 0L && any(file.info(source_files)$mtime > file.info(report)$mtime)
+        data.frame(
+            path = relative(report),
+            report_type = if (is_panel) "Panel overview" else if (is_sample) "Sample QC" else "Control QC",
+            format = if (grepl("\\.pdf$", report, ignore.case = TRUE)) "PDF" else "HTML",
+            created = format(file.info(report)$mtime, "%Y-%m-%d %H:%M:%S %Z"),
+            status = if (stale) "stale" else "current",
+            stringsAsFactors = FALSE
+        )
+    })
+    list(reports = do.call(rbind, rows))
+}
+
 #* Stream a project artifact through the local R backend
 #* @get /project/file
 #* @param path Relative path inside the active project
@@ -1959,6 +2012,7 @@ function(req) {
             n_threads = gui_workflow_number(body, "unmix_threads", 1, integer = TRUE, minimum = 1),
             save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
+            output_format = tolower(gui_workflow_value(body, "output_format", "pdf")),
             use_scatter_gating = gui_workflow_bool(body, "use_scatter_gating", TRUE),
             manual_gating = FALSE,
             manual_gate_file = gate_file,
@@ -2029,6 +2083,7 @@ function(req) {
             output_dir = output_dir,
             write_fcs = gui_workflow_bool(body, "write_fcs", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
+            output_format = tolower(gui_workflow_value(body, "output_format", "pdf")),
             save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
             plot_n_events = gui_workflow_number(body, "plot_n_events", 10000, integer = TRUE, minimum = 1),
             chunk_size = gui_workflow_number(body, "chunk_size", 50000, integer = TRUE, minimum = 1),
@@ -2157,18 +2212,41 @@ function(req) {
 function(req) {
     body <- gui_workflow_body(req)
     report_type <- tolower(gui_workflow_value(body, "report_type", "control"))
+    output_format <- tolower(gui_workflow_value(body, "output_format", "html"))
+    if (!output_format %in% c("html", "pdf")) {
+        return(list(success = FALSE, error = "Report format must be 'html' or 'pdf'."))
+    }
+    overwrite <- tolower(gui_workflow_value(body, "overwrite", "version"))
+    if (!overwrite %in% c("version", "overwrite", "error")) {
+        return(list(success = FALSE, error = "Overwrite behavior must be 'version', 'overwrite', or 'error'."))
+    }
+    root <- gui_workflow_root(body)
     run <- gui_workflow_run(
         body,
         "report",
         if (identical(report_type, "sample")) {
             stop("Sample report rendering requires the current sample results object. Run sample unmixing from the Samples workspace first.")
         } else {
-            report_file <- file.path("spectreasy_outputs", "unmix_controls", "qc_controls", "qc_controls_report.pdf")
-            spectreasy::qc_controls(output_file = report_file)
+            matrix_file <- file.path(root, "spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv")
+            if (!file.exists(matrix_file)) stop("Reference matrix not found: ", matrix_file)
+            M <- spectreasy:::.read_unmixing_matrix_csv(matrix_file)
+            report_dir <- file.path(root, "spectreasy_outputs", "unmix_controls", "qc_controls")
+            dir.create(report_dir, recursive = TRUE, showWarnings = FALSE)
+            report_file <- file.path(report_dir, paste0("qc_controls_report.", output_format))
+            spectreasy::qc_controls(
+                M = M,
+                unmixing_matrix_file = matrix_file,
+                scc_dir = file.path(root, "scc"),
+                control_file = file.path(root, "fcs_mapping.csv"),
+                output_file = report_file,
+                output_format = output_format,
+                overwrite = overwrite
+            )
         }
     )
     if (!isTRUE(run$success)) return(run)
-    run$result <- list(report_file = file.path("spectreasy_outputs", "unmix_controls", "qc_controls", "qc_controls_report.pdf"))
+    report_path <- if (is.list(run$result) && !is.null(run$result$output_file)) run$result$output_file else report_file
+    run$result <- list(report_file = report_path, output_format = output_format)
     run
 }
 

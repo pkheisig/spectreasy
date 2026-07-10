@@ -388,6 +388,7 @@ function MappingWorkspace({
   onSaveMapping,
   settings,
   onSettingsChange,
+  onViewReports,
 }: Pick<
   WorkflowWorkspaceProps,
   | "project"
@@ -399,7 +400,7 @@ function MappingWorkspace({
   | "onSaveMapping"
   | "settings"
   | "onSettingsChange"
->) {
+> & { onViewReports: () => void }) {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const toggleRow = (id: string) =>
@@ -686,7 +687,12 @@ function MappingWorkspace({
           onRun={onRun}
         />
       )}
-      {mappingTab === "qc" && <ControlReportPanel onRun={onRun} />}
+      {mappingTab === "qc" && (
+        <ControlReportPanel
+          onRun={onRun}
+          onView={onViewReports}
+        />
+      )}
     </>
   );
 }
@@ -956,7 +962,7 @@ function LegacyBuildReferencePanel({
         </div>
         <div>
           <span className="eyebrow">Report</span>
-          <strong>HTML + PDF</strong>
+          <strong>HTML</strong>
           <small>Shared QC data object</small>
         </div>
       </div>
@@ -1086,7 +1092,11 @@ function BuildReferencePanel({
         </div>
         <div>
           <span className="eyebrow">Report</span>
-          <strong>{settings.saveReport ? "PDF enabled" : "Report off"}</strong>
+          <strong>
+            {settings.saveReport
+              ? `${settings.outputFormat.toUpperCase()} enabled`
+              : "Report off"}
+          </strong>
           <small>
             {settings.saveQcPlots ? "QC plots included" : "QC plots off"}
           </small>
@@ -1132,6 +1142,20 @@ function BuildReferencePanel({
           />
           <span className="toggle-ui" />
           <span>Generate report</span>
+        </label>
+        <label>
+          <span>Report format</span>
+          <select
+            value={settings.outputFormat}
+            onChange={(event) =>
+              onSettingsChange({
+                outputFormat: event.target.value as ControlSettings["outputFormat"],
+              })
+            }
+          >
+            <option value="html">HTML</option>
+            <option value="pdf">PDF</option>
+          </select>
         </label>
         <label className="toggle-label">
           <input
@@ -1280,8 +1304,10 @@ function BuildReferencePanel({
 
 function ControlReportPanel({
   onRun,
+  onView,
 }: {
   onRun: WorkflowWorkspaceProps["onRun"];
+  onView: () => void;
 }) {
   return (
     <section className="surface-card report-snapshot">
@@ -1295,8 +1321,8 @@ function ControlReportPanel({
           </p>
         </div>
         <div className="toolbar-actions">
-          <button className="button button-ghost">
-            <Download size={14} /> PDF
+          <button className="button button-ghost" onClick={onView}>
+            <ArrowRight size={14} /> View Control Report
           </button>
           <button
             className="button button-primary"
@@ -1371,10 +1397,15 @@ function ControlReportPanel({
   );
 }
 
-function ControlsWorkspace(props: WorkflowWorkspaceProps) {
+function ControlsWorkspace(
+  props: WorkflowWorkspaceProps & {
+    onSectionChange: (section: SectionId) => void;
+  },
+) {
   return (
     <MappingWorkspace
       {...props}
+      onViewReports={() => props.onSectionChange("reports")}
       onSaveMapping={props.onSaveMapping ?? props.onSave}
     />
   );
@@ -1531,7 +1562,7 @@ function SamplesWorkspace({
           </div>
           <div>
             <span className="eyebrow">QC</span>
-            <strong>HTML + PDF</strong>
+            <strong>HTML</strong>
             <small>Report after unmix</small>
           </div>
           <div>
@@ -1545,6 +1576,12 @@ function SamplesWorkspace({
             <AlertCircle size={15} />
             <span>Sample QC report will be refreshed after this run.</span>
           </div>
+          <button
+            className="button button-ghost"
+            onClick={() => onSectionChange("reports")}
+          >
+            View Sample Report <ArrowRight size={14} />
+          </button>
           <button
             className="button button-primary large-button"
             onClick={() => onRun("sample", "Unmix 28 samples")}
@@ -1721,7 +1758,9 @@ function LegacyConfigurableSamplesWorkspace({
           <div>
             <span className="eyebrow">Outputs</span>
             <strong>
-              {settings.writeFcs ? "FCS + report" : "Report only"}
+              {settings.writeFcs
+                ? `FCS + ${settings.outputFormat.toUpperCase()}`
+                : `${settings.outputFormat.toUpperCase()} report only`}
             </strong>
             <small>{settings.outputDir}</small>
           </div>
@@ -1861,6 +1900,20 @@ function LegacyConfigurableSamplesWorkspace({
               <span className="toggle-ui" />
               <span>Generate report</span>
             </label>
+            <label>
+              Report format
+              <select
+                value={settings.outputFormat}
+                onChange={(event) =>
+                  onSettingsChange({
+                    outputFormat: event.target.value as SampleSettings["outputFormat"],
+                  })
+                }
+              >
+                <option value="html">HTML</option>
+                <option value="pdf">PDF</option>
+              </select>
+            </label>
             <label className="toggle-label">
               <input
                 type="checkbox"
@@ -1882,6 +1935,12 @@ function LegacyConfigurableSamplesWorkspace({
               before writing.
             </span>
           </div>
+          <button
+            className="button button-ghost"
+            onClick={() => onSectionChange("reports")}
+          >
+            View Sample Report <ArrowRight size={14} />
+          </button>
           <button
             className="button button-primary large-button"
             onClick={() => onRun("sample", "Unmix sample workflow")}
@@ -2107,7 +2166,9 @@ function ConfigurableSamplesWorkspace({
           <div>
             <span className="eyebrow">Outputs</span>
             <strong>
-              {settings.writeFcs ? "FCS + report" : "Report only"}
+              {settings.writeFcs
+                ? `FCS + ${settings.outputFormat.toUpperCase()}`
+                : `${settings.outputFormat.toUpperCase()} report only`}
             </strong>
             <small>{settings.outputDir}</small>
           </div>
@@ -2246,6 +2307,20 @@ function ConfigurableSamplesWorkspace({
               />
               <span className="toggle-ui" />
               <span>Generate report</span>
+            </label>
+            <label>
+              Report format
+              <select
+                value={settings.outputFormat}
+                onChange={(event) =>
+                  onSettingsChange({
+                    outputFormat: event.target.value as SampleSettings["outputFormat"],
+                  })
+                }
+              >
+                <option value="html">HTML</option>
+                <option value="pdf">PDF</option>
+              </select>
             </label>
             <label className="toggle-label">
               <input
@@ -2610,10 +2685,8 @@ function LegacyMatrixWorkspace({
 }
 
 function ReportsWorkspace({
-  onDownload,
   onRun,
 }: {
-  onDownload: WorkflowWorkspaceProps["onDownload"];
   onRun: WorkflowWorkspaceProps["onRun"];
 }) {
   const [reports, setReports] = useState<Report[]>(demoReports);
@@ -2728,23 +2801,17 @@ function ReportsWorkspace({
               <h2>{selectedReport.title}</h2>
             </div>
             <div className="toolbar-actions">
-              <button
+              <a
                 className="button button-ghost"
-                onClick={() =>
-                  onDownload({
-                    id: selectedReport.id,
-                    name: selectedReport.title.replaceAll(" ", "_"),
-                    type: "QC report",
-                    group: "Reports",
-                    status: selectedReport.status,
-                    detail: selectedReport.format,
-                    path: selectedReport.path ?? "/reports",
-                    updated: selectedReport.created,
-                  })
-                }
+                href={selectedReport.path ? projectFileUrl(selectedReport.path) : undefined}
+                download={selectedReport.path?.split("/").pop()}
+                aria-disabled={!selectedReport.path}
+                onClick={(event) => {
+                  if (!selectedReport.path) event.preventDefault();
+                }}
               >
                 <Download size={14} /> Download
-              </button>
+              </a>
               <button
                 className="button button-ghost"
                 onClick={openReport}
@@ -2754,6 +2821,14 @@ function ReportsWorkspace({
               </button>
             </div>
           </div>
+          {selectedReport.format === "HTML" && selectedReport.path ? (
+            <iframe
+              className="report-viewer-frame"
+              src={projectFileUrl(selectedReport.path)}
+              title={selectedReport.title}
+              sandbox="allow-scripts allow-same-origin"
+            />
+          ) : (
           <div className="report-page">
             <div className="report-page-head">
               <span className="report-kicker">
@@ -2838,6 +2913,7 @@ function ReportsWorkspace({
               </div>
             </div>
           </div>
+          )}
         </section>
       </div>
     </>
@@ -4898,6 +4974,20 @@ function ConfigurableSettingsWorkspace({
             <span className="toggle-ui" />
             <span>Generate QC report</span>
           </label>
+          <label>
+            Control report format
+            <select
+              value={control.outputFormat}
+              onChange={(event) =>
+                onSettingsChange("control", {
+                  outputFormat: event.target.value as ControlSettings["outputFormat"],
+                })
+              }
+            >
+              <option value="html">HTML</option>
+              <option value="pdf">PDF</option>
+            </select>
+          </label>
           <label className="toggle-label">
             <input
               type="checkbox"
@@ -5136,6 +5226,20 @@ function ConfigurableSettingsWorkspace({
             />
             <span className="toggle-ui" />
             <span>Generate report</span>
+          </label>
+          <label>
+            Sample report format
+            <select
+              value={sample.outputFormat}
+              onChange={(event) =>
+                onSettingsChange("sample", {
+                  outputFormat: event.target.value as SampleSettings["outputFormat"],
+                })
+              }
+            >
+              <option value="html">HTML</option>
+              <option value="pdf">PDF</option>
+            </select>
           </label>
           <label className="toggle-label">
             <input
@@ -5616,10 +5720,9 @@ function SettingsWorkspace({
             </label>
             <label>
               Default report format
-              <select defaultValue="HTML + PDF">
-                <option>HTML + PDF</option>
-                <option>HTML only</option>
-                <option>PDF only</option>
+              <select defaultValue="HTML">
+                <option>HTML</option>
+                <option>PDF</option>
               </select>
             </label>
             <label>
@@ -5720,7 +5823,7 @@ export function WorkflowWorkspace(
         />
       )}
       {activeSection === "reports" && (
-        <ReportsWorkspace onDownload={props.onDownload} onRun={props.onRun} />
+        <ReportsWorkspace onRun={props.onRun} />
       )}
       {activeSection === "matrix" && <MatrixWorkspace />}
       {activeSection === "panel" && (

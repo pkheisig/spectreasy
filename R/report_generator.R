@@ -401,6 +401,13 @@
     if (!is.data.frame(nps_scores) || !("File" %in% colnames(nps_scores)) || nrow(nps_scores) == 0) {
         return(list())
     }
+    if (!("NPS" %in% colnames(nps_scores))) {
+        return(list())
+    }
+    nps_scores <- nps_scores[is.finite(nps_scores$NPS), , drop = FALSE]
+    if (nrow(nps_scores) == 0L) {
+        return(list())
+    }
 
     batches <- .split_qc_report_batches(unique(as.character(nps_scores$File)), max_per_page = max_files_per_page)
     pages <- list()
@@ -1018,6 +1025,12 @@
 #'   alongside the PDF report.
 #' @param qc_metrics_dir Optional directory where plot-ready QC metric
 #'   CSVs are written alongside the PDF report.
+#' @param output_format Optional report format. When omitted, `.html` and `.pdf`
+#'   output filename extensions are inferred; otherwise use `"html"` or `"pdf"`.
+#' @param overwrite HTML collision policy: create a versioned filename
+#'   (recommended), overwrite, or error. Existing PDF behavior is unchanged.
+#' @param report_run_settings Additional workflow settings recorded in HTML.
+#' @param report_artifact_paths Additional input/output paths recorded in HTML.
 #'
 #' @return Invisibly returns a list with `output_file`, `qc_plot_dir`, and
 #'   `qc_metrics_dir`; writes report artifacts to disk.
@@ -1064,9 +1077,16 @@ qc_samples <- function(results,
                        nxn_all_samples = FALSE,
                        qc_plot_dir = NULL,
                        save_qc_pngs = FALSE,
-                       qc_metrics_dir = NULL) {
+                       qc_metrics_dir = NULL,
+                       output_format = NULL,
+                       overwrite = c("version", "overwrite", "error"),
+                       report_run_settings = list(),
+                       report_artifact_paths = list()) {
+    output_file_missing <- missing(output_file)
+    output_spec <- .report_output_spec(output_file, output_format, default_format = "pdf", output_missing = output_file_missing)
+    output_file <- output_spec$path
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
-        stop("Please supply output_file to save the QC PDF report.", call. = FALSE)
+        stop("Please supply output_file to save the QC report.", call. = FALSE)
     }
     sample_nxn_transform <- match.arg(sample_nxn_transform)
     method_attr <- attr(results, "method")
@@ -1098,6 +1118,44 @@ qc_samples <- function(results,
         if (is.data.frame(pd_attr)) {
             pd <- pd_attr
         }
+    }
+
+    if (identical(output_spec$format, "html")) {
+        report_data <- collect_sample_report_data(
+            results = results,
+            M = M,
+            unmixing_method = unmixing_method,
+            res_list = res_list,
+            pd = pd,
+            matrix_source = unmixing_matrix_file,
+            qc_metrics_dir = qc_metrics_dir,
+            artifact_paths = report_artifact_paths,
+            run_settings = c(
+                list(
+                    max_events_per_sample = max_events_per_sample,
+                    overview_files_per_page = overview_files_per_page,
+                    matrix_markers_per_page = matrix_markers_per_page,
+                    sample_nxn_rows_per_page = sample_nxn_rows_per_page,
+                    sample_nxn_max_points = sample_nxn_max_points,
+                    sample_nxn_transform = sample_nxn_transform,
+                    sample_nxn_asinh_cofactor = sample_nxn_asinh_cofactor,
+                    sample_nxn_axis_limit = sample_nxn_axis_limit,
+                    nxn_all_samples = nxn_all_samples,
+                    save_qc_pngs = save_qc_pngs,
+                    output_format = "html"
+                ),
+                report_run_settings
+            ),
+            max_events_per_sample = max_events_per_sample,
+            sample_nxn_rows_per_page = sample_nxn_rows_per_page,
+            sample_nxn_max_points = sample_nxn_max_points,
+            sample_nxn_transform = sample_nxn_transform,
+            sample_nxn_asinh_cofactor = sample_nxn_asinh_cofactor,
+            sample_nxn_axis_limit = sample_nxn_axis_limit,
+            nxn_all_samples = nxn_all_samples,
+            plot_dir = qc_plot_dir
+        )
+        return(render_qc_html_report(report_data, output_file, overwrite = overwrite))
     }
 
     report_results <- if (is.data.frame(results)) {

@@ -25,6 +25,7 @@ unmix_samples(
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
   save_report = TRUE,
+  output_format = c("pdf", "html"),
   save_qc_plots = FALSE,
   qc_plot_dir = NULL,
   plot_n_events = 10000L,
@@ -35,8 +36,9 @@ unmix_samples(
 )
 }
 \arguments{
-\item{sample_dir}{Directory containing experimental FCS files, a
-`flowCore::flowSet`, or a `SingleCellExperiment` for in-memory workflows.}
+\item{sample_dir}{Directory containing experimental FCS files, a character
+vector of FCS file paths, a `flowCore::flowSet`, or a
+`SingleCellExperiment` for in-memory workflows.}
 
 \item{samples_dir}{Alias for `sample_dir`, accepted for workflows and scripts
 that use the plural directory name.}
@@ -106,12 +108,15 @@ unstained cell control is available. Default is `FALSE`.}
 \item{write_fcs}{Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
 
-\item{save_report}{Logical; if `TRUE`, write a sample QC PDF report and
+\item{save_report}{Logical; if `TRUE`, write a sample QC report and
 sample QC metric CSVs from the in-memory unmixing results without rerunning
 unmixing. Defaults to `TRUE`.}
 
+\item{output_format}{Report format, either `"pdf"` (the backward-compatible
+default) or `"html"`. Only the selected format is written.}
+
 \item{save_qc_plots}{Logical; if `TRUE`, save QC report plots as PNG files
-in `qc_plot_dir` while creating the PDF report.}
+in `qc_plot_dir` while creating the report.}
 
 \item{qc_plot_dir}{Directory for sample QC report PNG files when
 `save_qc_plots = TRUE`.}
@@ -119,11 +124,11 @@ in `qc_plot_dir` while creating the PDF report.}
 \item{plot_n_events}{Optional integer; number of events per sample retained
 for automatic QC report plots and returned in-memory results. The full
 unsampled unmixed data will still be written to FCS files. Defaults to
-10000. Set `plot_n_events = NULL` to keep all events in the returned object
-and report input.}
+10000. Set `plot_n_events = NULL` to keep all events in the returned
+object and report input.}
 
 \item{chunk_size}{Integer number of events unmixed at a time per sample.
-The default, 50000, lowers peak memory use on large FCS files. Pass
+Defaults to 50000 to reduce peak memory use for large FCS files. Set
 `chunk_size = NULL` to process each sample in one chunk.}
 
 \item{seed}{Optional integer seed for deterministic subsampling.}

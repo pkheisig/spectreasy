@@ -21,6 +21,7 @@ unmix_controls(
   n_threads = 1L,
   save_qc_plots = FALSE,
   save_report = TRUE,
+  output_format = c("pdf", "html"),
   use_scatter_gating = TRUE,
   manual_gating = TRUE,
   manual_gate_file = "ssc_gate_config.csv",
@@ -90,8 +91,11 @@ multi-AF WLS/RWLS SCC unmixing. The default, 1, keeps execution single-threaded.
 \item{save_qc_plots}{Logical; whether to write per-control FSC/SSC,
 intensity-gate, and spectrum PNGs under `output_dir`.}
 
-\item{save_report}{Logical; if `TRUE`, write the SCC QC PDF report
+\item{save_report}{Logical; if `TRUE`, write the SCC QC report
 automatically after controls are unmixed. Defaults to `TRUE`.}
+
+\item{output_format}{Report format, either `"pdf"` (the backward-compatible
+default) or `"html"`. Only the selected format is written.}
 
 \item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
 scatter gate for final positive/negative population selection. If `FALSE`,

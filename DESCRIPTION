@@ -11,6 +11,7 @@ BugReports: https://github.com/pkheisig/spectreasy/issues
 License: MIT + file LICENSE
 Depends: R (>= 4.5.0)
 Imports:
+    base64enc,
     data.table,
     dplyr,
     flowCore,

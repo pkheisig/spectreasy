@@ -26,6 +26,11 @@ qc_controls(
   unmix_scatter_max_points = 1000,
   unmix_scatter_axis_limit = NULL,
   seed = NULL,
+  output_format = NULL,
+  overwrite = c("version", "overwrite", "error"),
+  report_plots = list(),
+  report_run_settings = list(),
+  report_artifact_paths = list(),
   ...
 )
 }
@@ -90,6 +95,19 @@ SCC unmixing scatter matrix. The default `NULL` uses local per-panel
 ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
+
+\item{output_format}{Optional report format. When omitted, `.html` and `.pdf`
+output filename extensions are inferred; otherwise use `"html"` or `"pdf"`.}
+
+\item{overwrite}{HTML collision policy: create a versioned filename
+(recommended), overwrite, or error. Existing PDF behavior is unchanged.}
+
+\item{report_plots}{Optional named list of precomputed spectra, AF, and SCC
+scatter plots to reuse in HTML output.}
+
+\item{report_run_settings}{Additional workflow settings recorded in HTML.}
+
+\item{report_artifact_paths}{Additional input/output paths recorded in HTML.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }

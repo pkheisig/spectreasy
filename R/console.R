@@ -62,7 +62,11 @@
     tryCatch(
         flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE),
         error = function(e) {
-            stop("Could not read ", label, ": ", path, call. = FALSE)
+            stop(
+                "Could not read ", label, ": ", path,
+                ". Reason: ", conditionMessage(e),
+                call. = FALSE
+            )
         }
     )
 }

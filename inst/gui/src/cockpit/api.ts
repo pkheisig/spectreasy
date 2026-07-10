@@ -255,27 +255,24 @@ export async function listAfProfiles(): Promise<Array<{ name: string; bands: num
 
 export async function loadProjectReports(): Promise<Report[]> {
   try {
-    const response = await client.get('/project/status')
-    const rawFiles: unknown[] = Array.isArray(response.data?.files) ? response.data.files : []
-    const files: string[] = rawFiles.map((file: unknown) => String(file))
-    return files.filter((file: string) => /\.(html?|pdf)$/i.test(file) && /(^|\/)(reports|spectreasy_outputs)\//i.test(file)).map((file: string) => {
-      const normalized = file.replace(/\\/g, '/')
-      const format = normalized.toLowerCase().endsWith('.pdf') ? 'PDF' : 'HTML'
+    const response = await client.get('/project/reports')
+    return rowsFromBackend(response.data?.reports).map((row) => {
+      const normalized = String(row.path ?? '').replace(/\\/g, '/')
+      const format = String(row.format ?? (normalized.toLowerCase().endsWith('.pdf') ? 'PDF' : 'HTML')) as 'HTML' | 'PDF'
       const basename = normalized.split('/').pop() ?? normalized
       const title = basename.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')
-      const stale = /sample|qc_samples/i.test(normalized) && /013|stale/i.test(normalized)
       return {
         id: `live-${normalized}`,
         title,
-        type: /panel/i.test(normalized) ? 'Panel overview' : /sample|qc_samples/i.test(normalized) ? 'Sample QC' : 'Control QC',
+        type: String(row.report_type ?? (/sample|qc_samples/i.test(normalized) ? 'Sample QC' : 'Control QC')) as Report['type'],
         format,
         run: normalized.split('/').find((part: string) => /^run[-_]/i.test(part)) ?? 'project',
-        created: 'Present in active project',
-        status: stale ? 'stale' : 'current',
+        created: String(row.created ?? 'Present in active project'),
+        status: String(row.status ?? 'current') as Report['status'],
         matrix: '—',
         path: normalized,
       } satisfies Report
-    })
+    }).filter((report) => report.path.length > 0)
   } catch {
     return []
   }

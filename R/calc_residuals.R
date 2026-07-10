@@ -1,17 +1,9 @@
 .normalize_rwls_max_iter <- function(rwls_max_iter) {
-    rwls_max_iter <- suppressWarnings(as.integer(rwls_max_iter[1]))
-    if (!is.finite(rwls_max_iter) || rwls_max_iter < 1L) {
-        stop("rwls_max_iter must be an integer >= 1.", call. = FALSE)
-    }
-    rwls_max_iter
+    .normalize_positive_integer(rwls_max_iter, "rwls_max_iter")
 }
 
 .normalize_unmix_threads <- function(n_threads) {
-    n_threads <- suppressWarnings(as.integer(n_threads[1]))
-    if (!is.finite(n_threads) || n_threads < 1L) {
-        stop("n_threads must be an integer >= 1.", call. = FALSE)
-    }
-    n_threads
+    .normalize_positive_integer(n_threads, "n_threads")
 }
 
 .normalize_unmix_method <- function(method,
@@ -79,11 +71,9 @@
 }
 
 .normalize_spectreasy_weight_quantile <- function(spectreasy_weight_quantile) {
-    q <- suppressWarnings(as.numeric(spectreasy_weight_quantile[1]))
-    if (!is.finite(q) || is.na(q) || q < 0 || q > 1) {
-        stop("spectreasy_weight_quantile must be a numeric value between 0 and 1.", call. = FALSE)
-    }
-    q
+    .normalize_numeric_scalar(
+        spectreasy_weight_quantile, "spectreasy_weight_quantile", lower = 0, upper = 1
+    )
 }
 
 .decoder_projected_af_marker_weights <- function(M,
@@ -357,9 +347,22 @@ calc_residuals <- function(flow_frame,
                            spectral_variant_min_improvement = 0.01,
                            spectreasy_weight_quantile = 0.9) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
+    if (!inherits(flow_frame, "flowFrame")) {
+        stop("flow_frame must be a flowCore::flowFrame.", call. = FALSE)
+    }
     M <- .as_reference_matrix(M, "M")
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_unmix_threads(n_threads)
+    spectral_variant_top_k <- .normalize_positive_integer(spectral_variant_top_k, "spectral_variant_top_k")
+    spectral_variant_min_abundance <- .normalize_numeric_scalar(
+        spectral_variant_min_abundance, "spectral_variant_min_abundance", lower = 0
+    )
+    spectral_variant_positive_fraction <- .normalize_numeric_scalar(
+        spectral_variant_positive_fraction, "spectral_variant_positive_fraction", lower = 0, upper = 1
+    )
+    spectral_variant_min_improvement <- .normalize_numeric_scalar(
+        spectral_variant_min_improvement, "spectral_variant_min_improvement", lower = 0, upper = 1
+    )
     method <- .normalize_unmix_method(method)
     if (!identical(method, "Spectreasy") && !spectreasy_weight_quantile_missing) {
         stop("spectreasy_weight_quantile is only accepted when method = \"Spectreasy\".", call. = FALSE)
@@ -372,14 +375,48 @@ calc_residuals <- function(flow_frame,
         .spectral_variant_library_has_variants(spectral_variant_library)
     full_data <- flowCore::exprs(flow_frame)
     detectors <- colnames(M)
+    if (nrow(full_data) == 0L) {
+        stop("flow_frame contains no events to unmix.", call. = FALSE)
+    }
     
     # Check for missing detectors
     missing <- setdiff(detectors, colnames(full_data))
     if (length(missing) > 0) {
         stop("Detectors in reference matrix not found in flow_frame: ", paste(missing, collapse = ", "))
     }
+
+    duplicated_required <- intersect(detectors, unique(colnames(full_data)[duplicated(colnames(full_data))]))
+    if (length(duplicated_required) > 0) {
+        stop(
+            "flow_frame contains duplicated reference detector channels: ",
+            paste(duplicated_required, collapse = ", "),
+            call. = FALSE
+        )
+    }
+
+    passthrough <- .get_passthrough_parameter_names(colnames(full_data), detector_names = detectors)
+    reserved_marker_names <- intersect(rownames(M), c("File", "AF Index", passthrough))
+    if (length(reserved_marker_names) > 0) {
+        stop(
+            "Reference marker names conflict with reserved output/acquisition columns: ",
+            paste(reserved_marker_names, collapse = ", "),
+            call. = FALSE
+        )
+    }
     
     Y <- full_data[, detectors, drop = FALSE]
+    used_data <- full_data[, unique(c(detectors, passthrough)), drop = FALSE]
+    non_finite <- !is.finite(used_data)
+    if (any(non_finite)) {
+        bad_by_detector <- colSums(non_finite)
+        bad_by_detector <- bad_by_detector[bad_by_detector > 0]
+        stop(
+            "flow_frame contains non-finite values in channels used for unmixing/output: ",
+            paste0(names(bad_by_detector), " (", bad_by_detector, ")", collapse = ", "),
+            ". Remove or repair these events before unmixing.",
+            call. = FALSE
+        )
+    }
 
     Mt <- t(M)
 

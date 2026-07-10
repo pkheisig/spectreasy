@@ -1819,7 +1819,7 @@ function App() {
     ))
   ), [histogramAutogateTargets, gates])
   const canAutogateHistograms = gatesLoaded && histogramAutogateTargets.length > 0 && histogramAutogateMissing.length === 0 && !histogramAutogating
-  const canConfirm = confirmIssues.length === 0
+  const canConfirm = gatesLoaded && files.length > 0 && confirmIssues.length === 0
   const confirmIssueLines = useMemo(() => formatConfirmIssues(confirmIssues), [confirmIssues])
   const initialLoading = !status.startsWith('Could not') && (!gatesLoaded || (files.length > 0 && (!preloadComplete || !payload)))
   const singletWarningText = currentFile.is_af && gateIsFinalized(singletGate) && singletsFilteredEvents.length < MIN_CONFIRM_EVENTS
@@ -2198,6 +2198,20 @@ function App() {
             </span>
           </div>
         </header>
+
+        {(status.startsWith('Could not') || (gatesLoaded && files.length === 0)) && (
+          <div
+            className={`gating-status-banner ${status.startsWith('Could not') ? 'is-error' : ''}`}
+            role={status.startsWith('Could not') ? 'alert' : 'status'}
+          >
+            <strong>{status.startsWith('Could not') ? 'Controls could not be loaded' : 'No control files found'}</strong>
+            <span>
+              {status.startsWith('Could not')
+                ? status
+                : 'Add FCS control files to the configured SCC folder, then reopen or refresh the gating GUI.'}
+            </span>
+          </div>
+        )}
 
         <div className="plot-grid">
           <GatePlot

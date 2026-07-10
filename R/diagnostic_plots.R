@@ -16,10 +16,25 @@
 #' head(nps)
 #' @export
 calculate_nps <- function(data, markers = NULL) {
+    if (!is.data.frame(data) || !("File" %in% colnames(data))) {
+        stop("data must be a data.frame containing a 'File' column.", call. = FALSE)
+    }
     if (is.null(markers)) {
         exclude <- .get_result_metadata_columns(colnames(data))
         markers <- setdiff(colnames(data), exclude)
         markers <- markers[!grepl("^AF($|_)", markers, ignore.case = TRUE)]
+    }
+    markers <- unique(as.character(markers))
+    missing_markers <- setdiff(markers, colnames(data))
+    if (length(missing_markers) > 0L) {
+        stop("markers not found in data: ", paste(missing_markers, collapse = ", "), call. = FALSE)
+    }
+    non_numeric <- markers[!vapply(data[markers], is.numeric, logical(1))]
+    if (length(non_numeric) > 0L) {
+        stop("NPS markers must be numeric columns: ", paste(non_numeric, collapse = ", "), call. = FALSE)
+    }
+    if (length(markers) == 0L) {
+        return(data.frame(File = character(), Marker = character(), NPS = numeric()))
     }
     
     # For each marker, isolate the negative population (intensity < threshold)
@@ -30,7 +45,9 @@ calculate_nps <- function(data, markers = NULL) {
             # Heuristic: negative population is around 0. 
             # We take values between -2SD and +2SD to avoid true positives
             # But simpler: just take the MAD of all values < quantile(0.2)
-            neg_subset <- x[x < quantile(x, 0.2)]
+            x <- x[is.finite(x)]
+            if (length(x) < 2L) return(NA_real_)
+            neg_subset <- x[x <= stats::quantile(x, 0.2, na.rm = TRUE, names = FALSE)]
             stats::mad(neg_subset, na.rm = TRUE)
         })) |> 
         tidyr::pivot_longer(cols = -File, names_to = "Marker", values_to = "NPS")
@@ -524,8 +541,18 @@ plot_sample_rms_residuals <- function(results, M = NULL, output_file = NULL, wid
     
     df <- do.call(rbind, sample_dfs)
     
-    p <- ggplot2::ggplot(df, ggplot2::aes(Sample, RMS, fill = Sample)) +
-        ggplot2::geom_violin(alpha = 0.5, color = "grey60", scale = "width") +
+    finite_df <- df[is.finite(df$RMS), , drop = FALSE]
+    group_counts <- table(finite_df$Sample)
+    violin_groups <- names(group_counts[group_counts >= 2L])
+
+    p <- ggplot2::ggplot(finite_df, ggplot2::aes(Sample, RMS, fill = Sample))
+    if (length(violin_groups) > 0L) {
+        p <- p + ggplot2::geom_violin(
+            data = finite_df[finite_df$Sample %in% violin_groups, , drop = FALSE],
+            alpha = 0.5, color = "grey60", scale = "width"
+        )
+    }
+    p <- p +
         ggplot2::geom_boxplot(width = 0.15, fill = "white", outlier.shape = NA, color = "grey30") +
         ggplot2::scale_y_continuous(
             trans = scales::pseudo_log_trans(base = 10, sigma = 100),

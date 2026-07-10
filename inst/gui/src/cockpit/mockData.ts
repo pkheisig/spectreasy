@@ -56,9 +56,8 @@ export const workflowStatus: Record<string, { state: 'complete' | 'ready' | 'war
   mapping: { state: 'complete', note: 'Validated 09:22' },
   gating: { state: 'complete', note: '7 saved gates' },
   controlRun: { state: 'complete', note: 'run-014 · 4m 12s' },
-  controlReport: { state: 'complete', note: 'HTML + PDF ready' },
+  controlReport: { state: 'complete', note: 'HTML report ready' },
   sampleImport: { state: 'warning', note: '2 new samples since last run' },
   sampleRun: { state: 'ready', note: 'Matrix selected · 28 samples' },
   sampleReport: { state: 'stale', note: 'Regenerate after sample run' },
 }
-

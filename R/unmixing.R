@@ -81,11 +81,49 @@
         .spectreasy_stop_empty_fcs_directory(sample_dir_resolved, label = "sample_dir")
     }
 
-    lapply(fcs_files, function(f) {
+    sample_keys <- make.unique(tools::file_path_sans_ext(basename(fcs_files)))
+    lapply(seq_along(fcs_files), function(i) {
+        f <- fcs_files[[i]]
         list(
-            sample_name = tools::file_path_sans_ext(basename(f)),
+            sample_name = sample_keys[[i]],
             source_name = basename(f),
             file_path = f,
+            flow_frame = NULL,
+            cell_ids = NULL
+        )
+    })
+}
+
+.prepare_unmix_samples_input_from_files <- function(fcs_files) {
+    fcs_files <- as.character(fcs_files)
+    if (length(fcs_files) == 0L) {
+        stop("sample_dir must contain at least one FCS file path.", call. = FALSE)
+    }
+    missing_files <- fcs_files[is.na(fcs_files) | !file.exists(fcs_files) | dir.exists(fcs_files)]
+    if (length(missing_files) > 0) {
+        stop(
+            "sample_dir contains missing or invalid FCS file paths: ",
+            paste(missing_files, collapse = ", "),
+            call. = FALSE
+        )
+    }
+    invalid_ext <- fcs_files[!grepl("\\.fcs$", fcs_files, ignore.case = TRUE)]
+    if (length(invalid_ext) > 0) {
+        stop("sample_dir file paths must point to .fcs files: ", paste(invalid_ext, collapse = ", "), call. = FALSE)
+    }
+
+    normalized_files <- normalizePath(fcs_files, mustWork = TRUE)
+    duplicate_files <- unique(normalized_files[duplicated(normalized_files)])
+    if (length(duplicate_files) > 0L) {
+        stop("sample_dir contains duplicate FCS file paths: ", paste(duplicate_files, collapse = ", "), call. = FALSE)
+    }
+    sample_keys <- make.unique(tools::file_path_sans_ext(basename(fcs_files)))
+    lapply(seq_along(fcs_files), function(i) {
+        f <- fcs_files[[i]]
+        list(
+            sample_name = sample_keys[[i]],
+            source_name = basename(f),
+            file_path = normalized_files[[i]],
             flow_frame = NULL,
             cell_ids = NULL
         )
@@ -107,8 +145,14 @@
         return(.prepare_unmix_samples_input_from_sce(sample_input))
     }
 
+    if (is.character(sample_input) &&
+        (length(sample_input) > 1L ||
+            (length(sample_input) == 1L && !is.na(sample_input) && grepl("\\.fcs$", sample_input, ignore.case = TRUE)))) {
+        return(.prepare_unmix_samples_input_from_files(sample_input))
+    }
+
     if (!is.character(sample_input) || length(sample_input) != 1 || is.na(sample_input)) {
-        stop("sample_dir must be either a directory path, a flowCore::flowSet, or a SingleCellExperiment.", call. = FALSE)
+        stop("sample_dir must be a directory path, one or more FCS file paths, a flowCore::flowSet, or a SingleCellExperiment.", call. = FALSE)
     }
 
     .prepare_unmix_samples_input_from_directory(sample_input)
@@ -259,10 +303,16 @@
     if (length(primary_names) == 0) return(labels)
 
     opt_control <- getOption("spectreasy.control_file", "")
-    sample_parent <- if (is.character(sample_dir) && length(sample_dir) == 1 && !is.na(sample_dir)) {
-        dirname(normalizePath(sample_dir, mustWork = FALSE))
-    } else {
-        getwd()
+    sample_parent <- getwd()
+    if (is.character(sample_dir) && length(sample_dir) >= 1L && all(!is.na(sample_dir))) {
+        if (length(sample_dir) == 1L && dir.exists(sample_dir)) {
+            sample_parent <- dirname(normalizePath(sample_dir, mustWork = FALSE))
+        } else {
+            file_parents <- unique(dirname(normalizePath(sample_dir, mustWork = FALSE)))
+            if (length(file_parents) == 1L) {
+                sample_parent <- dirname(file_parents[[1]])
+            }
+        }
     }
     candidates <- unique(c(
         as.character(opt_control),
@@ -371,6 +421,11 @@
 }
 
 .unmixed_fcs_filename <- function(sample_name, method, M) {
+    sample_name <- trimws(as.character(sample_name)[1])
+    sample_name <- gsub("[[:cntrl:]/\\\\:]", "_", sample_name)
+    sample_name <- gsub("[. ]+$", "", sample_name)
+    if (!nzchar(sample_name) || sample_name %in% c(".", "..")) sample_name <- "sample"
+    sample_name <- substr(sample_name, 1L, 180L)
     paste0(
         sample_name,
         "_",
@@ -382,25 +437,14 @@
 }
 
 .normalize_unmix_chunk_size <- function(chunk_size) {
-    if (is.null(chunk_size)) {
-        return(Inf)
-    }
-    chunk_size <- suppressWarnings(as.integer(chunk_size[1]))
-    if (!is.finite(chunk_size) || is.na(chunk_size) || chunk_size < 1L) {
-        stop("chunk_size must be NULL or an integer >= 1.", call. = FALSE)
-    }
-    chunk_size
+    .normalize_positive_integer(chunk_size, "chunk_size", allow_null = TRUE)
 }
 
 .normalize_unmix_plot_n_events <- function(plot_n_events) {
     if (is.null(plot_n_events)) {
         return(NULL)
     }
-    plot_n_events <- suppressWarnings(as.integer(plot_n_events[1]))
-    if (!is.finite(plot_n_events) || is.na(plot_n_events) || plot_n_events < 1L) {
-        stop("plot_n_events must be NULL or an integer >= 1.", call. = FALSE)
-    }
-    plot_n_events
+    .normalize_positive_integer(plot_n_events, "plot_n_events")
 }
 
 .unmix_chunk_indices <- function(n_events, chunk_size) {
@@ -673,8 +717,9 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 
 #' Unmix Experimental Samples
 #' 
-#' @param sample_dir Directory containing experimental FCS files, a
-#'   `flowCore::flowSet`, or a `SingleCellExperiment` for in-memory workflows.
+#' @param sample_dir Directory containing experimental FCS files, a character
+#'   vector of FCS file paths, a `flowCore::flowSet`, or a
+#'   `SingleCellExperiment` for in-memory workflows.
 #' @param samples_dir Alias for `sample_dir`, accepted for workflows and scripts
 #'   that use the plural directory name.
 #' @param M Optional reference matrix (Markers x Detectors). If supplied,
@@ -726,11 +771,13 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param output_dir Directory to save unmixed FCS files when `write_fcs = TRUE`.
 #' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
 #'   Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.
-#' @param save_report Logical; if `TRUE`, write a sample QC PDF report and
+#' @param save_report Logical; if `TRUE`, write a sample QC report and
 #'   sample QC metric CSVs from the in-memory unmixing results without rerunning
 #'   unmixing. Defaults to `TRUE`.
+#' @param output_format Report format, either `"pdf"` (the backward-compatible
+#'   default) or `"html"`. Only the selected format is written.
 #' @param save_qc_plots Logical; if `TRUE`, save QC report plots as PNG files
-#'   in `qc_plot_dir` while creating the PDF report.
+#'   in `qc_plot_dir` while creating the report.
 #' @param qc_plot_dir Directory for sample QC report PNG files when
 #'   `save_qc_plots = TRUE`.
 #' @param plot_n_events Optional integer; number of events per sample retained
@@ -809,6 +856,7 @@ unmix_samples <- function(sample_dir = "samples",
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
                           save_report = TRUE,
+                          output_format = c("pdf", "html"),
                           save_qc_plots = FALSE,
                           qc_plot_dir = NULL,
                           plot_n_events = 10000L,
@@ -819,6 +867,11 @@ unmix_samples <- function(sample_dir = "samples",
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     unmixing_matrix_file_missing <- missing(unmixing_matrix_file)
     return_type <- match.arg(return_type)
+    output_format <- match.arg(output_format)
+    write_fcs <- .normalize_scalar_logical(write_fcs, "write_fcs")
+    save_report <- .normalize_scalar_logical(save_report, "save_report")
+    save_qc_plots <- .normalize_scalar_logical(save_qc_plots, "save_qc_plots")
+    verbose <- .normalize_scalar_logical(verbose, "verbose")
     .with_optional_seed(seed)
     scc_dir <- NULL
     if (!is.null(samples_dir)) {
@@ -869,9 +922,17 @@ unmix_samples <- function(sample_dir = "samples",
     if (identical(method, "Spectreasy")) {
         spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
     }
-    estimate_af <- isTRUE(estimate_af)
+    estimate_af <- .normalize_scalar_logical(estimate_af, "estimate_af")
     chunk_size <- .normalize_unmix_chunk_size(chunk_size)
     plot_n_events <- .normalize_unmix_plot_n_events(plot_n_events)
+    if (isTRUE(write_fcs) || isTRUE(save_report)) {
+        if (!is.character(output_dir) || length(output_dir) != 1L || is.na(output_dir) || !nzchar(trimws(output_dir))) {
+            stop("output_dir must be a non-empty directory path when writing FCS files or a report.", call. = FALSE)
+        }
+        if (file.exists(output_dir) && !dir.exists(output_dir)) {
+            stop("output_dir points to a file, not a directory: ", output_dir, call. = FALSE)
+        }
+    }
 
     if (isTRUE(verbose)) {
         .spectreasy_console_header("unmix_samples")
@@ -929,6 +990,9 @@ unmix_samples <- function(sample_dir = "samples",
                 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
             }
         }
+        if (!dir.exists(output_dir)) {
+            stop("Could not create output_dir: ", output_dir, call. = FALSE)
+        }
     }
 
     for (entry in sample_entries) {
@@ -940,12 +1004,15 @@ unmix_samples <- function(sample_dir = "samples",
             .spectreasy_read_fcs(entry$file_path, label = "sample FCS file")
         }
         n_events <- nrow(flowCore::exprs(ff))
+        if (n_events == 0L) {
+            stop("Sample '", sn, "' contains no events to unmix.", call. = FALSE)
+        }
         chunk_indices <- .unmix_chunk_indices(n_events, chunk_size = chunk_size)
         keep_global <- .unmix_sample_keep_indices(n_events, plot_n_events = plot_n_events)
         marker_source_all <- rownames(M)
         marker_source_for_output <- marker_source_all[!grepl("^AF_", marker_source_all, ignore.case = TRUE)]
 
-        write_chunks <- if (isTRUE(write_fcs)) vector("list", length(chunk_indices)) else list()
+        write_data_all <- NULL
         data_chunks <- list()
         residual_chunks <- list()
         variant_infos <- list()
@@ -980,7 +1047,16 @@ unmix_samples <- function(sample_dir = "samples",
                 autospectral_cols <- if (.is_autospectral_style_method(method) && "AF Index" %in% colnames(write_data)) "AF Index" else character()
                 passthrough_cols <- .get_passthrough_parameter_names(colnames(write_data))
                 cols_to_write <- unique(c(markers_to_keep, autospectral_cols, passthrough_cols))
-                write_chunks[[chunk_i]] <- as.matrix(write_data[, cols_to_write, drop = FALSE])
+                write_chunk <- as.matrix(write_data[, cols_to_write, drop = FALSE])
+                if (is.null(write_data_all)) {
+                    write_data_all <- matrix(
+                        NA_real_, nrow = n_events, ncol = ncol(write_chunk),
+                        dimnames = list(NULL, colnames(write_chunk))
+                    )
+                } else if (!identical(colnames(write_chunk), colnames(write_data_all))) {
+                    stop("Internal error: unmixed FCS columns changed between chunks for sample '", sn, "'.", call. = FALSE)
+                }
+                write_data_all[event_idx, ] <- write_chunk
             }
 
             local_keep <- which(event_idx %in% keep_global)
@@ -1004,7 +1080,7 @@ unmix_samples <- function(sample_dir = "samples",
         }
 
         if (isTRUE(write_fcs)) {
-            unmixed_exprs <- do.call(rbind, write_chunks)
+            unmixed_exprs <- write_data_all
             storage.mode(unmixed_exprs) <- "numeric"
             new_ff <- flowCore::flowFrame(unmixed_exprs)
             new_ff <- .apply_feature_secondary_labels(
@@ -1020,7 +1096,7 @@ unmix_samples <- function(sample_dir = "samples",
                 .spectreasy_console_step("Safe output", basename(output_path))
             }
             flowCore::write.FCS(new_ff, output_path)
-            rm(write_chunks, unmixed_exprs, new_ff)
+            rm(write_data_all, unmixed_exprs, new_ff)
         }
 
         results[[sn]] <- .combine_unmix_result_chunks(
@@ -1044,10 +1120,11 @@ unmix_samples <- function(sample_dir = "samples",
     attr(results, "qc_samples_dir") <- NULL
     attr(results, "qc_metrics_dir") <- NULL
     attr(results, "qc_plot_dir") <- NULL
+    attr(results, "qc_report_data") <- NULL
 
     if (isTRUE(save_report)) {
         qc_samples_dir <- .next_safe_output_dir(.default_unmix_samples_report_dir(output_dir))
-        output_file <- file.path(qc_samples_dir, "qc_samples_report.pdf")
+        output_file <- file.path(qc_samples_dir, paste0("qc_samples_report.", output_format))
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
         report_res <- qc_samples(
             results = results,
@@ -1056,12 +1133,35 @@ unmix_samples <- function(sample_dir = "samples",
             unmixing_method = method,
             qc_metrics_dir = qc_samples_dir,
             qc_plot_dir = qc_plot_dir,
-            save_qc_pngs = save_qc_plots
+            save_qc_pngs = save_qc_plots,
+            output_format = output_format,
+            overwrite = "overwrite",
+            report_artifact_paths = list(
+                matrix = if (!isTRUE(unmixing_matrix_file_missing)) unmixing_matrix_file else NULL,
+                detector_noise = detector_noise_file,
+                spectral_variant_library = spectral_variant_library_file,
+                output_dir = output_dir
+            ),
+            report_run_settings = list(
+                rwls_max_iter = rwls_max_iter,
+                n_threads = n_threads,
+                spectral_variant_top_k = spectral_variant_top_k,
+                spectral_variant_min_abundance = spectral_variant_min_abundance,
+                spectral_variant_positive_fraction = spectral_variant_positive_fraction,
+                spectral_variant_min_improvement = spectral_variant_min_improvement,
+                spectreasy_weight_quantile = spectreasy_weight_quantile,
+                estimate_af = estimate_af,
+                write_fcs = write_fcs,
+                plot_n_events = plot_n_events,
+                chunk_size = chunk_size,
+                seed = seed
+            )
         )
         attr(results, "qc_report_file") <- report_res$output_file
         attr(results, "qc_samples_dir") <- qc_samples_dir
         attr(results, "qc_metrics_dir") <- qc_samples_dir
         attr(results, "qc_plot_dir") <- report_res$qc_plot_dir
+        attr(results, "qc_report_data") <- report_res$report_data
         if (!file.exists(report_res$output_file)) {
             stop("Automatic sample QC report was requested but was not created at: ", report_res$output_file, call. = FALSE)
         }

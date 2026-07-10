@@ -78,6 +78,37 @@ testthat::test_that("GUI spectrum gating keeps zero-event gate results empty", {
     testthat::expect_equal(nrow(api_env$gate_apply_positive_gate(expr, empty_positive_gate, "Peak-A")), 0L)
 })
 
+testthat::test_that("GUI gate file listing handles an empty project", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) {
+        api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    }
+    testthat::skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+
+    project_dir <- tempfile("spectreasy_empty_gui_project_")
+    scc_dir <- file.path(project_dir, "scc")
+    dir.create(scc_dir, recursive = TRUE)
+    withr::local_options(list(
+        spectreasy.gating_scc_dir = scc_dir,
+        spectreasy.gating_control_file = file.path(project_dir, "fcs_mapping.csv")
+    ))
+
+    mapping <- api_env$gate_read_mapping()
+    testthat::expect_s3_class(mapping, "data.frame")
+    testthat::expect_equal(nrow(mapping), 0L)
+    testthat::expect_named(
+        mapping,
+        c(
+            "filename", "fluorophore", "marker", "channel", "control.type",
+            "universal.negative", "is.viability", "file_exists", "is_af",
+            "is_viability", "id"
+        )
+    )
+})
+
 testthat::test_that("GUI histogram autogating creates positive and negative intervals with package defaults", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) {

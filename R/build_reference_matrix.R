@@ -84,26 +84,18 @@
                                               af_max_cells,
                                               af_min_cluster_events = 20,
                                               af_min_cluster_proportion = 0.005) {
-    af_n_bands <- suppressWarnings(as.integer(af_n_bands[1]))
-    if (!is.finite(af_n_bands) || is.na(af_n_bands) || af_n_bands < 1) {
-        stop("af_n_bands must be an integer >= 1.")
-    }
+    af_n_bands <- .normalize_positive_integer(af_n_bands, "af_n_bands")
 
-    af_max_cells <- as.integer(af_max_cells[1])
-    if (!is.finite(af_max_cells) || is.na(af_max_cells) || af_max_cells < 100) {
+    af_max_cells <- .normalize_positive_integer(af_max_cells, "af_max_cells")
+    if (af_max_cells < 100L) {
         stop("af_max_cells must be an integer >= 100.")
     }
 
-    af_min_cluster_events <- as.integer(af_min_cluster_events[1])
-    if (!is.finite(af_min_cluster_events) || is.na(af_min_cluster_events) || af_min_cluster_events < 1) {
-        stop("af_min_cluster_events must be an integer >= 1.")
-    }
+    af_min_cluster_events <- .normalize_positive_integer(af_min_cluster_events, "af_min_cluster_events")
 
-    af_min_cluster_proportion <- as.numeric(af_min_cluster_proportion[1])
-    if (!is.finite(af_min_cluster_proportion) || is.na(af_min_cluster_proportion) ||
-        af_min_cluster_proportion < 0 || af_min_cluster_proportion > 1) {
-        stop("af_min_cluster_proportion must be a number between 0 and 1.")
-    }
+    af_min_cluster_proportion <- .normalize_numeric_scalar(
+        af_min_cluster_proportion, "af_min_cluster_proportion", lower = 0, upper = 1
+    )
 
     list(
         af_n_bands = af_n_bands,
@@ -473,13 +465,17 @@
 # Prepares the complete list of FCS files to be processed.
 # Locates FCS files in the input folder.
 # Returns a list containing 'fcs_files' and 'fcs_files_all'.
-.prepare_reference_file_set <- function(input_folder) {
+.prepare_reference_file_set <- function(input_folder, control_df = NULL) {
     if (!dir.exists(input_folder)) {
         .spectreasy_stop_missing_directory(input_folder, label = "input_folder")
     }
     fcs_files_all <- list.files(input_folder, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     if (length(fcs_files_all) == 0) {
         .spectreasy_stop_empty_fcs_directory(input_folder, label = "input_folder")
+    }
+    fcs_files_all <- .control_validation_select_scc_files(control_df, fcs_files_all)
+    if (length(fcs_files_all) == 0) {
+        stop("None of the FCS files listed in control_df were found in input_folder.", call. = FALSE)
     }
 
     list(fcs_files = fcs_files_all, fcs_files_all = fcs_files_all)
@@ -4094,24 +4090,15 @@ build_reference_matrix <- function(
         scc_background_method = scc_background_method,
         scc_background_k = scc_background_k
     )
-    autospectral_n_candidates <- suppressWarnings(as.integer(autospectral_n_candidates[1]))
-    if (!is.finite(autospectral_n_candidates) || is.na(autospectral_n_candidates) || autospectral_n_candidates < 1L) {
-        stop("autospectral_n_candidates must be an integer >= 1.", call. = FALSE)
-    }
-    autospectral_n_spectral <- suppressWarnings(as.integer(autospectral_n_spectral[1]))
-    if (!is.finite(autospectral_n_spectral) || is.na(autospectral_n_spectral) || autospectral_n_spectral < 1L) {
-        stop("autospectral_n_spectral must be an integer >= 1.", call. = FALSE)
-    }
-    autospectral_min_events <- suppressWarnings(as.integer(autospectral_min_events[1]))
-    if (!is.finite(autospectral_min_events) || is.na(autospectral_min_events) || autospectral_min_events < 1L) {
-        stop("autospectral_min_events must be an integer >= 1.", call. = FALSE)
-    }
+    autospectral_n_candidates <- .normalize_positive_integer(autospectral_n_candidates, "autospectral_n_candidates")
+    autospectral_n_spectral <- .normalize_positive_integer(autospectral_n_spectral, "autospectral_n_spectral")
+    autospectral_min_events <- .normalize_positive_integer(autospectral_min_events, "autospectral_min_events")
 
     .with_optional_seed(seed)
     manual_gates <- .read_reference_manual_gates(manual_gate_file)
 
     sample_patterns <- get_fluorophore_patterns()
-    file_info <- .prepare_reference_file_set(input_folder = input_folder)
+    file_info <- .prepare_reference_file_set(input_folder = input_folder, control_df = control_df)
     out_path <- .prepare_reference_output_path(output_folder = output_folder, save_qc_plots = save_qc_plots)
     metadata <- .prepare_reference_detector_info(file_info$fcs_files[1])
     cytometer <- .resolve_cytometer_from_pd(cytometer, metadata$pd_meta)
@@ -4266,6 +4253,7 @@ build_reference_matrix <- function(
     .attach_estimated_wls_detector_noise(
         M = M,
         scc_dir = input_folder,
+        fcs_files = file_info$fcs_files_all,
         fallback = .default_wls_background_noise(),
         warn = FALSE
     )

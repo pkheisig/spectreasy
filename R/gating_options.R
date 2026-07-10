@@ -99,6 +99,12 @@ get_fluorophore_patterns <- function() {
 #' get_sorted_detectors(pd)$names
 #' @export
 get_sorted_detectors <- function(pd) {
+    if (!is.data.frame(pd) || !("name" %in% colnames(pd))) {
+        stop("pd must be a data.frame containing a 'name' column.", call. = FALSE)
+    }
+    if (!("desc" %in% colnames(pd))) {
+        pd$desc <- as.character(pd$name)
+    }
     # 1. Identify spectral detectors
     # Common patterns: FL[0-9]+-A, [A-Z][0-9]+-A, etc.
     # Exclude FSC, SSC, Time
@@ -167,7 +173,14 @@ get_sorted_detectors <- function(pd) {
         gsub(".*?([0-9]{3}).*", "\\1", label_wo_laser),
         NA_character_
     )))
-    if (all(is.na(wavelength))) wavelength <- seq_along(names) # Fallback to index
+    channel_number <- suppressWarnings(as.integer(ifelse(
+        grepl("[0-9]+(?:-A)?$", names, ignore.case = TRUE, perl = TRUE),
+        sub(".*?([0-9]+)(?:-A)?$", "\\1", names, ignore.case = TRUE, perl = TRUE),
+        NA_character_
+    )))
+    missing_wavelength <- is.na(wavelength)
+    wavelength[missing_wavelength] <- channel_number[missing_wavelength]
+    wavelength[is.na(wavelength)] <- seq_along(names)[is.na(wavelength)]
 
     # 4. Sort
     ord <- order(laser_priority, wavelength, na.last = TRUE)

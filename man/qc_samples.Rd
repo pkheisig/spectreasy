@@ -24,7 +24,11 @@ qc_samples(
   nxn_all_samples = FALSE,
   qc_plot_dir = NULL,
   save_qc_pngs = FALSE,
-  qc_metrics_dir = NULL
+  qc_metrics_dir = NULL,
+  output_format = NULL,
+  overwrite = c("version", "overwrite", "error"),
+  report_run_settings = list(),
+  report_artifact_paths = list()
 )
 }
 \arguments{
@@ -89,6 +93,16 @@ alongside the PDF report.}
 
 \item{qc_metrics_dir}{Optional directory where plot-ready QC metric
 CSVs are written alongside the PDF report.}
+
+\item{output_format}{Optional report format. When omitted, `.html` and `.pdf`
+output filename extensions are inferred; otherwise use `"html"` or `"pdf"`.}
+
+\item{overwrite}{HTML collision policy: create a versioned filename
+(recommended), overwrite, or error. Existing PDF behavior is unchanged.}
+
+\item{report_run_settings}{Additional workflow settings recorded in HTML.}
+
+\item{report_artifact_paths}{Additional input/output paths recorded in HTML.}
 }
 \value{
 Invisibly returns a list with `output_file`, `qc_plot_dir`, and

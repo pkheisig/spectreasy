@@ -371,6 +371,14 @@
 #'   SCC unmixing scatter matrix. The default `NULL` uses local per-panel
 #'   ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
+#' @param output_format Optional report format. When omitted, `.html` and `.pdf`
+#'   output filename extensions are inferred; otherwise use `"html"` or `"pdf"`.
+#' @param overwrite HTML collision policy: create a versioned filename
+#'   (recommended), overwrite, or error. Existing PDF behavior is unchanged.
+#' @param report_plots Optional named list of precomputed spectra, AF, and SCC
+#'   scatter plots to reuse in HTML output.
+#' @param report_run_settings Additional workflow settings recorded in HTML.
+#' @param report_artifact_paths Additional input/output paths recorded in HTML.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #' @return Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
 #'   `qc_metrics_dir`, `af_bank_info`, and `unmixing_method`.
@@ -404,10 +412,18 @@ qc_controls <- function(
     unmix_scatter_max_points = 1000,
     unmix_scatter_axis_limit = NULL,
     seed = NULL,
+    output_format = NULL,
+    overwrite = c("version", "overwrite", "error"),
+    report_plots = list(),
+    report_run_settings = list(),
+    report_artifact_paths = list(),
     ...
 ) {
+    output_file_missing <- missing(output_file)
+    output_spec <- .report_output_spec(output_file, output_format, default_format = "pdf", output_missing = output_file_missing)
+    output_file <- output_spec$path
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
-        stop("Please supply output_file to save the SCC PDF report.", call. = FALSE)
+        stop("Please supply output_file to save the SCC report.", call. = FALSE)
     }
     extra_args <- list(...)
     unmixing_method <- .normalize_unmix_method(unmixing_method)
@@ -421,12 +437,20 @@ qc_controls <- function(
 
     qc_metrics_dir <- .prepare_qc_report_metrics_dir(qc_metrics_dir)
 
-    can_reuse_reference <- !is.null(M) && !is.null(qc_summary) && !is.null(report_plot_dir)
+    can_reuse_reference <- !is.null(M) && (
+        identical(output_spec$format, "html") ||
+            (!is.null(qc_summary) && !is.null(report_plot_dir))
+    )
     if (isTRUE(can_reuse_reference)) {
         M_built <- .as_reference_matrix(M, "M")
-        report_plot_dir <- normalizePath(report_plot_dir, mustWork = FALSE)
-        if (!dir.exists(report_plot_dir)) {
-            stop("report_plot_dir not found: ", report_plot_dir, call. = FALSE)
+        if (is.null(report_plot_dir) && identical(output_spec$format, "html")) {
+            report_plot_dir <- tempfile("spectreasy_control_html_gates_")
+            dir.create(report_plot_dir, recursive = TRUE, showWarnings = FALSE)
+        } else {
+            report_plot_dir <- normalizePath(report_plot_dir, mustWork = FALSE)
+            if (!dir.exists(report_plot_dir)) {
+                stop("report_plot_dir not found: ", report_plot_dir, call. = FALSE)
+            }
         }
         if (isTRUE(cleanup_report_plot_dir)) {
             on.exit(unlink(report_plot_dir, recursive = TRUE, force = TRUE), add = TRUE)
@@ -492,15 +516,55 @@ qc_controls <- function(
     }
 
     if (is.null(pd)) {
-        if (!dir.exists(scc_dir)) {
+        pd_attr <- attr(M_report, "detector_pd")
+        if (is.data.frame(pd_attr)) {
+            pd <- pd_attr
+        } else if (identical(output_spec$format, "html") && !dir.exists(scc_dir)) {
+            pd <- NULL
+        } else if (!dir.exists(scc_dir)) {
             .spectreasy_stop_missing_directory(scc_dir, label = "scc_dir")
+        } else {
+            fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+            if (length(fcs_files) == 0) {
+                if (!identical(output_spec$format, "html")) {
+                    .spectreasy_stop_empty_fcs_directory(scc_dir, label = "scc_dir")
+                }
+            } else {
+                ff_meta <- .spectreasy_read_fcs(fcs_files[1], label = "SCC FCS file")
+                pd <- flowCore::pData(flowCore::parameters(ff_meta))
+            }
         }
-        fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-        if (length(fcs_files) == 0) {
-            .spectreasy_stop_empty_fcs_directory(scc_dir, label = "scc_dir")
-        }
-        ff_meta <- .spectreasy_read_fcs(fcs_files[1], label = "SCC FCS file")
-        pd <- flowCore::pData(flowCore::parameters(ff_meta))
+    }
+
+    if (identical(output_spec$format, "html")) {
+        report_data <- collect_control_report_data(
+            M = M_report,
+            scc_dir = scc_dir,
+            control_file = control_file,
+            cytometer = cytometer,
+            unmixing_method = unmixing_method,
+            unmixed_list = unmixed_list,
+            qc_summary = qc_summary,
+            report_plot_dir = report_plot_dir,
+            pd = pd,
+            af_bank_info = af_bank_info,
+            matrix_source = unmixing_matrix_file,
+            artifact_paths = report_artifact_paths,
+            plots = report_plots,
+            run_settings = c(
+                list(
+                    use_scatter_gating = use_scatter_gating,
+                    unmix_scatter_max_points = unmix_scatter_max_points,
+                    unmix_scatter_axis_limit = unmix_scatter_axis_limit,
+                    seed = seed,
+                    save_qc_pngs = save_qc_pngs,
+                    output_format = "html"
+                ),
+                report_run_settings
+            ),
+            plot_dir = qc_plot_dir
+        )
+        return(render_qc_html_report(report_data, output_file, overwrite = overwrite))
     }
 
     if (!requireNamespace("png", quietly = TRUE)) {

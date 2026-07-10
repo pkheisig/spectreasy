@@ -118,6 +118,42 @@
 
 .default_wls_noise_tail_fraction <- function() 0.20
 
+.normalize_positive_integer <- function(x, arg_name, allow_null = FALSE) {
+    if (is.null(x)) {
+        if (isTRUE(allow_null)) return(Inf)
+        stop(arg_name, " must be an integer >= 1 and have length 1.", call. = FALSE)
+    }
+    if (length(x) != 1L || is.na(x) || !is.numeric(x) || !is.finite(x) ||
+        x < 1 || x != floor(x) || x > .Machine$integer.max) {
+        null_note <- if (isTRUE(allow_null)) " or NULL" else ""
+        stop(arg_name, " must be an integer >= 1", null_note, " and have length 1.", call. = FALSE)
+    }
+    as.integer(x)
+}
+
+.normalize_scalar_logical <- function(x, arg_name) {
+    if (!is.logical(x) || length(x) != 1L || is.na(x)) {
+        stop(arg_name, " must be TRUE or FALSE.", call. = FALSE)
+    }
+    x
+}
+
+.normalize_numeric_scalar <- function(x, arg_name, lower = -Inf, upper = Inf) {
+    if (!is.numeric(x) || length(x) != 1L || is.na(x) || !is.finite(x) || x < lower || x > upper) {
+        range_text <- if (is.finite(lower) && is.finite(upper)) {
+            paste0(" between ", lower, " and ", upper)
+        } else if (is.finite(lower)) {
+            paste0(" >= ", lower)
+        } else if (is.finite(upper)) {
+            paste0(" <= ", upper)
+        } else {
+            ""
+        }
+        stop(arg_name, " must be a single finite numeric value", range_text, ".", call. = FALSE)
+    }
+    as.numeric(x)
+}
+
 .coerce_wls_vector <- function(x, n_detectors, default, arg_name) {
     if (length(x) == 0 || all(is.na(x))) {
         x <- default
@@ -189,7 +225,8 @@
                                          detectors,
                                          fallback = .default_wls_background_noise(),
                                          tail_fraction = .default_wls_noise_tail_fraction(),
-                                         signal_scale = .default_wls_signal_scale()) {
+                                         signal_scale = .default_wls_signal_scale(),
+                                         fcs_files = NULL) {
     detectors <- as.character(detectors)
     if (length(detectors) == 0) {
         stop("detectors must contain at least one detector name.")
@@ -208,7 +245,9 @@
         fallback <- .default_wls_background_noise()
     }
 
-    fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+    if (is.null(fcs_files)) {
+        fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+    }
     if (length(fcs_files) == 0) {
         .spectreasy_stop_empty_fcs_directory(scc_dir, label = "scc_dir")
     }
@@ -259,6 +298,7 @@
                                                 fallback = .default_wls_background_noise(),
                                                 tail_fraction = .default_wls_noise_tail_fraction(),
                                                 signal_scale = .default_wls_signal_scale(),
+                                                fcs_files = NULL,
                                                 warn = TRUE) {
     M <- .as_reference_matrix(M, "M")
     detector_noise <- tryCatch(
@@ -267,7 +307,8 @@
             detectors = colnames(M),
             fallback = fallback,
             tail_fraction = tail_fraction,
-            signal_scale = signal_scale
+            signal_scale = signal_scale,
+            fcs_files = fcs_files
         ),
         error = function(e) {
             if (isTRUE(warn)) {

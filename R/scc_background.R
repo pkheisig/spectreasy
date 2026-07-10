@@ -4,10 +4,8 @@
                                           scc_background_method,
                                           scc_background_k) {
     method <- match.arg(scc_background_method, c("scatter_knn", "none"))
-    k <- suppressWarnings(as.integer(scc_background_k[1]))
-    if (!is.finite(k) || is.na(k) || k < 1L) {
-        stop("scc_background_k must be an integer >= 1.", call. = FALSE)
-    }
+    clean_scc_with_unstained <- .normalize_scalar_logical(clean_scc_with_unstained, "clean_scc_with_unstained")
+    k <- .normalize_positive_integer(scc_background_k, "scc_background_k")
     list(
         enabled = isTRUE(clean_scc_with_unstained) && method != "none",
         method = method,
