@@ -1,0 +1,392 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  urlcolor=blue!50!black,
+  citecolor=blue!50!black
+}
+
+\newcommand{\y}{\mathbf{y}}
+\newcommand{\uvec}{\mathbf{u}}
+\newcommand{\m}{\mathbf{m}}
+\newcommand{\eps}{\boldsymbol{\epsilon}}
+\newcommand{\M}{\mathbf{M}}
+\newcommand{\A}{\mathbf{A}}
+\newcommand{\R}{\mathbf{R}}
+\newcommand{\G}{\mathbf{G}}
+\newcommand{\Hmat}{\mathbf{H}}
+
+\title{Critical Review of Semi-Synthetic Cell-Like Single-Color Controls for Spectreasy}
+\author{Prepared for Spectreasy method development}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Executive Summary}
+
+It is possible to create synthetic cell-like single-color controls (SCCs) by
+starting from real unstained cell events and adding simulated fluorophore
+spectra. This is a valid and potentially useful idea, but it should not be
+described as creating ``perfect SCCs.'' A better name is
+\textbf{semi-synthetic cell-like SCCs}. These controls are perfect only relative
+to the spectrum and variation model assumed by the simulator. They cannot
+discover an unknown true spectrum by themselves.
+
+The idea is strongest as an \textbf{augmentation and benchmarking tool}. It can
+make bead-derived spectra look more cell-like by adding them onto real cell AF
+backgrounds. It can test whether Spectreasy recovers known simulated abundance.
+It can also create controlled tandem-degradation or spectral-variant scenarios.
+However, it should not replace real measured SCCs unless the spectral prior is
+already trusted.
+
+\section{Core Synthetic SCC Model}
+
+Let an unstained cell event be
+\begin{equation}
+  \uvec_i \in \mathbb{R}^{D},
+\end{equation}
+where \(D\) is the number of spectral detectors. Let the fluorophore spectrum
+for marker \(j\) be
+\begin{equation}
+  \m_j \in \mathbb{R}^{D}.
+\end{equation}
+A semi-synthetic positive event is generated as
+\begin{equation}
+  \y_i^{\text{synthetic}}
+  =
+  \uvec_i
+  +
+  a_i \m_j
+  +
+  \eps_i,
+\end{equation}
+where \(a_i\) is the simulated fluorophore abundance and \(\eps_i\) is optional
+extra detector noise.
+
+The most important feature is that \(\uvec_i\) is real. It contains real cell
+autofluorescence, scatter-associated background, detector baseline behavior, and
+event-to-event biological variation. The simulator does not need to invent a
+cell background from scratch; it paints a fluorophore signal on top of a real
+unstained cell.
+
+\section{Why This Could Help Spectreasy}
+
+\subsection{Cell-Like SCCs From Bead-Based Spectra}
+
+Many SCCs are bead-based. Beads can provide clean bright spectra, but they do
+not have the same AF background as cells. A semi-synthetic SCC can combine the
+advantages of both:
+\begin{equation}
+  \text{bead-derived fluorophore spectrum}
+  +
+  \text{real unstained cell background}.
+\end{equation}
+This could help test how a fluorophore behaves when it is embedded in real cell
+AF, even if the spectral prior came from beads.
+
+\subsection{Known Truth for Benchmarking}
+
+Because \(a_i\) is simulated, the true abundance is known. After unmixing, one
+can compare the recovered abundance \(\hat{a}_i\) to the truth:
+\begin{equation}
+  e_i = \hat{a}_i - a_i.
+\end{equation}
+Useful benchmark metrics include:
+\begin{equation}
+  \operatorname{RMSE}
+  =
+  \sqrt{
+    \frac{1}{n}
+    \sum_{i=1}^{n}
+    \left(
+      \hat{a}_i - a_i
+    \right)^2
+  },
+\end{equation}
+and
+\begin{equation}
+  \operatorname{bias}
+  =
+  \frac{1}{n}
+  \sum_{i=1}^{n}
+  \left(
+    \hat{a}_i - a_i
+  \right).
+\end{equation}
+This makes synthetic SCCs useful for method development and regression tests.
+
+\subsection{Controlled Variant and Tandem-Degradation Scenarios}
+
+For tandem dyes or unstable fluorophores, the simulator can assign each event a
+variant spectrum:
+\begin{equation}
+  \y_i
+  =
+  \uvec_i
+  +
+  a_i \m_{j,v_i}
+  +
+  \eps_i.
+\end{equation}
+For a simple degradation model, define
+\begin{equation}
+  \m_{j,v_i}
+  =
+  (1-\eta_i)\m_{\text{intact}}
+  +
+  \eta_i\m_{\text{degraded}},
+\end{equation}
+where
+\begin{equation}
+  0 \leq \eta_i \leq 1
+\end{equation}
+is the event-specific degradation fraction. If \(\eta_i = 0\), the event is
+fully intact. If \(\eta_i = 1\), the event follows the degraded spectrum.
+
+This lets developers create SCCs where not every positive event has the same
+idealized spectrum. Spectreasy could then learn or test spectral variants under
+controlled conditions.
+
+\section{The Main Caveat: Synthetic SCCs Are Circular Without a Trusted Prior}
+
+The central limitation is simple:
+\begin{equation}
+  \text{synthetic SCCs cannot invent the true fluorophore spectrum}.
+\end{equation}
+The simulator needs \(\m_j\) from somewhere. If the same assumed spectrum is
+used to create synthetic SCCs and then recovered from those SCCs, the procedure
+mostly validates its own assumption.
+
+The useful direction is:
+\begin{equation}
+  \text{real SCC}
+  \rightarrow
+  \text{learn spectrum}
+  \rightarrow
+  \text{synthetic cell-like SCC augmentation}.
+\end{equation}
+The circular direction is:
+\begin{equation}
+  \text{assumed spectrum}
+  \rightarrow
+  \text{synthetic SCC}
+  \rightarrow
+  \text{``validated'' spectrum}.
+\end{equation}
+The second path is not independent validation. It can still be useful for
+software testing, but not for proving that the spectrum is biologically correct.
+
+\section{Why Averaging Broad Variant Mixtures Can Be Harmful}
+
+If synthetic positives contain a broad mixture of variants, one might be tempted
+to average them into one reference row:
+\begin{equation}
+  \bar{\m}_j
+  =
+  \frac{1}{n}
+  \sum_{i=1}^{n}
+  \m_{j,v_i}.
+\end{equation}
+This can be misleading. The average spectrum may be a spectrum that no real
+event actually has. If the method then uses this average row for all events,
+individual events may be poorly fit even though the average looks reasonable.
+
+A safer approach is:
+\begin{enumerate}
+  \item keep a clean base spectrum as the main reference row;
+  \item generate synthetic variant-positive events;
+  \item use those events to populate or test the spectral-variant library;
+  \item during sample unmixing, allow per-cell matching to variant spectra.
+\end{enumerate}
+
+In symbols, the matrix keeps the base row
+\begin{equation}
+  \m_j
+\end{equation}
+while the variant library stores
+\begin{equation}
+  \left\{
+    \m_{j,1},
+    \m_{j,2},
+    \ldots,
+    \m_{j,V}
+  \right\}.
+\end{equation}
+The event-level solver can then select or test variants without replacing the
+base biological reference with an artificial average.
+
+\section{Noise and Intensity Models}
+
+\subsection{Abundance Model}
+
+A realistic synthetic SCC should not use one fixed abundance for all events.
+Common choices include a lognormal model:
+\begin{equation}
+  a_i \sim \operatorname{LogNormal}(\mu,\sigma^2),
+\end{equation}
+or a mixture model with negative and positive cells:
+\begin{equation}
+  z_i \sim \operatorname{Bernoulli}(\pi),
+\end{equation}
+\begin{equation}
+  a_i =
+  \begin{cases}
+    0, & z_i = 0, \\
+    \operatorname{LogNormal}(\mu,\sigma^2), & z_i = 1.
+  \end{cases}
+\end{equation}
+Here, \(\pi\) is the synthetic positive fraction.
+
+\subsection{Detector Noise}
+
+The simplest version adds no extra noise:
+\begin{equation}
+  \eps_i = \mathbf{0}.
+\end{equation}
+This is a reasonable starting point because the unstained event already carries
+real background variation. A more explicit noise model could be:
+\begin{equation}
+  \epsilon_{id}
+  \sim
+  \mathcal{N}
+  \left(
+    0,
+    \sigma_{0d}^{2}
+    +
+    \sigma_{1d}
+    \left|
+      y_{id}
+    \right|
+  \right).
+\end{equation}
+Here \(\sigma_{0d}^{2}\) is detector-specific baseline variance and
+\(\sigma_{1d}\) controls signal-dependent variance.
+
+This should be optional. Extra noise can make the simulation look more realistic
+but also adds assumptions that are hard to verify.
+
+\section{Implementation Rules}
+
+The simulator should follow strict rules:
+\begin{itemize}
+  \item use raw linear detector values, not transformed or asinh values;
+  \item preserve FSC, SSC, Time, and other non-spectral parameters from the
+        unstained cell event;
+  \item add fluorophore signal only to spectral detector channels;
+  \item write metadata declaring the synthetic origin and the spectrum source;
+  \item keep the original simulated abundance \(a_i\) in a truth table, not
+        necessarily inside the FCS file;
+  \item never label synthetic controls as equivalent to measured SCCs.
+\end{itemize}
+
+The detector update is:
+\begin{equation}
+  \y_{i,\text{detectors}}^{\text{new}}
+  =
+  \uvec_{i,\text{detectors}}
+  +
+  a_i\m_j.
+\end{equation}
+All non-detector channels are copied:
+\begin{equation}
+  \y_{i,\text{scatter/time}}^{\text{new}}
+  =
+  \uvec_{i,\text{scatter/time}}.
+\end{equation}
+
+\section{Suggested Spectreasy API}
+
+\begin{verbatim}
+simulate_scc_controls(
+  unstained_fcs,
+  reference_matrix,
+  fluorophores = NULL,
+  abundance_model = "lognormal",
+  abundance_median = 5000,
+  abundance_cv = 0.5,
+  positive_fraction = 0.8,
+  variant_model = "none",
+  variant_library = NULL,
+  noise_model = "none",
+  output_dir = "synthetic_scc"
+)
+\end{verbatim}
+
+For variant simulation:
+\begin{verbatim}
+simulate_scc_controls(
+  unstained_fcs,
+  reference_matrix,
+  variant_model = "tandem_degradation",
+  degradation_fraction = c(0, 0.4)
+)
+\end{verbatim}
+
+The output should include:
+\begin{itemize}
+  \item synthetic FCS files;
+  \item a control mapping CSV;
+  \item a truth table with event-level \(a_i\), fluorophore, variant ID, and
+        degradation fraction;
+  \item metadata recording the source reference matrix and simulator settings.
+\end{itemize}
+
+\section{Best Use Cases}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+Use case & Value & Caveat \\
+\midrule
+Benchmarking & High & Tests assumed truth only \\
+Bead-to-cell-like SCC augmentation & High & Spectrum still comes from beads \\
+Tandem degradation experiments & High & Requires realistic degradation model \\
+Missing real SCC replacement & Medium to low & Circular without trusted prior \\
+Unknown spectrum discovery & Low & Synthetic data cannot reveal unknown truth \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Critical Recommendation}
+
+This feature is worth implementing as a simulator, augmentation, and benchmark
+tool. It should not be marketed as a way to always create perfect SCCs. The most
+accurate framing is:
+\begin{quote}
+Semi-synthetic cell-like SCCs create realistic cell-background controls from a
+trusted spectral prior. They are useful for testing, augmentation, and controlled
+variant scenarios, but they do not replace measuring the true spectrum when the
+true spectrum is unknown.
+\end{quote}
+
+For Spectreasy, the best integration would be:
+\begin{verbatim}
+scc_mode = "semi_synthetic_cell"
+\end{verbatim}
+or, more explicitly,
+\begin{verbatim}
+augment_scc_with_synthetic_cells = TRUE
+\end{verbatim}
+with a metadata flag:
+\begin{verbatim}
+reference_source = "synthetic_from_prior"
+\end{verbatim}
+
+\section*{Bottom Line}
+
+Yes, semi-synthetic cell-like SCCs are possible and useful. They can make
+controls more cell-like, support benchmarking, and generate controlled spectral
+variant scenarios. But they are not automatically perfect SCCs. They are only
+as true as the spectrum and variant model used to create them.
+
+\end{document}

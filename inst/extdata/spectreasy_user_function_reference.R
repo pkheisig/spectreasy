@@ -181,6 +181,8 @@
     # Interactive tools
     # -------------------------------------------------------------------------
 
+    spectreasy_gui()
+
     adjust_matrix(
         matrix_dir = NULL,
         samples_dir = NULL,

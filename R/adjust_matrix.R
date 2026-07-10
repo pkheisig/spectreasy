@@ -173,6 +173,7 @@
 }
 
 .spectreasy_gui_mode_label <- function(mode) {
+    if (identical(mode, "cockpit")) return("Spectreasy Cockpit")
     if (identical(mode, "control-gating")) return("Control gating GUI")
     if (identical(mode, "panel-builder")) return("Spectral panel builder GUI")
     "Matrix adjustment GUI"
@@ -263,12 +264,22 @@
     }
 
     options(
+        spectreasy.project_dir = dirs$matrix_dir,
         spectreasy.matrix_dir = dirs$matrix_dir,
         spectreasy.samples_dir = dirs$samples_dir,
         spectreasy.unmixing_method = unmixing_method,
         spectreasy.gui_mode = mode,
         spectreasy.panel_cytometer = panel_cytometer
     )
+    if (!identical(mode, "control-gating")) {
+        project_dir <- .infer_project_dir_from_matrix_dir(dirs$matrix_dir)
+        if (is.null(project_dir) || !dir.exists(project_dir)) project_dir <- dirs$matrix_dir
+        options(
+            spectreasy.gating_scc_dir = file.path(project_dir, "scc"),
+            spectreasy.gating_control_file = file.path(project_dir, "fcs_mapping.csv"),
+            spectreasy.gating_gate_file = file.path(project_dir, "ssc_gate_config.csv")
+        )
+    }
     if (identical(mode, "control-gating")) {
         options(
             spectreasy.gating_scc_dir = gate_paths$scc_dir,
@@ -365,6 +376,34 @@ adjust_matrix <- function(matrix_dir = NULL,
         dev_mode = dev_mode,
         unmixing_method = unmixing_method,
         mode = "tuner"
+    )
+    invisible(NULL)
+}
+
+#' Launch the Spectreasy Cockpit
+#'
+#' Starts the complete local Spectreasy browser application. The current R
+#' working directory is used as the initial project folder; the project path,
+#' input folders, analysis method, numerical settings, gates, reports, and
+#' output locations can then be configured from inside the GUI.
+#'
+#' This is the recommended entry point for interactive use:
+#' `library(spectreasy); spectreasy_gui()`.
+#'
+#' @return Invisibly returns `NULL`. This function blocks while the local GUI
+#' application is running.
+#' @export
+#' @examples
+#' if (interactive()) {
+#'   spectreasy_gui()
+#' }
+spectreasy_gui <- function() {
+    project_dir <- normalizePath(getwd(), mustWork = TRUE)
+    samples_dir <- file.path(project_dir, "samples")
+    .launch_spectreasy_gui(
+        matrix_dir = project_dir,
+        samples_dir = samples_dir,
+        mode = "cockpit"
     )
     invisible(NULL)
 }

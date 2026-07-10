@@ -1,8 +1,25 @@
 # gui_api_adjust.R
 # API for the spectreasy Interactive Tuner (Adjustment/Crosstalk Correction)
 
+get_gui_default_project_dir <- function() {
+    configured <- getOption("spectreasy.project_dir", "")
+    if (!is.null(configured) && length(configured) > 0 && nzchar(trimws(as.character(configured[1])))) {
+        return(normalizePath(as.character(configured[1]), mustWork = FALSE))
+    }
+
+    cwd <- normalizePath(getwd(), mustWork = FALSE)
+    package_root <- normalizePath(file.path(cwd, "..", ".."), mustWork = FALSE)
+    is_source_package <- file.exists(file.path(package_root, "DESCRIPTION")) &&
+        file.exists(file.path(package_root, "inst", "api", "gui_api.R"))
+    if (is_source_package) package_root else cwd
+}
+
 get_matrix_dir <- function() {
-    normalizePath(getOption("spectreasy.matrix_dir", getwd()), mustWork = FALSE)
+    configured <- getOption("spectreasy.matrix_dir", getOption("spectreasy.project_dir", ""))
+    if (is.null(configured) || length(configured) == 0 || !nzchar(trimws(as.character(configured[1])))) {
+        configured <- get_gui_default_project_dir()
+    }
+    normalizePath(as.character(configured[1]), mustWork = FALSE)
 }
 
 get_samples_dir <- function() {
@@ -174,15 +191,15 @@ user_gui_config_path <- function(module) {
 }
 
 get_gate_scc_dir <- function() {
-    normalizePath(getOption("spectreasy.gating_scc_dir", file.path(getwd(), "scc")), mustWork = FALSE)
+    normalizePath(getOption("spectreasy.gating_scc_dir", file.path(get_gui_default_project_dir(), "scc")), mustWork = FALSE)
 }
 
 get_gate_control_file <- function() {
-    normalizePath(getOption("spectreasy.gating_control_file", file.path(getwd(), "fcs_mapping.csv")), mustWork = FALSE)
+    normalizePath(getOption("spectreasy.gating_control_file", file.path(get_gui_default_project_dir(), "fcs_mapping.csv")), mustWork = FALSE)
 }
 
 get_gate_file <- function() {
-    normalizePath(getOption("spectreasy.gating_gate_file", file.path(getwd(), "ssc_gate_config.csv")), mustWork = FALSE)
+    normalizePath(getOption("spectreasy.gating_gate_file", file.path(get_gui_default_project_dir(), "ssc_gate_config.csv")), mustWork = FALSE)
 }
 
 set_gate_file <- function(path) {
@@ -192,7 +209,7 @@ set_gate_file <- function(path) {
 }
 
 gate_working_dir <- function() {
-    normalizePath(getwd(), mustWork = FALSE)
+    get_gui_default_project_dir()
 }
 
 gate_applescript_quote <- function(x) {
@@ -908,6 +925,41 @@ function() {
     list(files = df, metadata = meta, gate_file = get_gate_file())
 }
 
+#* Save the control mapping edited in the cockpit
+#* @post /control_mapping
+function(req) {
+    body <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+    rows <- body$rows
+    if (is.null(rows) || length(rows) == 0) {
+        return(list(success = FALSE, error = "No control mapping rows were supplied."))
+    }
+    row_value <- function(row, keys, fallback = "") {
+        for (key in keys) {
+            value <- row[[key]]
+            if (!is.null(value) && length(value) > 0 && !is.na(value[1]) && nzchar(as.character(value[1]))) {
+                return(as.character(value[1]))
+            }
+        }
+        fallback
+    }
+    mapping <- do.call(rbind, lapply(rows, function(row) {
+        data.frame(
+            filename = row_value(row, c("file", "filename")),
+            fluorophore = row_value(row, "fluorophore"),
+            marker = row_value(row, "marker"),
+            channel = row_value(row, "channel"),
+            control.type = row_value(row, c("controlType", "control.type"), "cells"),
+            universal.negative = row_value(row, c("universalNegative", "universal.negative")),
+            is.viability = row_value(row, c("isViability", "is.viability"), "FALSE"),
+            stringsAsFactors = FALSE
+        )
+    }))
+    path <- get_gate_control_file()
+    dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+    utils::write.csv(mapping, path, row.names = FALSE, quote = TRUE)
+    list(success = TRUE, path = path, rows = nrow(mapping))
+}
+
 #* Load one downsampled SCC control payload
 #* @get /gate_events
 #* @param filename
@@ -1126,6 +1178,53 @@ function(req) {
             content_base64 = jsonlite::base64_enc(payload)
         )
     }, error = function(e) list(error = conditionMessage(e)))
+}
+
+#* List saved AF profiles
+#* @get /af_profiles
+function() {
+    profiles <- tryCatch(spectreasy::list_af_profiles(), error = function(e) data.frame())
+    list(profiles = profiles)
+}
+
+#* Delete a saved AF profile
+#* @delete /af_profiles
+#* @param name Profile name
+function(name = "") {
+    if (is.null(name) || !nzchar(trimws(as.character(name)[1]))) {
+        return(list(success = FALSE, error = "A profile name is required."))
+    }
+    tryCatch({
+        spectreasy::delete_af_profile(as.character(name)[1])
+        list(success = TRUE, name = as.character(name)[1])
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Apply a saved AF profile to a matrix
+#* @post /af_profiles/apply
+function(req) {
+    body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
+    body_value <- function(name, fallback = "") {
+        value <- body[[name]]
+        if (is.null(value) || length(value) == 0 || is.na(value[1])) fallback else value[1]
+    }
+    matrix_filename <- trimws(as.character(body_value("matrix_filename"))[1])
+    profile_name <- trimws(as.character(body_value("profile_name"))[1])
+    output_filename <- trimws(as.character(body_value("output_filename", matrix_filename))[1])
+    if (!nzchar(matrix_filename) || !nzchar(profile_name) || !nzchar(output_filename)) {
+        return(list(success = FALSE, error = "Matrix, profile, and output names are required."))
+    }
+    tryCatch({
+        matrix_file <- matrix_path(matrix_filename)
+        output_file <- matrix_path(output_filename)
+        if (!file.exists(matrix_file)) stop("Matrix file not found: ", matrix_filename, call. = FALSE)
+        matrix_data <- read_matrix_csv(matrix_file)
+        profile <- spectreasy::load_af_profile(profile_name, show_plot = FALSE)
+        adjusted <- spectreasy::add_af_profile(matrix_data, profile, replace_existing = TRUE)
+        dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
+        utils::write.csv(adjusted, output_file, row.names = FALSE, quote = TRUE)
+        list(success = TRUE, path = output_file, filename = output_filename)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
 
 #* List available matrices
@@ -1455,4 +1554,526 @@ function(matrix_json, raw_data_json, type = "reference", matrix_filename = "", m
     }
 
     return(as.data.frame(unmixed))
+}
+
+# Workflow wrappers keep the browser orchestration layer small. All scientific
+# work remains delegated to the exported Spectreasy functions below.
+gui_workflow_body <- function(req) {
+    tryCatch(
+        jsonlite::fromJSON(req$postBody, simplifyVector = FALSE),
+        error = function(e) list()
+    )
+}
+
+gui_workflow_value <- function(body, key, fallback = NULL) {
+    value <- body[[key]]
+    if (is.null(value) || length(value) == 0 || !nzchar(trimws(as.character(value[1])))) {
+        return(fallback)
+    }
+    as.character(value[1])
+}
+
+gui_workflow_bool <- function(body, key, fallback = FALSE) {
+    value <- body[[key]]
+    if (is.null(value) || length(value) == 0 || is.na(value[1])) return(isTRUE(fallback))
+    if (is.logical(value[1])) return(isTRUE(value[1]))
+    normalized <- tolower(trimws(as.character(value[1])))
+    if (normalized %in% c("true", "1", "yes", "on")) return(TRUE)
+    if (normalized %in% c("false", "0", "no", "off")) return(FALSE)
+    isTRUE(fallback)
+}
+
+gui_workflow_number <- function(body, key, fallback = 0, integer = FALSE, minimum = NULL) {
+    value <- suppressWarnings(as.numeric(gui_workflow_value(body, key, fallback)))
+    if (length(value) == 0 || !is.finite(value[1])) value <- fallback
+    value <- as.numeric(value[1])
+    if (!is.null(minimum)) value <- max(value, minimum)
+    if (isTRUE(integer)) value <- as.integer(round(value))
+    value
+}
+
+gui_workflow_path <- function(body, key, fallback = "", allow_empty = TRUE) {
+    value <- gui_workflow_value(body, key, fallback)
+    if (is.null(value) || is.na(value)) return(if (isTRUE(allow_empty)) "" else fallback)
+    value <- trimws(as.character(value[1]))
+    if (!nzchar(value) && isTRUE(allow_empty)) return("")
+    value
+}
+
+gui_method_optional_args <- function(method, body) {
+    resolved <- tryCatch(spectreasy:::.normalize_unmix_method(method), error = function(e) "")
+    if (identical(resolved, "Spectreasy")) {
+        return(list(spectreasy_weight_quantile = gui_workflow_number(body, "spectreasy_weight_quantile", 0.9, minimum = 0)))
+    }
+    list()
+}
+
+gui_workflow_root <- function(body) {
+    root <- gui_workflow_value(body, "projectPath", get_matrix_dir())
+    if (!dir.exists(root)) return(get_matrix_dir())
+    normalizePath(root, mustWork = TRUE)
+}
+
+gui_workflow_run <- function(body, action, expr) {
+    root <- gui_workflow_root(body)
+    old_wd <- getwd()
+    on.exit(setwd(old_wd), add = TRUE)
+    setwd(root)
+    tryCatch(
+        {
+            result <- force(expr)
+            list(
+                success = TRUE,
+                action = action,
+                project_path = root,
+                finished_at = as.character(Sys.time()),
+                result = result
+            )
+        },
+        error = function(e) {
+            list(
+                success = FALSE,
+                action = action,
+                project_path = root,
+                error = conditionMessage(e),
+                suggested_next_step = "Review the project inputs and the full action log, then retry from the relevant workflow card."
+            )
+        }
+    )
+}
+
+gui_workflow_file_or_null <- function(path, root = getwd()) {
+    if (is.null(path) || length(path) == 0 || is.na(path[1])) return(NULL)
+    path <- trimws(as.character(path[1]))
+    if (!nzchar(path)) return(NULL)
+    candidate <- if (grepl("^(/|[A-Za-z]:[/\\\\])", path)) path else file.path(root, path)
+    if (!file.exists(candidate)) return(NULL)
+    normalizePath(candidate, mustWork = TRUE)
+}
+
+gui_project_scan <- function(root) {
+    files <- if (dir.exists(root)) list.files(root, recursive = TRUE, full.names = TRUE, all.files = FALSE) else character()
+    files <- normalizePath(files[file.exists(files)], mustWork = FALSE)
+    relative <- if (length(files) > 0) {
+        sub(paste0("^", gsub("([.|(){}+*?^$\\[\\]\\\\])", "\\\\\\1", root), "[/\\\\]?"), "", files)
+    } else {
+        character()
+    }
+    relative <- gsub("\\\\", "/", relative)
+    count_matches <- function(pattern) sum(grepl(pattern, relative, ignore.case = TRUE, perl = TRUE))
+    controls <- count_matches("(^|/)(scc|controls?)/.*\\.fcs$")
+    samples <- count_matches("(^|/)samples?/.*\\.fcs$")
+    matrices <- count_matches("matrix.*\\.csv$|unmixing.*\\.csv$|detector_noise.*\\.csv$")
+    reports <- count_matches("\\.(html?|pdf)$")
+    gates <- count_matches("gate.*\\.csv$")
+    qc_metrics <- count_matches("metric.*\\.csv$")
+    spectral_variants <- count_matches("variant.*\\.(rds|csv)$")
+    summary <- if (length(files) == 0) {
+        "empty project"
+    } else if (matrices > 0 && reports > 0 && samples > 0) {
+        "mixed/partial project"
+    } else if (matrices > 0) {
+        "reference built"
+    } else if (controls > 0) {
+        "controls imported"
+    } else {
+        "project detected"
+    }
+    list(
+        project_path = root,
+        files = relative,
+        scan = list(
+            controls = controls,
+            samples = samples,
+            matrices = matrices,
+            reports = reports,
+            gates = gates,
+            qc_metrics = qc_metrics,
+            spectral_variants = spectral_variants
+        ),
+        summary = summary,
+        recommended_next_action = if (matrices == 0) "Review controls and build a reference matrix" else if (samples > 0) "Run sample unmixing" else "Import samples"
+    )
+}
+
+#* Project scan and workflow prerequisites
+#* @get /project/status
+#* @param project_path Optional project directory
+function(project_path = "") {
+    root <- if (is.null(project_path) || !nzchar(trimws(as.character(project_path)[1]))) get_matrix_dir() else as.character(project_path)[1]
+    root <- normalizePath(root, mustWork = FALSE)
+    gui_project_scan(root)
+}
+
+#* Stream a project artifact through the local R backend
+#* @get /project/file
+#* @param path Relative path inside the active project
+function(path = "", res) {
+    root <- normalizePath(get_matrix_dir(), mustWork = FALSE)
+    relative <- gsub("\\\\", "/", trimws(as.character(path)[1]))
+    parts <- strsplit(relative, "/", fixed = TRUE)[[1]]
+    if (!nzchar(relative) || any(parts %in% c("", ".", ".."))) {
+        res$status <- 400
+        return(list(error = "Invalid project artifact path."))
+    }
+    target <- normalizePath(file.path(root, do.call(file.path, as.list(parts))), mustWork = FALSE)
+    root_prefix <- paste0(root, .Platform$file.sep)
+    if (!identical(target, root) && !startsWith(target, root_prefix)) {
+        res$status <- 403
+        return(list(error = "Artifact path is outside the active project."))
+    }
+    if (!file.exists(target) || dir.exists(target)) {
+        res$status <- 404
+        return(list(error = "Project artifact not found."))
+    }
+    extension <- tolower(tools::file_ext(target))
+    content_type <- switch(
+        extension,
+        html = "text/html; charset=utf-8",
+        htm = "text/html; charset=utf-8",
+        pdf = "application/pdf",
+        csv = "text/csv; charset=utf-8",
+        json = "application/json; charset=utf-8",
+        "application/octet-stream"
+    )
+    res$setHeader("Content-Type", content_type)
+    res$body <- readBin(target, what = "raw", n = file.info(target)$size)
+    res
+}
+
+#* Change the active project folder from the cockpit
+#* @post /project/context
+function(req) {
+    body <- gui_workflow_body(req)
+    project_path <- gui_workflow_path(body, "projectPath", "", allow_empty = FALSE)
+    if (!dir.exists(project_path)) {
+        return(list(success = FALSE, error = paste("Project folder not found:", project_path)))
+    }
+    project_path <- normalizePath(project_path, mustWork = TRUE)
+    options(
+        spectreasy.project_dir = project_path,
+        spectreasy.matrix_dir = project_path,
+        spectreasy.samples_dir = file.path(project_path, "samples"),
+        spectreasy.gating_scc_dir = file.path(project_path, "scc"),
+        spectreasy.gating_control_file = file.path(project_path, "fcs_mapping.csv"),
+        spectreasy.gating_gate_file = file.path(project_path, "ssc_gate_config.csv")
+    )
+    list(success = TRUE, project = gui_project_scan(project_path))
+}
+
+#* CORS preflight for workflow_control
+#* @options /workflow/control
+function(res) {
+    return("")
+}
+
+#* Run the complete control-stage workflow through Spectreasy R
+#* @post /workflow/control
+function(req) {
+    body <- gui_workflow_body(req)
+    scc_dir <- gui_workflow_value(body, "scc_dir", "scc")
+    control_file <- gui_workflow_value(body, "control_file", "fcs_mapping.csv")
+    output_dir <- gui_workflow_value(body, "output_dir", file.path("spectreasy_outputs", "unmix_controls"))
+    method <- gui_workflow_value(body, "method", get_unmixing_method())
+    cytometer <- gui_workflow_value(body, "cytometer", "auto")
+    gate_file <- gui_workflow_file_or_null(
+        gui_workflow_value(body, "gate_file", "ssc_gate_config.csv"),
+        root = gui_workflow_root(body)
+    )
+    control_args <- c(
+        list(
+            scc_dir = scc_dir,
+            control_file = control_file,
+            auto_create_mapping = gui_workflow_bool(body, "auto_create_mapping", TRUE),
+            cytometer = cytometer,
+            auto_unknown_fluor_policy = gui_workflow_value(body, "auto_unknown_fluor_policy", "by_channel"),
+            output_dir = output_dir,
+            unmixing_method = method,
+            unmix_scatter_panel_size_mm = gui_workflow_number(body, "unmix_scatter_panel_size_mm", 30, minimum = 1),
+            seed = gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1),
+            af_n_bands = gui_workflow_number(body, "af_n_bands", 100, integer = TRUE, minimum = 1),
+            af_max_cells = gui_workflow_number(body, "af_max_cells", 50000, integer = TRUE, minimum = 1),
+            af_min_cluster_events = gui_workflow_number(body, "af_min_cluster_events", 20, integer = TRUE, minimum = 1),
+            af_min_cluster_proportion = gui_workflow_number(body, "af_min_cluster_proportion", 0.005, minimum = 0),
+            default_sample_type = gui_workflow_value(body, "default_sample_type", "beads"),
+            histogram_pct_beads = gui_workflow_number(body, "histogram_pct_beads", 0.98, minimum = 0),
+            histogram_direction_beads = gui_workflow_value(body, "histogram_direction_beads", "right"),
+            histogram_pct_cells = gui_workflow_number(body, "histogram_pct_cells", 0.35, minimum = 0),
+            histogram_direction_cells = gui_workflow_value(body, "histogram_direction_cells", "right"),
+            outlier_percentile = gui_workflow_number(body, "outlier_percentile", 0.02, minimum = 0),
+            debris_percentile = gui_workflow_number(body, "debris_percentile", 0.08, minimum = 0),
+            bead_gate_scale = gui_workflow_number(body, "bead_gate_scale", 1.3, minimum = 0),
+            max_clusters = gui_workflow_number(body, "max_clusters", 10, integer = TRUE, minimum = 1),
+            min_cluster_proportion = gui_workflow_number(body, "min_cluster_proportion", 0.03, minimum = 0),
+            gate_contour_beads = gui_workflow_number(body, "gate_contour_beads", 0.95, minimum = 0),
+            gate_contour_cells = gui_workflow_number(body, "gate_contour_cells", 0.9, minimum = 0),
+            subsample_n = gui_workflow_number(body, "subsample_n", 5000, integer = TRUE, minimum = 1),
+            rwls_max_iter = gui_workflow_number(body, "rwls_max_iter", 1, integer = TRUE, minimum = 1),
+            unmix_threads = gui_workflow_number(body, "unmix_threads", 1, integer = TRUE, minimum = 1),
+            save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
+            save_report = gui_workflow_bool(body, "save_report", TRUE),
+            use_scatter_gating = gui_workflow_bool(body, "use_scatter_gating", TRUE),
+            manual_gating = FALSE,
+            manual_gate_file = gate_file,
+            gating_file = gate_file,
+            clean_scc_with_unstained = gui_workflow_bool(body, "clean_scc_with_unstained", TRUE),
+            scc_background_method = gui_workflow_value(body, "scc_background_method", "scatter_knn"),
+            scc_background_k = gui_workflow_number(body, "scc_background_k", 2, integer = TRUE, minimum = 1),
+            spectral_variant_som_nodes = gui_workflow_number(body, "spectral_variant_som_nodes", 16, integer = TRUE, minimum = 1),
+            spectral_variant_top_k = gui_workflow_number(body, "spectral_variant_top_k", 3, integer = TRUE, minimum = 1),
+            spectral_variant_cosine_threshold = gui_workflow_number(body, "spectral_variant_cosine_threshold", 0.98, minimum = 0),
+            spectral_variant_max_variants = gui_workflow_number(body, "spectral_variant_max_variants", 8, integer = TRUE, minimum = 1),
+            spectral_variant_min_events = gui_workflow_number(body, "spectral_variant_min_events", 50, integer = TRUE, minimum = 1),
+            autospectral_n_candidates = gui_workflow_number(body, "autospectral_n_candidates", 1000, integer = TRUE, minimum = 1),
+            autospectral_n_spectral = gui_workflow_number(body, "autospectral_n_spectral", 200, integer = TRUE, minimum = 1),
+            autospectral_min_events = gui_workflow_number(body, "autospectral_min_events", 10, integer = TRUE, minimum = 1),
+            refine = gui_workflow_bool(body, "refine", FALSE)
+        ),
+        gui_method_optional_args(method, body)
+    )
+    run <- gui_workflow_run(
+        body,
+        "control",
+        do.call(spectreasy::unmix_controls, control_args)
+    )
+    if (!isTRUE(run$success)) return(run)
+    result <- run$result
+    run$result <- list(
+        reference_matrix_file = result$reference_matrix_file,
+        detector_noise_file = result$detector_noise_file,
+        unmixing_matrix_file = result$unmixing_matrix_file,
+        spectral_variant_library_file = result$spectral_variant_library_file,
+        qc_report_file = result$qc_report_file,
+        spectra_file = result$spectra_file,
+        unmixing_scatter_file = result$unmixing_scatter_file
+    )
+    run
+}
+
+#* CORS preflight for workflow_sample
+#* @options /workflow/sample
+function(res) {
+    return("")
+}
+
+#* Run sample unmixing and sample QC through Spectreasy R
+#* @post /workflow/sample
+function(req) {
+    body <- gui_workflow_body(req)
+    sample_dir <- gui_workflow_value(body, "sample_dir", "samples")
+    matrix_file <- gui_workflow_value(body, "matrix_file", file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"))
+    noise_file <- gui_workflow_file_or_null(gui_workflow_value(body, "detector_noise_file", ""), root = gui_workflow_root(body))
+    output_dir <- gui_workflow_value(body, "output_dir", file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"))
+    method <- gui_workflow_value(body, "method", get_unmixing_method())
+    sample_args <- c(
+        list(
+            sample_dir = sample_dir,
+            unmixing_matrix_file = matrix_file,
+            detector_noise_file = noise_file,
+            unmixing_method = method,
+            rwls_max_iter = gui_workflow_number(body, "rwls_max_iter", 1, integer = TRUE, minimum = 1),
+            n_threads = gui_workflow_number(body, "n_threads", 1, integer = TRUE, minimum = 1),
+            spectral_variant_top_k = gui_workflow_number(body, "spectral_variant_top_k", 3, integer = TRUE, minimum = 1),
+            spectral_variant_min_abundance = gui_workflow_number(body, "spectral_variant_min_abundance", 1, minimum = 0),
+            spectral_variant_positive_fraction = gui_workflow_number(body, "spectral_variant_positive_fraction", 0.02, minimum = 0),
+            spectral_variant_min_improvement = gui_workflow_number(body, "spectral_variant_min_improvement", 0.01, minimum = 0),
+            spectral_variant_library_file = gui_workflow_file_or_null(gui_workflow_value(body, "spectral_variant_library_file", ""), root = gui_workflow_root(body)),
+            estimate_af = gui_workflow_bool(body, "estimate_af", FALSE),
+            output_dir = output_dir,
+            write_fcs = gui_workflow_bool(body, "write_fcs", TRUE),
+            save_report = gui_workflow_bool(body, "save_report", TRUE),
+            save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
+            plot_n_events = gui_workflow_number(body, "plot_n_events", 10000, integer = TRUE, minimum = 1),
+            chunk_size = gui_workflow_number(body, "chunk_size", 50000, integer = TRUE, minimum = 1),
+            seed = gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1),
+            return_type = gui_workflow_value(body, "return_type", "list"),
+            verbose = FALSE
+        ),
+        gui_method_optional_args(method, body)
+    )
+    run <- gui_workflow_run(
+        body,
+        "sample",
+        do.call(spectreasy::unmix_samples, sample_args)
+    )
+    if (!isTRUE(run$success)) return(run)
+    result <- run$result
+    run$result <- list(
+        qc_report_file = attr(result, "qc_report_file"),
+        qc_samples_dir = attr(result, "qc_samples_dir"),
+        qc_metrics_dir = attr(result, "qc_metrics_dir"),
+        output_dir = output_dir
+    )
+    run
+}
+
+#* CORS preflight for workflow_report
+#* @options /workflow/report
+function(res) {
+    return("")
+}
+
+#* Compare selected unmixing methods on one active sample
+#* @post /workflow/compare
+function(req) {
+    body <- gui_workflow_body(req)
+    raw_methods <- body$methods
+    methods <- unique(as.character(unlist(raw_methods, recursive = TRUE, use.names = FALSE)))
+    methods <- methods[nzchar(methods)]
+    if (length(methods) == 0) methods <- c("Spectreasy", "OLS", "WLS", "NNLS")
+    matrix_input <- gui_workflow_value(body, "matrix_file", "")
+    sample_dir_input <- gui_workflow_value(body, "sample_dir", "samples")
+    root <- gui_workflow_root(body)
+    matrix_file <- gui_workflow_file_or_null(matrix_input, root = root)
+    sample_dir <- if (grepl("^(/|[A-Za-z]:[/\\\\])", sample_dir_input)) sample_dir_input else file.path(root, sample_dir_input)
+    if (is.null(matrix_file) || !file.exists(matrix_file)) {
+        return(list(success = FALSE, error = "Select a readable reference matrix before comparing methods."))
+    }
+    sample_files <- sort(list.files(sample_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE))
+    if (length(sample_files) == 0) {
+        return(list(success = FALSE, error = paste("No FCS sample files found in", sample_dir)))
+    }
+    matrix_df <- read_matrix_csv(matrix_file)
+    if (ncol(matrix_df) < 2) return(list(success = FALSE, error = "The selected matrix has no detector columns."))
+    marker_names <- as.character(matrix_df[[1]])
+    matrix_values <- as.matrix(matrix_df[, -1, drop = FALSE])
+    rownames(matrix_values) <- marker_names
+    sample_frame <- flowCore::read.FCS(sample_files[1], transformation = FALSE, truncate_max_range = FALSE)
+    events <- flowCore::exprs(sample_frame)
+    if (nrow(events) > 2000) {
+        set.seed(gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1))
+        events <- events[sort(sample.int(nrow(events), 2000)), , drop = FALSE]
+    }
+    common_detectors <- intersect(colnames(events), colnames(matrix_values))
+    if (length(common_detectors) == 0) return(list(success = FALSE, error = "The sample and matrix share no detector channels."))
+    comparison <- lapply(methods, function(method) {
+        resolved <- tryCatch(spectreasy:::.normalize_unmix_method(method), error = function(e) e)
+        if (inherits(resolved, "error")) return(data.frame(method = method, status = "error", residual_rms = NA_real_, message = conditionMessage(resolved), stringsAsFactors = FALSE))
+        result <- tryCatch(
+            spectreasy::calc_residuals(
+                flowCore::flowFrame(events[, common_detectors, drop = FALSE]),
+                matrix_values[, common_detectors, drop = FALSE],
+                method = resolved
+            ),
+            error = function(e) e
+        )
+        if (inherits(result, "error")) return(data.frame(method = method, status = "error", residual_rms = NA_real_, message = conditionMessage(result), stringsAsFactors = FALSE))
+        numeric_result <- suppressWarnings(as.matrix(result))
+        data.frame(method = method, status = "complete", residual_rms = sqrt(mean(numeric_result^2, na.rm = TRUE)), message = "", stringsAsFactors = FALSE)
+    })
+    comparison_df <- do.call(rbind, comparison)
+    output_dir <- file.path(root, "spectreasy_outputs", "method_comparison")
+    dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+    output_file <- file.path(output_dir, "method_comparison.csv")
+    utils::write.csv(comparison_df, output_file, row.names = FALSE, quote = TRUE)
+    list(success = TRUE, result = list(sample = basename(sample_files[1]), matrix = matrix_file, output_file = output_file, rows = comparison_df))
+}
+
+#* Generate a synthetic SCC FCS from one matrix signature
+#* @post /workflow/synthetic
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_workflow_root(body)
+    matrix_input <- gui_workflow_value(body, "matrix_file", "")
+    matrix_file <- gui_workflow_file_or_null(matrix_input, root = root)
+    if (is.null(matrix_file) || !file.exists(matrix_file)) {
+        return(list(success = FALSE, error = "Select a readable reference matrix before generating synthetic SCC."))
+    }
+    matrix_df <- read_matrix_csv(matrix_file)
+    if (ncol(matrix_df) < 2 || nrow(matrix_df) == 0) return(list(success = FALSE, error = "The selected matrix has no usable signatures."))
+    marker <- gui_workflow_value(body, "marker", as.character(matrix_df[[1]][1]))
+    marker_index <- match(marker, as.character(matrix_df[[1]]))
+    if (is.na(marker_index)) return(list(success = FALSE, error = paste("Marker not found in matrix:", marker)))
+    detectors <- colnames(matrix_df)[-1]
+    signature <- suppressWarnings(as.numeric(matrix_df[marker_index, -1, drop = TRUE]))
+    events_n <- gui_workflow_number(body, "events", 1000, integer = TRUE, minimum = 1)
+    noise <- gui_workflow_number(body, "noise", 0.02, minimum = 0)
+    seed <- gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1)
+    set.seed(seed)
+    synthetic <- matrix(rep(signature, each = events_n), nrow = events_n, ncol = length(signature), byrow = FALSE)
+    synthetic <- matrix(pmax(0, synthetic * exp(matrix(stats::rnorm(events_n * length(signature), mean = 0, sd = noise), nrow = events_n))), nrow = events_n, ncol = length(signature))
+    colnames(synthetic) <- detectors
+    output_input <- gui_workflow_value(body, "output_file", file.path("spectreasy_outputs", "synthetic_scc", paste0("synthetic_", gsub("[^A-Za-z0-9._-]+", "_", marker), ".fcs")))
+    output_file <- if (grepl("^(/|[A-Za-z]:[/\\\\])", output_input)) output_input else file.path(root, output_input)
+    output_file <- normalizePath(output_file, mustWork = FALSE)
+    root_prefix <- paste0(normalizePath(root, mustWork = FALSE), .Platform$file.sep)
+    if (!startsWith(output_file, root_prefix)) return(list(success = FALSE, error = "Synthetic output must stay inside the active project."))
+    dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
+    flowCore::write.FCS(flowCore::flowFrame(synthetic), output_file)
+    truth_file <- sub("\\.fcs$", "_truth.csv", output_file, ignore.case = TRUE)
+    utils::write.csv(data.frame(marker = marker, detector = detectors, signature = signature), truth_file, row.names = FALSE, quote = TRUE)
+    list(success = TRUE, result = list(output_file = output_file, truth_file = truth_file, marker = marker, events = events_n, detectors = length(detectors)))
+}
+
+#* Render a report from existing Spectreasy outputs
+#* @post /workflow/report
+function(req) {
+    body <- gui_workflow_body(req)
+    report_type <- tolower(gui_workflow_value(body, "report_type", "control"))
+    run <- gui_workflow_run(
+        body,
+        "report",
+        if (identical(report_type, "sample")) {
+            stop("Sample report rendering requires the current sample results object. Run sample unmixing from the Samples workspace first.")
+        } else {
+            report_file <- file.path("spectreasy_outputs", "unmix_controls", "qc_controls", "qc_controls_report.pdf")
+            spectreasy::qc_controls(output_file = report_file)
+        }
+    )
+    if (!isTRUE(run$success)) return(run)
+    run$result <- list(report_file = file.path("spectreasy_outputs", "unmix_controls", "qc_controls", "qc_controls_report.pdf"))
+    run
+}
+
+#* CORS preflight for workflow_af
+#* @options /workflow/af
+function(res) {
+    return("")
+}
+
+#* Extract one AF profile through Spectreasy R
+#* @post /workflow/af
+function(req) {
+    body <- gui_workflow_body(req)
+    fcs_file <- gui_workflow_value(body, "fcs_file", file.path("scc", "unstained_cells.fcs"))
+    bands <- gui_workflow_number(body, "af_n_bands", 100, integer = TRUE, minimum = 1)
+    run <- gui_workflow_run(
+        body,
+        "af",
+        spectreasy::extract_af_profile(
+            fcs_file = fcs_file,
+            af_n_bands = bands,
+            af_max_cells = gui_workflow_number(body, "af_max_cells", 50000, integer = TRUE, minimum = 1),
+            af_min_cluster_events = gui_workflow_number(body, "af_min_cluster_events", 20, integer = TRUE, minimum = 1),
+            af_min_cluster_proportion = gui_workflow_number(body, "af_min_cluster_proportion", 0.005, minimum = 0),
+            seed = gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1),
+            show_plot = FALSE,
+            verbose = FALSE
+        )
+    )
+    if (!isTRUE(run$success)) return(run)
+    profile <- run$result
+    save_name <- trimws(as.character(gui_workflow_value(body, "save_name", ""))[1])
+    save_overwrite <- isTRUE(gui_workflow_bool(body, "save_overwrite", FALSE))
+    saved_path <- NULL
+    if (nzchar(save_name)) {
+        saved_path <- tryCatch(
+            spectreasy::save_af_profile(save_name, profile, overwrite = save_overwrite),
+            error = function(e) e
+        )
+        if (inherits(saved_path, "error")) {
+            run$success <- FALSE
+            run$error <- conditionMessage(saved_path)
+            return(run)
+        }
+        saved_path <- as.character(saved_path)
+    }
+    run$result <- list(
+        bands = nrow(profile$profile),
+        detectors = ncol(profile$profile),
+        source = fcs_file,
+        profile_name = if (nzchar(save_name)) save_name else NULL,
+        profile_path = saved_path
+    )
+    run
 }

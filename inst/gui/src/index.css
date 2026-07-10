@@ -1,1 +1,16 @@
 @import "tailwindcss";
+
+:root {
+  font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+  color: #1d2a2c;
+  background: #e8e3d8;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 1180px; min-height: 100vh; }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }

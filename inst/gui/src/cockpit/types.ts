@@ -1,0 +1,276 @@
+export type SectionId =
+  | 'overview'
+  | 'controls'
+  | 'samples'
+  | 'reports'
+  | 'matrix'
+  | 'panel'
+  | 'af'
+  | 'comparison'
+  | 'simulator'
+  | 'settings'
+
+export type ArtifactStatus = 'current' | 'stale' | 'user' | 'synthetic' | 'missing' | 'unknown'
+export type JobState = 'idle' | 'running' | 'complete' | 'failed'
+export type StepState = 'complete' | 'ready' | 'warning' | 'blocked' | 'stale' | 'idle'
+
+export type Artifact = {
+  id: string
+  name: string
+  type: string
+  group: string
+  status: ArtifactStatus
+  detail: string
+  path: string
+  updated: string
+  run?: string
+}
+
+export type MappingRow = {
+  id: string
+  file: string
+  fluorophore: string
+  marker: string
+  channel: string
+  controlType: 'cell' | 'bead' | 'unstained' | 'viability'
+  universalNegative: boolean
+  warning?: string
+}
+
+export type ProjectState = {
+  projectName: string
+  projectPath: string
+  cytometer: string
+  method: string
+  lastAction: string
+  lastActionAt: string
+  artifacts: Artifact[]
+  mapping: MappingRow[]
+  mappingDirty: boolean
+  gatesDirty: boolean
+  scan: {
+    controls: number
+    samples: number
+    matrices: number
+    reports: number
+    qcMetrics: number
+    spectralVariants: number
+    gates: number
+  }
+}
+
+export type BackendStatus = {
+  connected: boolean
+  version: string
+  mode: string
+  message: string
+  apiPort: string
+  packageReady: boolean
+}
+
+export type Job = {
+  label: string
+  state: JobState
+  progress: number
+  subtask: string
+  startedAt?: string
+  finishedAt?: string
+  output?: string
+}
+
+export type PanelPayload = {
+  cytometer: string
+  configuration: string
+  fluorophores: Array<{ fluorophore: string; peak_detector: string; peak_laser: string }>
+  selected: string[]
+  complexity_index: number | null
+  peak_detectors: string[]
+}
+
+export type Report = {
+  id: string
+  title: string
+  type: 'Control QC' | 'Sample QC' | 'Panel overview'
+  format: 'HTML' | 'PDF'
+  run: string
+  created: string
+  status: 'current' | 'stale'
+  matrix: string
+  path?: string
+}
+
+export type ControlSettings = {
+  sccDir: string
+  controlFile: string
+  outputDir: string
+  method: string
+  cytometer: string
+  autoCreateMapping: boolean
+  autoUnknownFluorPolicy: 'by_channel' | 'empty' | 'filename'
+  gateFile: string
+  afNBands: number
+  afMaxCells: number
+  afMinClusterEvents: number
+  afMinClusterProportion: number
+  defaultSampleType: 'beads' | 'cells'
+  histogramPctBeads: number
+  histogramDirectionBeads: 'right' | 'both' | 'left'
+  histogramPctCells: number
+  histogramDirectionCells: 'right' | 'both' | 'left'
+  outlierPercentile: number
+  debrisPercentile: number
+  beadGateScale: number
+  maxClusters: number
+  minClusterProportion: number
+  gateContourBeads: number
+  gateContourCells: number
+  subsampleN: number
+  unmixScatterPanelSizeMm: number
+  rwlsMaxIter: number
+  unmixThreads: number
+  seed: number
+  saveQcPlots: boolean
+  saveReport: boolean
+  useScatterGating: boolean
+  cleanSccWithUnstained: boolean
+  sccBackgroundMethod: 'scatter_knn' | 'none'
+  sccBackgroundK: number
+  spectralVariantSomNodes: number
+  spectralVariantTopK: number
+  spectralVariantCosineThreshold: number
+  spectralVariantMaxVariants: number
+  spectralVariantMinEvents: number
+  spectreasyWeightQuantile: number
+  autospectralNCandidates: number
+  autospectralNSpectral: number
+  autospectralMinEvents: number
+  refine: boolean
+}
+
+export type SampleSettings = {
+  sampleDir: string
+  matrixFile: string
+  detectorNoiseFile: string
+  outputDir: string
+  method: string
+  rwlsMaxIter: number
+  nThreads: number
+  spectralVariantTopK: number
+  spectralVariantMinAbundance: number
+  spectralVariantPositiveFraction: number
+  spectralVariantMinImprovement: number
+  spectralVariantLibraryFile: string
+  spectreasyWeightQuantile: number
+  estimateAf: boolean
+  writeFcs: boolean
+  saveReport: boolean
+  saveQcPlots: boolean
+  plotNEvents: number
+  chunkSize: number
+  seed: number
+  returnType: 'list' | 'flowSet' | 'SingleCellExperiment'
+}
+
+export type AfSettings = {
+  fcsFile: string
+  saveName: string
+  saveOverwrite: boolean
+  afNBands: number
+  afMaxCells: number
+  afMinClusterEvents: number
+  afMinClusterProportion: number
+  seed: number
+}
+
+export type WorkflowSettings = {
+  projectPath: string
+  control: ControlSettings
+  sample: SampleSettings
+  af: AfSettings
+}
+
+export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
+  return {
+    projectPath,
+    control: {
+      sccDir: 'scc',
+      controlFile: 'fcs_mapping.csv',
+      outputDir: 'spectreasy_outputs/unmix_controls',
+      method: 'Spectreasy',
+      cytometer: 'auto',
+      autoCreateMapping: true,
+      autoUnknownFluorPolicy: 'by_channel',
+      gateFile: 'ssc_gate_config.csv',
+      afNBands: 100,
+      afMaxCells: 50000,
+      afMinClusterEvents: 20,
+      afMinClusterProportion: 0.005,
+      defaultSampleType: 'beads',
+      histogramPctBeads: 0.98,
+      histogramDirectionBeads: 'right',
+      histogramPctCells: 0.35,
+      histogramDirectionCells: 'right',
+      outlierPercentile: 0.02,
+      debrisPercentile: 0.08,
+      beadGateScale: 1.3,
+      maxClusters: 10,
+      minClusterProportion: 0.03,
+      gateContourBeads: 0.95,
+      gateContourCells: 0.9,
+      subsampleN: 5000,
+      unmixScatterPanelSizeMm: 30,
+      rwlsMaxIter: 1,
+      unmixThreads: 1,
+      seed: 1,
+      saveQcPlots: true,
+      saveReport: true,
+      useScatterGating: true,
+      cleanSccWithUnstained: true,
+      sccBackgroundMethod: 'scatter_knn',
+      sccBackgroundK: 2,
+      spectralVariantSomNodes: 16,
+      spectralVariantTopK: 3,
+      spectralVariantCosineThreshold: 0.98,
+      spectralVariantMaxVariants: 8,
+      spectralVariantMinEvents: 50,
+      spectreasyWeightQuantile: 0.9,
+      autospectralNCandidates: 1000,
+      autospectralNSpectral: 200,
+      autospectralMinEvents: 10,
+      refine: false,
+    },
+    sample: {
+      sampleDir: 'samples',
+      matrixFile: 'spectreasy_outputs/unmix_controls/scc_reference_matrix.csv',
+      detectorNoiseFile: 'spectreasy_outputs/unmix_controls/scc_detector_noise.csv',
+      outputDir: 'spectreasy_outputs/unmix_samples/unmixed_fcs',
+      method: 'Spectreasy',
+      rwlsMaxIter: 1,
+      nThreads: 1,
+      spectralVariantTopK: 3,
+      spectralVariantMinAbundance: 1,
+      spectralVariantPositiveFraction: 0.02,
+      spectralVariantMinImprovement: 0.01,
+      spectralVariantLibraryFile: '',
+      spectreasyWeightQuantile: 0.9,
+      estimateAf: false,
+      writeFcs: true,
+      saveReport: true,
+      saveQcPlots: true,
+      plotNEvents: 10000,
+      chunkSize: 50000,
+      seed: 1,
+      returnType: 'list',
+    },
+    af: {
+      fcsFile: 'scc/unstained_cells.fcs',
+      saveName: '',
+      saveOverwrite: false,
+      afNBands: 100,
+      afMaxCells: 50000,
+      afMinClusterEvents: 20,
+      afMinClusterProportion: 0.005,
+      seed: 1,
+    },
+  }
+}
