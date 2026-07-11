@@ -112,6 +112,11 @@ test_that("corrupt FCS errors retain the parser reason", {
 
 test_that("GUI report discovery excludes unrelated project documents", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) {
+        api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    }
+    testthat::skip_if_not(file.exists(api_path))
+
     api_env <- new.env(parent = globalenv())
     source(api_path, local = api_env)
 
