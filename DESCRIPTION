@@ -1,6 +1,6 @@
 Package: spectreasy
 Title: Single-Color Review and Spectral Unmixing Made Easier
-Version: 0.99.0
+Version: 1.0.0
 Authors@R: person(given = "Paul", family = "Heisig", email = "pkheisig@gmail.com", role = c("aut", "cre"), comment = c(ORCID = "0000-0002-8529-7944"))
 Author: Paul Heisig [aut, cre] (<https://orcid.org/0000-0002-8529-7944>)
 Maintainer: Paul Heisig <pkheisig@gmail.com>

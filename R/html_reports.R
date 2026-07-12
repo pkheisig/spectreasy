@@ -324,34 +324,64 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     paste0("<div class=\"badges\">",badge_html,"</div>",warning_html)
 }
 
+.report_has_rows <- function(x) is.data.frame(x) && nrow(x) > 0L
+
+.report_has_values <- function(x) {
+    if (is.null(x) || length(x) == 0L) return(FALSE)
+    flat <- unlist(x, recursive = TRUE, use.names = FALSE)
+    length(flat) > 0L && any(!is.na(flat) & nzchar(trimws(as.character(flat))))
+}
+
+.report_metric_html <- function(x, plots = character()) {
+    plots <- plots[file.exists(plots)]
+    if (length(plots)) return(.report_plots_html(plots))
+    .report_table_html(as.data.frame(x %||% data.frame(), check.names = FALSE))
+}
+
 .report_sections <- function(x) {
     if(inherits(x,"spectreasy_control_report_data")) {
-        list(
-            "qc-summary"=c("QC Summary",.report_qc_summary(x)),
+        gate_plots <- x$plots[grepl("gate|singlet|fsc|histogram", x$plots, ignore.case = TRUE)]
+        spectra_plots <- x$plots[grepl("control_spectra|spectrum", x$plots, ignore.case = TRUE)]
+        af_plots <- x$plots[grepl("af_bank|af_", x$plots, ignore.case = TRUE)]
+        scc_plots <- x$plots[grepl("unmix|scatter", x$plots, ignore.case = TRUE)]
+        similarity_plots <- x$plots[grepl("similar", x$plots, ignore.case = TRUE)]
+        sections <- Filter(Negate(is.null), list(
             overview=c("Overview",.report_list_html(c(x$counts,list(input_status=x$input_status)))),
-            "input-files"=c("Input files and mapping",.report_table_html(x$mapping)),
-            "mapping-validation"=c("Control mapping validation",.report_table_html(x$mapping[,intersect(c("filename","file.exists","validation.warning"),colnames(x$mapping)),drop=FALSE])),
-            gating=c("Gating summary",paste0(.report_table_html(x$gating_summary),.report_plots_html(x$plots[grepl("gate|singlet|fsc|histogram",x$plots,ignore.case=TRUE)]))),
-            reference=c("Reference matrix summary",paste0(.report_list_html(list(rows=nrow(x$matrix),detectors=ncol(x$matrix),source=x$matrix_source,status=x$input_status)),.report_table_html(x$peak_detectors),.report_table_html(x$matrix_preview))),
-            spectra=c("Control spectra",.report_plots_html(x$plots[grepl("control_spectra|spectrum",x$plots,ignore.case=TRUE)])),
-            af=c("AF bank summary",paste0(.report_list_html(x$af_bank_info),.report_plots_html(x$plots[grepl("af_bank|af_",x$plots,ignore.case=TRUE)]))),
-            noise=c("Detector noise summary",.report_table_html(as.data.frame(x$detector_noise %||% data.frame(),check.names=FALSE))),
-            scc=c("SCC unmixing diagnostics",paste0(.report_table_html(x$detector_rms),.report_table_html(x$reconstruction_error),.report_plots_html(x$plots[grepl("unmix|scatter",x$plots,ignore.case=TRUE)]))),
-            similarity=c("Spectral similarity or library comparison",paste0(.report_table_html(as.data.frame(x$similarity %||% data.frame(),check.names=FALSE)),.report_plots_html(x$plots[grepl("similar",x$plots,ignore.case=TRUE)]))),
-            spread=c("Negative population spread and spread-related diagnostics",.report_table_html(x$nps)),
-            artifacts=c("Generated artifacts",.report_table_html(x$artifacts)),warnings=c("Warnings and logs",.report_qc_summary(x)),settings=c("Settings",.report_list_html(x$run_settings))
-        )
+            "input-files"=if (.report_has_rows(x$mapping)) c("Input files and mapping",.report_table_html(x$mapping)) else NULL,
+            "mapping-validation"=if (.report_has_rows(x$mapping)) c("Control mapping validation",.report_table_html(x$mapping[,intersect(c("filename","file.exists","validation.warning"),colnames(x$mapping)),drop=FALSE])) else NULL,
+            gating=if (.report_has_rows(x$gating_summary) || length(gate_plots)) c("Gating summary",paste0(.report_table_html(x$gating_summary),.report_plots_html(gate_plots))) else NULL,
+            reference=c("Reference matrix summary",paste0(.report_list_html(list(rows=nrow(x$matrix),detectors=ncol(x$matrix),source=x$matrix_source,status=x$input_status)),.report_table_html(x$peak_detectors))),
+            spectra=if (length(spectra_plots)) c("Control spectra",.report_plots_html(spectra_plots)) else NULL,
+            af=if (.report_has_values(x$af_bank_info) || length(af_plots)) c("AF bank summary",paste0(.report_list_html(x$af_bank_info),.report_plots_html(af_plots))) else NULL,
+            noise=if (.report_has_values(x$detector_noise)) c("Detector noise summary", .report_table_html(as.data.frame(x$detector_noise, check.names = FALSE))) else NULL,
+            scc=if (.report_has_rows(x$detector_rms) || .report_has_rows(x$reconstruction_error) || length(scc_plots)) c("SCC unmixing diagnostics", paste0(.report_table_html(x$detector_rms), .report_table_html(x$reconstruction_error), .report_plots_html(scc_plots))) else NULL,
+            similarity=if (.report_has_values(x$similarity) || length(similarity_plots)) c("Spectral similarity or library comparison", .report_metric_html(x$similarity, similarity_plots)) else NULL,
+            spread=if (.report_has_rows(x$nps)) c("Negative population spread and spread-related diagnostics", .report_table_html(x$nps)) else NULL,
+            artifacts=c("Generated artifacts",.report_table_html(x$artifacts)),
+            warnings=if (length(x$warnings)) c("Warnings and logs", .report_qc_summary(x)) else NULL,
+            settings=if (.report_has_values(x$run_settings)) c("Settings",.report_list_html(x$run_settings)) else NULL
+        ))
+        sections
     } else {
-        list(
-            "qc-summary"=c("QC Summary",.report_qc_summary(x)),overview=c("Overview",.report_list_html(c(x$counts,list(input_status=x$input_status)))),
-            samples=c("Input samples",.report_table_html(x$samples)),reference=c("Reference matrix used",paste0(.report_list_html(list(source=x$matrix_source,rows=nrow(x$matrix),detectors=ncol(x$matrix),af_bands=x$counts$af_bands,status=x$input_status,detector_noise_file=x$detector_noise_file,spectral_variant_library=x$spectral_variant_library_file)),.report_table_html(x$matrix_preview))),
-            unmixing=c("Unmixing settings",.report_list_html(x$run_settings)),outputs=c("Sample output summary",.report_table_html(x$artifacts[grepl("FCS|CSV|HTML|PDF",x$artifacts$type),,drop=FALSE])),
-            residual=c("Detector residual summary",paste0(.report_table_html(x$detector_rms),.report_plots_html(x$plots[grepl("rms",x$plots,ignore.case=TRUE)]))),
-            nps=c("Negative population spread",paste0(if(!is.null(x$nps_note)) paste0("<p class=\"note\">",x$nps_note,"</p>") else "",.report_table_html(x$nps))),
-            matrix=c("Matrix diagnostics",paste0("<h3>Similarity</h3>",.report_table_html(as.data.frame(x$similarity %||% data.frame(),check.names=FALSE)),"<h3>Spread</h3>",.report_table_html(as.data.frame(x$spread %||% data.frame(),check.names=FALSE)),.report_plots_html(x$plots[grepl("similarity",x$plots,ignore.case=TRUE)]))),
-            nxn=c("Per-sample marker plots",.report_plots_html(x$plots[grepl("sample_nxn",x$plots,ignore.case=TRUE)])),reconstruction=c("Detector reconstruction error",.report_table_html(x$reconstruction_error)),
-            af=c("AF and spectral variant diagnostics",.report_list_html(list(af=x$af_metadata,spectral_variants=x$spectral_variant_metadata))),artifacts=c("Generated artifacts",.report_table_html(x$artifacts)),warnings=c("Warnings and logs",.report_qc_summary(x)),settings=c("Settings",.report_list_html(x$run_settings))
-        )
+        reference_plots <- x$plots[grepl("reference_spectra", x$plots, ignore.case = TRUE)]
+        rms_plots <- x$plots[grepl("rms", x$plots, ignore.case = TRUE)]
+        matrix_plots <- x$plots[grepl("similarity", x$plots, ignore.case = TRUE)]
+        nxn_plots <- x$plots[grepl("sample_nxn", x$plots, ignore.case = TRUE)]
+        sections <- Filter(Negate(is.null), list(
+            overview=c("Overview",.report_list_html(c(x$counts,list(input_status=x$input_status)))),
+            samples=c("Input samples",.report_table_html(x$samples)),reference=c("Reference matrix used",paste0(.report_list_html(list(source=x$matrix_source,rows=nrow(x$matrix),detectors=ncol(x$matrix),af_bands=x$counts$af_bands,status=x$input_status,detector_noise_file=x$detector_noise_file,spectral_variant_library=x$spectral_variant_library_file)),.report_plots_html(reference_plots))),
+            unmixing=if (.report_has_values(x$run_settings)) c("Unmixing settings",.report_list_html(x$run_settings)) else NULL,
+            outputs=c("Sample output summary",.report_table_html(x$artifacts[grepl("FCS|CSV|HTML|PDF",x$artifacts$type),,drop=FALSE])),
+            residual=if (.report_has_rows(x$detector_rms) || length(rms_plots)) c("Detector residual summary", .report_metric_html(x$detector_rms, rms_plots)) else NULL,
+            nps=if (!is.null(x$nps_note) || .report_has_rows(x$nps)) c("Negative population spread", paste0(if(!is.null(x$nps_note)) paste0("<p class=\"note\">",x$nps_note,"</p>") else "",.report_table_html(x$nps))) else NULL,
+            matrix=if (.report_has_values(x$similarity) || .report_has_values(x$spread) || length(matrix_plots)) c("Matrix diagnostics", paste0("<h3>Similarity</h3>", .report_metric_html(x$similarity, matrix_plots), if (.report_has_values(x$spread)) paste0("<h3>Spread</h3>", .report_table_html(as.data.frame(x$spread, check.names = FALSE))) else "")) else NULL,
+            nxn=if (length(nxn_plots)) c("Per-sample marker plots", .report_plots_html(nxn_plots)) else NULL,
+            reconstruction=if (.report_has_rows(x$reconstruction_error)) c("Detector reconstruction error", .report_table_html(x$reconstruction_error)) else NULL,
+            af=if (.report_has_values(x$af_metadata) || .report_has_values(x$spectral_variant_metadata)) c("AF and spectral variant diagnostics", .report_list_html(list(af=x$af_metadata,spectral_variants=x$spectral_variant_metadata))) else NULL,
+            artifacts=c("Generated artifacts",.report_table_html(x$artifacts)),
+            warnings=if (length(x$warnings)) c("Warnings and logs", .report_qc_summary(x)) else NULL
+        ))
+        sections
     }
 }
 

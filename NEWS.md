@@ -1,4 +1,4 @@
-# spectreasy 0.99.0
+# spectreasy 1.0.0
 
 ## New
 

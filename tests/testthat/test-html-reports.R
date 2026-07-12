@@ -26,11 +26,59 @@ test_that("sample HTML report is self-contained and contains major sections", {
     expect_true(file.exists(report$output_file))
     expect_true(report$self_contained)
     expect_match(html, "data:image/png;base64,", fixed = TRUE)
-    expect_match(html, "QC Summary", fixed = TRUE)
+    expect_false(grepl("QC Summary", html, fixed = TRUE))
     expect_match(html, "Input samples", fixed = TRUE)
-    expect_match(html, "Detector residual summary", fixed = TRUE)
+    expect_false(grepl("Detector residual summary", html, fixed = TRUE))
     expect_match(html, "Per-sample marker plots", fixed = TRUE)
     expect_match(html, "Generated artifacts", fixed = TRUE)
+    expect_match(html, "reference spectra", ignore.case = TRUE)
+    expect_false(grepl("Warnings and logs", html, fixed = TRUE))
+    expect_false(grepl(">Settings<", html, fixed = TRUE))
+})
+
+test_that("sample detector residual table includes every available detector", {
+    M <- rbind(FITC = c(1, 0.2, 0.05), PE = c(0.1, 1, 0.2))
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A")
+    sample_data <- data.frame(FITC = stats::rnorm(20), PE = stats::rnorm(20))
+    residuals <- matrix(stats::rnorm(60), nrow = 20, dimnames = list(NULL, colnames(M)))
+    results <- list(sample = list(data = sample_data, residuals = residuals))
+    class(results) <- c("spectreasy_unmixed_results", "list")
+    attr(results, "method") <- "OLS"
+    report_data <- collect_sample_report_data(results, M, unmixing_method = "OLS", sample_nxn_max_points = 10)
+    expect_equal(nrow(report_data$detector_rms), ncol(M))
+    expect_setequal(report_data$detector_rms$detector, colnames(M))
+})
+
+test_that("metric plots replace redundant raw numeric tables", {
+    M <- rbind(FITC = c(1, 0.2, 0.05), PE = c(0.1, 1, 0.2))
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A")
+    sample_data <- data.frame(FITC = stats::rnorm(20), PE = stats::rnorm(20))
+    residuals <- matrix(stats::rnorm(60), nrow = 20, dimnames = list(NULL, colnames(M)))
+    results <- list(sample = list(data = sample_data, residuals = residuals))
+    class(results) <- c("spectreasy_unmixed_results", "list")
+    attr(results, "method") <- "OLS"
+
+    report_data <- collect_sample_report_data(
+        results,
+        M,
+        unmixing_method = "OLS",
+        sample_nxn_max_points = 10
+    )
+    sections <- spectreasy:::.report_sections(report_data)
+
+    expect_false(grepl(">0.2<", sections[["reference"]][2], fixed = TRUE))
+    expect_false(grepl("<table", sections[["matrix"]][2], fixed = TRUE))
+    expect_false(grepl("<table", sections[["residual"]][2], fixed = TRUE))
+    expect_match(sections[["matrix"]][2], "data:image/png;base64,", fixed = TRUE)
+    expect_match(sections[["residual"]][2], "data:image/png;base64,", fixed = TRUE)
+})
+
+test_that("metric tables remain available when their plots are missing", {
+    metric <- matrix(c(1, 0.4, 0.4, 1), nrow = 2)
+    colnames(metric) <- rownames(metric) <- c("FITC", "PE")
+    html <- spectreasy:::.report_metric_html(metric, tempfile(fileext = ".png"))
+    expect_match(html, "<table", fixed = TRUE)
+    expect_match(html, "0.4", fixed = TRUE)
 })
 
 test_that("control HTML report uses supplied matrix without rebuilding controls", {
@@ -50,10 +98,10 @@ test_that("control HTML report uses supplied matrix without rebuilding controls"
     )
     html <- paste(readLines(report$output_file, warn = FALSE), collapse = "\n")
     expect_true(file.exists(report$output_file))
-    expect_match(html, "Input files and mapping", fixed = TRUE)
-    expect_match(html, "Gating summary", fixed = TRUE)
+    expect_false(grepl("Input files and mapping", html, fixed = TRUE))
+    expect_false(grepl("Gating summary", html, fixed = TRUE))
     expect_match(html, "AF bank summary", fixed = TRUE)
-    expect_match(html, "SCC unmixing diagnostics", fixed = TRUE)
+    expect_false(grepl("SCC unmixing diagnostics", html, fixed = TRUE))
 })
 
 test_that("report format and filename extensions are validated", {
