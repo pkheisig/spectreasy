@@ -22,7 +22,6 @@ qc_controls(
   pd = NULL,
   af_bank_info = NULL,
   cleanup_report_plot_dir = FALSE,
-  use_scatter_gating = TRUE,
   unmix_scatter_max_points = 1000,
   unmix_scatter_axis_limit = NULL,
   seed = NULL,
@@ -82,10 +81,6 @@ FSC/SSC, gate, and spectrum PNGs from [build_reference_matrix()].}
 \item{cleanup_report_plot_dir}{Logical; if `TRUE`, remove
 `report_plot_dir` after the PDF is assembled. Intended for internal
 temporary plot directories created by [unmix_controls()].}
-
-\item{use_scatter_gating}{Logical; if `TRUE` (default), use scatter/intensity
-gating and show scatter gate plots in the report. If `FALSE`, use and show
-the legacy histogram gate.}
 
 \item{unmix_scatter_max_points}{Maximum events sampled per control for the
 SCC unmixing scatter matrix.}

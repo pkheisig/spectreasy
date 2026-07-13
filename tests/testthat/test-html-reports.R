@@ -167,12 +167,12 @@ test_that("control HTML report uses supplied matrix without rebuilding controls"
 test_that("control HTML groups each PDF control page once without duplicate plot sections", {
     skip_if_not_installed("base64enc")
     plot_root <- tempfile("control_pdf_panels_")
-    for (directory in c("fsc_ssc", "intensity_scatter", "spectrum")) {
+    for (directory in c("fsc_ssc", "histogram", "spectrum")) {
         dir.create(file.path(plot_root, directory), recursive = TRUE, showWarnings = FALSE)
     }
     p <- ggplot2::ggplot(data.frame(x = 1:3, y = 1:3), ggplot2::aes(x, y)) + ggplot2::geom_point()
     ggplot2::ggsave(file.path(plot_root, "fsc_ssc", "ctrl_a_fsc_ssc.png"), p, width = 2, height = 2, dpi = 72)
-    ggplot2::ggsave(file.path(plot_root, "intensity_scatter", "ctrl_a_intensity_scatter.png"), p, width = 2, height = 2, dpi = 72)
+    ggplot2::ggsave(file.path(plot_root, "histogram", "ctrl_a_histogram.png"), p, width = 2, height = 2, dpi = 72)
     ggplot2::ggsave(file.path(plot_root, "spectrum", "ctrl_a_spectrum.png"), p, width = 2, height = 2, dpi = 72)
 
     M <- rbind(FITC = c(1, 0.2), PE = c(0.1, 1), AF_1 = c(0.2, 0.1), AF_2 = c(0.1, 0.2))
@@ -203,7 +203,7 @@ test_that("control HTML groups each PDF control page once without duplicate plot
     expect_equal(length(strsplit(sections[["spectra"]][2], "<img", fixed = TRUE)[[1]]) - 1L, 2L)
     expect_length(report_data$plot_manifest$controls, 1)
     expect_length(report_data$plot_manifest$controls[[1]]$paths, 3)
-    expect_identical(report_data$plot_manifest$controls[[1]]$image_titles, c("FSC/SSC gate", "Intensity-vs-FSC scatter gate", "Per-event spectrum distribution"))
+    expect_identical(report_data$plot_manifest$controls[[1]]$image_titles, c("FSC/SSC gate", "Peak-channel histogram gate", "Per-event spectrum distribution"))
     expect_length(unique(report_data$plot_manifest$controls[[1]]$paths), 3)
     expect_false(grepl("<table", paste(vapply(sections, `[[`, character(1), 2), collapse = ""), fixed = TRUE))
     expect_false(grepl("SCC AF spectra", paste(vapply(sections, `[[`, character(1), 2), collapse = ""), fixed = TRUE))
@@ -268,8 +268,7 @@ test_that("manual GUI gating remains the default and its four PDF panels are reu
 
     panels <- spectreasy:::.report_control_panels(
         plot_root,
-        qc_summary = data.frame(sample = "ctrl_a", fluorophore = "FITC", stringsAsFactors = FALSE),
-        use_scatter_gating = TRUE
+        qc_summary = data.frame(sample = "ctrl_a", fluorophore = "FITC", stringsAsFactors = FALSE)
     )
     expect_length(panels, 1)
     expect_identical(panels[[1]]$image_titles, c("Cell gate", "Singlet gate", "Histogram", "Per-event spectrum distribution"))

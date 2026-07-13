@@ -2133,7 +2133,6 @@ function(req) {
             save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
             output_format = tolower(gui_workflow_value(body, "output_format", "pdf")),
-            use_scatter_gating = gui_workflow_bool(body, "use_scatter_gating", TRUE),
             manual_gating = FALSE,
             manual_gate_file = gate_file,
             gating_file = gate_file,

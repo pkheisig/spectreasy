@@ -136,7 +136,7 @@ Clicking Confirm saves the gate CSV, closes the GUI server, and lets the same `u
 - `spectreasy_outputs/unmix_controls/scc_spectra.png`
 - `spectreasy_outputs/unmix_controls/scc_af_spectra.png`
 - `spectreasy_outputs/unmix_controls/fsc_ssc/*.png` 
-- `spectreasy_outputs/unmix_controls/intensity_scatter/*.png`
+- `spectreasy_outputs/unmix_controls/histogram/*.png`
 - `spectreasy_outputs/unmix_controls/spectrum/*.png`
 
 

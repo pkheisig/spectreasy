@@ -19,7 +19,6 @@
     )
 
     gate_settings <- gating_options(
-        use_scatter_gating = TRUE,
         histogram_pct_beads = 0.98,
         histogram_direction_beads = "right",
         histogram_pct_cells = 0.35,
@@ -46,7 +45,6 @@
         n_threads = 1L,
         save_qc_plots = FALSE,
         save_report = TRUE,
-        use_scatter_gating = TRUE,
         clean_scc_with_unstained = TRUE,
         scc_background_method = c("scatter_knn", "none"),
         scc_background_k = 2L,
@@ -79,7 +77,6 @@
         qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
         save_qc_pngs = FALSE,
         qc_metrics_dir = NULL,
-        use_scatter_gating = TRUE,
         unmix_scatter_max_points = 1000,
         unmix_scatter_axis_limit = NULL,
         seed = NULL
@@ -269,7 +266,6 @@
         seed = NULL,
         default_sample_type = "beads",
         cytometer = "auto",
-        use_scatter_gating = TRUE,
         autospectral_scc_cleanup = FALSE,
         clean_scc_with_unstained = FALSE,
         scc_background_method = c("scatter_knn", "none"),

@@ -132,7 +132,6 @@ export type ControlSettings = {
   saveQcPlots: boolean
   saveReport: boolean
   outputFormat: 'html' | 'pdf'
-  useScatterGating: boolean
   cleanSccWithUnstained: boolean
   sccBackgroundMethod: 'scatter_knn' | 'none'
   sccBackgroundK: number
@@ -227,7 +226,6 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       saveQcPlots: true,
       saveReport: true,
       outputFormat: 'html',
-      useScatterGating: true,
       cleanSccWithUnstained: true,
       sccBackgroundMethod: 'scatter_knn',
       sccBackgroundK: 2,

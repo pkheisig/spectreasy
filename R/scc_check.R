@@ -167,7 +167,7 @@
     invisible(NULL)
 }
 
-.draw_scc_report_sample_page <- function(row, report_plot_dir, use_scatter_gating = TRUE) {
+.draw_scc_report_sample_page <- function(row, report_plot_dir) {
     sample_id <- row$sample[[1]]
     fluor <- row$fluorophore[[1]]
     marker <- if ("marker" %in% colnames(row)) trimws(as.character(row$marker[[1]])) else ""
@@ -224,12 +224,9 @@
             width = grid::unit(0.46, "npc"),
             height = grid::unit(0.44, "npc")
         )
-        gate_dir <- if (isTRUE(use_scatter_gating)) "intensity_scatter" else "histogram"
-        gate_suffix <- if (isTRUE(use_scatter_gating)) "_intensity_scatter.png" else "_histogram.png"
-        gate_title <- if (isTRUE(use_scatter_gating)) "Intensity-vs-FSC Scatter Gate" else "Peak-Channel Histogram Gate"
         .draw_report_image_panel(
-            file.path(report_plot_dir, gate_dir, paste0(sample_id, gate_suffix)),
-            gate_title,
+            file.path(report_plot_dir, "histogram", paste0(sample_id, "_histogram.png")),
+            "Peak-Channel Histogram Gate",
             x = grid::unit(0.74, "npc"),
             y = grid::unit(0.71, "npc"),
             width = grid::unit(0.42, "npc"),
@@ -362,9 +359,6 @@
 #' @param cleanup_report_plot_dir Logical; if `TRUE`, remove
 #'   `report_plot_dir` after the PDF is assembled. Intended for internal
 #'   temporary plot directories created by [unmix_controls()].
-#' @param use_scatter_gating Logical; if `TRUE` (default), use scatter/intensity
-#'   gating and show scatter gate plots in the report. If `FALSE`, use and show
-#'   the legacy histogram gate.
 #' @param unmix_scatter_max_points Maximum events sampled per control for the
 #'   SCC unmixing scatter matrix.
 #' @param unmix_scatter_axis_limit Optional fixed symmetric axis limit for the
@@ -408,7 +402,6 @@ qc_controls <- function(
     pd = NULL,
     af_bank_info = NULL,
     cleanup_report_plot_dir = FALSE,
-    use_scatter_gating = TRUE,
     unmix_scatter_max_points = 1000,
     unmix_scatter_axis_limit = NULL,
     seed = NULL,
@@ -473,7 +466,6 @@ qc_controls <- function(
                 save_qc_plots = TRUE,
                 control_df = control_input,
                 cytometer = cytometer,
-                use_scatter_gating = use_scatter_gating,
                 seed = seed
             ),
             extra_args
@@ -562,7 +554,6 @@ qc_controls <- function(
             plots = report_plots,
             run_settings = c(
                 list(
-                    use_scatter_gating = use_scatter_gating,
                     unmix_scatter_max_points = unmix_scatter_max_points,
                     unmix_scatter_axis_limit = unmix_scatter_axis_limit,
                     seed = seed,
@@ -571,8 +562,7 @@ qc_controls <- function(
                 ),
                 report_run_settings
             ),
-            plot_dir = collector_plot_dir,
-            use_scatter_gating = use_scatter_gating
+            plot_dir = collector_plot_dir
         )
         if (!isTRUE(save_qc_pngs)) report_data <- .report_embed_plot_manifest(report_data)
         return(render_qc_html_report(report_data, output_file, overwrite = overwrite))
@@ -706,7 +696,7 @@ qc_controls <- function(
 
     if (nrow(qc_summary) > 0) {
         for (i in seq_len(nrow(qc_summary))) {
-            .draw_scc_report_sample_page(qc_summary[i, , drop = FALSE], report_plot_dir = report_plot_dir, use_scatter_gating = use_scatter_gating)
+            .draw_scc_report_sample_page(qc_summary[i, , drop = FALSE], report_plot_dir = report_plot_dir)
         }
     }
 

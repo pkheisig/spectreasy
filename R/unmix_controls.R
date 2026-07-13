@@ -355,11 +355,6 @@
 #'   automatically after controls are unmixed. Defaults to `TRUE`.
 #' @param output_format Report format, either `"pdf"` (the backward-compatible
 #'   default) or `"html"`. Only the selected format is written.
-#' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
-#'   scatter gate for final positive/negative population selection. If `FALSE`,
-#'   use the legacy one-dimensional histogram gate. Ignored when
-#'   `unmixing_method = "AutoSpectral"` or `"Spectreasy"`; these methods use
-#'   their own post-FSC/SSC SCC spectral selector.
 #' @param manual_gating Logical; if `TRUE` (default), launch the manual control
 #'   gating GUI before building the SCC reference matrix. If `FALSE`, the GUI is
 #'   skipped; an existing `gating_file`/`manual_gate_file` is still reused when
@@ -436,7 +431,6 @@ unmix_controls <- function(
     save_qc_plots = FALSE,
     save_report = TRUE,
     output_format = c("pdf", "html"),
-    use_scatter_gating = TRUE,
     manual_gating = TRUE,
     manual_gate_file = "ssc_gate_config.csv",
     gating_file = manual_gate_file,
@@ -595,7 +589,6 @@ unmix_controls <- function(
         af_n_bands = af_n_bands,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
-        use_scatter_gating = use_scatter_gating,
         manual_gate_file = manual_gate_file,
         autospectral_scc_cleanup = use_autospectral,
         clean_scc_with_unstained = scc_background_args$enabled,
@@ -732,7 +725,6 @@ unmix_controls <- function(
                 pd = meta_info$pd,
                 af_bank_info = attr(M, "af_bank_info"),
                 cleanup_report_plot_dir = !isTRUE(save_qc_plots),
-                use_scatter_gating = use_scatter_gating,
                 unmix_scatter_max_points = 1000,
                 seed = seed,
                 unmixing_matrix_file = output_paths$reference_matrix_csv,
@@ -757,7 +749,6 @@ unmix_controls <- function(
                     rwls_max_iter = rwls_max_iter,
                     n_threads = n_threads,
                     save_qc_plots = save_qc_plots,
-                    use_scatter_gating = use_scatter_gating,
                     manual_gating = manual_gating,
                     clean_scc_with_unstained = clean_scc_with_unstained,
                     scc_background_method = scc_background_method,

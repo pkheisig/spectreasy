@@ -507,7 +507,6 @@
         dir.create(file.path(out_path, "fsc_ssc"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "singlet"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "histogram"), showWarnings = FALSE, recursive = TRUE)
-        dir.create(file.path(out_path, "intensity_scatter"), showWarnings = FALSE, recursive = TRUE)
         dir.create(file.path(out_path, "spectrum"), showWarnings = FALSE, recursive = TRUE)
     }
     out_path
@@ -2184,311 +2183,6 @@
     list(vals_log = vals_log, gate_min = 10^lower_log, gate_max = 10^upper_log)
 }
 
-.group_reference_density_peaks <- function(x, y, peak_idx, merge_distance = 0.35) {
-    if (length(peak_idx) == 0) return(integer())
-    peak_idx <- peak_idx[order(x[peak_idx])]
-    groups <- list()
-    current <- peak_idx[[1]]
-    if (length(peak_idx) > 1) {
-        for (idx in peak_idx[-1]) {
-            if ((x[idx] - x[current[length(current)]]) <= merge_distance) {
-                current <- c(current, idx)
-            } else {
-                groups[[length(groups) + 1L]] <- current
-                current <- idx
-            }
-        }
-    }
-    groups[[length(groups) + 1L]] <- current
-    as.integer(vapply(groups, function(g) g[which.max(y[g])], numeric(1)))
-}
-
-.compute_reference_density_scatter_gate <- function(vals_log,
-                                                    min_prop = 0.02,
-                                                    min_mean_gap = 0.35,
-                                                    min_signal_log = 0.5,
-                                                    peak_height_fraction = 0.03,
-                                                    merge_distance = 0.35) {
-    vals_log <- vals_log[is.finite(vals_log)]
-    if (length(vals_log) < 80) return(NULL)
-    gate_vals <- vals_log[vals_log > min_signal_log]
-    if (length(gate_vals) < 80) return(NULL)
-
-    d <- stats::density(gate_vals, n = 2048)
-    peak_idx <- which(diff(sign(diff(d$y))) == -2) + 1
-    if (length(peak_idx) == 0) return(NULL)
-
-    signal_region <- d$x > min_signal_log
-    reference_height <- if (any(signal_region)) max(d$y[signal_region], na.rm = TRUE) else max(d$y, na.rm = TRUE)
-    signal_peaks <- peak_idx[
-        d$x[peak_idx] > min_signal_log &
-            d$y[peak_idx] >= reference_height * peak_height_fraction
-    ]
-    signal_peaks <- .group_reference_density_peaks(d$x, d$y, signal_peaks, merge_distance = merge_distance)
-    if (length(signal_peaks) < 2) return(NULL)
-
-    centers <- sort(d$x[signal_peaks])
-    boundaries <- (centers[-1] + centers[-length(centers)]) / 2
-    assigned_gate <- findInterval(gate_vals, boundaries) + 1L
-
-    stats_df <- do.call(rbind, lapply(seq_along(centers), function(i) {
-        xi <- gate_vals[assigned_gate == i]
-        if (length(xi) == 0) return(NULL)
-        spread <- stats::mad(xi, constant = 1.4826, na.rm = TRUE)
-        if (!is.finite(spread) || spread <= 0) spread <- stats::sd(xi, na.rm = TRUE)
-        data.frame(
-            component = i,
-            n = length(xi),
-            prop = length(xi) / length(vals_log),
-            mean = mean(xi, na.rm = TRUE),
-            peak = centers[[i]],
-            sd = stats::sd(xi, na.rm = TRUE),
-            spread = spread,
-            q005 = as.numeric(stats::quantile(xi, 0.005, na.rm = TRUE, names = FALSE)),
-            q01 = as.numeric(stats::quantile(xi, 0.01, na.rm = TRUE, names = FALSE)),
-            q15 = as.numeric(stats::quantile(xi, 0.15, na.rm = TRUE, names = FALSE)),
-            q20 = as.numeric(stats::quantile(xi, 0.20, na.rm = TRUE, names = FALSE)),
-            q85 = as.numeric(stats::quantile(xi, 0.85, na.rm = TRUE, names = FALSE)),
-            q90 = as.numeric(stats::quantile(xi, 0.90, na.rm = TRUE, names = FALSE)),
-            q99 = as.numeric(stats::quantile(xi, 0.99, na.rm = TRUE, names = FALSE)),
-            q995 = as.numeric(stats::quantile(xi, 0.995, na.rm = TRUE, names = FALSE)),
-            stringsAsFactors = FALSE
-        )
-    }))
-    if (is.null(stats_df) || nrow(stats_df) < 2) return(NULL)
-
-    real_idx <- which(stats_df$prop >= min_prop)
-    if (length(real_idx) < 2) return(NULL)
-
-    pos_idx <- real_idx[which.max(stats_df$peak[real_idx])]
-    neg_candidates <- real_idx[stats_df$peak[real_idx] < (stats_df$peak[pos_idx] - min_mean_gap)]
-    if (length(neg_candidates) == 0) return(NULL)
-    neg_idx <- neg_candidates[which.max(stats_df$peak[neg_candidates])]
-
-    window_for <- function(i, kind = c("negative", "positive")) {
-        kind <- match.arg(kind)
-        xi <- gate_vals[assigned_gate == i]
-        row <- stats_df[i, ]
-        if (identical(kind, "negative")) {
-            lo <- row$q20
-            hi <- row$q85
-            spread_mult <- 2.0
-        } else {
-            lo <- row$q01
-            hi <- row$q99
-            spread_mult <- 2.75
-        }
-        if (is.finite(row$spread) && row$spread > 0) {
-            lo <- max(lo, row$peak - spread_mult * row$spread)
-            hi <- min(hi, row$peak + spread_mult * row$spread)
-        }
-        if (!is.finite(lo) || !is.finite(hi) || hi <= lo) {
-            lo <- min(xi, na.rm = TRUE)
-            hi <- max(xi, na.rm = TRUE)
-        }
-        c(lower = lo, upper = hi)
-    }
-
-    neg_window <- window_for(neg_idx, kind = "negative")
-    pos_window <- window_for(pos_idx, kind = "positive")
-    if ((pos_window[["lower"]] - neg_window[["upper"]]) < 0) {
-        split <- mean(c(stats_df$peak[neg_idx], stats_df$peak[pos_idx]))
-        neg_window[["upper"]] <- min(neg_window[["upper"]], split)
-        pos_window[["lower"]] <- max(pos_window[["lower"]], split)
-    }
-
-    positive <- vals_log >= pos_window[["lower"]] & vals_log <= pos_window[["upper"]]
-    negative <- vals_log >= neg_window[["lower"]] & vals_log <= neg_window[["upper"]]
-    if (sum(positive, na.rm = TRUE) < 20 || sum(negative, na.rm = TRUE) < 20) {
-        return(NULL)
-    }
-
-    list(
-        mode = "density_peak_window_pos_neg",
-        positive = positive,
-        negative = negative,
-        pos_lower = pos_window[["lower"]],
-        pos_upper = pos_window[["upper"]],
-        neg_lower = neg_window[["lower"]],
-        neg_upper = neg_window[["upper"]],
-        components = stats_df[, c("component", "n", "prop", "mean", "sd", "q005", "q995")]
-    )
-}
-
-.compute_reference_gmm_scatter_gate <- function(vals_log,
-                                                min_prop = 0.02,
-                                                min_mean_gap = 0.35,
-                                                max_components = 6L) {
-    if (!requireNamespace("mclust", quietly = TRUE)) return(NULL)
-    max_g <- min(as.integer(max_components), max(1L, floor(length(vals_log) / 40)))
-    fit <- tryCatch(
-        mclust::Mclust(vals_log, G = seq_len(max_g), verbose = FALSE),
-        error = function(e) NULL
-    )
-    if (is.null(fit) || is.null(fit$classification)) return(NULL)
-
-    component_stats <- function(x, cls) {
-        comp <- sort(unique(cls))
-        do.call(rbind, lapply(comp, function(k) {
-            xk <- x[cls == k]
-            data.frame(
-                component = k,
-                n = length(xk),
-                prop = length(xk) / length(x),
-                mean = mean(xk, na.rm = TRUE),
-                sd = stats::sd(xk, na.rm = TRUE),
-                q005 = as.numeric(stats::quantile(xk, 0.005, na.rm = TRUE)),
-                q995 = as.numeric(stats::quantile(xk, 0.995, na.rm = TRUE)),
-                stringsAsFactors = FALSE
-            )
-        }))
-    }
-
-    posterior_boundary <- function(left_k, right_k, left_mean, right_mean) {
-        grid <- seq(left_mean, right_mean, length.out = 1024)
-        pred <- tryCatch(stats::predict(fit, newdata = grid)$z, error = function(e) NULL)
-        if (is.null(pred) || ncol(pred) < max(left_k, right_k)) return(mean(c(left_mean, right_mean)))
-        diff_post <- pred[, left_k] - pred[, right_k]
-        cross <- which(diff_post <= 0)
-        if (length(cross) == 0) return(mean(c(left_mean, right_mean)))
-        grid[min(cross)]
-    }
-
-    stats_df <- component_stats(vals_log, fit$classification)
-    if (nrow(stats_df) < 2) return(NULL)
-
-    floor_component <- stats_df$mean <= 0.1 | stats_df$q995 <= 0.25
-    high_artifact <- stats_df$prop < min_prop & stats_df$mean > stats::median(vals_log, na.rm = TRUE)
-    real_idx <- which(!floor_component & !high_artifact & stats_df$prop >= min_prop)
-    if (length(real_idx) == 0) real_idx <- which(!floor_component & !high_artifact)
-    if (length(real_idx) < 2) return(NULL)
-
-    pos_idx <- real_idx[which.max(stats_df$mean[real_idx])]
-    neg_candidates <- real_idx[stats_df$mean[real_idx] < stats_df$mean[pos_idx]]
-    if (length(neg_candidates) == 0) return(NULL)
-    neg_idx <- neg_candidates[which.max(stats_df$mean[neg_candidates])]
-    neg_row <- stats_df[neg_idx, ]
-    pos_row <- stats_df[pos_idx, ]
-    if ((pos_row$mean - neg_row$mean) < min_mean_gap) return(NULL)
-
-    boundary <- posterior_boundary(
-        left_k = neg_row$component,
-        right_k = pos_row$component,
-        left_mean = neg_row$mean,
-        right_mean = pos_row$mean
-    )
-    if (!is.finite(boundary) || boundary <= neg_row$mean || boundary >= pos_row$mean) {
-        boundary <- mean(c(neg_row$mean, pos_row$mean))
-    }
-
-    left_bound <- neg_row$q005
-    left_candidates <- which(stats_df$mean < neg_row$mean)
-    if (length(left_candidates) > 0) {
-        left_idx <- left_candidates[which.max(stats_df$mean[left_candidates])]
-        left_cross <- posterior_boundary(
-            left_k = stats_df$component[left_idx],
-            right_k = neg_row$component,
-            left_mean = stats_df$mean[left_idx],
-            right_mean = neg_row$mean
-        )
-        if (is.finite(left_cross)) left_bound <- max(left_bound, left_cross)
-    }
-
-    list(
-        mode = if (nrow(stats_df) == 2) "two_component_pos_neg" else "multi_component_nearest_negative_pos",
-        positive = vals_log >= boundary & vals_log <= pos_row$q995,
-        negative = vals_log >= left_bound & vals_log < boundary,
-        pos_lower = boundary,
-        pos_upper = pos_row$q995,
-        neg_lower = left_bound,
-        neg_upper = boundary,
-        components = stats_df
-    )
-}
-
-.compute_reference_one_cluster_scatter_gate <- function(vals_log) {
-    signal_vals <- vals_log[is.finite(vals_log) & vals_log > 0.5]
-    if (length(signal_vals) < 20) signal_vals <- vals_log[is.finite(vals_log)]
-    pos_lower <- as.numeric(stats::quantile(signal_vals, 0.005, names = FALSE, na.rm = TRUE))
-    pos_upper <- as.numeric(stats::quantile(signal_vals, 0.995, names = FALSE, na.rm = TRUE))
-    positive <- vals_log >= pos_lower & vals_log <= pos_upper
-    list(
-        mode = "one_component_positive",
-        positive = positive,
-        negative = vals_log < pos_lower,
-        pos_lower = pos_lower,
-        pos_upper = pos_upper,
-        neg_lower = min(vals_log, na.rm = TRUE),
-        neg_upper = pos_lower,
-        components = data.frame(
-            component = 1L,
-            n = length(vals_log),
-            prop = 1,
-            mean = mean(vals_log, na.rm = TRUE),
-            sd = stats::sd(vals_log, na.rm = TRUE),
-            q005 = as.numeric(stats::quantile(vals_log, 0.005, names = FALSE, na.rm = TRUE)),
-            q995 = as.numeric(stats::quantile(vals_log, 0.995, names = FALSE, na.rm = TRUE))
-        )
-    )
-}
-
-.compute_reference_scatter_intensity_gate <- function(peak_vals,
-                                                      sample_type,
-                                                      histogram_pct_beads,
-                                                      histogram_direction_beads,
-                                                      histogram_pct_cells,
-                                                      histogram_direction_cells,
-                                                      is_viability = FALSE) {
-    vals_log <- log10(pmax(peak_vals, 1))
-    vals_log <- vals_log[is.finite(vals_log)]
-    positive_gate_present <- !(sample_type %in% c("unstained"))
-    if (!positive_gate_present) {
-        out <- .compute_reference_histogram_gate(
-            peak_vals = peak_vals,
-            sample_type = sample_type,
-            histogram_pct_beads = histogram_pct_beads,
-            histogram_direction_beads = histogram_direction_beads,
-            histogram_pct_cells = histogram_pct_cells,
-            histogram_direction_cells = histogram_direction_cells,
-            is_viability = is_viability
-        )
-        attr(out$vals_log, "gate_type") <- "scatter"
-        return(out)
-    }
-
-    gate <- .compute_reference_density_scatter_gate(vals_log)
-    if (is.null(gate)) {
-        gate <- .compute_reference_gmm_scatter_gate(vals_log)
-    }
-    if (is.null(gate)) {
-        gate <- .compute_reference_one_cluster_scatter_gate(vals_log)
-    }
-
-    if (!is.finite(gate$pos_lower) || !is.finite(gate$pos_upper) || gate$pos_upper <= gate$pos_lower) {
-        out <- .compute_reference_histogram_gate(
-            peak_vals = peak_vals,
-            sample_type = sample_type,
-            histogram_pct_beads = histogram_pct_beads,
-            histogram_direction_beads = histogram_direction_beads,
-            histogram_pct_cells = histogram_pct_cells,
-            histogram_direction_cells = histogram_direction_cells,
-            is_viability = is_viability
-        )
-        attr(out$vals_log, "gate_type") <- "histogram_fallback"
-        return(out)
-    }
-
-    attr(vals_log, "neg_log_min") <- gate$neg_lower
-    attr(vals_log, "neg_log_max") <- gate$neg_upper
-    attr(vals_log, "negative_gate_present") <- isTRUE(sum(gate$negative, na.rm = TRUE) >= 10)
-    attr(vals_log, "positive_gate_present") <- TRUE
-    attr(vals_log, "gate_method") <- paste0("intensity scatter/GMM gate: ", gate$mode)
-    attr(vals_log, "gmm_components") <- gate$components
-    attr(vals_log, "gate_type") <- "scatter"
-
-    list(vals_log = vals_log, gate_min = 10^gate$pos_lower, gate_max = 10^gate$pos_upper)
-}
-
 .compute_reference_autospectral_scc <- function(clean_data,
                                                 detector_names,
                                                 peak_channel,
@@ -3440,7 +3134,6 @@
                                      detector_labels,
                                      det_info,
                                      out_path,
-                                     use_scatter_gating = TRUE,
                                      manual_gate_info = NULL,
                                      hist_info = NULL,
                                      gui_scatter_domains = NULL,
@@ -3567,46 +3260,6 @@
         x_domain = histogram_domain
     )
     .save_reference_ggsave(file.path(out_path, "histogram", paste0(sn, "_histogram.png")), p2, sn, "histogram", width = 6.5, height = 4, dpi = 300)
-    if (isTRUE(use_scatter_gating)) {
-        scatter_x <- log10(pmax(peak_vals, 1))
-        scatter_class <- ifelse(
-            positive_gate_valid & peak_vals >= gate_min & peak_vals <= gate_max,
-            "positive",
-            ifelse(
-                negative_gate_valid &
-                    peak_vals >= 10^neg_log_min &
-                    peak_vals <= 10^neg_log_max,
-                "negative",
-                "other"
-            )
-        )
-        scatter_dt <- data.table::data.table(
-            x = scatter_x,
-            y = gated_data[, fsc],
-            class = factor(scatter_class, levels = c("negative", "other", "positive"))
-        )
-        p2_scatter <- ggplot2::ggplot(scatter_dt, ggplot2::aes(x, y, color = class))
-        if (negative_gate_valid) {
-            p2_scatter <- p2_scatter +
-                ggplot2::annotate("rect", xmin = neg_log_min, xmax = neg_log_max, ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#2C7BE5")
-        }
-        if (positive_gate_valid) {
-            p2_scatter <- p2_scatter +
-                ggplot2::annotate("rect", xmin = log10(gate_min), xmax = log10(gate_max), ymin = -Inf, ymax = Inf, alpha = 0.12, fill = "#D62728")
-        }
-        p2_scatter <- p2_scatter +
-            ggplot2::geom_point(size = 0.45, alpha = 0.45) +
-            ggplot2::scale_color_manual(values = c(negative = "#2C7BE5", other = "grey55", positive = "#D62728"), drop = FALSE) +
-            ggplot2::labs(
-                title = paste0(sn, " - ", peak_channel),
-                x = paste0("log10(", peak_channel, ")"),
-                y = fsc_desc
-            ) +
-            ggplot2::theme_minimal(base_size = 11) +
-            ggplot2::theme(legend.position = "none")
-        .save_reference_ggsave(file.path(out_path, "intensity_scatter", paste0(sn, "_intensity_scatter.png")), p2_scatter, sn, "intensity scatter", width = 6.5, height = 4, dpi = 300)
-    }
-
     if (nrow(spectrum_plot_data) > 0L && all(detector_names %in% colnames(spectrum_plot_data))) {
         log_mat <- log10(pmax(spectrum_plot_data[, detector_names, drop = FALSE], 1e-3))
     } else {
@@ -3851,7 +3504,6 @@
                 detector_labels = metadata$detector_labels,
                 det_info = metadata$det_info,
                 out_path = config$out_path,
-                use_scatter_gating = TRUE,
                 manual_gate_info = scatter_info$manual_gate_info,
                 hist_info = qc_hist_info,
                 gui_scatter_domains = config$gui_scatter_domains,
@@ -3906,12 +3558,7 @@
         hist_info <- manual_positive$hist_info
         final_gated_data <- manual_positive$final_gated_data
     } else {
-        gate_fun <- if (isTRUE(config$use_scatter_gating)) {
-            .compute_reference_scatter_intensity_gate
-        } else {
-            .compute_reference_histogram_gate
-        }
-        hist_info <- gate_fun(
+        hist_info <- .compute_reference_histogram_gate(
             peak_vals = peak_vals,
             sample_type = sample_info$type,
             histogram_pct_beads = config$histogram_pct_beads,
@@ -3984,7 +3631,6 @@
             detector_labels = metadata$detector_labels,
             det_info = metadata$det_info,
             out_path = config$out_path,
-            use_scatter_gating = config$use_scatter_gating,
             manual_gate_info = scatter_info$manual_gate_info,
             hist_info = hist_info,
             gui_scatter_domains = config$gui_scatter_domains,
@@ -4019,7 +3665,7 @@
             histogram_gate_pct = round(100 * nrow(final_gated_data) / max(nrow(scatter_info$gated_data), 1), 1),
             intensity_gate_type = {
                 gate_type <- attr(hist_info$vals_log, "gate_type")
-                if (!is.null(gate_type) && nzchar(gate_type)) gate_type else if (isTRUE(config$use_scatter_gating)) "scatter" else "histogram"
+                if (!is.null(gate_type) && nzchar(gate_type)) gate_type else "histogram"
             },
             stain_index = round(stain_index, 1),
             saturated = ifelse(any_sat, "YES", "OK")
@@ -4126,9 +3772,6 @@
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
-#' @param use_scatter_gating Logical; if `TRUE` (default), use the intensity-vs-FSC
-#'   scatter gate for final positive/negative population selection. If `FALSE`,
-#'   use the legacy one-dimensional histogram gate.
 #' @param manual_gate_file Optional gate CSV from [gate_controls()]. When
 #'   provided, manual cell/singlet gates are used before automatic SCC spectrum
 #'   extraction, and manual positive gates are used for standard SCC extraction.
@@ -4199,7 +3842,6 @@ build_reference_matrix <- function(
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
-  use_scatter_gating = TRUE,
   manual_gate_file = NULL,
   histogram_pct_beads = 0.98,
   histogram_direction_beads = "right",
@@ -4270,7 +3912,6 @@ build_reference_matrix <- function(
         gate_contour_beads = gate_contour_beads,
         gate_contour_cells = gate_contour_cells,
         bead_gate_scale = bead_gate_scale,
-        use_scatter_gating = use_scatter_gating,
         manual_gates = manual_gates,
         histogram_pct_beads = histogram_pct_beads,
         histogram_direction_beads = histogram_direction_beads,

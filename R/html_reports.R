@@ -27,7 +27,6 @@
             rwls_max_iter = 1L,
             n_threads = 1L,
             save_qc_plots = FALSE,
-            use_scatter_gating = TRUE,
             manual_gating = TRUE,
             clean_scc_with_unstained = TRUE,
             scc_background_method = "scatter_knn",
@@ -51,7 +50,7 @@
             unmix_scatter_panel_size_mm = "Scatter panel size (mm)", seed = "Seed",
             af_min_cluster_events = "Minimum AF cluster events", af_min_cluster_proportion = "Minimum AF cluster proportion",
             rwls_max_iter = "RWLS iterations", n_threads = "Threads", save_qc_plots = "Save QC plots",
-            use_scatter_gating = "Scatter gating", manual_gating = "Manual gating",
+            manual_gating = "Manual gating",
             clean_scc_with_unstained = "Clean SCC with unstained", scc_background_method = "SCC background method",
             scc_background_k = "SCC background neighbours", spectral_variant_som_nodes = "Spectral variant SOM nodes",
             spectral_variant_top_k = "Spectral variant top K", spectral_variant_cosine_threshold = "Variant cosine threshold",
@@ -300,7 +299,7 @@
     if (length(parts)) paste(parts, collapse = " | ") else NULL
 }
 
-.report_control_panels <- function(report_plot_dir, qc_summary = data.frame(), use_scatter_gating = TRUE) {
+.report_control_panels <- function(report_plot_dir, qc_summary = data.frame()) {
     if (is.null(report_plot_dir) || !dir.exists(report_plot_dir)) return(list())
     qc_summary <- as.data.frame(qc_summary %||% data.frame(), stringsAsFactors = FALSE)
     samples <- if (nrow(qc_summary) && "sample" %in% colnames(qc_summary)) {
@@ -320,13 +319,11 @@
         } else sample_id
         singlet <- file.path(report_plot_dir, "singlet", paste0(sample_id, "_singlet.png"))
         has_singlet <- file.exists(singlet)
-        gate_dir <- if (has_singlet) "histogram" else if (isTRUE(use_scatter_gating)) "intensity_scatter" else "histogram"
-        gate_suffix <- if (has_singlet || !isTRUE(use_scatter_gating)) "_histogram.png" else "_intensity_scatter.png"
-        gate_title <- if (has_singlet) "Histogram" else if (isTRUE(use_scatter_gating)) "Intensity-vs-FSC scatter gate" else "Peak-channel histogram gate"
+        gate_title <- if (has_singlet) "Histogram" else "Peak-channel histogram gate"
         image_paths <- c(
             file.path(report_plot_dir, "fsc_ssc", paste0(sample_id, "_fsc_ssc.png")),
             if (has_singlet) singlet else NULL,
-            file.path(report_plot_dir, gate_dir, paste0(sample_id, gate_suffix)),
+            file.path(report_plot_dir, "histogram", paste0(sample_id, "_histogram.png")),
             file.path(report_plot_dir, "spectrum", paste0(sample_id, "_spectrum.png"))
         )
         image_titles <- c(
@@ -369,8 +366,6 @@
 #' @param run_settings Named list of workflow and report settings.
 #' @param project_path Project path displayed in the report.
 #' @param plot_dir Directory used for cached report PNG files.
-#' @param use_scatter_gating Whether the PDF-equivalent positive-gate panel uses
-#'   the intensity-versus-FSC scatter plot or the histogram plot.
 #' @return A `spectreasy_control_report_data` object.
 #' @export
 collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapping.csv", cytometer="auto",
@@ -378,7 +373,7 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
                                         report_plot_dir=NULL, pd=NULL, af_bank_info=NULL,
                                         matrix_source=NULL, artifact_paths=list(), plots=list(),
                                         warnings=character(), run_settings=list(), project_path=getwd(),
-                                        plot_dir=NULL, use_scatter_gating=TRUE) {
+                                        plot_dir=NULL) {
     if (is.null(M)) stop("No reference matrix provided for the control HTML report.", call.=FALSE)
     M <- .as_reference_matrix(M, "M")
     method <- .normalize_unmix_method(unmixing_method)
@@ -425,7 +420,7 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
         .report_plot_file(scatter_pages[[1]], file.path(plot_dir, "control_nxn_full.png"), width = nxn_width, height = nxn_width)
     } else character()
     if (length(scatter_files)) names(scatter_files) <- "Controls"
-    control_panels <- .report_control_panels(report_plot_dir, qc_summary, use_scatter_gating = use_scatter_gating)
+    control_panels <- .report_control_panels(report_plot_dir, qc_summary)
     plot_files <- .report_existing_paths(c(reference_file, af_file, similarity_file, scatter_files, unlist(lapply(control_panels, `[[`, "paths"), use.names = FALSE)))
     control_paths <- if (nrow(mapping)) file.path(scc_dir,mapping$filename) else character()
     source_paths <- unique(c(matrix_source, tryCatch(.resolve_control_file_path(control_file),error=function(e) control_file), control_paths, artifact_paths$gate_file))

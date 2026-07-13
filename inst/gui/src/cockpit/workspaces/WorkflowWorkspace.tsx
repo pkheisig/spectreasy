@@ -1203,20 +1203,6 @@ function BuildReferencePanel({
             />
           </label>
           <label>
-            Scatter gate
-            <select
-              value={settings.useScatterGating ? "scatter" : "histogram"}
-              onChange={(event) =>
-                onSettingsChange({
-                  useScatterGating: event.target.value === "scatter",
-                })
-              }
-            >
-              <option value="scatter">Scatter + intensity</option>
-              <option value="histogram">Histogram fallback</option>
-            </select>
-          </label>
-          <label>
             Background
             <select
               value={settings.sccBackgroundMethod}
@@ -4921,19 +4907,6 @@ function ConfigurableSettingsWorkspace({
             />
             <span className="toggle-ui" />
             <span>Auto-create mapping</span>
-          </label>
-          <label className="toggle-label">
-            <input
-              type="checkbox"
-              checked={control.useScatterGating}
-              onChange={(event) =>
-                onSettingsChange("control", {
-                  useScatterGating: event.target.checked,
-                })
-              }
-            />
-            <span className="toggle-ui" />
-            <span>Use scatter gating</span>
           </label>
           <label className="toggle-label">
             <input

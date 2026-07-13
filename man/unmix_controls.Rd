@@ -22,7 +22,6 @@ unmix_controls(
   save_qc_plots = FALSE,
   save_report = TRUE,
   output_format = c("pdf", "html"),
-  use_scatter_gating = TRUE,
   manual_gating = TRUE,
   manual_gate_file = "ssc_gate_config.csv",
   gating_file = manual_gate_file,
@@ -96,12 +95,6 @@ automatically after controls are unmixed. Defaults to `TRUE`.}
 
 \item{output_format}{Report format, either `"pdf"` (the backward-compatible
 default) or `"html"`. Only the selected format is written.}
-
-\item{use_scatter_gating}{Logical; if `TRUE` (default), use the intensity-vs-FSC
-scatter gate for final positive/negative population selection. If `FALSE`,
-use the legacy one-dimensional histogram gate. Ignored when
-`unmixing_method = "AutoSpectral"` or `"Spectreasy"`; these methods use
-their own post-FSC/SSC SCC spectral selector.}
 
 \item{manual_gating}{Logical; if `TRUE` (default), launch the manual control
 gating GUI before building the SCC reference matrix. If `FALSE`, the GUI is
