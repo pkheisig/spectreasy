@@ -252,3 +252,58 @@ html[data-theme="dark"] .settings-section > summary span { color: #9f9a94; }
   .context-select { min-width: 104px; }
   .context-select select { max-width: 128px; }
 }
+
+/* Matrix adjustment mirrors the control-gating theme without changing other cockpit workspaces. */
+.matrix-workspace {
+  --matrix-ink: #17201d;
+  --matrix-muted: #68736e;
+  --matrix-panel: #fffdfa;
+  --matrix-line: #d8d5cc;
+  --matrix-wash: #f5f3ee;
+  --matrix-selected: #eef7f3;
+  --matrix-accent: #8052c7;
+  margin: -33px -35px -70px;
+  min-height: calc(100vh - 72px);
+  padding: 33px 35px 70px;
+  color: var(--matrix-ink);
+  background-color: var(--matrix-wash);
+  background-image: linear-gradient(90deg, rgba(38, 63, 115, .035) 1px, transparent 1px), linear-gradient(rgba(38, 63, 115, .035) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.matrix-workspace .workspace-header h1,
+.matrix-workspace .card-toolbar h2,
+.matrix-workspace .matrix-header-card h2 { color: var(--matrix-ink); }
+.matrix-workspace .workspace-header p,
+.matrix-workspace .matrix-header-card p,
+.matrix-workspace .table-note,
+.matrix-workspace .tuner-note,
+.matrix-workspace .chart-axis { color: var(--matrix-muted); }
+.matrix-workspace .surface-card,
+.matrix-workspace .signature-chart { color: var(--matrix-ink); border-color: var(--matrix-line); background: var(--matrix-panel); box-shadow: 0 4px 12px rgba(23, 32, 29, .07); }
+.matrix-workspace .matrix-scroll,
+.matrix-workspace .matrix-preview th,
+.matrix-workspace .matrix-preview td,
+.matrix-workspace .tuner-controls { border-color: var(--matrix-line); }
+.matrix-workspace .matrix-preview th { color: var(--matrix-muted); background: #ece7db; }
+.matrix-workspace .matrix-preview tr.is-selected { background: var(--matrix-selected); }
+.matrix-workspace .matrix-preview td strong,
+.matrix-workspace .matrix-bar-row { color: var(--matrix-ink); }
+.matrix-workspace .matrix-edit-cell,
+.matrix-workspace .matrix-file-select { color: var(--matrix-ink); border-color: var(--matrix-line); background: var(--matrix-panel); }
+.matrix-workspace .matrix-edit-cell:focus { border-color: var(--matrix-accent); background: var(--matrix-panel); box-shadow: 0 0 0 2px color-mix(in srgb, var(--matrix-accent) 16%, transparent); }
+.matrix-workspace .matrix-bar-row i { background: #e3ded3; }
+.matrix-workspace .matrix-bar-row b { background: var(--matrix-accent); }
+.matrix-workspace .button-primary { color: #fff; border-color: var(--matrix-accent); background: var(--matrix-accent); box-shadow: 0 4px 11px color-mix(in srgb, var(--matrix-accent) 24%, transparent); }
+
+html[data-theme="dark"] .matrix-workspace {
+  --matrix-ink: #f0f3f2;
+  --matrix-muted: #9ba7a2;
+  --matrix-panel: #1e2522;
+  --matrix-line: #3b4541;
+  --matrix-wash: #121816;
+  --matrix-selected: #1c2b26;
+  --matrix-accent: #ff7a1a;
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, .02) 1px, transparent 1px), linear-gradient(rgba(255, 255, 255, .02) 1px, transparent 1px);
+}
+html[data-theme="dark"] .matrix-workspace .matrix-preview th { color: var(--matrix-muted); background: #252e2a; }
+html[data-theme="dark"] .matrix-workspace .matrix-bar-row i { background: #303a36; }

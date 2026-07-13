@@ -33,11 +33,7 @@ get_unmixing_method <- function() {
 }
 
 get_config_dir <- function() {
-    cfg_dir <- file.path(get_matrix_dir(), "gui_configs")
-    if (!dir.exists(cfg_dir)) {
-        dir.create(cfg_dir, recursive = TRUE, showWarnings = FALSE)
-    }
-    cfg_dir
+    get_user_gui_config_dir()
 }
 
 normalize_config_filename <- function(filename) {
@@ -936,9 +932,23 @@ gate_detector_labels <- function(det_info, spec_channels) {
     labels
 }
 
-gate_build_spectrum_plot <- function(expr_filtered, spec_channels, det_info) {
+gate_build_spectrum_plot <- function(expr_filtered, spec_channels, det_info, dark_mode = FALSE) {
     labels <- gate_detector_labels(det_info, spec_channels)
     y_power <- 1.5
+    plot_background <- if (isTRUE(dark_mode)) "#0b1110" else "white"
+    plot_foreground <- if (isTRUE(dark_mode)) "#d9e1de" else "#333333"
+    spectrum_theme <- ggplot2::theme_minimal() +
+        ggplot2::theme(
+            text = ggplot2::element_text(color = plot_foreground),
+            axis.text = ggplot2::element_text(color = plot_foreground),
+            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6, color = plot_foreground),
+            axis.title = ggplot2::element_text(color = plot_foreground),
+            legend.position = "none",
+            plot.background = ggplot2::element_rect(fill = plot_background, color = NA),
+            panel.background = ggplot2::element_rect(fill = plot_background, color = NA),
+            panel.grid.major = ggplot2::element_blank(),
+            panel.grid.minor = ggplot2::element_blank()
+        )
     if (nrow(expr_filtered) == 0) {
         max_y <- 6
         y_breaks_orig <- 0:max_y
@@ -949,14 +959,7 @@ gate_build_spectrum_plot <- function(expr_filtered, spec_channels, det_info) {
             ggplot2::scale_y_continuous(limits = c(0, (max_y + 0.5)^y_power), breaks = y_breaks_trans, labels = y_labels) +
             ggplot2::coord_cartesian(expand = FALSE) +
             ggplot2::labs(title = NULL, x = NULL, y = "Intensity") +
-            ggplot2::theme_minimal() +
-            ggplot2::theme(
-                axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
-                legend.position = "none",
-                panel.background = ggplot2::element_rect(fill = "white", color = NA),
-                panel.grid.major = ggplot2::element_blank(),
-                panel.grid.minor = ggplot2::element_blank()
-            )
+            spectrum_theme
         return(gate_plot_to_base64(p_empty))
     }
 
@@ -981,7 +984,7 @@ gate_build_spectrum_plot <- function(expr_filtered, spec_channels, det_info) {
     dt_c <- dt_c[dt_c$count >= min_bin_count, , drop = FALSE]
     if (nrow(dt_c) == 0) {
         empty_expr <- expr_filtered[0, , drop = FALSE]
-        return(gate_build_spectrum_plot(empty_expr, spec_channels, det_info))
+        return(gate_build_spectrum_plot(empty_expr, spec_channels, det_info, dark_mode = dark_mode))
     }
     dt_c$y <- dt_c$y_orig^y_power
     fill_lo <- min(dt_c$fill, na.rm = TRUE)
@@ -997,18 +1000,11 @@ gate_build_spectrum_plot <- function(expr_filtered, spec_channels, det_info) {
         ggplot2::scale_y_continuous(limits = c(0, (max_y + 0.5)^y_power), breaks = y_breaks_trans, labels = y_labels) +
         ggplot2::coord_cartesian(expand = FALSE) +
         ggplot2::labs(title = NULL, x = NULL, y = "Intensity") +
-        ggplot2::theme_minimal() +
-        ggplot2::theme(
-            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
-            legend.position = "none",
-            panel.background = ggplot2::element_rect(fill = "white", color = NA),
-            panel.grid.major = ggplot2::element_blank(),
-            panel.grid.minor = ggplot2::element_blank()
-        )
+        spectrum_theme
     gate_plot_to_base64(p_spec)
 }
 
-gate_spectrum_for_file <- function(filename) {
+gate_spectrum_for_file <- function(filename, dark_mode = FALSE) {
     df <- gate_read_mapping()
     name <- gate_safe_basename(filename)
     row <- df[df$filename == name, , drop = FALSE]
@@ -1035,7 +1031,7 @@ gate_spectrum_for_file <- function(filename) {
     if (!isTRUE(row$is_af[1])) {
         expr_filtered <- gate_apply_positive_gate(expr_filtered, gate_cached_gate(cache, "positive", name, control_type), peak)
     }
-    gate_build_spectrum_plot(expr_filtered, spec_channels, det_info)
+    gate_build_spectrum_plot(expr_filtered, spec_channels, det_info, dark_mode = dark_mode)
 }
 
 gate_payload_for_file <- function(filename, max_points = 3000L) {
@@ -1251,9 +1247,11 @@ function(req) {
 #* Render selected SCC spectrum for the current gate cache
 #* @get /gate_spectrum
 #* @param filename
-function(filename) {
+#* @param dark
+function(filename, dark = "false") {
+    dark_mode <- tolower(as.character(dark)[1]) %in% c("true", "1", "yes")
     tryCatch(
-        list(spectrum = gate_spectrum_for_file(filename = filename)),
+        list(spectrum = gate_spectrum_for_file(filename = filename, dark_mode = dark_mode)),
         error = function(e) list(error = conditionMessage(e), spectrum = NULL)
     )
 }
@@ -1335,7 +1333,7 @@ function() {
 function() {
     cache <- getOption("spectreasy.gating_state_cache")
     if (is.null(cache)) {
-        return(list(gates = list(), pointSize = 1.5, maxPoints = 50000, histogramBins = 100, histogramTransform = "asinh", eventCountVersion = 2))
+        return(list(gates = list(), pointSize = 1.5, maxPoints = 50000, histogramBins = 100, histogramTransform = "asinh", viewSettings = list(), eventCountVersion = 2))
     }
     cache
 }
@@ -1350,6 +1348,7 @@ function(req) {
         maxPoints = body$maxPoints,
         histogramBins = body$histogramBins,
         histogramTransform = body$histogramTransform,
+        viewSettings = body$viewSettings,
         eventCountVersion = body$eventCountVersion
     ))
     list(success = TRUE)

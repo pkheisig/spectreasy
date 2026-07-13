@@ -2,13 +2,33 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/logo.png" />
+    <link id="spectreasy-favicon" rel="icon" type="image/svg+xml" href="/favicon-light.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spectreasy · Spectral Analysis</title>
-    <script type="module" crossorigin src="/assets/index-BzuXWFXe.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-BBqjW-q_.css">
+    <script type="module" crossorigin src="/assets/index-DpfHW8f2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Cor_MhnV.css">
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (() => {
+        const favicon = document.getElementById('spectreasy-favicon')
+        const preferredDark = window.matchMedia('(prefers-color-scheme: dark)')
+        const updateFavicon = () => {
+          const storedTheme = localStorage.getItem('spectreasy-theme') || localStorage.getItem('spectreasy_theme')
+          const renderedDark = document.body.classList.contains('dark') || document.documentElement.dataset.theme === 'dark'
+          const dark = renderedDark || (storedTheme ? storedTheme === 'dark' : preferredDark.matches)
+          favicon.href = dark ? '/favicon-dark.svg' : '/favicon-light.svg'
+        }
+        window.addEventListener('DOMContentLoaded', () => {
+          updateFavicon()
+          const observer = new MutationObserver(updateFavicon)
+          observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+          observer.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+        })
+        preferredDark.addEventListener('change', updateFavicon)
+        window.addEventListener('storage', updateFavicon)
+      })()
+    </script>
   </body>
 </html>

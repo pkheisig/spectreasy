@@ -36,3 +36,14 @@ test('drops obsolete negative histogram rows when AF_beads supplies bead backgro
   }])
   assert.deepEqual(result.rows, [rows[0]])
 })
+
+test('drops file-scoped viewport settings for removed controls', () => {
+  const rows = [
+    { gate_type: 'setting', scope: 'file', filename: 'removed.fcs', x_channel: 'view_histogram' },
+    { gate_type: 'setting', scope: 'beads', filename: '', x_channel: 'view_cell' },
+  ]
+  const result = reconcileGateCsvRows(rows, [{ filename: 'replacement.fcs' }])
+
+  assert.deepEqual(result.rows, [rows[1]])
+  assert.deepEqual(result.ignoredFiles, ['removed.fcs'])
+})

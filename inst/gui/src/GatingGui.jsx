@@ -14,7 +14,7 @@ import {
   Sun,
   Moon,
   Settings,
-  WandSparkles,
+  Info,
 } from 'lucide-react'
 import './GatingGui.css'
 import { reconcileGateCsvRows } from './gatingCsvCompatibility.js'
@@ -24,6 +24,11 @@ import {
   pruneUnavailableNegativeGates,
 } from './gatingEligibility.js'
 import { clearHistogramGatesForFile, histogramDomainIncludingGates } from './histogramGates.js'
+import {
+  buildViewSettingRows,
+  normalizePlotView,
+  parseViewSettings,
+} from './gatingViewSettings.js'
 
 const API_BASE = (() => {
   const envBase = import.meta.env.VITE_API_BASE?.trim()
@@ -36,6 +41,7 @@ const API_BASE = (() => {
 })()
 const CONFIG_NAME = 'ssc_gate_config.csv'
 const GUI_MODULE = 'control_gating'
+const THEME_STORAGE_KEY = 'spectreasy-theme'
 const DEFAULT_EVENT_COUNT = 50000
 const EVENT_COUNT_VERSION = 2
 const AXIS_SETTINGS_VERSION = 2
@@ -57,9 +63,21 @@ const PLOT_WIDTH = 520
 const PLOT_HEIGHT = 420
 const PAD = { left: 54, right: 18, top: 18, bottom: 46 }
 
+function HistogramSparkleIcon() {
+  return (
+    <svg className="histogram-sparkle-icon" viewBox="0 0 34 26" aria-hidden="true">
+      <path className="histogram-sparkle-curve" d="M3 21 C7 21 7 17 10 17 C13 17 13 20 16 20 C20 20 20 6 24 6 C28 6 27 21 31 21" />
+      <path className="histogram-sparkle-star star-one" d="M8 3 L9 5.4 L11.5 6.3 L9 7.2 L8 9.7 L7 7.2 L4.5 6.3 L7 5.4 Z" />
+      <path className="histogram-sparkle-star star-two" d="M29 1 L29.7 2.8 L31.5 3.5 L29.7 4.2 L29 6 L28.3 4.2 L26.5 3.5 L28.3 2.8 Z" />
+      <path className="histogram-sparkle-star star-three" d="M17 8 L17.6 9.4 L19 10 L17.6 10.6 L17 12 L16.4 10.6 L15 10 L16.4 9.4 Z" />
+    </svg>
+  )
+}
+
 function axisLabel(labels, channel) {
-  const desc = labels?.[channel]
-  return desc && desc !== channel ? `${channel} (${desc})` : channel
+  const cleanChannel = String(channel || '').replace(/\s*\(\s*\)\s*$/, '').trim()
+  const desc = String(labels?.[channel] || '').replace(/^\s*\(\s*\)\s*$/, '').trim()
+  return desc && desc !== cleanChannel ? `${cleanChannel} (${desc})` : cleanChannel
 }
 
 function channelTitle(channel) {
@@ -573,6 +591,7 @@ function buildRows(gates, files, settings = {}) {
       y: '',
     },
   ]
+  rows.push(...buildViewSettingRows(settings.viewSettings, files))
   const negativeDisabledFiles = new Set(
     files.filter((file) => !fileUsesNegativeHistogramGate(file)).map((file) => file.filename),
   )
@@ -627,6 +646,7 @@ function buildRows(gates, files, settings = {}) {
 
 function parseConfigRows(rows) {
   const gates = {}
+  const viewSettings = parseViewSettings(rows)
   let pointSize = null
   let maxPoints = null
   let histogramBins = null
@@ -679,7 +699,12 @@ function parseConfigRows(rows) {
     maxPoints: maxPoints === null ? null : normalizeEventCount(maxPoints),
     histogramBins,
     histogramTransform,
+    viewSettings,
   }
+}
+
+function hasViewSettings(value) {
+  return ['cell', 'singlet', 'histogram'].some((plot) => Object.keys(value?.[plot] || {}).length > 0)
 }
 
 function useApi(path, options) {
@@ -767,6 +792,12 @@ function densityPalette(size = 64) {
 }
 
 const DENSITY_PALETTE = densityPalette()
+const DARK_DENSITY_PALETTE = Array.from({ length: DENSITY_PALETTE.length }, (_, index) => {
+  const value = index / Math.max(DENSITY_PALETTE.length - 1, 1)
+  const hue = 218 - value * 198
+  const lightness = 72 - value * 10
+  return `hsla(${hue}, 100%, ${lightness}%, 0.94)`
+})
 
 function computeDensityBuckets(points, xField, yField) {
   const n = points.length
@@ -872,6 +903,9 @@ function GatePlot({
   onClear,
   onToggleHistogramGate,
   negativeGateEnabled = true,
+  darkMode = false,
+  viewDomain = null,
+  onViewDomainChange,
 }) {
   const plotRef = useRef(null)
   const menuRef = useRef(null)
@@ -881,7 +915,13 @@ function GatePlot({
   const [lastMousePos, setLastMousePos] = useState(null)
   const [hoverPt, setHoverPt] = useState(null)
   const [dragPreviewVertices, setDragPreviewVertices] = useState(null)
+  const [panTarget, setPanTarget] = useState(null)
   const [axisMenu, setAxisMenu] = useState(null)
+  const [zoomXDomain, setZoomXDomain] = useState(null)
+  const [zoomYDomain, setZoomYDomain] = useState(null)
+  const [plotHovered, setPlotHovered] = useState(false)
+  const panMovedRef = useRef(false)
+  const pendingViewRef = useRef(null)
 
   const transformFns = useMemo(() => histogramTransformFns(histogramTransform), [histogramTransform])
   const toPlotX = (value) => {
@@ -893,7 +933,7 @@ function GatePlot({
     return Number.isFinite(out) ? out : 0
   }
 
-  const xDomain = useMemo(() => {
+  const baseXDomain = useMemo(() => {
     const eventValues = events.map((e) => e[xField])
     const rawDomain = xDomainProp || extent(eventValues)
     if (mode !== 'histogram') return rawDomain
@@ -906,13 +946,14 @@ function GatePlot({
     if (transformed.length < 2 || transformed[0] === transformed[1]) return [0, 1]
     return [Math.min(...transformed), Math.max(...transformed)]
   }, [events, xField, xDomainProp, mode, transformFns, gate, secondaryGates])
+  const xDomain = zoomXDomain || baseXDomain
 
   const densityCurve = useMemo(() => {
     if (mode !== 'histogram') return []
     return getDensityCurve(events.map((e) => toPlotX(e[xField])), xDomain, histogramBins)
   }, [events, mode, xField, xDomain, histogramBins, histogramTransform])
 
-  const yDomain = useMemo(() => {
+  const baseYDomain = useMemo(() => {
     if (yDomainProp) return yDomainProp
     if (mode === 'histogram') {
       if (densityCurve.length === 0) return [0, 1]
@@ -920,6 +961,7 @@ function GatePlot({
     }
     return extent(events.map((e) => e[yField]))
   }, [events, mode, yDomainProp, densityCurve])
+  const yDomain = zoomYDomain || baseYDomain
 
   const xScale = useMemo(() => makeScale(xDomain, [PAD.left, PLOT_WIDTH - PAD.right]), [xDomain])
   const yScale = useMemo(() => makeScale(yDomain, [PLOT_HEIGHT - PAD.bottom, PAD.top]), [yDomain])
@@ -933,6 +975,116 @@ function GatePlot({
 
   const xTicks = useMemo(() => getTicks(xDomain, 5), [xDomain])
   const yTicks = useMemo(() => getTicks(yDomain, 5), [yDomain])
+
+  useEffect(() => {
+    const saved = normalizePlotView(viewDomain, mode !== 'histogram')
+    const savedX = mode === 'histogram' && saved?.x
+      ? saved.x.map((value) => transformFns.forward(value))
+      : saved?.x
+    setZoomXDomain(savedX || null)
+    setZoomYDomain(mode === 'histogram' ? null : (saved?.y || null))
+    pendingViewRef.current = savedX ? { x: savedX, y: mode === 'histogram' ? null : (saved?.y || null) } : null
+  }, [
+    xField,
+    yField,
+    mode,
+    xDomainProp?.[0],
+    xDomainProp?.[1],
+    yDomainProp?.[0],
+    yDomainProp?.[1],
+    histogramTransform,
+    viewDomain?.x?.[0],
+    viewDomain?.x?.[1],
+    viewDomain?.y?.[0],
+    viewDomain?.y?.[1],
+  ])
+
+  function emitViewChange(view) {
+    if (!view) {
+      onViewDomainChange?.(null)
+      return
+    }
+    if (mode === 'histogram') {
+      onViewDomainChange?.({ x: view.x.map((value) => fromPlotX(value)), y: null })
+      return
+    }
+    onViewDomainChange?.(view)
+  }
+
+  function zoomDomainAround(domain, baseDomain, factor, anchor) {
+    const [baseMin, baseMax] = baseDomain
+    const [currentMin, currentMax] = domain
+    const baseSpan = baseMax - baseMin
+    const currentSpan = currentMax - currentMin
+    if (!Number.isFinite(baseSpan) || baseSpan <= 0 || !Number.isFinite(currentSpan) || currentSpan <= 0) return domain
+    const targetSpan = clamp(currentSpan * factor, baseSpan * 0.04, baseSpan)
+    const ratio = clamp((anchor - currentMin) / currentSpan, 0, 1)
+    let nextMin = anchor - targetSpan * ratio
+    let nextMax = nextMin + targetSpan
+    if (nextMin < baseMin) {
+      nextMax += baseMin - nextMin
+      nextMin = baseMin
+    }
+    if (nextMax > baseMax) {
+      nextMin -= nextMax - baseMax
+      nextMax = baseMax
+    }
+    return [Math.max(baseMin, nextMin), Math.min(baseMax, nextMax)]
+  }
+
+  function applyPlotZoom(factor, anchorX, anchorY) {
+    if (mode === 'histogram') return
+    const nextX = zoomDomainAround(xDomain, baseXDomain, factor, anchorX)
+    const nextY = zoomDomainAround(yDomain, baseYDomain, factor, anchorY)
+    setZoomXDomain(nextX)
+    setZoomYDomain(nextY)
+    pendingViewRef.current = { x: nextX, y: nextY }
+    emitViewChange(pendingViewRef.current)
+  }
+
+  function handleWheel(evt) {
+    if (mode === 'histogram') return
+    evt.preventDefault()
+    evt.stopPropagation()
+    const point = screenToData(evt)
+    const factor = evt.deltaY < 0 ? 0.97 : 1.03
+    applyPlotZoom(factor, point.plotX, point.y)
+  }
+
+  useEffect(() => {
+    const plotNode = svgRef.current
+    if (!plotNode) return undefined
+    const wheelListener = (event) => handleWheel(event)
+    plotNode.addEventListener('wheel', wheelListener, { passive: false })
+    return () => plotNode.removeEventListener('wheel', wheelListener)
+  }, [xDomain, yDomain, baseXDomain, baseYDomain, mode])
+
+  useEffect(() => {
+    if (!plotHovered) return undefined
+    const handleZoomKey = (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      const zoomIn = event.key === '+' || event.key === '='
+      const zoomOut = event.key === '-' || event.key === '_'
+      const reset = event.key === '0'
+      if (!zoomIn && !zoomOut && !reset) return
+      if (mode === 'histogram' && !reset) return
+      event.preventDefault()
+      if (reset) {
+        setZoomXDomain(null)
+        setZoomYDomain(null)
+        pendingViewRef.current = null
+        emitViewChange(null)
+        return
+      }
+      applyPlotZoom(
+        zoomIn ? 0.95 : 1.05,
+        (xDomain[0] + xDomain[1]) / 2,
+        (yDomain[0] + yDomain[1]) / 2,
+      )
+    }
+    window.addEventListener('keydown', handleZoomKey)
+    return () => window.removeEventListener('keydown', handleZoomKey)
+  }, [plotHovered, xDomain, yDomain, baseXDomain, baseYDomain, mode])
 
   function screenToData(evt) {
     const box = svgRef.current.getBoundingClientRect()
@@ -996,10 +1148,9 @@ function GatePlot({
     ctx.rect(PAD.left, PAD.top, PLOT_WIDTH - PAD.left - PAD.right, PLOT_HEIGHT - PAD.top - PAD.bottom)
     ctx.clip()
 
-    // Light theme plot bg area
-    ctx.fillStyle = '#f8f7f3'
+    ctx.fillStyle = darkMode ? '#0b1110' : '#f8f7f3'
     ctx.fillRect(PAD.left, PAD.top, PLOT_WIDTH - PAD.left - PAD.right, PLOT_HEIGHT - PAD.top - PAD.bottom)
-    ctx.strokeStyle = '#c7c3ba'
+    ctx.strokeStyle = darkMode ? '#52615b' : '#c7c3ba'
     ctx.strokeRect(PAD.left, PAD.top, PLOT_WIDTH - PAD.left - PAD.right, PLOT_HEIGHT - PAD.top - PAD.bottom)
 
     if (events.length === 0) {
@@ -1011,7 +1162,8 @@ function GatePlot({
     const half = side / 2
     densityBuckets.forEach((bucket, colorIndex) => {
       if (!bucket.length) return
-      ctx.fillStyle = DENSITY_PALETTE[colorIndex] || 'rgba(0, 0, 255, 0.6)'
+      const palette = darkMode ? DARK_DENSITY_PALETTE : DENSITY_PALETTE
+      ctx.fillStyle = palette[colorIndex] || (darkMode ? 'rgba(90, 190, 255, 0.9)' : 'rgba(0, 0, 255, 0.6)')
       ctx.beginPath()
       bucket.forEach((eventIndex) => {
         const p = events[eventIndex]
@@ -1023,9 +1175,13 @@ function GatePlot({
     })
 
     ctx.restore()
-  }, [events, densityBuckets, xScale, yScale, mode, pointSize, xField, yField])
+  }, [events, densityBuckets, xScale, yScale, mode, pointSize, xField, yField, darkMode])
 
   function handleClick(evt) {
+    if (panMovedRef.current) {
+      panMovedRef.current = false
+      return
+    }
     if (!active) {
       onClickPlot()
       return
@@ -1081,9 +1237,70 @@ function GatePlot({
     if (targetKey && targetGate?.type) onSelectHistogramGate?.(targetGate.type)
   }
 
+  function shiftDomain(domain, amount, limitDomain) {
+    const span = domain[1] - domain[0]
+    let nextMin = domain[0] + amount
+    let nextMax = domain[1] + amount
+    if (nextMin < limitDomain[0]) {
+      nextMax = limitDomain[0] + span
+      nextMin = limitDomain[0]
+    }
+    if (nextMax > limitDomain[1]) {
+      nextMin = limitDomain[1] - span
+      nextMax = limitDomain[1]
+    }
+    return [nextMin, nextMax]
+  }
+
+  function handlePlotMouseDown(evt) {
+    if (evt.button !== 0 || drawActive || !active) return
+    const scatterCanPan = mode === 'scatter' && (zoomXDomain || zoomYDomain)
+    if (!scatterCanPan && mode !== 'histogram') return
+    const box = svgRef.current.getBoundingClientRect()
+    const sx = (evt.clientX - box.left) * (PLOT_WIDTH / box.width)
+    const sy = (evt.clientY - box.top) * (PLOT_HEIGHT / box.height)
+    if (sx < PAD.left || sx > PLOT_WIDTH - PAD.right || sy < PAD.top || sy > PLOT_HEIGHT - PAD.bottom) return
+    evt.preventDefault()
+    panMovedRef.current = false
+    setPanTarget({
+      clientX: evt.clientX,
+      clientY: evt.clientY,
+      xDomain: [...xDomain],
+      yDomain: [...yDomain],
+    })
+  }
+
   function handleMouseMove(evt) {
     const currentPt = screenToData(evt)
     setHoverPt(currentPt)
+
+    if (panTarget) {
+      const box = svgRef.current.getBoundingClientRect()
+      const plotWidth = box.width * (PLOT_WIDTH - PAD.left - PAD.right) / PLOT_WIDTH
+      const plotHeight = box.height * (PLOT_HEIGHT - PAD.top - PAD.bottom) / PLOT_HEIGHT
+      const dxPixels = evt.clientX - panTarget.clientX
+      const dyPixels = evt.clientY - panTarget.clientY
+      if (Math.abs(dxPixels) > 2 || Math.abs(dyPixels) > 2) panMovedRef.current = true
+
+      const startXSpan = panTarget.xDomain[1] - panTarget.xDomain[0]
+      const xShift = -(dxPixels / plotWidth) * startXSpan
+      if (mode === 'histogram') {
+        const baseSpan = baseXDomain[1] - baseXDomain[0]
+        const extendedLimits = [baseXDomain[0] - baseSpan * 4, baseXDomain[1] + baseSpan * 4]
+        const nextX = shiftDomain(panTarget.xDomain, xShift, extendedLimits)
+        setZoomXDomain(nextX)
+        pendingViewRef.current = { x: nextX, y: null }
+      } else {
+        const startYSpan = panTarget.yDomain[1] - panTarget.yDomain[0]
+        const yShift = (dyPixels / plotHeight) * startYSpan
+        const nextX = shiftDomain(panTarget.xDomain, xShift, baseXDomain)
+        const nextY = shiftDomain(panTarget.yDomain, yShift, baseYDomain)
+        setZoomXDomain(nextX)
+        setZoomYDomain(nextY)
+        pendingViewRef.current = { x: nextX, y: nextY }
+      }
+      return
+    }
 
     if (dragTarget === null || lastMousePos === null || !dragTarget.gate?.vertices?.length) return
     const dx = currentPt.x - lastMousePos.x
@@ -1126,6 +1343,12 @@ function GatePlot({
   }
 
   function handleMouseUp() {
+    if (panTarget) {
+      setPanTarget(null)
+      if (panMovedRef.current && pendingViewRef.current) {
+        emitViewChange(pendingViewRef.current)
+      }
+    }
     if (dragTarget !== null) {
       if (dragPreviewVertices) {
         if (dragTarget.gateKey) {
@@ -1222,7 +1445,7 @@ function GatePlot({
             key={`secondary-handle-${index}-${handleIndex}`}
             cx={xToScreen(p.x)}
             cy={PLOT_HEIGHT / 2}
-            r="7"
+            r="6"
             className="gate-handle is-secondary"
             clipPath="url(#plot-clip)"
             style={{ cursor: 'ew-resize' }}
@@ -1342,6 +1565,8 @@ function GatePlot({
           width="100%"
           viewBox={`0 0 ${PLOT_WIDTH} ${PLOT_HEIGHT}`}
           className="plot-svg"
+          data-x-domain={xDomain.join(',')}
+          data-y-domain={yDomain.join(',')}
           style={{
             position: 'absolute',
             top: 0,
@@ -1350,14 +1575,25 @@ function GatePlot({
             height: '100%',
             zIndex: 2,
             background: 'transparent',
-            cursor: drawActive ? 'crosshair' : 'default',
+            cursor: drawActive
+              ? 'crosshair'
+              : panTarget
+                ? 'grabbing'
+                : (mode === 'histogram' || zoomXDomain || zoomYDomain)
+                  ? 'grab'
+                  : 'default',
           }}
+          onMouseDown={handlePlotMouseDown}
           onClick={handleClick}
           onDoubleClick={onFinish}
           onContextMenu={handleContext}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onMouseEnter={() => setPlotHovered(true)}
+          onMouseOut={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setPlotHovered(false)
+          }}
         >
           <defs>
             <clipPath id="plot-clip">
@@ -1367,9 +1603,8 @@ function GatePlot({
           
           {mode === 'histogram' && (
             <>
-              {/* Keep plot areas white/light themed */}
-              <rect x={PAD.left} y={PAD.top} width={PLOT_WIDTH - PAD.left - PAD.right} height={PLOT_HEIGHT - PAD.top - PAD.bottom} fill="#f8f7f3" stroke="#c7c3ba" />
-              {densityPath && <path d={densityPath} fill="rgba(38, 63, 115, 0.3)" stroke="#263f73" strokeWidth="1.5" clipPath="url(#plot-clip)" />}
+              <rect className="plot-bg" x={PAD.left} y={PAD.top} width={PLOT_WIDTH - PAD.left - PAD.right} height={PLOT_HEIGHT - PAD.top - PAD.bottom} />
+              {densityPath && <path className="histogram-density" d={densityPath} strokeWidth="1.35" clipPath="url(#plot-clip)" />}
             </>
           )}
           <line x1={PAD.left} y1={PLOT_HEIGHT - PAD.bottom} x2={PLOT_WIDTH - PAD.right} y2={PLOT_HEIGHT - PAD.bottom} className="axis" />
@@ -1396,8 +1631,8 @@ function GatePlot({
             const x = xScale.toScreen(t)
             return (
               <g key={`xtick-${t}`}>
-                <line x1={x} y1={PLOT_HEIGHT - PAD.bottom} x2={x} y2={PLOT_HEIGHT - PAD.bottom + 5} stroke="#6d756f" strokeWidth="1" />
-                <text x={x} y={PLOT_HEIGHT - PAD.bottom + 18} textAnchor="middle" fontSize="10" fill="#6d756f" fontWeight="bold">{formatTickValue(mode === 'histogram' ? fromPlotX(t) : t)}</text>
+                <line className="axis-tick-line" x1={x} y1={PLOT_HEIGHT - PAD.bottom} x2={x} y2={PLOT_HEIGHT - PAD.bottom + 5} />
+                <text className="axis-tick-label" x={x} y={PLOT_HEIGHT - PAD.bottom + 18} textAnchor="middle">{formatTickValue(mode === 'histogram' ? fromPlotX(t) : t)}</text>
               </g>
             )
           })}
@@ -1405,8 +1640,8 @@ function GatePlot({
             const y = yScale.toScreen(t)
             return (
               <g key={`ytick-${t}`}>
-                <line x1={PAD.left - 5} y1={y} x2={PAD.left} y2={y} stroke="#6d756f" strokeWidth="1" />
-                <text x={PAD.left - 8} y={y + 3} textAnchor="end" fontSize="10" fill="#6d756f" fontWeight="bold">{formatTickValue(t)}</text>
+                <line className="axis-tick-line" x1={PAD.left - 5} y1={y} x2={PAD.left} y2={y} />
+                <text className="axis-tick-label" x={PAD.left - 8} y={y + 3} textAnchor="end">{formatTickValue(t)}</text>
               </g>
             )
           })}
@@ -1447,8 +1682,8 @@ function GatePlot({
               key={`handle-${index}`}
               cx={xToScreen(p.x)}
               cy={PLOT_HEIGHT / 2}
-              r="8"
-              className="gate-handle"
+              r="6"
+              className={`gate-handle ${isBead && !isPositivePlot ? 'gate-handle-bead' : ''}`}
               clipPath="url(#plot-clip)"
               style={{ cursor: 'ew-resize' }}
               onMouseDown={(evt) => handleMouseDown(index, evt)}
@@ -1464,7 +1699,7 @@ function GatePlot({
               height={PLOT_HEIGHT - PAD.bottom - PAD.top}
               fill={histogramGateType === 'positive' ? 'rgba(214, 82, 56, 0.1)' : 'rgba(38, 63, 115, 0.1)'}
               stroke={histogramGateType === 'positive' ? '#d65238' : '#263f73'}
-              strokeWidth="2"
+              strokeWidth="1.6"
               strokeDasharray="4 4"
               clipPath="url(#plot-clip)"
             />
@@ -1484,8 +1719,8 @@ function GatePlot({
               key={`${p.x}-${p.y}-${index}`}
               cx={xToScreen(p.x)}
               cy={yScale.toScreen(p.y)}
-              r="8"
-              className="gate-handle"
+              r="6"
+              className={`gate-handle ${isBead && !isPositivePlot ? 'gate-handle-bead' : ''}`}
               clipPath="url(#plot-clip)"
               style={{ cursor: 'move' }}
               onMouseDown={(evt) => handleMouseDown(index, evt)}
@@ -1532,12 +1767,17 @@ function App() {
   const [maxPoints, setMaxPoints] = useState(DEFAULT_EVENT_COUNT)
   const [histogramBins, setHistogramBins] = useState(DEFAULT_HISTOGRAM_BINS)
   const [histogramTransform, setHistogramTransform] = useState(DEFAULT_HISTOGRAM_TRANSFORM)
-  const [darkMode, setDarkMode] = useState(false)
+  const [darkMode, setDarkMode] = useState(() => {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
+    if (stored === 'dark' || stored === 'light') return stored === 'dark'
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches || false
+  })
   const [guiStateLoaded, setGuiStateLoaded] = useState(false)
   const [preloadComplete, setPreloadComplete] = useState(false)
   const [gatesLoaded, setGatesLoaded] = useState(false)
   const [histogramAutogating, setHistogramAutogating] = useState(false)
   const [axisSettings, setAxisSettings] = useState({ cell: {}, singlet: {} })
+  const [viewSettings, setViewSettings] = useState({ cell: {}, singlet: {}, histogram: {} })
   const [spectrum, setSpectrum] = useState(null)
   const [spectrumCache, setSpectrumCache] = useState({})
   const loadInputRef = useRef(null)
@@ -1545,6 +1785,7 @@ function App() {
   // Sync dark mode class to document body
   useEffect(() => {
     document.body.classList.toggle('dark', darkMode)
+    window.localStorage.setItem(THEME_STORAGE_KEY, darkMode ? 'dark' : 'light')
   }, [darkMode])
 
   useEffect(() => {
@@ -1591,6 +1832,11 @@ function App() {
         if (typeof csvGates.maxPoints === 'number') setMaxPoints(normalizeEventCount(csvGates.maxPoints))
         if (typeof csvGates.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(csvGates.histogramBins))
         if (typeof csvGates.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(csvGates.histogramTransform))
+        if (hasViewSettings(csvGates.viewSettings)) {
+          setViewSettings(csvGates.viewSettings)
+        } else if (hasViewSettings(cacheData?.viewSettings)) {
+          setViewSettings(cacheData.viewSettings)
+        }
         if (cacheData?.pointSize) {
           setPointSize(Number(cacheData.pointSize))
         }
@@ -1641,11 +1887,11 @@ function App() {
       useApi('/gate_cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gates, pointSize, maxPoints: normalizeEventCount(maxPoints), histogramBins, histogramTransform, eventCountVersion: EVENT_COUNT_VERSION })
+        body: JSON.stringify({ gates, pointSize, maxPoints: normalizeEventCount(maxPoints), histogramBins, histogramTransform, viewSettings, eventCountVersion: EVENT_COUNT_VERSION })
       }).catch(() => {})
     }, 400)
     return () => clearTimeout(timer)
-  }, [gates, pointSize, maxPoints, histogramBins, histogramTransform, gatesLoaded])
+  }, [gates, pointSize, maxPoints, histogramBins, histogramTransform, viewSettings, gatesLoaded])
 
   useEffect(() => {
     if (!gatesLoaded || !files.length) return
@@ -1653,11 +1899,11 @@ function App() {
       useApi('/gate_config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: CONFIG_NAME, rows: buildRows(gates, files, { pointSize, maxPoints, histogramBins, histogramTransform }) }),
+        body: JSON.stringify({ filename: CONFIG_NAME, rows: buildRows(gates, files, { pointSize, maxPoints, histogramBins, histogramTransform, viewSettings }) }),
       }).catch(() => {})
     }, 700)
     return () => clearTimeout(timer)
-  }, [gates, files, pointSize, maxPoints, histogramBins, histogramTransform, gatesLoaded])
+  }, [gates, files, pointSize, maxPoints, histogramBins, histogramTransform, viewSettings, gatesLoaded])
 
   useEffect(() => {
     if (!selected || !gatesLoaded) return
@@ -1668,14 +1914,14 @@ function App() {
       singlet: gates[`singlet:${selected}`] || gates[`singlet:${selectedControlType}`] || null,
       positive: gates[`positive:${selected}`] || null,
     }
-    const cacheKey = `${selected}:${JSON.stringify(relevantGates)}`
+    const cacheKey = `${selected}:${darkMode ? 'dark' : 'light'}:${JSON.stringify(relevantGates)}`
     if (spectrumCache[cacheKey]) {
       setSpectrum(spectrumCache[cacheKey])
       return
     }
     setSpectrum(null)
     const timer = setTimeout(() => {
-      useApi(`/gate_spectrum?filename=${encodeURIComponent(selected)}`)
+      useApi(`/gate_spectrum?filename=${encodeURIComponent(selected)}&dark=${darkMode ? 'true' : 'false'}`)
         .then((data) => {
           const image = data?.spectrum || null
           setSpectrum(image)
@@ -1686,7 +1932,7 @@ function App() {
         .catch(() => setSpectrum(null))
     }, 800)
     return () => clearTimeout(timer)
-  }, [selected, gates, gatesLoaded, files, spectrumCache])
+  }, [selected, gates, gatesLoaded, files, spectrumCache, darkMode])
 
   useEffect(() => {
     if (!files.length) return
@@ -1772,6 +2018,18 @@ function App() {
 
   const controlType = fileControlType(currentFile)
   const isBead = controlType === 'beads'
+  const updateViewSetting = (plot, target, view) => {
+    setViewSettings((previous) => {
+      const next = {
+        ...previous,
+        [plot]: { ...(previous[plot] || {}) },
+      }
+      const normalized = normalizePlotView(view, plot !== 'histogram')
+      if (normalized) next[plot][target] = normalized
+      else delete next[plot][target]
+      return next
+    })
+  }
   const activeKey = gateKey(activeGate, selected, controlType)
 
   const fileCellGate = gates[`cell:${selected}`]
@@ -2004,7 +2262,7 @@ function App() {
   }
 
   async function saveConfig(closeAfter = false, choosePath = false) {
-    const rows = buildRows(gates, files, { pointSize, maxPoints, histogramBins, histogramTransform })
+    const rows = buildRows(gates, files, { pointSize, maxPoints, histogramBins, histogramTransform, viewSettings })
     try {
       const saved = await useApi('/gate_config', {
         method: 'POST',
@@ -2032,7 +2290,7 @@ function App() {
   }
 
   async function saveConfigAsCsv() {
-    const rows = buildRows(gates, files, { pointSize, maxPoints, histogramBins, histogramTransform })
+    const rows = buildRows(gates, files, { pointSize, maxPoints, histogramBins, histogramTransform, viewSettings })
     const csvText = gateRowsToCsv(rows)
     let filename = CONFIG_NAME
     try {
@@ -2080,6 +2338,7 @@ function App() {
     if (typeof parsed.maxPoints === 'number') setMaxPoints(normalizeEventCount(parsed.maxPoints))
     if (typeof parsed.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(parsed.histogramBins))
     if (typeof parsed.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(parsed.histogramTransform))
+    setViewSettings(parsed.viewSettings)
     setDraft([])
     await useApi('/gate_config', {
       method: 'POST',
@@ -2213,11 +2472,94 @@ function App() {
               disabled={!canAutogateHistograms}
               onClick={() => { if (canAutogateHistograms) setShowAutogateConfirmModal(true) }}
             >
-              <WandSparkles size={17} /> Auto-gate histograms
+              <HistogramSparkleIcon />
             </button>
-            <button title="Settings" onClick={() => setShowSettingsModal(true)}>
-              <Settings size={17} />
-            </button>
+            <div className="gating-help">
+              <button type="button" className="icon-button gating-help-button" aria-label="Gating help" aria-describedby="gating-help-popover">
+                <Info size={17} />
+              </button>
+              <div id="gating-help-popover" className="gating-help-popover" role="tooltip">
+                <strong>Quick guide</strong>
+                <dl>
+                  <div><dt>Navigate</dt><dd>Use the arrows or select a control in the sidebar.</dd></div>
+                  <div><dt>Scatter gates</dt><dd>Press Gate, click polygon points, then click the first point or double-click to close. Drag the border to move the gate or its nodes to reshape it.</dd></div>
+                  <div><dt>Gate scope</dt><dd>Cell and bead gates are global for their control type. Right-click a gate to make it file-specific, make it global, or clear it. A gate remains tied to the axis channels on which it was created. After changing a plot axis, create a new gate; moving the old gate does not convert it to the new channels.</dd></div>
+                  <div><dt>Histogram gates</dt><dd>Use Pos or Neg and click twice to define an interval. Neg is disabled when a matched external AF background exists. Clear removes histogram gates only for this SCC file.</dd></div>
+                  <div><dt>Auto-gate</dt><dd>The starred histogram button creates only missing required histogram gates and preserves existing gates.</dd></div>
+                  <div><dt>Plot view</dt><dd>Use the mouse wheel or Ctrl +/− to zoom scatter plots, then drag to pan. Histograms pan horizontally without zoom. Ctrl+0 resets the current view. Views are saved in the gate CSV.</dd></div>
+                  <div><dt>Axes and files</dt><dd>Click an underlined scatter-axis label to change its channel. Save and Load write or read the gate CSV; Confirm validates required gates and exits.</dd></div>
+                </dl>
+              </div>
+            </div>
+            <div className="gating-settings">
+              <button
+                className="icon-button"
+                title="Settings"
+                aria-label="Settings"
+                aria-expanded={showSettingsModal}
+                onClick={() => setShowSettingsModal((open) => !open)}
+              >
+                <Settings size={17} />
+              </button>
+              {showSettingsModal && (
+                <div className="gating-settings-popover" role="dialog" aria-label="Gating settings">
+                  <div className="gating-settings-heading">
+                    <strong>Settings</strong>
+                    <span>Changes are saved automatically</span>
+                  </div>
+                  <div className="gating-settings-appearance">
+                    <span>Appearance</span>
+                    <button type="button" onClick={() => setDarkMode(!darkMode)}>
+                      {darkMode ? <Moon size={14} /> : <Sun size={14} />}
+                      {darkMode ? 'Dark' : 'Light'}
+                    </button>
+                  </div>
+                  <label className="gating-settings-row">
+                    <span>Point size</span>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="4.0"
+                      step="0.25"
+                      value={pointSize}
+                      onChange={(e) => setPointSize(Number(e.target.value))}
+                    />
+                    <strong>{pointSize.toFixed(2)}</strong>
+                  </label>
+                  <label className="gating-settings-row">
+                    <span>Events</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max={EVENT_COUNT_STEPS.length - 1}
+                      step="1"
+                      value={eventStepIndex(maxPoints)}
+                      onChange={(e) => setMaxPoints(EVENT_COUNT_STEPS[Number(e.target.value)])}
+                    />
+                    <strong>{eventStepLabel(maxPoints, payload?.total_events)}</strong>
+                  </label>
+                  <label className="gating-settings-row">
+                    <span>Histogram bins</span>
+                    <input
+                      type="range"
+                      min={HISTOGRAM_BIN_MIN}
+                      max={HISTOGRAM_BIN_MAX}
+                      step="5"
+                      value={histogramBins}
+                      onChange={(e) => setHistogramBins(normalizeHistogramBins(e.target.value))}
+                      onInput={(e) => setHistogramBins(normalizeHistogramBins(e.currentTarget.value))}
+                    />
+                    <strong>{histogramBins}</strong>
+                  </label>
+                  <div className="gating-settings-transform">
+                    <TransformDropdown
+                      value={histogramTransform}
+                      onChange={(nextValue) => setHistogramTransform(normalizeHistogramTransform(nextValue))}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
             <input
               ref={loadInputRef}
               type="file"
@@ -2225,8 +2567,8 @@ function App() {
               className="hidden-file-input"
               onChange={(event) => loadConfigFromFile(event.target.files?.[0] || null)}
             />
-            <button title="Save gates as CSV" onClick={() => saveConfigAsCsv()}><Save size={17} /> Save</button>
-            <button title="Load gates from CSV" onClick={() => loadConfigFromPicker()}><FolderOpen size={17} /> Load</button>
+            <button className="icon-button" aria-label="Save gates as CSV" title="Save gates as CSV" onClick={() => saveConfigAsCsv()}><Save size={17} /></button>
+            <button className="icon-button" aria-label="Load gates from CSV" title="Load gates from CSV" onClick={() => loadConfigFromPicker()}><FolderOpen size={17} /></button>
             <span
               className="confirm-wrapper"
               onMouseEnter={() => !canConfirm && setShowConfirmIssues(true)}
@@ -2319,9 +2661,12 @@ function App() {
             onDragEnd={handleDragEnd}
             xDomain={domainForChannel(cellAxes.x, domains.fsc_a)}
             yDomain={domainForChannel(cellAxes.y, domains.ssc_a)}
+            viewDomain={viewSettings.cell?.[controlType] || null}
+            onViewDomainChange={(view) => updateViewSetting('cell', controlType, view)}
             statsText={cellGate ? `${cellSummary.count.toLocaleString()} (${cellSummary.pct.toFixed(1)}%)` : null}
             drawActive={drawActive}
             pointSize={pointSize}
+            darkMode={darkMode}
             onContextGate={(x, y) => setContextMenu({ x, y, gateKey: gates[`cell:${selected}`] ? `cell:${selected}` : `cell:${controlType}` })}
             availableChannels={availableScatterChannels}
             onAxisChange={(axis, channel) => updateAxis('cell', axis, channel)}
@@ -2388,10 +2733,13 @@ function App() {
             onDragEnd={handleDragEnd}
             xDomain={domainForChannel(singletAxes.x, domains.fsc_h)}
             yDomain={domainForChannel(singletAxes.y, domains.fsc_a)}
+            viewDomain={viewSettings.singlet?.[controlType] || null}
+            onViewDomainChange={(view) => updateViewSetting('singlet', controlType, view)}
             statsText={singletGate ? `${singletSummary.count.toLocaleString()} (${singletSummary.pct.toFixed(1)}%)` : null}
             warningText={singletWarningText}
             drawActive={drawActive}
             pointSize={pointSize}
+            darkMode={darkMode}
             onContextGate={(x, y) => setContextMenu({ x, y, gateKey: gates[`singlet:${selected}`] ? `singlet:${selected}` : `singlet:${controlType}` })}
             availableChannels={availableScatterChannels}
             onAxisChange={(axis, channel) => updateAxis('singlet', axis, channel)}
@@ -2466,6 +2814,8 @@ function App() {
               }}
               onDragEnd={handleDragEnd}
               xDomain={domains.peak}
+              viewDomain={viewSettings.histogram?.[selected] || null}
+              onViewDomainChange={(view) => updateViewSetting('histogram', selected, view)}
               statsText={[
                 positiveGate ? `Pos ${positiveSummary.count.toLocaleString()} (${positiveSummary.pct.toFixed(1)}%)` : null,
                 negativeGate ? `Neg ${negativeSummary.count.toLocaleString()} (${negativeSummary.pct.toFixed(1)}%)` : null,
@@ -2473,6 +2823,7 @@ function App() {
               warningText={positiveWarningText}
               drawActive={drawActive}
               pointSize={pointSize}
+              darkMode={darkMode}
               onContextGate={(x, y, key) => setContextMenu({ x, y, gateKey: key || histogramGateKey(histogramGateType, selected) })}
               isPositivePlot={true}
               histogramGateType={histogramGateType}
@@ -2601,78 +2952,6 @@ function App() {
         </div>
       )}
 
-      {/* Settings Modal */}
-      {showSettingsModal && (
-        <div className="confirm-modal-overlay" onClick={() => setShowSettingsModal(false)}>
-          <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Gating Settings</h2>
-            <div style={{ display: 'grid', gap: 20, margin: '24px 0', textAlign: 'left' }}>
-              <div style={{ display: 'grid', gap: 8 }}>
-                <label style={{ fontWeight: 'bold', fontSize: 14 }}>Theme:</label>
-                <button type="button" onClick={() => setDarkMode(!darkMode)} style={{ justifyContent: 'flex-start' }}>
-                  {darkMode ? <Sun size={17} /> : <Moon size={17} />}
-                  {darkMode ? 'Light mode' : 'Dark mode'}
-                </button>
-              </div>
-              <div style={{ display: 'grid', gap: 6 }}>
-                <label style={{ fontWeight: 'bold', fontSize: 14 }}>Point Size ({pointSize}px):</label>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="4.0"
-                  step="0.25"
-                  value={pointSize}
-                  onChange={(e) => setPointSize(Number(e.target.value))}
-                  style={{ width: '100%', cursor: 'pointer' }}
-                />
-              </div>
-              <div style={{ display: 'grid', gap: 6 }}>
-                <label style={{ fontWeight: 'bold', fontSize: 14 }}>
-                  Show Downsampled Events ({eventStepLabel(maxPoints, payload?.total_events)}):
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max={EVENT_COUNT_STEPS.length - 1}
-                  step="1"
-                  value={eventStepIndex(maxPoints)}
-                  onChange={(e) => setMaxPoints(EVENT_COUNT_STEPS[Number(e.target.value)])}
-                  style={{ width: '100%', cursor: 'pointer' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', fontWeight: 800 }}>
-                  <span>1K</span>
-                  <span>3K</span>
-                  <span>10K</span>
-                  <span>50K</span>
-                  <span>100K</span>
-                </div>
-              </div>
-              <div style={{ display: 'grid', gap: 6 }}>
-                <label style={{ fontWeight: 'bold', fontSize: 14 }}>Histogram ({histogramBins} bins):</label>
-                <input
-                  type="range"
-                  min={HISTOGRAM_BIN_MIN}
-                  max={HISTOGRAM_BIN_MAX}
-                  step="5"
-                  value={histogramBins}
-                  onChange={(e) => setHistogramBins(normalizeHistogramBins(e.target.value))}
-                  onInput={(e) => setHistogramBins(normalizeHistogramBins(e.currentTarget.value))}
-                  style={{ width: '100%', cursor: 'pointer' }}
-                />
-              </div>
-              <div style={{ display: 'grid', gap: 6 }}>
-                <TransformDropdown
-                  value={histogramTransform}
-                  onChange={(nextValue) => setHistogramTransform(normalizeHistogramTransform(nextValue))}
-                />
-              </div>
-            </div>
-            <div className="confirm-modal-actions">
-              <button className="confirm-btn" onClick={() => setShowSettingsModal(false)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   )
 }

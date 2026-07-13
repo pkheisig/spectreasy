@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { Download, FileText, Moon, Plus, Sun, Trash2, Upload } from 'lucide-react';
+import { Moon, Plus, Save, Sun, Trash2, Upload } from 'lucide-react';
 import './PanelBuilder.css';
 
 const API_BASE = (() => {
@@ -12,6 +12,32 @@ const API_BASE = (() => {
     }
     return 'http://localhost:8000';
 })();
+
+const unboxGuiState = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+        if (value.length === 1) return unboxGuiState(value[0]);
+        return value.map(unboxGuiState);
+    }
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, unboxGuiState(item)]));
+    }
+    return value;
+};
+
+const normalizeMarkers = (value: unknown): Record<number, string> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return Object.fromEntries(
+        Object.entries(value).map(([key, marker]) => [Number(key), String(unboxGuiState(marker) ?? '')])
+    );
+};
+
+const PdfIcon = ({ size = 20 }: { size?: number }) => (
+    <svg width={size + 4} height={size} viewBox="0 0 30 24" fill="none" aria-hidden="true">
+        <path d="M4 2.75h13l5 5v13.5H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+        <path d="M17 2.75v5h5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+        <text x="13" y="16.4" fill="currentColor" fontSize="6.2" fontWeight="800" textAnchor="middle" fontFamily="Avenir Next, sans-serif">PDF</text>
+    </svg>
+);
 
 type LibraryInfo = {
     id: string;
@@ -538,7 +564,7 @@ const PanelBuilder = () => {
     const [markers, setMarkers] = useState<Record<number, string>>(() => {
         try {
             const stored = localStorage.getItem('spectreasy_markers');
-            return stored ? JSON.parse(stored) : {};
+            return stored ? normalizeMarkers(JSON.parse(stored)) : {};
         } catch {
             return {};
         }
@@ -552,7 +578,11 @@ const PanelBuilder = () => {
     const [exporting, setExporting] = useState(false);
     const [importing, setImporting] = useState(false);
     const [hoveredFluor, setHoveredFluor] = useState<string | null>(null);
-    const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('spectreasy_theme') as 'light' | 'dark') || 'light');
+    const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+        const stored = localStorage.getItem('spectreasy-theme') || localStorage.getItem('spectreasy_theme');
+        if (stored === 'light' || stored === 'dark') return stored;
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    });
     const [guiStateLoaded, setGuiStateLoaded] = useState(false);
 
     useEffect(() => {
@@ -564,7 +594,9 @@ const PanelBuilder = () => {
     }, [configuration]);
 
     useEffect(() => {
-        localStorage.setItem('spectreasy_theme', theme);
+        localStorage.setItem('spectreasy-theme', theme);
+        localStorage.removeItem('spectreasy_theme');
+        document.documentElement.dataset.theme = theme;
     }, [theme]);
 
     useEffect(() => {
@@ -699,12 +731,12 @@ const PanelBuilder = () => {
         const boot = async () => {
             try {
                 const stateRes = await axios.get(`${API_BASE}/gui_state?module=panel_builder`).catch(() => null);
-                const saved = stateRes?.data?.config || {};
+                const saved = unboxGuiState(stateRes?.data?.config || {}) as Record<string, unknown>;
                 const defaults = bootDefaultsRef.current;
                 const savedCytometer = typeof saved.cytometer === 'string' ? getCytometerName(saved.cytometer) : defaults.cytometer;
                 const savedConfiguration = typeof saved.configuration === 'string' ? getCytometerName(saved.configuration) : defaults.configuration;
                 const savedSlots = Array.isArray(saved.slots) ? saved.slots.map(String) : defaults.slots;
-                const savedMarkers = saved.markers && typeof saved.markers === 'object' ? saved.markers as Record<number, string> : defaults.markers;
+                const savedMarkers = saved.markers && typeof saved.markers === 'object' ? normalizeMarkers(saved.markers) : defaults.markers;
                 if (saved.theme === 'light' || saved.theme === 'dark') setTheme(saved.theme);
                 if (saved.tab === 'panel' || saved.tab === 'similarity' || saved.tab === 'signatures') setTab(saved.tab);
                 setSlots(savedSlots);
@@ -989,13 +1021,14 @@ const PanelBuilder = () => {
                     </button>
                     <button
                         type="button"
-                        className="export-button"
+                        className="export-button icon-only"
                         onClick={clearSelection}
                         disabled={selected.length === 0}
-                        style={{ color: '#ef4444' }}
+                        aria-label="Clear selection"
+                        title="Clear selection"
+                        style={{ color: 'var(--accent-2)' }}
                     >
                         <Trash2 size={16} />
-                        Clear selection
                     </button>
                     <input
                         ref={importInputRef}
@@ -1004,17 +1037,14 @@ const PanelBuilder = () => {
                         className="hidden-file-input"
                         onChange={event => void importPanelCsv(event.target.files?.[0] || null)}
                     />
-                    <button type="button" className="export-button" onClick={() => importInputRef.current?.click()} disabled={importing}>
+                    <button type="button" className="export-button icon-only" onClick={() => importInputRef.current?.click()} disabled={importing} aria-label={importing ? 'Importing panel CSV' : 'Import panel CSV'} title={importing ? 'Importing…' : 'Import panel CSV'}>
                         <Upload size={16} />
-                        {importing ? 'Importing...' : 'Import panel CSV'}
                     </button>
-                    <button type="button" className="export-button" onClick={exportPanelCsv}>
-                        <FileText size={16} />
-                        Export panel CSV
+                    <button type="button" className="export-button icon-only" onClick={exportPanelCsv} aria-label="Export panel CSV" title="Export panel CSV">
+                        <Save size={16} />
                     </button>
-                    <button type="button" className="export-button primary" onClick={() => void exportPanelOverview()} disabled={exporting}>
-                        <Download size={16} />
-                        {exporting ? 'Exporting...' : 'Export overview PDF'}
+                    <button type="button" className="export-button primary icon-only" onClick={() => void exportPanelOverview()} disabled={exporting} aria-label={exporting ? 'Exporting overview PDF' : 'Export overview PDF'} title={exporting ? 'Exporting…' : 'Export overview PDF'}>
+                        <PdfIcon size={20} />
                     </button>
                 </div>
             </header>
@@ -1324,11 +1354,11 @@ const PanelBuilder = () => {
                                     if (!row) return null;
                                     
                                     const isDark = theme === 'dark';
-                                    const plotBg = isDark ? 'rgba(15, 23, 42, 0.5)' : '#f8fafc';
-                                    const plotStroke = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)';
-                                    const textHeading = isDark ? '#cbd5e1' : '#334155';
-                                    const gridH = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)';
-                                    const gridV = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)';
+                                    const plotBg = isDark ? '#0b1110' : '#f8f7f3';
+                                    const plotStroke = isDark ? '#52615b' : '#c7c3ba';
+                                    const textHeading = isDark ? '#f0f3f2' : '#17201d';
+                                    const gridH = isDark ? 'rgba(169, 183, 177, 0.16)' : 'rgba(109, 117, 111, 0.14)';
+                                    const gridV = isDark ? 'rgba(169, 183, 177, 0.1)' : 'rgba(109, 117, 111, 0.09)';
                                     
                                     return (
                                         <div className="signature-card" key={fluor}>

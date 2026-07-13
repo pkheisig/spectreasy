@@ -18,6 +18,11 @@ async function renderRoot() {
     root.render(<StrictMode><GatingGui /></StrictMode>)
     return
   }
+  if (mode === 'tuner') {
+    const { default: MatrixAdjustment } = await import('./MatrixAdjustment.tsx')
+    root.render(<StrictMode><MatrixAdjustment /></StrictMode>)
+    return
+  }
   root.render(<StrictMode><App /></StrictMode>)
 }
 

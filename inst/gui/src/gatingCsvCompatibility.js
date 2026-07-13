@@ -15,7 +15,7 @@ export function reconcileGateCsvRows(rows, files) {
     const gateType = String(row?.gate_type || '').trim()
     const filename = String(row?.filename || '').trim()
     if (gateType === 'negative' && negativeDisabledFiles.has(filename)) return false
-    if (gateType === 'setting' || !filename || knownFiles.has(filename)) return true
+    if (!filename || knownFiles.has(filename)) return true
 
     ignoredFiles.add(filename)
     ignoredRowCount += 1

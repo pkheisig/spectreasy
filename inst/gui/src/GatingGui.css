@@ -12,6 +12,13 @@
   --blueprint: #263f73;
   --wash: #ece7db;
   --selected-bg: #eef7f3;
+  --plot-bg: #f8f7f3;
+  --plot-line: #c7c3ba;
+  --axis-color: #6d756f;
+  --histogram-fill: rgba(38, 63, 115, 0.3);
+  --histogram-stroke: #263f73;
+  --bead-gate: #8052c7;
+  --bead-gate-fill: rgba(128, 82, 199, 0.16);
 }
 
 body.dark {
@@ -20,10 +27,20 @@ body.dark {
   color: #f0f3f2;
   --ink: #f0f3f2;
   --muted: #9ba7a2;
+  --accent: #55c7b6;
+  --accent-2: #ff765f;
+  --blueprint: #779cff;
   --panel: #1e2522;
   --line: #3b4541;
   --wash: #121816;
   --selected-bg: #1c2b26;
+  --plot-bg: #0b1110;
+  --plot-line: #52615b;
+  --axis-color: #a9b7b1;
+  --histogram-fill: rgba(120, 156, 255, 0.34);
+  --histogram-stroke: #9bb6ff;
+  --bead-gate: #b794ff;
+  --bead-gate-fill: rgba(183, 148, 255, 0.2);
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
     linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
@@ -175,6 +192,8 @@ body.dark .initial-loading-overlay {
 
 .brand h1 {
   font-size: 19px;
+  font-weight: 750;
+  color: var(--ink);
   letter-spacing: 0;
 }
 
@@ -329,6 +348,222 @@ body.dark .gating-status-banner.is-error {
   gap: 8px;
 }
 
+.control-navigation .icon-button {
+  border-color: #9ba49f;
+  color: #4d5a55;
+  box-shadow: inset 0 0 0 1px rgba(23, 32, 29, 0.04);
+}
+
+.control-navigation .icon-button:hover:not(:disabled) {
+  border-color: #596660;
+  color: var(--ink);
+}
+
+.control-navigation .icon-button:disabled {
+  border-color: #c4c5bf;
+  color: #979e9a;
+  opacity: 0.62;
+}
+
+body.dark .control-navigation .icon-button {
+  border-color: #697771;
+  color: #d2ddd8;
+}
+
+body.dark .control-navigation .icon-button:disabled {
+  border-color: #46514d;
+  color: #76827d;
+}
+
+.gating-help {
+  position: relative;
+}
+
+.gating-settings {
+  position: relative;
+}
+
+.gating-settings-popover {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 330px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 18px 44px rgba(23, 32, 29, 0.22);
+}
+
+.gating-settings-heading {
+  margin-bottom: 14px;
+}
+
+.gating-settings-heading strong,
+.gating-settings-heading span {
+  display: block;
+}
+
+.gating-settings-heading strong {
+  font-size: 14px;
+}
+
+.gating-settings-heading span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.gating-settings-appearance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 0 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gating-settings-appearance button {
+  min-width: 92px;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.gating-settings-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr) 54px;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.gating-settings-row > span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.gating-settings-row input {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.gating-settings-row strong {
+  color: var(--ink);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.gating-settings-transform {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.gating-settings-transform .transform-dropdown-control {
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+}
+
+.gating-help-button,
+body.dark .gating-help-button {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.gating-help-button:hover,
+body.dark .gating-help-button:hover {
+  border-color: transparent;
+  background: var(--wash);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.gating-help-popover {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(430px, calc(100vw - 32px));
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 18px 44px rgba(23, 32, 29, 0.22);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+}
+
+.gating-help:hover .gating-help-popover,
+.gating-help:focus-within .gating-help-popover {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.gating-help-popover::before {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: -6px;
+  width: 10px;
+  height: 10px;
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  transform: rotate(45deg);
+}
+
+.gating-help-popover > strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.gating-help-popover dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.gating-help-popover dl > div {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 10px;
+}
+
+.gating-help-popover dt,
+.gating-help-popover dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.38;
+}
+
+.gating-help-popover dt {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.gating-help-popover dd {
+  color: var(--muted);
+}
+
 .gating-topbar > .actions {
   flex: 0 0 auto;
 }
@@ -352,11 +587,40 @@ body.dark .gating-status-banner.is-error {
 }
 
 .auto-histogram-button {
-  margin-right: 10px;
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+  margin-right: 4px;
   border-color: rgba(31, 122, 109, 0.5);
   background: var(--selected-bg);
   color: var(--accent);
   white-space: nowrap;
+}
+
+.histogram-sparkle-icon {
+  width: 31px;
+  height: 24px;
+  overflow: visible;
+}
+
+.histogram-sparkle-curve {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.histogram-sparkle-star {
+  fill: currentColor;
+}
+
+.histogram-sparkle-icon .star-two {
+  opacity: 0.82;
+}
+
+.histogram-sparkle-icon .star-three {
+  opacity: 0.68;
 }
 
 .auto-histogram-button:hover:not(:disabled) {
@@ -530,8 +794,13 @@ body.dark .auto-histogram-button:disabled {
 }
 
 .plot-bg {
-  fill: #f8f7f3;
-  stroke: #c7c3ba;
+  fill: var(--plot-bg);
+  stroke: var(--plot-line);
+}
+
+.histogram-density {
+  fill: var(--histogram-fill);
+  stroke: var(--histogram-stroke);
 }
 
 .dot {
@@ -544,12 +813,23 @@ body.dark .auto-histogram-button:disabled {
 }
 
 .axis {
-  stroke: #6d756f;
+  stroke: var(--axis-color);
   stroke-width: 1;
 }
 
+.axis-tick-line {
+  stroke: var(--axis-color);
+  stroke-width: 1;
+}
+
+.axis-tick-label {
+  fill: var(--axis-color);
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .axis-label {
-  fill: #58635e;
+  fill: var(--axis-color);
   font-size: 18px;
   font-weight: 800;
   text-anchor: middle;
@@ -651,7 +931,7 @@ body.dark .auto-histogram-button:disabled {
 .gate-path {
   fill: rgba(214, 82, 56, 0.16);
   stroke: var(--accent-2);
-  stroke-width: 3.2;
+  stroke-width: 2.2;
 }
 
 .gate-path.is-draft {
@@ -662,7 +942,7 @@ body.dark .auto-histogram-button:disabled {
 .gate-handle {
   fill: var(--panel);
   stroke: var(--accent-2);
-  stroke-width: 2;
+  stroke-width: 1.7;
 }
 
 .plot-panel.empty {
@@ -771,6 +1051,13 @@ button.on {
   background: var(--ink);
   color: white;
   border-color: var(--ink);
+}
+
+body.dark .plot-toolbar button.on {
+  background: #42564f;
+  color: #f7fbf9;
+  border-color: #8ca199;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .plot-toolbar {
@@ -911,7 +1198,7 @@ button.on {
 
 .separator-line {
   stroke: #6d756f;
-  stroke-width: 3.2;
+  stroke-width: 2.2;
   stroke-dasharray: 6 5;
   transition: stroke 0.15s;
 }
@@ -933,13 +1220,13 @@ button.on {
 .gate-path-pos {
   fill: rgba(214, 82, 56, 0.16);
   stroke: #d65238;
-  stroke-width: 3.2;
+  stroke-width: 2.2;
 }
 
 .gate-path-neg {
   fill: rgba(38, 63, 115, 0.16);
   stroke: #263f73;
-  stroke-width: 3.2;
+  stroke-width: 2.2;
 }
 
 button.btn-positive-gate {
@@ -988,9 +1275,13 @@ button.btn-clear-histogram:hover {
 }
 
 .gate-path-bead {
-  fill: rgba(86, 180, 233, 0.16);
-  stroke: #56b4e9;
-  stroke-width: 3.2;
+  fill: var(--bead-gate-fill);
+  stroke: var(--bead-gate);
+  stroke-width: 2.2;
+}
+
+.gate-handle-bead {
+  stroke: var(--bead-gate);
 }
 
 @media (max-width: 1180px) {

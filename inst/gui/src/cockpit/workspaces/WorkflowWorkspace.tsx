@@ -2994,7 +2994,7 @@ function MatrixWorkspace() {
   const displayFilename =
     filename.replace(/\\/g, "/").split("/").pop() || filename;
   return (
-    <>
+    <div className="matrix-workspace">
       <WorkspaceHeader
         kicker="Matrix review / adjustment"
         title="Tune with context"
@@ -3178,7 +3178,7 @@ function MatrixWorkspace() {
           </section>
         </div>
       )}
-    </>
+    </div>
   );
 }
 

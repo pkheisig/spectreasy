@@ -429,7 +429,15 @@ testthat::test_that("GUI spectrum renderer keeps an empty plot for zero events",
     )
     expr <- data.frame(`B1-A` = numeric(), `YG1-A` = numeric(), check.names = FALSE)
     image <- api_env$gate_build_spectrum_plot(expr, c("B1-A", "YG1-A"), det_info)
+    dark_image <- api_env$gate_build_spectrum_plot(
+        expr,
+        c("B1-A", "YG1-A"),
+        det_info,
+        dark_mode = TRUE
+    )
 
     testthat::expect_true(is.character(image))
     testthat::expect_match(image, "^data:image/png;base64,")
+    testthat::expect_match(dark_image, "^data:image/png;base64,")
+    testthat::expect_false(identical(image, dark_image))
 })
