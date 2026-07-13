@@ -17,6 +17,7 @@ import {
   WandSparkles,
 } from 'lucide-react'
 import './GatingGui.css'
+import { reconcileGateCsvRows } from './gatingCsvCompatibility.js'
 
 const API_BASE = (() => {
   const envBase = import.meta.env.VITE_API_BASE?.trim()
@@ -374,16 +375,14 @@ function parseCsvDocument(text) {
   return { headers, rows: dataRows }
 }
 
-function validateGateCsvRows(rows, files, headers = []) {
+function validateGateCsvRows(rows, headers = []) {
   const missingColumns = REQUIRED_GATE_CSV_COLUMNS.filter((column) => !headers.includes(column))
   if (missingColumns.length) {
     throw new Error(`CSV is missing required columns: ${missingColumns.join(', ')}`)
   }
 
-  const knownFiles = new Set(files.map((file) => file.filename).filter(Boolean))
   const allowedGateTypes = new Set(['cell', 'singlet', 'positive', 'negative', 'setting'])
   const allowedPlotModes = new Set(['scatter', 'histogram', 'separator', 'positive_1d', 'negative_1d', 'missing', 'blocked'])
-  const unknownFiles = new Set()
 
   rows.forEach((row, index) => {
     const rowNumber = index + 2
@@ -401,7 +400,6 @@ function validateGateCsvRows(rows, files, headers = []) {
     if ((gateType === 'positive' || gateType === 'negative') && plotMode !== 'missing' && !filename) {
       throw new Error(`CSV row ${rowNumber} is a ${gateType} gate but has no filename`)
     }
-    if (filename && !knownFiles.has(filename)) unknownFiles.add(filename)
     if (plotMode === 'missing' || plotMode === 'blocked') return
 
     const vertexIndex = Number(row.vertex_index)
@@ -415,9 +413,6 @@ function validateGateCsvRows(rows, files, headers = []) {
     }
   })
 
-  if (unknownFiles.size) {
-    throw new Error(`CSV contains files not in this session: ${Array.from(unknownFiles).slice(0, 8).join(', ')}`)
-  }
 }
 
 async function saveCsvWithSystemPicker(filename, csvText) {
@@ -1559,7 +1554,8 @@ function App() {
         setSelected(clean[0]?.filename || '')
         setConfigs(configData.configs || [])
 
-        const csvGates = parseConfigRows(gateConfig?.rows || [])
+        const compatibleCsv = reconcileGateCsvRows(gateConfig?.rows || [], clean)
+        const csvGates = parseConfigRows(compatibleCsv.rows)
         if (Object.keys(csvGates.gates).length > 0) {
           setGates(csvGates.gates)
         } else if (cacheData?.gates && Object.keys(cacheData.gates).length > 0) {
@@ -1821,6 +1817,7 @@ function App() {
   const canAutogateHistograms = gatesLoaded && histogramAutogateTargets.length > 0 && histogramAutogateMissing.length === 0 && !histogramAutogating
   const canConfirm = gatesLoaded && files.length > 0 && confirmIssues.length === 0
   const confirmIssueLines = useMemo(() => formatConfirmIssues(confirmIssues), [confirmIssues])
+  const importCompatibilityNotice = status.startsWith('Loaded ') && status.includes('ignored')
   const initialLoading = !status.startsWith('Could not') && (!gatesLoaded || (files.length > 0 && (!preloadComplete || !payload)))
   const singletWarningText = currentFile.is_af && gateIsFinalized(singletGate) && singletsFilteredEvents.length < MIN_CONFIRM_EVENTS
     ? `Only ${singletsFilteredEvents.length.toLocaleString()} events in singlets`
@@ -2023,8 +2020,9 @@ function App() {
   }
 
   async function applyLoadedConfigRows(rows, sourceName, headers = REQUIRED_GATE_CSV_COLUMNS) {
-    validateGateCsvRows(rows, files, headers)
-    const parsed = parseConfigRows(rows)
+    const compatible = reconcileGateCsvRows(rows, files)
+    validateGateCsvRows(compatible.rows, headers)
+    const parsed = parseConfigRows(compatible.rows)
     setGates(parsed.gates)
     if (typeof parsed.pointSize === 'number') setPointSize(parsed.pointSize)
     if (typeof parsed.maxPoints === 'number') setMaxPoints(normalizeEventCount(parsed.maxPoints))
@@ -2034,11 +2032,22 @@ function App() {
     await useApi('/gate_config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename: CONFIG_NAME, rows }),
+      body: JSON.stringify({ filename: CONFIG_NAME, rows: compatible.rows }),
     }).catch(() => null)
     const cfg = await useApi('/gate_configs')
     setConfigs(cfg.configs || [])
-    setStatus(`Loaded ${rows.length} rows from ${sourceName}`)
+    if (compatible.ignoredRowCount > 0) {
+      const ignoredNames = compatible.ignoredFiles.slice(0, 4).join(', ')
+      const more = compatible.ignoredFiles.length > 4 ? ` +${compatible.ignoredFiles.length - 4} more` : ''
+      setStatus(
+        `Loaded ${compatible.rows.length} compatible rows from ${sourceName}; ` +
+        `ignored ${compatible.ignoredRowCount} row${compatible.ignoredRowCount === 1 ? '' : 's'} ` +
+        `for missing file${compatible.ignoredFiles.length === 1 ? '' : 's'}: ` +
+        `${ignoredNames}${more}. Group gates apply to current files.`,
+      )
+    } else {
+      setStatus(`Loaded ${compatible.rows.length} rows from ${sourceName}`)
+    }
   }
 
   async function loadConfigFromPicker() {
@@ -2199,16 +2208,24 @@ function App() {
           </div>
         </header>
 
-        {(status.startsWith('Could not') || (gatesLoaded && files.length === 0)) && (
+        {(status.startsWith('Could not') || (gatesLoaded && files.length === 0) || importCompatibilityNotice) && (
           <div
             className={`gating-status-banner ${status.startsWith('Could not') ? 'is-error' : ''}`}
             role={status.startsWith('Could not') ? 'alert' : 'status'}
           >
-            <strong>{status.startsWith('Could not') ? 'Controls could not be loaded' : 'No control files found'}</strong>
+            <strong>
+              {status.startsWith('Could not')
+                ? 'Controls could not be loaded'
+                : importCompatibilityNotice
+                  ? 'Gate CSV loaded with missing files ignored'
+                  : 'No control files found'}
+            </strong>
             <span>
               {status.startsWith('Could not')
                 ? status
-                : 'Add FCS control files to the configured SCC folder, then reopen or refresh the gating GUI.'}
+                : importCompatibilityNotice
+                  ? status
+                  : 'Add FCS control files to the configured SCC folder, then reopen or refresh the gating GUI.'}
             </span>
           </div>
         )}

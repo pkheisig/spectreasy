@@ -733,15 +733,15 @@ gate_histogram_autogate_ranges <- function(peak_vals,
 
 gate_histogram_interval <- function(type, filename, peak, limits) {
     list(
-        type = type,
-        scope = "file",
-        filename = filename,
-        xChannel = peak,
-        yChannel = "",
-        mode = paste0(type, "_1d"),
+        type = jsonlite::unbox(as.character(type)[1]),
+        scope = jsonlite::unbox("file"),
+        filename = jsonlite::unbox(as.character(filename)[1]),
+        xChannel = jsonlite::unbox(as.character(peak)[1]),
+        yChannel = jsonlite::unbox(""),
+        mode = jsonlite::unbox(paste0(as.character(type)[1], "_1d")),
         vertices = list(
-            list(x = unname(limits[1]), y = 0),
-            list(x = unname(limits[2]), y = 0)
+            list(x = jsonlite::unbox(unname(as.numeric(limits[1]))), y = jsonlite::unbox(0)),
+            list(x = jsonlite::unbox(unname(as.numeric(limits[2]))), y = jsonlite::unbox(0))
         )
     )
 }

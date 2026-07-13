@@ -314,13 +314,23 @@ body.dark .gating-status-banner.is-error {
 }
 
 .control-heading {
+  flex: 1 1 0;
   min-width: 0;
-  gap: 12px;
+  gap: 16px;
+}
+
+.control-heading > h1 {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .control-navigation {
-  flex: 0 0 auto;
+  flex: 0 0 80px;
   gap: 8px;
+}
+
+.gating-topbar > .actions {
+  flex: 0 0 auto;
 }
 
 .actions,
@@ -999,7 +1009,8 @@ button.btn-negative-gate.on {
   }
 
   .control-heading {
-    flex-wrap: wrap;
+    flex: 0 0 auto;
+    width: 100%;
   }
 
   .actions {

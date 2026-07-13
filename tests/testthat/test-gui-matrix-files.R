@@ -160,6 +160,36 @@ testthat::test_that("GUI histogram autogating creates positive and negative inte
     testthat::expect_true(captured$is_viability)
 })
 
+testthat::test_that("GUI histogram autogates serialize as scalar 1D intervals", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) {
+        api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    }
+    testthat::skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+
+    interval <- api_env$gate_histogram_interval(
+        type = "positive",
+        filename = "PE-Cy7.fcs",
+        peak = "R1-A",
+        limits = c(55000, 497000)
+    )
+    wire <- jsonlite::fromJSON(
+        jsonlite::toJSON(interval, auto_unbox = FALSE),
+        simplifyVector = FALSE
+    )
+
+    testthat::expect_identical(wire$type, "positive")
+    testthat::expect_identical(wire$mode, "positive_1d")
+    testthat::expect_identical(wire$xChannel, "R1-A")
+    testthat::expect_identical(wire$vertices[[1]]$x, 55000L)
+    testthat::expect_identical(wire$vertices[[2]]$x, 497000L)
+    testthat::expect_identical(wire$vertices[[1]]$y, 0L)
+    testthat::expect_identical(wire$vertices[[2]]$y, 0L)
+})
+
 testthat::test_that("GUI spectrum renderer keeps an empty plot for zero events", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) {
