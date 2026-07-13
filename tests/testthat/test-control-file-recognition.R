@@ -55,6 +55,8 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
 
     testthat::expect_equal(by_file[["Alexa 647 (Beads).fcs"]]$fluorophore[[1]], "Alexa Fluor 647")
     testthat::expect_equal(by_file[["AF594 (Beads).fcs"]]$fluorophore[[1]], "Alexa Fluor 594")
+    alexa_bead_negative <- by_file[["Alexa 647 (Beads).fcs"]]$universal.negative[[1]]
+    testthat::expect_equal(by_file[[alexa_bead_negative]]$fluorophore[[1]], "AF_beads")
 
     testthat::expect_equal(by_file[["AF488 CD4 (Beads).fcs"]]$fluorophore[[1]], "Alexa Fluor 488")
     testthat::expect_equal(by_file[["AF488 CD4 (Beads).fcs"]]$marker[[1]], "CD4")
@@ -80,6 +82,7 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
     testthat::expect_equal(by_file[["FVD780 CD8 (Cells).fcs"]]$fluorophore[[1]], "FVD780")
     testthat::expect_equal(by_file[["FVD780 CD8 (Cells).fcs"]]$marker[[1]], "CD8")
     testthat::expect_equal(by_file[["FVD780 CD8 (Cells).fcs"]]$is.viability[[1]], "TRUE")
+    testthat::expect_equal(by_file[["FVD780 CD8 (Cells).fcs"]]$universal.negative[[1]], "scc_cells_AF_UnstainedDead.fcs")
 
     testthat::expect_equal(by_file[["Zombie Aqua CCR7 (Cells).fcs"]]$fluorophore[[1]], "Zombie Aqua")
     testthat::expect_equal(by_file[["Zombie Aqua CCR7 (Cells).fcs"]]$marker[[1]], "CCR7")

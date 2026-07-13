@@ -580,6 +580,15 @@ gate_read_mapping <- function() {
     df$file_exists <- rep(TRUE, nrow(df))
     df$is_af <- grepl("^AF($|_|\\b)", df$fluorophore, ignore.case = TRUE) |
         grepl("autofluorescence|background", df$marker, ignore.case = TRUE)
+    df$uses_histogram_gates <- !df$is_af
+    has_af_beads <- any(
+        df$is_af &
+            df$control.type == "beads" &
+            (grepl("^AF_beads?$", df$fluorophore, ignore.case = TRUE) |
+                grepl("bead.*background|unstained.*bead|bead.*negative", df$marker, ignore.case = TRUE))
+    )
+    df$uses_negative_histogram_gate <- df$uses_histogram_gates &
+        !(df$control.type == "beads" & has_af_beads)
     df$is_viability <- tolower(as.character(df$is.viability)) %in% c("true", "t", "1", "yes")
     df$id <- tools::file_path_sans_ext(basename(df$filename))
     df
@@ -708,7 +717,8 @@ gate_is_finalized_histogram <- function(gate) {
 gate_histogram_autogate_ranges <- function(peak_vals,
                                            sample_type,
                                            is_viability = FALSE,
-                                           compute_fun = NULL) {
+                                           compute_fun = NULL,
+                                           include_negative = TRUE) {
     peak_vals <- as.numeric(peak_vals)
     peak_vals <- peak_vals[is.finite(peak_vals)]
     if (length(peak_vals) < 10L) {
@@ -735,9 +745,37 @@ gate_histogram_autogate_ranges <- function(peak_vals,
     if (length(positive) != 2L || any(!is.finite(positive)) || positive[2] <= positive[1]) {
         stop("The histogram autogater did not produce a valid positive interval.", call. = FALSE)
     }
-    if (!isTRUE(attr(result$vals_log, "negative_gate_present")) ||
-        length(negative) != 2L || any(!is.finite(negative)) || negative[2] <= negative[1]) {
+    if (isTRUE(include_negative) && (!isTRUE(attr(result$vals_log, "negative_gate_present")) ||
+        length(negative) != 2L || any(!is.finite(negative)) || negative[2] <= negative[1])) {
         stop("The histogram autogater did not produce a valid negative interval.", call. = FALSE)
+    }
+    repair_empty_interval <- function(limits, direction) {
+        in_gate <- peak_vals >= limits[1] & peak_vals <= limits[2]
+        minimum_count <- min(10L, length(peak_vals))
+        if (sum(in_gate, na.rm = TRUE) >= minimum_count) return(limits)
+
+        ordered <- sort(peak_vals)
+        fallback_count <- min(
+            length(ordered),
+            max(minimum_count, as.integer(ceiling(length(ordered) * 0.05)))
+        )
+        fallback <- if (identical(direction, "high")) {
+            utils::tail(ordered, fallback_count)
+        } else {
+            utils::head(ordered, fallback_count)
+        }
+        repaired <- range(fallback)
+        if (repaired[1] == repaired[2]) {
+            padding <- max(abs(repaired[1]) * 1e-8, .Machine$double.eps^0.5)
+            repaired <- repaired + c(-padding, padding)
+        }
+        repaired
+    }
+    positive <- repair_empty_interval(positive, "high")
+    if (isTRUE(include_negative)) {
+        negative <- repair_empty_interval(negative, "low")
+    } else {
+        negative <- NULL
     }
     list(positive = positive, negative = negative)
 }
@@ -759,7 +797,13 @@ gate_histogram_interval <- function(type, filename, peak, limits) {
 
 gate_autogenerate_histograms <- function(gates) {
     df <- gate_read_mapping()
-    targets <- df[!df$is_af, , drop = FALSE]
+    uses_histogram <- if ("uses_histogram_gates" %in% colnames(df)) {
+        as.logical(df$uses_histogram_gates)
+    } else {
+        !as.logical(df$is_af)
+    }
+    uses_histogram[is.na(uses_histogram)] <- FALSE
+    targets <- df[uses_histogram, , drop = FALSE]
     if (nrow(targets) == 0) {
         stop("No non-AF single-color controls are available for histogram autogating.", call. = FALSE)
     }
@@ -776,6 +820,7 @@ gate_autogenerate_histograms <- function(gates) {
             control_type = control_type,
             cell_gate = cell_gate,
             singlet_gate = singlet_gate,
+            needs_negative = isTRUE(as.logical(row$uses_negative_histogram_gate[1])),
             ready = gate_is_finalized_polygon(cell_gate) && gate_is_finalized_polygon(singlet_gate)
         )
     })
@@ -795,9 +840,9 @@ gate_autogenerate_histograms <- function(gates) {
         positive_key <- paste0("positive:", item$filename)
         negative_key <- paste0("negative:", item$filename)
         keep_positive <- gate_is_finalized_histogram(gates[[positive_key]])
-        keep_negative <- gate_is_finalized_histogram(gates[[negative_key]])
+        keep_negative <- item$needs_negative && gate_is_finalized_histogram(gates[[negative_key]])
         preserved_count <- preserved_count + as.integer(keep_positive) + as.integer(keep_negative)
-        if (keep_positive && keep_negative) next
+        if (keep_positive && (!item$needs_negative || keep_negative)) next
 
         path <- file.path(get_gate_scc_dir(), item$filename)
         ff <- gate_read_fcs(path)
@@ -819,14 +864,15 @@ gate_autogenerate_histograms <- function(gates) {
         ranges <- gate_histogram_autogate_ranges(
             gated[, peak],
             sample_type = item$control_type,
-            is_viability = isTRUE(item$row$is_viability[1])
+            is_viability = isTRUE(item$row$is_viability[1]),
+            include_negative = item$needs_negative
         )
         if (!keep_positive) {
             generated[[positive_key]] <- gate_histogram_interval(
                 "positive", item$filename, peak, ranges$positive
             )
         }
-        if (!keep_negative) {
+        if (item$needs_negative && !keep_negative) {
             generated[[negative_key]] <- gate_histogram_interval(
                 "negative", item$filename, peak, ranges$negative
             )

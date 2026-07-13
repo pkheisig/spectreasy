@@ -55,14 +55,11 @@
         filename = control_df$filename,
         control_type = if ("control.type" %in% colnames(control_df)) control_df$control.type else NULL
     )
-    dead_files <- control_df$filename[dead_rows]
-    dead_files <- dead_files[nzchar(dead_files)]
-    if (length(dead_files) == 0) {
-        return(control_df)
-    }
-    control_df$fluorophore[dead_rows] <- "AF_dead"
-    if ("marker" %in% colnames(control_df)) {
-        control_df$marker[dead_rows] <- "Dead cell background"
+    if (any(dead_rows)) {
+        control_df$fluorophore[dead_rows] <- "AF_dead"
+        if ("marker" %in% colnames(control_df)) {
+            control_df$marker[dead_rows] <- "Dead cell background"
+        }
     }
 
     viability_rows <- toupper(trimws(as.character(control_df$is.viability))) %in% c("TRUE", "T", "1", "YES", "Y")
@@ -71,9 +68,27 @@
     } else {
         rep("", nrow(control_df))
     }
+    primary_af_rows <- .is_primary_af_control_row(
+        fluorophore = if ("fluorophore" %in% colnames(control_df)) control_df$fluorophore else NULL,
+        marker = if ("marker" %in% colnames(control_df)) control_df$marker else NULL,
+        filename = control_df$filename
+    ) & !dead_rows & control_type != "beads"
+    bead_af_rows <- control_type == "beads" & (
+        grepl("^AF_BEADS$", trimws(as.character(control_df$fluorophore)), ignore.case = TRUE) |
+        vapply(control_df$filename, .reference_is_bead_negative_file, logical(1))
+    )
+    af_files <- control_df$filename[primary_af_rows & nzchar(control_df$filename)]
+    dead_files <- control_df$filename[dead_rows & nzchar(control_df$filename)]
+    bead_files <- control_df$filename[bead_af_rows & nzchar(control_df$filename)]
+
     empty_negative <- !nzchar(trimws(as.character(control_df$universal.negative)))
-    target_rows <- viability_rows & !dead_rows & control_type != "beads" & empty_negative
-    control_df$universal.negative[target_rows] <- dead_files[1]
+    source_rows <- primary_af_rows | dead_rows | bead_af_rows
+    ordinary_cells <- control_type != "beads" & !viability_rows & !source_rows & empty_negative
+    viability_targets <- control_type != "beads" & viability_rows & !source_rows & empty_negative
+    bead_targets <- control_type == "beads" & !source_rows & empty_negative
+    if (length(af_files) > 0L) control_df$universal.negative[ordinary_cells] <- "AF"
+    if (length(dead_files) > 0L) control_df$universal.negative[viability_targets] <- dead_files[1]
+    if (length(bead_files) > 0L) control_df$universal.negative[bead_targets] <- bead_files[1]
     control_df
 }
 
@@ -798,6 +813,54 @@
     )
 }
 
+.reference_histogram_negative_source <- function(gated_data,
+                                                  peak_channel,
+                                                  filename,
+                                                  sample_type,
+                                                  manual_gates,
+                                                  detector_names,
+                                                  fsc,
+                                                  ssc) {
+    if (!all(c(peak_channel, detector_names, fsc, ssc) %in% colnames(gated_data))) return(NULL)
+
+    gate <- .reference_manual_gate(manual_gates, "negative", filename, sample_type)
+    verts <- .reference_gate_vertices(gate)
+    keep <- NULL
+    source <- "lower_tail"
+    if (!is.null(gate) && !is.null(verts) && nrow(verts) >= 2L &&
+        identical(as.character(gate$plot_mode[1]), "negative_1d")) {
+        limits <- range(verts$x, na.rm = TRUE)
+        if (all(is.finite(limits)) && limits[2] > limits[1]) {
+            keep <- gated_data[, peak_channel] >= limits[1] & gated_data[, peak_channel] <= limits[2]
+            source <- "manual_negative_gate"
+        }
+    }
+    if (is.null(keep) || sum(keep, na.rm = TRUE) < 10L) {
+        peak_vals <- gated_data[, peak_channel]
+        finite <- is.finite(peak_vals)
+        if (sum(finite) < 10L) return(NULL)
+        cutoff <- as.numeric(stats::quantile(peak_vals[finite], 0.15, na.rm = TRUE))
+        keep <- finite & peak_vals <= cutoff
+        source <- "lower_tail"
+    }
+    keep[is.na(keep)] <- FALSE
+    negative_events <- gated_data[keep, , drop = FALSE]
+    if (nrow(negative_events) < 10L) return(NULL)
+
+    negative <- apply(negative_events[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
+    background <- .scc_background_from_gated_af_list(
+        af_gated_list = list(list(
+            events = negative_events[, detector_names, drop = FALSE],
+            scatter = negative_events[, c(fsc, ssc), drop = FALSE],
+            scatter_names = c(fsc, ssc)
+        )),
+        detector_names = detector_names
+    )
+    if (!is.null(background)) attr(negative, "scc_background") <- background
+    attr(negative, "source") <- source
+    negative
+}
+
 # Computes the 2D ellipse coordinates at a given confidence level.
 # Used for gating populations in FSC/SSC scatter plots based on GMM component mean and variance.
 # Returns a data.table containing the ellipse points.
@@ -1186,10 +1249,42 @@
     out
 }
 
+.reference_background_scatter_gate <- function(raw_data,
+                                               pd,
+                                               sample_type,
+                                               filename,
+                                               config,
+                                               auto_sample_type = sample_type) {
+    scatter_info <- .apply_reference_manual_scatter_gates(
+        raw_data = raw_data,
+        sample_type = sample_type,
+        filename = filename,
+        manual_gates = .get_reference_config_value(config, "manual_gates", NULL)
+    )
+    if (!is.null(scatter_info)) return(scatter_info)
+
+    .compute_reference_scatter_gate(
+        raw_data = raw_data,
+        pd = pd,
+        sample_type = auto_sample_type,
+        outlier_percentile = .get_reference_config_value(config, "outlier_percentile", 0.02),
+        debris_percentile = .get_reference_config_value(config, "debris_percentile", 0.08),
+        subsample_n = .get_reference_config_value(config, "subsample_n", 5000),
+        max_clusters = .get_reference_config_value(config, "max_clusters", 10),
+        min_cluster_proportion = .get_reference_config_value(config, "min_cluster_proportion", 0.03),
+        gate_contour_beads = .get_reference_config_value(config, "gate_contour_beads", 0.95),
+        gate_contour_cells = .get_reference_config_value(config, "gate_contour_cells", 0.90),
+        bead_gate_scale = .get_reference_config_value(config, "bead_gate_scale", 1.3)
+    )
+}
+
 # Reads and gates an AF / unstained control FCS file.
 # Applies scatter-gating on FSC-SSC to isolate the main cell/bead population from debris.
 # Returns a list containing the gated event data across all spectral detectors and gating metadata.
-.extract_reference_af_gated_events <- function(fcs_file, detector_names, config) {
+.extract_reference_af_gated_events <- function(fcs_file,
+                                               detector_names,
+                                               config,
+                                               sample_type = "cells") {
     ff_af <- tryCatch(
         flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
         error = function(e) NULL
@@ -1206,18 +1301,14 @@
         return(NULL)
     }
 
-    scatter_info <- .compute_reference_scatter_gate(
+    sample_type <- if (identical(tolower(trimws(as.character(sample_type)[1])), "beads")) "beads" else "cells"
+    scatter_info <- .reference_background_scatter_gate(
         raw_data = raw_af,
         pd = pd_af,
-        sample_type = "unstained",
-        outlier_percentile = .get_reference_config_value(config, "outlier_percentile", 0.02),
-        debris_percentile = .get_reference_config_value(config, "debris_percentile", 0.08),
-        subsample_n = .get_reference_config_value(config, "subsample_n", 5000),
-        max_clusters = .get_reference_config_value(config, "max_clusters", 10),
-        min_cluster_proportion = .get_reference_config_value(config, "min_cluster_proportion", 0.03),
-        gate_contour_beads = .get_reference_config_value(config, "gate_contour_beads", 0.95),
-        gate_contour_cells = .get_reference_config_value(config, "gate_contour_cells", 0.90),
-        bead_gate_scale = .get_reference_config_value(config, "bead_gate_scale", 1.3)
+        sample_type = sample_type,
+        filename = basename(fcs_file),
+        config = config,
+        auto_sample_type = if (identical(sample_type, "beads")) "beads" else "unstained"
     )
     if (is.null(scatter_info)) {
         .spectreasy_console_step("Skip AF", paste0(basename(fcs_file), " has too few scatter-gated cells"))
@@ -1302,7 +1393,13 @@
     af_source_types <- af_source_types[keep_unique]
 
     if (length(af_paths) > 0) {
-        af_gated_list <- lapply(af_paths, .extract_reference_af_gated_events, detector_names = detector_names, config = config)
+        af_gated_list <- lapply(
+            af_paths,
+            .extract_reference_af_gated_events,
+            detector_names = detector_names,
+            config = config,
+            sample_type = "cells"
+        )
         keep_gated <- vapply(af_gated_list, function(x) !is.null(x) && !is.null(x$events) && nrow(x$events) > 0, logical(1))
         af_gated_list <- af_gated_list[keep_gated]
         af_source_types <- af_source_types[keep_gated]
@@ -2753,18 +2850,12 @@
 
         pd <- flowCore::pData(flowCore::parameters(ff))
         raw_data <- flowCore::exprs(ff)
-        scatter_info <- .compute_reference_scatter_gate(
+        scatter_info <- .reference_background_scatter_gate(
             raw_data = raw_data,
             pd = pd,
             sample_type = "beads",
-            outlier_percentile = config$outlier_percentile,
-            debris_percentile = config$debris_percentile,
-            subsample_n = config$subsample_n,
-            max_clusters = config$max_clusters,
-            min_cluster_proportion = config$min_cluster_proportion,
-            gate_contour_beads = config$gate_contour_beads,
-            gate_contour_cells = config$gate_contour_cells,
-            bead_gate_scale = config$bead_gate_scale
+            filename = basename(fcs_file),
+            config = config
         )
 
         neg_data <- if (!is.null(scatter_info)) scatter_info$gated_data else raw_data
@@ -2849,26 +2940,79 @@
 
         pd <- flowCore::pData(flowCore::parameters(ff))
         raw_data <- flowCore::exprs(ff)
-        scatter_info <- .compute_reference_scatter_gate(
+        scatter_info <- .reference_background_scatter_gate(
             raw_data = raw_data,
             pd = pd,
             sample_type = sample_info$type,
-            outlier_percentile = config$outlier_percentile,
-            debris_percentile = config$debris_percentile,
-            subsample_n = config$subsample_n,
-            max_clusters = config$max_clusters,
-            min_cluster_proportion = config$min_cluster_proportion,
-            gate_contour_beads = config$gate_contour_beads,
-            gate_contour_cells = config$gate_contour_cells,
-            bead_gate_scale = config$bead_gate_scale
+            filename = basename(fcs_file),
+            config = config
         )
 
         neg_data <- if (!is.null(scatter_info)) scatter_info$gated_data else raw_data
-        out[[key]] <- apply(neg_data[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
+        negative <- apply(neg_data[, detector_names, drop = FALSE], 2, stats::median, na.rm = TRUE)
+        if (!is.null(scatter_info)) {
+            background <- .scc_background_from_gated_af_list(
+                af_gated_list = list(list(
+                    events = neg_data[, detector_names, drop = FALSE],
+                    scatter = neg_data[, c(scatter_info$fsc, scatter_info$ssc), drop = FALSE],
+                    scatter_names = c(scatter_info$fsc, scatter_info$ssc)
+                )),
+                detector_names = detector_names
+            )
+            if (!is.null(background)) attr(negative, "scc_background") <- background
+        }
+        out[[key]] <- negative
         .spectreasy_console_field("Negative", basename(fcs_file))
     }
 
     out
+}
+
+.resolve_reference_scc_negative_source <- function(row_info,
+                                                   sample_type,
+                                                   af_data_raw = NULL,
+                                                   scc_background = NULL,
+                                                   universal_negatives = NULL,
+                                                   bead_negative = NULL) {
+    if (identical(sample_type, "beads")) {
+        return(list(
+            negative = bead_negative,
+            background = attr(bead_negative, "scc_background", exact = TRUE),
+            source = "AF_beads"
+        ))
+    }
+
+    uv_val <- if (nrow(row_info) > 0L && "universal.negative" %in% colnames(row_info)) {
+        trimws(as.character(row_info$universal.negative[1]))
+    } else {
+        ""
+    }
+    uv_upper <- toupper(uv_val)
+    uv_key <- .reference_negative_key(uv_val)
+    named_negative <- if (
+        nzchar(uv_key) &&
+        !uv_upper %in% c("FALSE", "TRUE", "AF") &&
+        !is.null(universal_negatives) &&
+        uv_key %in% names(universal_negatives)
+    ) {
+        universal_negatives[[uv_key]]
+    } else {
+        NULL
+    }
+
+    if (!is.null(named_negative)) {
+        return(list(
+            negative = named_negative,
+            background = attr(named_negative, "scc_background", exact = TRUE),
+            source = uv_val
+        ))
+    }
+
+    list(
+        negative = af_data_raw,
+        background = scc_background,
+        source = "AF"
+    )
 }
 
 # Helper to extract the description attribute of a channel for plotting.
@@ -3611,6 +3755,16 @@
     peak_vals <- scatter_info$gated_data[, peak_channel]
     if (isTRUE(.get_reference_config_value(config, "autospectral_scc_cleanup", FALSE))) {
         autospectral_clean_data <- scatter_info$gated_data
+        internal_negative <- .reference_histogram_negative_source(
+            gated_data = scatter_info$gated_data,
+            peak_channel = peak_channel,
+            filename = sn_ext,
+            sample_type = sample_info$type,
+            manual_gates = config$manual_gates,
+            detector_names = metadata$detector_names,
+            fsc = scatter_info$fsc,
+            ssc = scatter_info$ssc
+        )
         autospectral_positive <- .apply_reference_manual_positive_gate(
             gated_data = autospectral_clean_data,
             peak_channel = peak_channel,
@@ -3623,22 +3777,19 @@
         }
         autospectral_peak_vals <- autospectral_clean_data[, peak_channel]
         use_external_background <- isTRUE(.get_reference_config_value(config, "clean_scc_with_unstained", FALSE))
-        bead_background <- attr(bead_negative, "scc_background", exact = TRUE)
-        selected_background <- if (!isTRUE(use_external_background)) {
-            NULL
-        } else if (identical(sample_info$type, "beads") && !is.null(bead_background)) {
-            bead_background
-        } else if (identical(sample_info$type, "cells")) {
-            scc_background
-        } else {
-            NULL
-        }
-        selected_negative <- if (isTRUE(use_external_background) && identical(sample_info$type, "beads") && !is.null(bead_negative)) {
-            bead_negative
-        } else if (isTRUE(use_external_background) && identical(sample_info$type, "cells")) {
-            af_data_raw
-        } else {
-            NULL
+        negative_source <- .resolve_reference_scc_negative_source(
+            row_info = row_info,
+            sample_type = sample_info$type,
+            af_data_raw = af_data_raw,
+            scc_background = scc_background,
+            universal_negatives = universal_negatives,
+            bead_negative = bead_negative
+        )
+        selected_background <- if (isTRUE(use_external_background)) negative_source$background else NULL
+        selected_negative <- if (isTRUE(use_external_background)) negative_source$negative else NULL
+        if (isTRUE(use_external_background) && is.null(selected_negative) && !is.null(internal_negative)) {
+            selected_negative <- internal_negative
+            selected_background <- attr(internal_negative, "scc_background", exact = TRUE)
         }
         extraction <- .compute_reference_autospectral_scc(
             clean_data = autospectral_clean_data,

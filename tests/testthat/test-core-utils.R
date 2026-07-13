@@ -1071,7 +1071,7 @@ test_that("mapped SCC AF files are pooled into one AF bank size request", {
     )
     captured <- new.env(parent = emptyenv())
     testthat::local_mocked_bindings(
-        .extract_reference_af_gated_events = function(fcs_file, detector_names, config = NULL) {
+        .extract_reference_af_gated_events = function(fcs_file, detector_names, config = NULL, sample_type = "cells") {
             i <- match(normalizePath(fcs_file, mustWork = FALSE), normalizePath(fcs_files, mustWork = FALSE))
             events <- matrix(i, nrow = 3, ncol = length(detector_names), dimnames = list(NULL, detector_names))
             list(
@@ -1170,7 +1170,107 @@ test_that("viability controls auto-use dead cell AF negatives", {
     normalized <- spectreasy:::.normalize_build_reference_control_df(control_df)
 
     expect_equal(normalized$universal.negative[normalized$filename == "scc_cells_eFluor780_LiveDead.fcs"], "scc_cells_AF_UnstainedDead.fcs")
-    expect_equal(normalized$universal.negative[normalized$filename == "scc_cells_FITC_CD4.fcs"], "")
+    expect_equal(normalized$universal.negative[normalized$filename == "scc_cells_FITC_CD4.fcs"], "AF")
+})
+
+test_that("automatic negatives follow cell, viability, and bead source types", {
+    control_df <- data.frame(
+        filename = c("af.fcs", "dead.fcs", "bead-neg.fcs", "fitc.fcs", "live.fcs", "pe-beads.fcs"),
+        fluorophore = c("AF", "AF_dead", "AF_beads", "FITC", "Zombie NIR", "PE"),
+        marker = c("Autofluorescence", "Dead cell background", "Bead background", "CD4", "Live", "CD8"),
+        channel = c("V1-A", "R7-A", "V1-A", "B1-A", "R7-A", "YG1-A"),
+        control.type = c("cells", "cells", "beads", "cells", "cells", "beads"),
+        universal.negative = "",
+        is.viability = c("", "", "", "", "TRUE", ""),
+        stringsAsFactors = FALSE
+    )
+
+    normalized <- spectreasy:::.normalize_build_reference_control_df(control_df)
+    by_file <- split(normalized, normalized$filename)
+
+    expect_equal(by_file[["fitc.fcs"]]$universal.negative, "AF")
+    expect_equal(by_file[["live.fcs"]]$universal.negative, "dead.fcs")
+    expect_equal(by_file[["pe-beads.fcs"]]$universal.negative, "bead-neg.fcs")
+    expect_equal(by_file[["af.fcs"]]$universal.negative, "")
+    expect_equal(by_file[["dead.fcs"]]$universal.negative, "")
+    expect_equal(by_file[["bead-neg.fcs"]]$universal.negative, "")
+})
+
+test_that("SCC negative resolver selects AF_dead, AF_beads, and AF backgrounds", {
+    af_background <- list(method = "scatter_knn", n_events = 101L)
+    dead_background <- list(method = "scatter_knn", n_events = 51L)
+    bead_background <- list(method = "scatter_knn", n_events = 81L)
+    af_negative <- stats::setNames(c(1, 2), c("A", "B"))
+    dead_negative <- stats::setNames(c(3, 4), c("A", "B"))
+    bead_negative <- stats::setNames(c(5, 6), c("A", "B"))
+    attr(dead_negative, "scc_background") <- dead_background
+    attr(bead_negative, "scc_background") <- bead_background
+    negatives <- list(dead = dead_negative)
+
+    ordinary <- spectreasy:::.resolve_reference_scc_negative_source(
+        row_info = data.frame(universal.negative = ""),
+        sample_type = "cells",
+        af_data_raw = af_negative,
+        scc_background = af_background,
+        universal_negatives = negatives,
+        bead_negative = bead_negative
+    )
+    viability <- spectreasy:::.resolve_reference_scc_negative_source(
+        row_info = data.frame(universal.negative = "dead.fcs"),
+        sample_type = "cells",
+        af_data_raw = af_negative,
+        scc_background = af_background,
+        universal_negatives = negatives,
+        bead_negative = bead_negative
+    )
+    beads <- spectreasy:::.resolve_reference_scc_negative_source(
+        row_info = data.frame(universal.negative = "bead-neg.fcs"),
+        sample_type = "beads",
+        af_data_raw = af_negative,
+        scc_background = af_background,
+        universal_negatives = negatives,
+        bead_negative = bead_negative
+    )
+
+    expect_identical(ordinary$negative, af_negative)
+    expect_identical(ordinary$background, af_background)
+    expect_identical(viability$negative, dead_negative)
+    expect_identical(viability$background, dead_background)
+    expect_identical(beads$negative, bead_negative)
+    expect_identical(beads$background, bead_background)
+})
+
+test_that("AutoSpectral internal background prefers a manual histogram negative gate", {
+    detector_names <- c("B1-A", "YG1-A")
+    gated <- data.frame(
+        `FSC-A` = seq_len(100),
+        `SSC-A` = seq_len(100) * 2,
+        `B1-A` = c(rep(10, 20), rep(1000, 80)),
+        `YG1-A` = c(rep(5, 20), rep(100, 80)),
+        check.names = FALSE
+    )
+    manual_gates <- data.frame(
+        gate_type = rep("negative", 2), scope = rep("file", 2),
+        filename = rep("beads.fcs", 2), x_channel = rep("B1-A", 2),
+        y_channel = rep("", 2), plot_mode = rep("negative_1d", 2),
+        vertex_index = 1:2, x = c(5, 20), y = c(0, 0),
+        stringsAsFactors = FALSE
+    )
+    manual_gates <- split(
+        manual_gates,
+        paste(manual_gates$gate_type, manual_gates$scope, manual_gates$filename, sep = "\r")
+    )
+
+    negative <- spectreasy:::.reference_histogram_negative_source(
+        gated_data = as.matrix(gated), peak_channel = "B1-A",
+        filename = "beads.fcs", sample_type = "beads",
+        manual_gates = manual_gates, detector_names = detector_names,
+        fsc = "FSC-A", ssc = "SSC-A"
+    )
+
+    expect_equal(as.numeric(negative), c(10, 5))
+    expect_identical(attr(negative, "source"), "manual_negative_gate")
+    expect_equal(attr(negative, "scc_background")$spectra[, "B1-A"], rep(10, 20))
 })
 
 test_that("cell histogram gating keeps full middle negative mode for bright controls", {

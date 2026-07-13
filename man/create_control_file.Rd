@@ -35,6 +35,9 @@ The generated file contains only columns that usually need review:
 denoted as `AF_beads` with `control.type = "beads"` so they can be used
 as bead-background negatives. Ordinary unstained cell controls are numbered
 `AF`, `AF_2`, `AF_3`, and so on, and are pooled as AF-bank sources.
+Empty `universal.negative` values are filled by source type when the matching
+negative exists: `AF` for ordinary cell SCCs, `AF_dead` for viability SCCs,
+and `AF_beads` for bead SCCs. Explicit user mappings are preserved.
 }
 \description{
 Generates a spectreasy-compatible control CSV.

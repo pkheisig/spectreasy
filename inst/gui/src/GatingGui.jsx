@@ -18,6 +18,12 @@ import {
 } from 'lucide-react'
 import './GatingGui.css'
 import { reconcileGateCsvRows } from './gatingCsvCompatibility.js'
+import {
+  fileUsesHistogramGates,
+  fileUsesNegativeHistogramGate,
+  pruneUnavailableNegativeGates,
+} from './gatingEligibility.js'
+import { clearHistogramGatesForFile, histogramDomainIncludingGates } from './histogramGates.js'
 
 const API_BASE = (() => {
   const envBase = import.meta.env.VITE_API_BASE?.trim()
@@ -488,7 +494,7 @@ function validateFileForConfirm(file, payload, gates) {
     ? filterPolygonEvents(cells, singletGate, singletGate.xChannel, singletGate.yChannel)
     : []
 
-  if (file.is_af) {
+  if (!fileUsesHistogramGates(file)) {
     if (gateIsFinalized(singletGate) && singlets.length < MIN_CONFIRM_EVENTS) {
       issues.push({ filename, message: `singlet gate has only ${singlets.length.toLocaleString()} events` })
     }
@@ -567,7 +573,11 @@ function buildRows(gates, files, settings = {}) {
       y: '',
     },
   ]
+  const negativeDisabledFiles = new Set(
+    files.filter((file) => !fileUsesNegativeHistogramGate(file)).map((file) => file.filename),
+  )
   Object.values(gates).forEach((gate) => {
+    if (gate?.type === 'negative' && negativeDisabledFiles.has(gate.filename)) return
     if (gate?.mode === 'blocked') {
       rows.push({
         gate_type: gate.type,
@@ -598,7 +608,7 @@ function buildRows(gates, files, settings = {}) {
     })
   })
   files.forEach((file) => {
-    if (!gates[`positive:${file.filename}`] && !file.is_af) {
+    if (!gates[`positive:${file.filename}`] && fileUsesHistogramGates(file)) {
       rows.push({
         gate_type: 'positive',
         scope: 'file',
@@ -861,6 +871,7 @@ function GatePlot({
   onToggleDraw,
   onClear,
   onToggleHistogramGate,
+  negativeGateEnabled = true,
 }) {
   const plotRef = useRef(null)
   const menuRef = useRef(null)
@@ -883,12 +894,18 @@ function GatePlot({
   }
 
   const xDomain = useMemo(() => {
-    const rawDomain = xDomainProp || extent(events.map((e) => e[xField]))
+    const eventValues = events.map((e) => e[xField])
+    const rawDomain = xDomainProp || extent(eventValues)
     if (mode !== 'histogram') return rawDomain
-    const transformed = rawDomain.map((value) => transformFns.forward(value)).filter(Number.isFinite)
+    const visibleDomain = histogramDomainIncludingGates(
+      rawDomain,
+      eventValues,
+      [gate, ...secondaryGates],
+    )
+    const transformed = visibleDomain.map((value) => transformFns.forward(value)).filter(Number.isFinite)
     if (transformed.length < 2 || transformed[0] === transformed[1]) return [0, 1]
     return [Math.min(...transformed), Math.max(...transformed)]
-  }, [events, xField, xDomainProp, mode, transformFns])
+  }, [events, xField, xDomainProp, mode, transformFns, gate, secondaryGates])
 
   const densityCurve = useMemo(() => {
     if (mode !== 'histogram') return []
@@ -1263,6 +1280,8 @@ function GatePlot({
           <>
             <button
               className={`btn-negative-gate ${active && drawActive && histogramGateType === 'negative' ? 'on' : ''}`}
+              disabled={!negativeGateEnabled}
+              title={negativeGateEnabled ? 'Draw negative histogram gate' : 'AF_beads supplies the bead background'}
               onClick={(e) => onToggleHistogramGate('negative', e)}
             >
               Neg
@@ -1272,6 +1291,13 @@ function GatePlot({
               onClick={(e) => onToggleHistogramGate('positive', e)}
             >
               Pos
+            </button>
+            <button
+              className="btn-clear-histogram"
+              onClick={onClear}
+              title="Remove the positive and negative histogram gates for this file"
+            >
+              <Eraser size={13} /> Clear
             </button>
             <label className="histogram-bin-control">
               <span>Bins</span>
@@ -1557,9 +1583,9 @@ function App() {
         const compatibleCsv = reconcileGateCsvRows(gateConfig?.rows || [], clean)
         const csvGates = parseConfigRows(compatibleCsv.rows)
         if (Object.keys(csvGates.gates).length > 0) {
-          setGates(csvGates.gates)
+          setGates(pruneUnavailableNegativeGates(csvGates.gates, clean))
         } else if (cacheData?.gates && Object.keys(cacheData.gates).length > 0) {
-          setGates(cacheData.gates)
+          setGates(pruneUnavailableNegativeGates(cacheData.gates, clean))
         }
         if (typeof csvGates.pointSize === 'number') setPointSize(csvGates.pointSize)
         if (typeof csvGates.maxPoints === 'number') setMaxPoints(normalizeEventCount(csvGates.maxPoints))
@@ -1753,13 +1779,21 @@ function App() {
   const cellGate = fileCellGate?.mode === 'blocked' ? null : (fileCellGate || gates[`cell:${controlType}`])
   const singletGate = fileSingletGate?.mode === 'blocked' ? null : (fileSingletGate || gates[`singlet:${controlType}`])
   const positiveGate = gates[`positive:${selected}`]
-  const negativeGate = gates[`negative:${selected}`]
+  const usesNegativeHistogramGate = fileUsesNegativeHistogramGate(currentFile)
+  const negativeGate = usesNegativeHistogramGate ? gates[`negative:${selected}`] : null
   const activeHistogramGate = histogramGateType === 'negative' ? negativeGate : positiveGate
   const secondaryHistogramGates = [
     histogramGateType === 'negative'
       ? (positiveGate ? { ...positiveGate, _gateKey: histogramGateKey('positive', selected) } : null)
       : (negativeGate ? { ...negativeGate, _gateKey: histogramGateKey('negative', selected) } : null)
   ].filter(Boolean)
+  useEffect(() => {
+    if (!usesNegativeHistogramGate && histogramGateType === 'negative') {
+      setHistogramGateType('positive')
+      setDraft([])
+      setDrawActive(false)
+    }
+  }, [usesNegativeHistogramGate, histogramGateType])
   const selectedIndex = files.findIndex((file) => file.filename === selected)
   const canGoPrevious = selectedIndex > 0
   const canGoNext = selectedIndex >= 0 && selectedIndex < files.length - 1
@@ -1807,7 +1841,7 @@ function App() {
   const confirmIssues = useMemo(() => (
     files.flatMap((file) => validateFileForConfirm(file, payloadCache[file.filename], gates))
   ), [files, payloadCache, gates])
-  const histogramAutogateTargets = useMemo(() => files.filter((file) => !file.is_af), [files])
+  const histogramAutogateTargets = useMemo(() => files.filter(fileUsesHistogramGates), [files])
   const histogramAutogateMissing = useMemo(() => (
     histogramAutogateTargets.filter((file) => (
       !gateIsFinalized(resolveGateForFile(gates, 'cell', file)) ||
@@ -1818,10 +1852,10 @@ function App() {
   const canConfirm = gatesLoaded && files.length > 0 && confirmIssues.length === 0
   const confirmIssueLines = useMemo(() => formatConfirmIssues(confirmIssues), [confirmIssues])
   const initialLoading = !status.startsWith('Could not') && (!gatesLoaded || (files.length > 0 && (!preloadComplete || !payload)))
-  const singletWarningText = currentFile.is_af && gateIsFinalized(singletGate) && singletsFilteredEvents.length < MIN_CONFIRM_EVENTS
+  const singletWarningText = !fileUsesHistogramGates(currentFile) && gateIsFinalized(singletGate) && singletsFilteredEvents.length < MIN_CONFIRM_EVENTS
     ? `Only ${singletsFilteredEvents.length.toLocaleString()} events in singlets`
     : ''
-  const positiveWarningText = !currentFile.is_af && gateIsFinalized(positiveGate) && positiveSummary.count < MIN_CONFIRM_EVENTS
+  const positiveWarningText = fileUsesHistogramGates(currentFile) && gateIsFinalized(positiveGate) && positiveSummary.count < MIN_CONFIRM_EVENTS
     ? `Only ${positiveSummary.count.toLocaleString()} events in Pos gate`
     : ''
 
@@ -1890,6 +1924,12 @@ function App() {
       }
       return next
     })
+  }
+
+  function clearSelectedHistogramGates() {
+    setDraft([])
+    setDrawActive(false)
+    setGates((prev) => clearHistogramGatesForFile(prev, selected))
   }
 
   function makeFileSpecific() {
@@ -2032,7 +2072,7 @@ function App() {
     const compatible = reconcileGateCsvRows(rows, currentFiles)
     validateGateCsvRows(compatible.rows, headers)
     const parsed = parseConfigRows(compatible.rows)
-    setGates(parsed.gates)
+    setGates(pruneUnavailableNegativeGates(parsed.gates, currentFiles))
     if (typeof parsed.pointSize === 'number') setPointSize(parsed.pointSize)
     if (typeof parsed.maxPoints === 'number') setMaxPoints(normalizeEventCount(parsed.maxPoints))
     if (typeof parsed.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(parsed.histogramBins))
@@ -2100,7 +2140,7 @@ function App() {
         body: JSON.stringify({ gates }),
       })
       if (result.success === false) throw new Error(result.error || 'Histogram autogating failed')
-      setGates((previous) => ({ ...previous, ...(result.gates || {}) }))
+      setGates((previous) => pruneUnavailableNegativeGates({ ...previous, ...(result.gates || {}) }, files))
       setSpectrumCache({})
       const generated = Number(result.gates_generated ?? Object.keys(result.gates || {}).length)
       const preserved = Number(result.gates_preserved ?? 0)
@@ -2128,12 +2168,12 @@ function App() {
           {files.map((file) => (
             <button
               key={file.filename}
-              className={`file-row ${selected === file.filename ? 'selected' : ''} ${file.is_af ? 'is-af' : ''}`}
+              className={`file-row ${selected === file.filename ? 'selected' : ''} ${fileUsesHistogramGates(file) ? '' : 'is-af'}`}
               onClick={() => setSelected(file.filename)}
             >
               <span>{file.fluorophore}</span>
               <strong>{file.marker}</strong>
-              <small>{file.channel}{file.is_af ? ' · AF' : ''}</small>
+              <small>{file.channel}{fileUsesHistogramGates(file) ? '' : ' · AF'}</small>
             </button>
           ))}
         </div>
@@ -2369,7 +2409,7 @@ function App() {
               clearActiveGate()
             }}
           />
-          {currentFile.is_af ? null : (
+          {fileUsesHistogramGates(currentFile) ? (
             <GatePlot
               title="Histogram"
               subtitle=""
@@ -2433,6 +2473,7 @@ function App() {
               onContextGate={(x, y, key) => setContextMenu({ x, y, gateKey: key || histogramGateKey(histogramGateType, selected) })}
               isPositivePlot={true}
               histogramGateType={histogramGateType}
+              negativeGateEnabled={usesNegativeHistogramGate}
               histogramBins={histogramBins}
               histogramTransform={histogramTransform}
               onHistogramTransformChange={(value) => setHistogramTransform(normalizeHistogramTransform(value))}
@@ -2447,7 +2488,7 @@ function App() {
               onUpdateAnyGateVertices={(key, newVertices) => updateGateVertices(key, newVertices)}
               onToggleHistogramGate={(type, e) => {
                 e.stopPropagation()
-                const existingGate = type === 'negative' ? negativeGate : positiveGate
+                if (type === 'negative' && !usesNegativeHistogramGate) return
                 setActiveGate('positive')
                 setHistogramGateType(type)
                 setDraft([])
@@ -2455,15 +2496,15 @@ function App() {
                   setDrawActive(false)
                   return
                 }
-                setDrawActive(!existingGate)
+                setDrawActive(true)
               }}
               onClear={(e) => {
                 e.stopPropagation()
                 setActiveGate('positive')
-                clearActiveGate()
+                clearSelectedHistogramGates()
               }}
             />
-          )}
+          ) : null}
         </div>
 
         <div className="spectrum-container" style={{ marginTop: 28, display: 'flex', justifyContent: 'center' }}>

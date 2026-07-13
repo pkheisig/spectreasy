@@ -24,3 +24,15 @@ test('keeps group gates and current overrides while dropping missing-file rows',
   assert.ok(result.rows.some((row) => row.scope === 'beads' && row.gate_type === 'cell'))
   assert.ok(result.rows.some((row) => row.scope === 'beads' && row.gate_type === 'singlet'))
 })
+
+test('drops obsolete negative histogram rows when AF_beads supplies bead background', () => {
+  const rows = [
+    { gate_type: 'positive', filename: 'beads.fcs', plot_mode: 'positive_1d' },
+    { gate_type: 'negative', filename: 'beads.fcs', plot_mode: 'negative_1d' },
+  ]
+  const result = reconcileGateCsvRows(rows, [{
+    filename: 'beads.fcs',
+    uses_negative_histogram_gate: false,
+  }])
+  assert.deepEqual(result.rows, [rows[0]])
+})

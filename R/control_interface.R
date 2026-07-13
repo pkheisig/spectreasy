@@ -904,14 +904,7 @@
     df$control.type[is_af_row] <- "cells"
 
     df <- .canonicalize_primary_af_labels(df)
-
-    dead_negative_file <- df$filename[dead_af_row]
-    dead_negative_file <- dead_negative_file[nzchar(dead_negative_file)]
-    if (length(dead_negative_file) > 0) {
-        viability_row <- df$is.viability == "TRUE" & !dead_af_row & df$control.type != "beads"
-        empty_negative <- !nzchar(trimws(as.character(df$universal.negative)))
-        df$universal.negative[viability_row & empty_negative] <- dead_negative_file[1]
-    }
+    df <- .assign_reference_automatic_negatives(df)
 
     preferred_order <- c(
         "filename",
@@ -946,6 +939,9 @@
 #' denoted as `AF_beads` with `control.type = "beads"` so they can be used
 #' as bead-background negatives. Ordinary unstained cell controls are numbered
 #' `AF`, `AF_2`, `AF_3`, and so on, and are pooled as AF-bank sources.
+#' Empty `universal.negative` values are filled by source type when the matching
+#' negative exists: `AF` for ordinary cell SCCs, `AF_dead` for viability SCCs,
+#' and `AF_beads` for bead SCCs. Explicit user mappings are preserved.
 #' @export
 #' @examples
 #' make_example_ff <- function(main, n = 250) {
