@@ -19,10 +19,10 @@
 Install with:
 
 ```r
-remotes::install_github("pkheisig/spectreasy")
+remotes::install_github("pkheisig/spectreasy", force = TRUE)
 
 # alternatively
-devtools::install_github("pkheisig/spectreasy")
+devtools::install_github("pkheisig/spectreasy", force = TRUE)
 ```
 
 ---
