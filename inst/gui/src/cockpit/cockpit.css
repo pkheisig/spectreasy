@@ -307,3 +307,92 @@ html[data-theme="dark"] .matrix-workspace {
 }
 html[data-theme="dark"] .matrix-workspace .matrix-preview th { color: var(--matrix-muted); background: #252e2a; }
 html[data-theme="dark"] .matrix-workspace .matrix-bar-row i { background: #303a36; }
+
+/* Cockpit navigation and appearance layer, selectively ported from the gui branch. */
+:root {
+  --ui-zoom: 1.25;
+  --scaled-viewport-height: 80vh;
+  --corner-radius: 8px;
+  --cockpit-accent: #1f7a6d;
+  --cockpit-accent-soft: #eef7f3;
+  --cockpit-accent-ink: #17675c;
+  --teal: #1f7a6d;
+  --teal-deep: #17675c;
+  --coral: #d65238;
+  --display: "Avenir Next", "Trebuchet MS", sans-serif;
+}
+.cockpit-app { min-height: var(--scaled-viewport-height); zoom: var(--ui-zoom); font-family: "Avenir Next", "Trebuchet MS", sans-serif; }
+.button-primary { color: #fff; border-color: var(--cockpit-accent); background: var(--cockpit-accent); box-shadow: 0 4px 11px color-mix(in srgb, var(--cockpit-accent) 24%, transparent); }
+.button-primary:hover { color: #fff; border-color: var(--teal-deep); background: var(--teal-deep); }
+.text-action { color: var(--cockpit-accent-ink); }
+.app-body { height: calc(var(--scaled-viewport-height) - 72px); }
+html[data-sticky-header="on"] .topbar { position: sticky; top: 0; }
+html[data-sidebar="narrow"] .workflow-rail { flex-basis: 178px; }
+html[data-sidebar="wide"] .workflow-rail { flex-basis: 242px; }
+html[data-shadows="none"] { --shadow: none; }
+html[data-shadows="raised"] { --shadow: 0 14px 32px rgba(23, 32, 29, .13); }
+html[data-density="compact"] .workspace-content { padding-top: 24px; }
+html[data-density="compact"] .surface-card { padding: 14px; }
+html[data-density="spacious"] .workspace-content { padding-top: 42px; }
+html[data-density="spacious"] .surface-card { padding: 24px; }
+html[data-texture="on"] .main-canvas { background-image: radial-gradient(rgba(31, 122, 109, .1) .5px, transparent .5px); background-size: 8px 8px; }
+html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; transition-duration: .001ms !important; }
+html[data-contrast="high"] .cockpit-app { color: #07100d; }
+html[data-contrast="high"] .workspace-header p, html[data-contrast="high"] .section-title p { color: #39443f; }
+
+.rail-intro strong { display: block; margin-top: 5px; overflow: hidden; color: var(--ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.rail-overview, .rail-group-toggle, .rail-subitem { width: 100%; display: flex; align-items: center; color: #5d6964; border: 0; background: transparent; text-align: left; }
+.rail-overview { min-height: 38px; gap: 9px; padding: 0 9px; border-radius: var(--corner-radius); font-size: 10px; font-weight: 700; }
+.rail-overview:hover, .rail-group-toggle:hover, .rail-subitem:hover { color: var(--ink); background: rgba(255, 253, 250, .72); }
+.rail-overview.is-active { color: var(--cockpit-accent-ink); background: var(--cockpit-accent-soft); }
+.rail-group { padding-top: 2px; }
+.rail-group-toggle { min-height: 38px; gap: 9px; padding: 0 9px; border-radius: var(--corner-radius); font-size: 10px; font-weight: 700; }
+.rail-group.contains-active > .rail-group-toggle { color: var(--ink); }
+.rail-group-toggle span { min-width: 0; flex: 1; }
+.rail-chevron { transition: transform .16s ease; }
+.rail-group-toggle[aria-expanded="true"] .rail-chevron { transform: rotate(90deg); }
+.rail-subsections { display: grid; gap: 2px; margin: 2px 0 5px 16px; padding-left: 10px; border-left: 1px solid #cbc7bf; }
+.rail-subitem { min-height: 43px; gap: 7px; padding: 6px 7px 6px 9px; border-radius: calc(var(--corner-radius) - 2px); }
+.rail-subitem.is-active { color: var(--cockpit-accent-ink); background: var(--cockpit-accent-soft); box-shadow: inset 2px 0 0 var(--cockpit-accent); }
+.rail-subitem-copy { min-width: 0; flex: 1; }
+.rail-subitem-copy strong, .rail-subitem-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-subitem-copy strong { font-size: 9px; font-weight: 750; }
+.rail-subitem-copy small { margin-top: 3px; color: #8b918e; font-size: 7px; }
+.rail-count { min-width: 20px; padding: 2px 5px; color: #68716d; border-radius: 999px; background: rgba(255, 253, 250, .7); font-size: 7px; text-align: center; }
+
+details.settings-section:not([open]) > .settings-form-grid, details.settings-section:not([open]) > .appearance-settings-body { display: none !important; }
+.appearance-settings-body { display: grid; grid-template-columns: 1fr 1fr; }
+.appearance-group { min-width: 0; padding: 18px; border-right: 1px solid #e2dcd1; border-bottom: 1px solid #e2dcd1; }
+.appearance-group:nth-child(2n) { border-right: 0; }
+.appearance-group:last-child { border-bottom: 0; }
+.appearance-group-heading { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 14px; color: var(--cockpit-accent); }
+.appearance-group-heading strong, .appearance-group-heading small { display: block; }
+.appearance-group-heading strong { color: var(--ink); font-size: 10px; }
+.appearance-group-heading small { margin-top: 3px; color: var(--ink-faint); font-size: 8px; line-height: 1.4; }
+.choice-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.choice-button { min-height: 31px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; color: var(--ink-soft); border: 1px solid var(--line); border-radius: calc(var(--corner-radius) - 2px); background: var(--paper); font-size: 9px; }
+.choice-button.is-selected { color: var(--cockpit-accent-ink); border-color: color-mix(in srgb, var(--cockpit-accent) 45%, var(--line)); background: var(--cockpit-accent-soft); }
+.appearance-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.appearance-field-grid label { display: grid; gap: 6px; color: var(--ink-soft); font-size: 8px; }
+.appearance-field-grid label > strong { justify-self: end; margin-top: -14px; color: var(--ink); font-size: 8px; }
+.appearance-field-grid select { height: 31px; padding: 0 7px; color: var(--ink); border: 1px solid var(--line); border-radius: calc(var(--corner-radius) - 2px); background: var(--paper); }
+.appearance-field-grid input[type="range"] { width: 100%; accent-color: var(--cockpit-accent); }
+.preference-toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-top: 14px; }
+.preference-toggles label { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); font-size: 8px; }
+.preference-toggles input { accent-color: var(--cockpit-accent); }
+
+html[data-theme="dark"] { --cockpit-accent: #55c7b6; --cockpit-accent-soft: #1c2b26; --cockpit-accent-ink: #74d7c8; --teal: #55c7b6; --teal-deep: #43ae9e; --coral: #ff765f; }
+html[data-theme="dark"] .rail-intro strong { color: #f0f3f2; }
+html[data-theme="dark"] .rail-overview, html[data-theme="dark"] .rail-group-toggle, html[data-theme="dark"] .rail-subitem { color: #b7c0bc; }
+html[data-theme="dark"] .rail-overview:hover, html[data-theme="dark"] .rail-group-toggle:hover, html[data-theme="dark"] .rail-subitem:hover { color: #fff; background: #303532; }
+html[data-theme="dark"] .rail-overview.is-active, html[data-theme="dark"] .rail-subitem.is-active { color: #74d7c8; background: #1c2b26; }
+html[data-theme="dark"] .rail-subsections { border-left-color: #464b48; }
+html[data-theme="dark"] .rail-count { color: #b7c0bc; background: #343936; }
+html[data-theme="dark"] .appearance-group { border-color: #414642; }
+html[data-theme="dark"] .appearance-group-heading strong { color: #f0f3f2; }
+html[data-theme="dark"] .choice-button, html[data-theme="dark"] .appearance-field-grid select { color: #e7ebe9; border-color: #4b504d; background: #202522; }
+html[data-theme="dark"] .choice-button.is-selected { color: #74d7c8; background: #1c2b26; }
+html[data-theme="dark"] .appearance-field-grid label, html[data-theme="dark"] .preference-toggles label { color: #b7c0bc; }
+html[data-theme="dark"] .appearance-field-grid label > strong { color: #f0f3f2; }
+
+@media (max-width: 1220px) { .appearance-settings-body { grid-template-columns: 1fr; } .appearance-group { border-right: 0; } }

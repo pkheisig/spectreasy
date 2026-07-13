@@ -60,6 +60,7 @@ import {
 } from "../api";
 import { demoReports } from "../mockData";
 import { StatusPill } from "../components/StatusPill";
+import { AppearanceSettings } from "../components/AppearanceSettings";
 
 const GateEditor = lazy(() => import("../../GatingGui.jsx"));
 
@@ -83,11 +84,12 @@ export type WorkflowWorkspaceProps = {
   onSave: () => void;
   settings: WorkflowSettings;
   onSettingsChange: (
-    section: "projectPath" | "control" | "sample" | "af",
+    section: "projectPath" | "control" | "sample" | "af" | "appearance",
     patch:
       | Partial<WorkflowSettings["control"]>
       | Partial<WorkflowSettings["sample"]>
       | Partial<WorkflowSettings["af"]>
+      | Partial<WorkflowSettings["appearance"]>
       | { projectPath: string },
   ) => void;
   onOpenProject: (path: string) => void;
@@ -4562,6 +4564,10 @@ function ConfigurableSettingsWorkspace({
           </button>
         </section>
       </div>
+      <AppearanceSettings
+        value={settings.appearance}
+        onChange={(patch) => onSettingsChange("appearance", patch)}
+      />
       <details className="surface-card settings-section" open>
         <summary>
           <CircleCheckBig size={15} /> Control-stage parameters{" "}

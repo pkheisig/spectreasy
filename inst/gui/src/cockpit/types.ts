@@ -182,11 +182,26 @@ export type AfSettings = {
   seed: number
 }
 
+export type AppearanceSettings = {
+  theme: 'light' | 'dark'
+  density: 'compact' | 'comfortable' | 'spacious'
+  fontScale: number
+  sidebarWidth: 'narrow' | 'standard' | 'wide'
+  cornerRadius: number
+  shadows: 'none' | 'subtle' | 'raised'
+  reduceMotion: boolean
+  highContrast: boolean
+  backgroundTexture: boolean
+  showSectionCounts: boolean
+  stickyHeader: boolean
+}
+
 export type WorkflowSettings = {
   projectPath: string
   control: ControlSettings
   sample: SampleSettings
   af: AfSettings
+  appearance: AppearanceSettings
 }
 
 export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
@@ -271,6 +286,19 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       afMinClusterEvents: 20,
       afMinClusterProportion: 0.005,
       seed: 1,
+    },
+    appearance: {
+      theme: 'light',
+      density: 'comfortable',
+      fontScale: 125,
+      sidebarWidth: 'standard',
+      cornerRadius: 8,
+      shadows: 'subtle',
+      reduceMotion: false,
+      highContrast: false,
+      backgroundTexture: false,
+      showSectionCounts: true,
+      stickyHeader: true,
     },
   }
 }

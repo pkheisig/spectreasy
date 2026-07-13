@@ -167,17 +167,17 @@ export default function CockpitApp() {
   const [job, setJob] = useState<Job>(emptyJob);
   const [panelPayload, setPanelPayload] = useState<PanelPayload | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [settings, setSettings] = useState<WorkflowSettings>(() =>
-    defaultWorkflowSettings(demoProject.projectPath),
-  );
+  const [settings, setSettings] = useState<WorkflowSettings>(() => {
+    const initial = defaultWorkflowSettings(demoProject.projectPath);
+    const savedTheme = window.localStorage.getItem("spectreasy-theme");
+    if (savedTheme === "light" || savedTheme === "dark") {
+      initial.appearance.theme = savedTheme;
+    }
+    return initial;
+  });
   const [sectionBeforeSettings, setSectionBeforeSettings] =
     useState<SectionId>("overview");
-  const [darkMode, setDarkMode] = useState(() => {
-    const saved = window.localStorage.getItem("spectreasy-theme");
-    return saved
-      ? saved === "dark"
-      : window.matchMedia("(prefers-color-scheme: dark)").matches;
-  });
+  const darkMode = settings.appearance.theme === "dark";
 
   const refreshProject = useCallback(async (initial = false) => {
     const snapshot = await loadProjectSnapshot();
@@ -216,6 +216,7 @@ export default function CockpitApp() {
               current.sample.method,
           },
           af: { ...current.af, ...(saved.af ?? {}) },
+          appearance: { ...current.appearance, ...(saved.appearance ?? {}) },
         };
       });
     }
@@ -269,12 +270,22 @@ export default function CockpitApp() {
   }, [toast]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
-    window.localStorage.setItem(
-      "spectreasy-theme",
-      darkMode ? "dark" : "light",
-    );
-  }, [darkMode]);
+    const root = document.documentElement;
+    const appearance = settings.appearance;
+    const scale = appearance.fontScale / 100;
+    root.dataset.theme = appearance.theme;
+    root.dataset.density = appearance.density;
+    root.dataset.sidebar = appearance.sidebarWidth;
+    root.dataset.shadows = appearance.shadows;
+    root.dataset.contrast = appearance.highContrast ? "high" : "normal";
+    root.dataset.texture = appearance.backgroundTexture ? "on" : "off";
+    root.dataset.motion = appearance.reduceMotion ? "reduced" : "full";
+    root.dataset.stickyHeader = appearance.stickyHeader ? "on" : "off";
+    root.style.setProperty("--ui-zoom", String(scale));
+    root.style.setProperty("--scaled-viewport-height", `${100 / scale}vh`);
+    root.style.setProperty("--corner-radius", `${appearance.cornerRadius}px`);
+    window.localStorage.setItem("spectreasy-theme", appearance.theme);
+  }, [settings.appearance]);
 
   function updateMapping(id: string, patch: Partial<MappingRow>) {
     setProject((current) => ({
@@ -292,11 +303,12 @@ export default function CockpitApp() {
   }
 
   function updateSettings(
-    section: "projectPath" | "control" | "sample" | "af",
+    section: "projectPath" | "control" | "sample" | "af" | "appearance",
     patch:
       | Partial<WorkflowSettings["control"]>
       | Partial<WorkflowSettings["sample"]>
       | Partial<WorkflowSettings["af"]>
+      | Partial<WorkflowSettings["appearance"]>
       | { projectPath: string },
   ) {
     if (section === "projectPath") {
@@ -565,7 +577,9 @@ export default function CockpitApp() {
         settingsActive={activeSection === "settings"}
         onCytometerChange={changeCytometer}
         onMethodChange={changeMethod}
-        onToggleTheme={() => setDarkMode((current) => !current)}
+        onToggleTheme={() =>
+          updateSettings("appearance", { theme: darkMode ? "light" : "dark" })
+        }
         onRefresh={() => void refreshProject()}
         onSettings={toggleSettings}
       />
@@ -574,6 +588,7 @@ export default function CockpitApp() {
           <WorkflowRail
             activeSection={activeSection}
             project={project}
+            showCounts={settings.appearance.showSectionCounts}
             onChange={setActiveSection}
           />
           <div className="main-canvas">
