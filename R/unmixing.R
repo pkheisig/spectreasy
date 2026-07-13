@@ -1152,6 +1152,7 @@ unmix_samples <- function(sample_dir = "samples",
                 spectreasy_weight_quantile = spectreasy_weight_quantile,
                 estimate_af = estimate_af,
                 write_fcs = write_fcs,
+                save_qc_plots = save_qc_plots,
                 plot_n_events = plot_n_events,
                 chunk_size = chunk_size,
                 seed = seed

@@ -20,6 +20,8 @@ collect_sample_report_data(
   run_settings = list(),
   project_path = getwd(),
   max_events_per_sample = 1000,
+  overview_files_per_page = 15,
+  matrix_markers_per_page = 20,
   sample_nxn_rows_per_page = 10,
   sample_nxn_max_points = max_events_per_sample,
   sample_nxn_transform = c("none", "asinh"),
@@ -61,7 +63,15 @@ combined data frame with a `File` column.}
 
 \item{max_events_per_sample}{Maximum retained events per sample.}
 
-\item{sample_nxn_rows_per_page}{Marker rows/columns per NxN plot page.}
+\item{overview_files_per_page}{Maximum samples combined in PDF-equivalent
+NPS and reconstruction overview plots.}
+
+\item{matrix_markers_per_page}{Marker cutoff used by the PDF-equivalent
+similarity plot pages.}
+
+\item{sample_nxn_rows_per_page}{Marker rows/columns per PDF NxN plot page.
+HTML output instead renders one coherent matrix per selected sample in a
+separate companion HTML file.}
 
 \item{sample_nxn_max_points}{Maximum plotted events per sample.}
 

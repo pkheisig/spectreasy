@@ -401,7 +401,9 @@ plot_spectra <- function(ref_matrix,
     ramp <- .scatter_density_color_ramp()
     for (idx in groups) {
         if (length(idx) > 1 && stats::var(plot_df$x[idx]) > 0 && stats::var(plot_df$y[idx]) > 0) {
-            plot_df$color[idx] <- grDevices::densCols(plot_df$x[idx], plot_df$y[idx], colramp = ramp)
+            plot_df$color[idx] <- .with_known_qc_plot_warnings_suppressed(
+                grDevices::densCols(plot_df$x[idx], plot_df$y[idx], colramp = ramp)
+            )
         }
     }
     plot_df

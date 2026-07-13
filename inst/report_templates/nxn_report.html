@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{REPORT_TITLE}}</title>
+  <style>
+    :root { --ink:#251d19; --muted:#75665e; --paper:#faf5ef; --card:#fffefa; --line:#e4d9ce; --accent:#f28b54; --accent-dark:#b75525; }
+    body.report-control { --ink:#18232e; --muted:#657383; --paper:#f2f7fb; --card:#fcfeff; --line:#d6e2ed; --accent:#70afe8; --accent-dark:#3379b8; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:auto; }
+    body { margin:0; color:var(--ink); background:var(--paper); font:15px/1.5 Georgia,"Times New Roman",serif; }
+    header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:20px; padding:14px 20px; color:white; background:#332722; box-shadow:0 8px 24px rgba(71,43,28,.16); }
+    header h1 { flex:0 0 auto; margin:0; font-size:19px; font-weight:500; }
+    header p { flex:1 1 auto; margin:0; color:#f0d8ca; font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    main { height:calc(100vh - 70px); padding:12px; }
+    .matrix-canvas { width:100%; height:100%; overflow:auto; border:1px solid var(--line); background:white; }
+    .matrix-canvas img { display:block; width:auto; max-width:none; height:auto; }
+    @media (max-width:760px) { header{position:relative;align-items:flex-start;flex-direction:column;gap:8px}main{height:calc(100vh - 110px);padding:8px} }
+    @media print { header{position:relative}main{height:auto;padding:0}.matrix-canvas{height:auto;overflow:visible;border:0}.matrix-canvas img{max-width:100%;height:auto} }
+  </style>
+</head>
+<body class="{{REPORT_CLASS}}">
+  <header>
+    <h1>{{REPORT_HEADING}}</h1>
+    <p>{{REPORT_META}}</p>
+  </header>
+  <main><div class="matrix-canvas"><img alt="NxN scatter matrix for {{MATRIX_LABEL}}" src="{{MATRIX_IMAGE}}"></div></main>
+</body>
+</html>

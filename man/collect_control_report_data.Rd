@@ -21,7 +21,8 @@ collect_control_report_data(
   warnings = character(),
   run_settings = list(),
   project_path = getwd(),
-  plot_dir = NULL
+  plot_dir = NULL,
+  use_scatter_gating = TRUE
 )
 }
 \arguments{
@@ -59,6 +60,9 @@ collect_control_report_data(
 \item{project_path}{Project path displayed in the report.}
 
 \item{plot_dir}{Directory used for cached report PNG files.}
+
+\item{use_scatter_gating}{Whether the PDF-equivalent positive-gate panel uses
+the intensity-versus-FSC scatter plot or the histogram plot.}
 }
 \value{
 A `spectreasy_control_report_data` object.

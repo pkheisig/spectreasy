@@ -436,6 +436,7 @@ qc_controls <- function(
     }
 
     qc_metrics_dir <- .prepare_qc_report_metrics_dir(qc_metrics_dir)
+    collector_plot_dir <- NULL
 
     can_reuse_reference <- !is.null(M) && (
         identical(output_spec$format, "html") ||
@@ -457,6 +458,7 @@ qc_controls <- function(
         }
     } else {
         plot_dir_info <- .prepare_scc_report_plot_dir(qc_plot_dir = qc_plot_dir, save_qc_pngs = save_qc_pngs)
+        collector_plot_dir <- plot_dir_info$plot_dir
         if (!is.null(plot_dir_info$cleanup_dir)) {
             on.exit(unlink(plot_dir_info$cleanup_dir, recursive = TRUE, force = TRUE), add = TRUE)
         }
@@ -537,6 +539,13 @@ qc_controls <- function(
     }
 
     if (identical(output_spec$format, "html")) {
+        if (is.null(collector_plot_dir)) {
+            collector_plot_info <- .prepare_scc_report_plot_dir(qc_plot_dir = qc_plot_dir, save_qc_pngs = save_qc_pngs)
+            collector_plot_dir <- collector_plot_info$plot_dir
+            if (!is.null(collector_plot_info$cleanup_dir)) {
+                on.exit(unlink(collector_plot_info$cleanup_dir, recursive = TRUE, force = TRUE), add = TRUE)
+            }
+        }
         report_data <- collect_control_report_data(
             M = M_report,
             scc_dir = scc_dir,
@@ -562,8 +571,10 @@ qc_controls <- function(
                 ),
                 report_run_settings
             ),
-            plot_dir = qc_plot_dir
+            plot_dir = collector_plot_dir,
+            use_scatter_gating = use_scatter_gating
         )
+        if (!isTRUE(save_qc_pngs)) report_data <- .report_embed_plot_manifest(report_data)
         return(render_qc_html_report(report_data, output_file, overwrite = overwrite))
     }
 

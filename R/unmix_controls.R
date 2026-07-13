@@ -747,16 +747,31 @@ unmix_controls <- function(
                     gate_file = manual_gate_file
                 ),
                 report_run_settings = list(
+                    auto_create_mapping = auto_create_mapping,
+                    auto_unknown_fluor_policy = auto_unknown_fluor_policy,
+                    unmix_scatter_panel_size_mm = unmix_scatter_panel_size_mm,
+                    seed = seed,
                     af_n_bands = af_n_bands,
                     af_min_cluster_events = af_min_cluster_events,
                     af_min_cluster_proportion = af_min_cluster_proportion,
                     rwls_max_iter = rwls_max_iter,
                     n_threads = n_threads,
+                    save_qc_plots = save_qc_plots,
+                    use_scatter_gating = use_scatter_gating,
+                    manual_gating = manual_gating,
                     clean_scc_with_unstained = clean_scc_with_unstained,
                     scc_background_method = scc_background_method,
                     scc_background_k = scc_background_k,
+                    spectral_variant_som_nodes = spectral_variant_som_nodes,
                     spectral_variant_top_k = spectral_variant_top_k,
-                    spectreasy_weight_quantile = spectreasy_weight_quantile
+                    spectral_variant_cosine_threshold = spectral_variant_cosine_threshold,
+                    spectral_variant_max_variants = spectral_variant_max_variants,
+                    spectral_variant_min_events = spectral_variant_min_events,
+                    spectreasy_weight_quantile = spectreasy_weight_quantile,
+                    autospectral_n_candidates = autospectral_n_candidates,
+                    autospectral_n_spectral = autospectral_n_spectral,
+                    autospectral_min_events = autospectral_min_events,
+                    refine = refine
                 )
             )
         )

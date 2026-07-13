@@ -603,7 +603,9 @@
     ramp <- .scatter_density_color_ramp()
     for (idx in groups) {
         if (length(idx) > 1 && stats::var(plot_df$x[idx]) > 0 && stats::var(plot_df$y[idx]) > 0) {
-            plot_df$color[idx] <- grDevices::densCols(plot_df$x[idx], plot_df$y[idx], colramp = ramp)
+            plot_df$color[idx] <- .with_known_qc_plot_warnings_suppressed(
+                grDevices::densCols(plot_df$x[idx], plot_df$y[idx], colramp = ramp)
+            )
         }
     }
     plot_df
@@ -727,8 +729,8 @@
     plot_df <- do.call(rbind, panel_data)
     lim_df <- do.call(rbind, panel_limits)
     plot_df <- .add_qc_report_density_colors(plot_df)
-    page_rows <- .pad_qc_report_page_levels(row_markers, block_size = block_size, prefix = "row")
-    page_cols <- .pad_qc_report_page_levels(col_markers, block_size = block_size, prefix = "col")
+    page_rows <- unique(as.character(row_markers))
+    page_cols <- unique(as.character(col_markers))
 
     plot_df$panel_col <- factor(plot_df$panel_col, levels = page_cols)
     plot_df$panel_row <- factor(plot_df$panel_row, levels = page_rows)
@@ -757,7 +759,7 @@
         stringsAsFactors = FALSE
     )
 
-    ggplot2::ggplot() +
+    p <- ggplot2::ggplot() +
         ggplot2::geom_blank(data = panel_grid, ggplot2::aes(x = 0, y = 0)) +
         ggplot2::geom_blank(data = panel_info$lim_df, ggplot2::aes(x = x_low, y = y_low)) +
         ggplot2::geom_blank(data = panel_info$lim_df, ggplot2::aes(x = x_high, y = y_high)) +
@@ -813,6 +815,9 @@
             plot.subtitle = ggplot2::element_text(size = 9.3, hjust = 0.5),
             plot.margin = grid::unit(c(1, 1, 1, 1), "mm")
         )
+    attr(p, "spectreasy_nxn_rows") <- length(panel_info$page_rows)
+    attr(p, "spectreasy_nxn_cols") <- length(panel_info$page_cols)
+    p
 }
 
 .build_qc_report_sample_scatter_pages <- function(results_df,
@@ -939,8 +944,8 @@
             next
         }
 
-        page_rows <- .pad_qc_report_page_levels(row_markers, block_size = rows_per_page, prefix = "row")
-        page_cols <- .pad_qc_report_page_levels(col_markers, block_size = rows_per_page, prefix = "col")
+        page_rows <- unique(as.character(row_markers))
+        page_cols <- unique(as.character(col_markers))
         plot_df$panel_row <- factor(as.character(plot_df$panel_row), levels = page_rows)
         plot_df$panel_col <- factor(as.character(plot_df$panel_col), levels = page_cols)
         lim_df$panel_row <- factor(as.character(lim_df$panel_row), levels = page_rows)
@@ -1121,6 +1126,18 @@ qc_samples <- function(results,
     }
 
     if (identical(output_spec$format, "html")) {
+        html_plot_dir <- if (isTRUE(save_qc_pngs)) {
+            .prepare_qc_report_png_dir(
+                qc_plot_dir = qc_plot_dir,
+                save_qc_pngs = TRUE,
+                output_file = output_file
+            )
+        } else {
+            path <- tempfile("spectreasy_sample_html_plots_")
+            dir.create(path, showWarnings = FALSE, recursive = TRUE)
+            on.exit(unlink(path, recursive = TRUE, force = TRUE), add = TRUE)
+            path
+        }
         report_data <- collect_sample_report_data(
             results = results,
             M = M,
@@ -1147,14 +1164,17 @@ qc_samples <- function(results,
                 report_run_settings
             ),
             max_events_per_sample = max_events_per_sample,
+            overview_files_per_page = overview_files_per_page,
+            matrix_markers_per_page = matrix_markers_per_page,
             sample_nxn_rows_per_page = sample_nxn_rows_per_page,
             sample_nxn_max_points = sample_nxn_max_points,
             sample_nxn_transform = sample_nxn_transform,
             sample_nxn_asinh_cofactor = sample_nxn_asinh_cofactor,
             sample_nxn_axis_limit = sample_nxn_axis_limit,
             nxn_all_samples = nxn_all_samples,
-            plot_dir = qc_plot_dir
+            plot_dir = html_plot_dir
         )
+        if (!isTRUE(save_qc_pngs)) report_data <- .report_embed_plot_manifest(report_data)
         return(render_qc_html_report(report_data, output_file, overwrite = overwrite))
     }
 
