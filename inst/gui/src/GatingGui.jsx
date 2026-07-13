@@ -15,6 +15,8 @@ import {
   Moon,
   Settings,
   Info,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 import './GatingGui.css'
 import { reconcileGateCsvRows } from './gatingCsvCompatibility.js'
@@ -41,6 +43,17 @@ const API_BASE = (() => {
 })()
 const CONFIG_NAME = 'ssc_gate_config.csv'
 const GUI_MODULE = 'control_gating'
+
+const unboxGuiState = (value) => {
+  if (Array.isArray(value)) {
+    if (value.length === 1) return unboxGuiState(value[0])
+    return value.map(unboxGuiState)
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, unboxGuiState(item)]))
+  }
+  return value
+}
 const THEME_STORAGE_KEY = 'spectreasy-theme'
 const DEFAULT_EVENT_COUNT = 50000
 const EVENT_COUNT_VERSION = 2
@@ -1773,6 +1786,8 @@ function App() {
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches || false
   })
   const [guiStateLoaded, setGuiStateLoaded] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(192)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [preloadComplete, setPreloadComplete] = useState(false)
   const [gatesLoaded, setGatesLoaded] = useState(false)
   const [histogramAutogating, setHistogramAutogating] = useState(false)
@@ -1849,12 +1864,16 @@ function App() {
         if (typeof cacheData?.histogramTransform === 'string') {
           setHistogramTransform(normalizeHistogramTransform(cacheData.histogramTransform))
         }
-        const persisted = guiState?.config || {}
+        const persisted = unboxGuiState(guiState?.config || {})
         if (typeof persisted.pointSize === 'number') setPointSize(persisted.pointSize)
         if (typeof persisted.maxPoints === 'number' && persisted.eventCountVersion === EVENT_COUNT_VERSION) setMaxPoints(normalizeEventCount(persisted.maxPoints))
         if (typeof persisted.darkMode === 'boolean') setDarkMode(persisted.darkMode)
         if (typeof persisted.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(persisted.histogramBins))
         if (typeof persisted.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(persisted.histogramTransform))
+        if (typeof persisted.sidebarWidth === 'number' && Number.isFinite(persisted.sidebarWidth)) {
+          setSidebarWidth(Math.min(380, Math.max(160, persisted.sidebarWidth)))
+        }
+        if (typeof persisted.sidebarCollapsed === 'boolean') setSidebarCollapsed(persisted.sidebarCollapsed)
         if (persisted.axisSettings && typeof persisted.axisSettings === 'object' && persisted.axisSettingsVersion === AXIS_SETTINGS_VERSION) {
           setAxisSettings(persisted.axisSettings)
         }
@@ -1873,12 +1892,12 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           module: GUI_MODULE,
-          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, darkMode, axisSettings, axisSettingsVersion: AXIS_SETTINGS_VERSION }
+          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, darkMode, axisSettings, axisSettingsVersion: AXIS_SETTINGS_VERSION, sidebarWidth, sidebarCollapsed }
         })
       }).catch(() => {})
     }, 350)
     return () => clearTimeout(timer)
-  }, [pointSize, maxPoints, histogramBins, histogramTransform, darkMode, axisSettings, guiStateLoaded])
+  }, [pointSize, maxPoints, histogramBins, histogramTransform, darkMode, axisSettings, sidebarWidth, sidebarCollapsed, guiStateLoaded])
 
   // Synchronize frontend gates and settings to backend in-memory cache
   useEffect(() => {
@@ -2417,9 +2436,48 @@ function App() {
     }
   }
 
+  const beginSidebarResize = (event) => {
+    if (sidebarCollapsed) return
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = sidebarWidth
+    const previousCursor = document.body.style.cursor
+    const previousUserSelect = document.body.style.userSelect
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const move = (moveEvent) => {
+      setSidebarWidth(Math.min(380, Math.max(160, startWidth + moveEvent.clientX - startX)))
+    }
+    const finish = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      document.body.style.cursor = previousCursor
+      document.body.style.userSelect = previousUserSelect
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+  }
+
   return (
-    <main className={`app-shell ${initialLoading || histogramAutogating ? 'is-initial-loading' : ''}`}>
-      <aside className="sidebar">
+    <main
+      className={`app-shell ${initialLoading || histogramAutogating ? 'is-initial-loading' : ''}`}
+    >
+      <aside
+        className={`sidebar gating-sidebar ${sidebarCollapsed ? 'is-collapsed' : ''}`}
+        style={{ '--gating-sidebar-width': `${sidebarWidth}px` }}
+      >
+        <button
+          type="button"
+          className="gating-sidebar-toggle"
+          title={sidebarCollapsed ? 'Show control sidebar' : 'Hide control sidebar'}
+          aria-label={sidebarCollapsed ? 'Show control sidebar' : 'Hide control sidebar'}
+          onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+        >
+          {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+        </button>
         <div className="brand">
           <ScatterChart size={26} />
           <div>
@@ -2433,13 +2491,25 @@ function App() {
               className={`file-row ${selected === file.filename ? 'selected' : ''} ${fileUsesHistogramGates(file) ? '' : 'is-af'}`}
               onClick={() => setSelected(file.filename)}
             >
-              <span>{file.fluorophore}</span>
+              <div className="file-row-top">
+                <span>{file.fluorophore}</span>
+                <small>{file.channel}{fileUsesHistogramGates(file) ? '' : ' · AF'}</small>
+              </div>
               <strong>{file.marker}</strong>
-              <small>{file.channel}{fileUsesHistogramGates(file) ? '' : ' · AF'}</small>
             </button>
           ))}
         </div>
       </aside>
+
+      {!sidebarCollapsed && (
+        <div
+          className="gating-sidebar-resizer"
+          role="separator"
+          aria-label="Resize control sidebar"
+          aria-orientation="vertical"
+          onPointerDown={beginSidebarResize}
+        />
+      )}
 
       <section className="workspace">
         <header className="gating-topbar">

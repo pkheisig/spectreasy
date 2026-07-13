@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Settings, Save, RefreshCw, Sun, Moon, Info } from 'lucide-react';
+import { Check, ChevronDown, Settings, Save, RefreshCw, Sun, Moon, Info } from 'lucide-react';
 import axios from 'axios';
 import ResidualPlot from './ResidualPlot';
 
@@ -72,6 +72,150 @@ const asScalarString = (value: unknown, fallback = '') => {
 const asUnmixingMethod = (value: unknown): UnmixingMethod => {
     const text = asScalarString(value, 'Spectreasy');
     return UNMIXING_METHODS.includes(text as UnmixingMethod) ? text as UnmixingMethod : 'Spectreasy';
+};
+
+type DropdownTheme = {
+    inputBg: string;
+    glassBg: string;
+    glassBorder: string;
+    glassHighlight: string;
+    text: string;
+    textMuted: string;
+    accent: string;
+    accentGlow: string;
+};
+
+type StyledDropdownProps = {
+    label: string;
+    value: string;
+    options: readonly string[];
+    emptyLabel?: string;
+    width: number;
+    theme: DropdownTheme;
+    onChange: (value: string) => void;
+};
+
+const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)', width, theme, onChange }: StyledDropdownProps) => {
+    const [open, setOpen] = useState(false);
+    const rootRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const closeOnOutside = (event: PointerEvent) => {
+            if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+        };
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setOpen(false);
+        };
+        window.addEventListener('pointerdown', closeOnOutside);
+        window.addEventListener('keydown', closeOnEscape);
+        return () => {
+            window.removeEventListener('pointerdown', closeOnOutside);
+            window.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [open]);
+
+    const displayValue = value || emptyLabel;
+    return (
+        <div ref={rootRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+            <span style={{ color: theme.textMuted, fontSize: 9, fontWeight: 750, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{label}</span>
+            <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                aria-label={`${label}: ${displayValue}`}
+                title={displayValue}
+                onClick={() => setOpen(previous => !previous)}
+                style={{
+                    width,
+                    maxWidth: '32vw',
+                    height: 34,
+                    minHeight: 34,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    padding: '0 9px 0 10px',
+                    border: `1px solid ${open ? theme.accent : theme.glassBorder}`,
+                    borderRadius: 7,
+                    background: open ? theme.glassHighlight : theme.inputBg,
+                    color: value ? theme.text : theme.textMuted,
+                    boxShadow: open ? `0 0 0 2px ${theme.accentGlow}` : 'none',
+                    fontFamily: 'inherit',
+                    fontSize: 11,
+                    fontWeight: 650,
+                    textAlign: 'left',
+                    cursor: options.length > 0 ? 'pointer' : 'default'
+                }}
+            >
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayValue}</span>
+                <ChevronDown size={14} style={{ flex: '0 0 auto', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 140ms ease' }} />
+            </button>
+            {open && (
+                <div
+                    role="listbox"
+                    aria-label={label}
+                    style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 6px)',
+                        left: 0,
+                        zIndex: 100,
+                        width,
+                        maxWidth: 'min(32vw, 360px)',
+                        maxHeight: 280,
+                        overflowY: 'auto',
+                        padding: 5,
+                        border: `1px solid ${theme.glassBorder}`,
+                        borderRadius: 9,
+                        background: theme.glassBg,
+                        boxShadow: '0 18px 44px rgba(23, 32, 29, 0.24)'
+                    }}
+                >
+                    {options.length === 0 ? (
+                        <div style={{ padding: '9px 10px', color: theme.textMuted, fontSize: 11 }}>{emptyLabel}</div>
+                    ) : options.map(option => {
+                        const selected = option === value;
+                        return (
+                            <button
+                                type="button"
+                                role="option"
+                                aria-selected={selected}
+                                key={option}
+                                title={option}
+                                onClick={() => {
+                                    onChange(option);
+                                    setOpen(false);
+                                }}
+                                style={{
+                                    width: '100%',
+                                    minHeight: 31,
+                                    display: 'grid',
+                                    gridTemplateColumns: '16px minmax(0, 1fr)',
+                                    alignItems: 'center',
+                                    gap: 7,
+                                    padding: '0 8px',
+                                    border: 0,
+                                    borderRadius: 6,
+                                    background: selected ? theme.glassHighlight : 'transparent',
+                                    color: selected ? theme.accent : theme.text,
+                                    fontFamily: 'inherit',
+                                    fontSize: 11,
+                                    fontWeight: selected ? 750 : 600,
+                                    textAlign: 'left',
+                                    cursor: 'pointer'
+                                }}
+                                onMouseEnter={event => { if (!selected) event.currentTarget.style.background = theme.glassHighlight; }}
+                                onMouseLeave={event => { if (!selected) event.currentTarget.style.background = 'transparent'; }}
+                            >
+                                <span style={{ display: 'grid', placeItems: 'center' }}>{selected && <Check size={13} />}</span>
+                                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{option}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
 };
 
 const alignDetectorLabels = (detNames: string[], payload: Record<string, unknown>) => {
@@ -514,20 +658,25 @@ const App = () => {
                             change: (value: string) => void handleSampleChange(value)
                         }
                     ].map(control => (
-                        <label key={control.label} style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                            <span style={{ color: g.textMuted, fontSize: 9, fontWeight: 750, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{control.label}</span>
-                            <select value={control.value} onChange={event => control.change(event.target.value)} title={control.value} style={{ width: control.width, maxWidth: '32vw', height: 34, background: g.inputBg, color: g.text, border: `1px solid ${g.glassBorder}`, borderRadius: 7, padding: '0 9px', fontSize: 11 }}>
-                                {control.options.length === 0 && <option value="">{control.empty}</option>}
-                                {control.options.map(option => <option key={option} value={option}>{option}</option>)}
-                            </select>
-                        </label>
+                        <StyledDropdown
+                            key={control.label}
+                            label={control.label}
+                            value={control.value}
+                            options={control.options}
+                            emptyLabel={control.empty}
+                            width={control.width}
+                            theme={g}
+                            onChange={control.change}
+                        />
                     ))}
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        <span style={{ color: g.textMuted, fontSize: 9, fontWeight: 750, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Method</span>
-                        <select value={unmixingMethod} onChange={event => handleUnmixingMethodChange(asUnmixingMethod(event.target.value))} style={{ width: 126, height: 34, background: g.inputBg, color: g.text, border: `1px solid ${g.glassBorder}`, borderRadius: 7, padding: '0 9px', fontSize: 11 }}>
-                            {UNMIXING_METHODS.map(method => <option key={method} value={method}>{method}</option>)}
-                        </select>
-                    </label>
+                    <StyledDropdown
+                        label="Method"
+                        value={unmixingMethod}
+                        options={UNMIXING_METHODS}
+                        width={126}
+                        theme={g}
+                        onChange={value => handleUnmixingMethodChange(asUnmixingMethod(value))}
+                    />
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
                     <button aria-label="Plot settings" title="Plot settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(open => !open)} style={{ ...glassButton, width: 38, height: 38, display: 'grid', placeItems: 'center', color: settingsOpen ? g.accent : g.textDim, cursor: 'pointer', background: settingsOpen ? g.glassHighlight : g.glassBg }}>
                         <Settings size={18} />

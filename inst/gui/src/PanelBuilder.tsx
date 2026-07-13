@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import axios from 'axios';
-import { Moon, Plus, Save, Sun, Trash2, Upload } from 'lucide-react';
+import { Moon, PanelLeftClose, PanelLeftOpen, Plus, Save, Sun, Trash2, Upload } from 'lucide-react';
 import './PanelBuilder.css';
 
 const API_BASE = (() => {
@@ -584,6 +585,9 @@ const PanelBuilder = () => {
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     });
     const [guiStateLoaded, setGuiStateLoaded] = useState(false);
+    const [sidebarWidth, setSidebarWidth] = useState(214);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [showPdfConfirm, setShowPdfConfirm] = useState(false);
 
     useEffect(() => {
         localStorage.setItem('spectreasy_cytometer', getCytometerName(cytometer));
@@ -618,12 +622,14 @@ const PanelBuilder = () => {
                     theme,
                     slots,
                     markers,
-                    tab
+                    tab,
+                    sidebarWidth,
+                    sidebarCollapsed
                 }
             }).catch(() => null);
         }, 500);
         return () => window.clearTimeout(timer);
-    }, [cytometer, configuration, theme, slots, markers, tab, guiStateLoaded]);
+    }, [cytometer, configuration, theme, slots, markers, tab, sidebarWidth, sidebarCollapsed, guiStateLoaded]);
 
     const selected = useMemo(() => slots.filter(Boolean), [slots]);
 
@@ -739,6 +745,10 @@ const PanelBuilder = () => {
                 const savedMarkers = saved.markers && typeof saved.markers === 'object' ? normalizeMarkers(saved.markers) : defaults.markers;
                 if (saved.theme === 'light' || saved.theme === 'dark') setTheme(saved.theme);
                 if (saved.tab === 'panel' || saved.tab === 'similarity' || saved.tab === 'signatures') setTab(saved.tab);
+                if (typeof saved.sidebarWidth === 'number' && Number.isFinite(saved.sidebarWidth)) {
+                    setSidebarWidth(Math.min(440, Math.max(180, saved.sidebarWidth)));
+                }
+                if (typeof saved.sidebarCollapsed === 'boolean') setSidebarCollapsed(saved.sidebarCollapsed);
                 setSlots(savedSlots);
                 slotsRef.current = savedSlots;
                 setMarkers(savedMarkers);
@@ -950,6 +960,31 @@ const PanelBuilder = () => {
         }
     };
 
+    const beginSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+        if (sidebarCollapsed) return;
+        event.preventDefault();
+        const startX = event.clientX;
+        const startWidth = sidebarWidth;
+        const previousCursor = document.body.style.cursor;
+        const previousUserSelect = document.body.style.userSelect;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        const move = (moveEvent: PointerEvent) => {
+            setSidebarWidth(Math.min(440, Math.max(180, startWidth + moveEvent.clientX - startX)));
+        };
+        const finish = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', finish);
+            window.removeEventListener('pointercancel', finish);
+            document.body.style.cursor = previousCursor;
+            document.body.style.userSelect = previousUserSelect;
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', finish);
+        window.addEventListener('pointercancel', finish);
+    };
+
     const importPanelCsv = async (file: File | null) => {
         if (!file || !payload) return;
         setError('');
@@ -1043,13 +1078,31 @@ const PanelBuilder = () => {
                     <button type="button" className="export-button icon-only" onClick={exportPanelCsv} aria-label="Export panel CSV" title="Export panel CSV">
                         <Save size={16} />
                     </button>
-                    <button type="button" className="export-button primary icon-only" onClick={() => void exportPanelOverview()} disabled={exporting} aria-label={exporting ? 'Exporting overview PDF' : 'Export overview PDF'} title={exporting ? 'Exporting…' : 'Export overview PDF'}>
+                    <button type="button" className="export-button primary icon-only" onClick={() => {
+                        if (selectedRows.length === 0) {
+                            void exportPanelOverview();
+                            return;
+                        }
+                        setShowPdfConfirm(true);
+                    }} disabled={exporting} aria-label={exporting ? 'Exporting overview PDF' : 'Export overview PDF'} title={exporting ? 'Exporting…' : 'Export overview PDF'}>
                         <PdfIcon size={20} />
                     </button>
                 </div>
             </header>
             <div className="panel-shell">
-                <aside className="panel-sidebar">
+                <aside
+                    className={`panel-sidebar ${sidebarCollapsed ? 'is-collapsed' : ''}`}
+                    style={{ '--panel-sidebar-width': `${sidebarWidth}px` } as CSSProperties}
+                >
+                    <button
+                        type="button"
+                        className="panel-sidebar-toggle"
+                        onClick={() => setSidebarCollapsed(previous => !previous)}
+                        aria-label={sidebarCollapsed ? 'Show fluorophore sidebar' : 'Hide fluorophore sidebar'}
+                        title={sidebarCollapsed ? 'Show fluorophore sidebar' : 'Hide fluorophore sidebar'}
+                    >
+                        {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+                    </button>
                     <div className="panel-sidebar-head">
                         <select
                             className="instrument-select"
@@ -1141,6 +1194,16 @@ const PanelBuilder = () => {
                         </button>
                     </div>
                 </aside>
+
+                {!sidebarCollapsed && (
+                    <div
+                        className="panel-sidebar-resizer"
+                        role="separator"
+                        aria-label="Resize fluorophore sidebar"
+                        aria-orientation="vertical"
+                        onPointerDown={beginSidebarResize}
+                    />
+                )}
 
                 <main className="main-panel">
                     <div className="top-spectrum">
@@ -1408,6 +1471,21 @@ const PanelBuilder = () => {
                     </section>
                 </main>
             </div>
+            {showPdfConfirm && (
+                <div className="panel-confirm-overlay" onMouseDown={() => setShowPdfConfirm(false)}>
+                    <div className="panel-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="panel-pdf-confirm-title" onMouseDown={event => event.stopPropagation()}>
+                        <h2 id="panel-pdf-confirm-title">Generate PDF report for panel?</h2>
+                        <p>The report will contain the current panel overview and selected fluorophores.</p>
+                        <div className="panel-confirm-actions">
+                            <button type="button" className="panel-confirm-cancel" onClick={() => setShowPdfConfirm(false)}>Cancel</button>
+                            <button type="button" className="panel-confirm-submit" onClick={() => {
+                                setShowPdfConfirm(false);
+                                void exportPanelOverview();
+                            }}>Generate PDF</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

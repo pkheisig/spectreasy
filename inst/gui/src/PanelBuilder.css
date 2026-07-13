@@ -170,12 +170,29 @@
 }
 
 .panel-shell {
-  display: grid;
-  grid-template-columns: 320px 1fr;
+  display: flex;
+  align-items: stretch;
   min-height: calc(100vh - 70px);
 }
 
+.panel-sidebar.is-collapsed .panel-sidebar-head,
+.panel-sidebar.is-collapsed .selector-list {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-6px);
+  pointer-events: none;
+  transition-delay: 0s, 150ms, 0s;
+}
+
+.panel-sidebar.is-collapsed {
+  flex-basis: 34px;
+  width: 34px;
+  overflow: hidden;
+}
+
 .panel-sidebar {
+  flex: 0 0 var(--panel-sidebar-width, 214px);
+  width: var(--panel-sidebar-width, 214px);
   position: sticky;
   top: 70px;
   height: calc(100vh - 70px);
@@ -183,10 +200,78 @@
   border-right: 1px solid var(--border-color);
   background: var(--bg-sidebar);
   backdrop-filter: blur(10px);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  min-width: 0;
+  transition: flex-basis 180ms ease, width 180ms ease;
+}
+
+.panel-sidebar-head,
+.selector-list {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  transition: opacity 150ms ease, visibility 0s linear, transform 180ms ease;
+}
+
+.panel-sidebar::-webkit-scrollbar {
+  display: none;
+}
+
+.panel-sidebar-toggle {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin: 8px 8px 0 auto;
+  padding: 0;
+  border: 1px solid var(--button-border);
+  border-radius: 5px;
+  background: var(--button-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.panel-sidebar-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.panel-sidebar.is-collapsed .panel-sidebar-toggle {
+  margin-right: 5px;
+}
+
+.panel-sidebar-resizer {
+  flex: 0 0 6px;
+  position: relative;
+  z-index: 3;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+
+.panel-sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  background: var(--border-color);
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.panel-sidebar-resizer:hover::after,
+.panel-sidebar-resizer:active::after {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .panel-sidebar-head {
-  padding: 16px 20px;
+  padding: 8px 20px 16px;
   border-bottom: 1px solid var(--border-color-soft);
 }
 
@@ -367,6 +452,7 @@
 }
 
 .main-panel {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: auto;
   display: flex;
@@ -648,6 +734,77 @@
   border-color: rgba(239, 68, 68, 0.2);
 }
 
+.panel-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(23, 32, 29, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.panel-confirm-modal {
+  width: min(420px, 100%);
+  padding: 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: 0 18px 44px rgba(23, 32, 29, 0.22);
+}
+
+.panel-confirm-modal h2 {
+  margin: 0 0 10px;
+  color: var(--text-primary);
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.panel-confirm-modal p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.panel-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.panel-confirm-cancel,
+.panel-confirm-submit {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--button-border);
+  border-radius: 7px;
+  background: var(--button-bg);
+  color: var(--button-text);
+  font: 700 13px/1 Avenir Next, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.panel-confirm-submit {
+  border-color: #b53f2b;
+  background: var(--accent-2);
+  color: #fff;
+}
+
+.panel-confirm-submit:hover {
+  filter: brightness(1.04);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-sidebar,
+  .panel-sidebar-head,
+  .selector-list {
+    transition: none;
+  }
+}
+
 /* Custom Scrollbar for modern feel */
 ::-webkit-scrollbar {
   width: 8px;
@@ -677,16 +834,29 @@
 
 @media (max-width: 920px) {
   .panel-shell {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .panel-sidebar-resizer {
+    display: none;
   }
 
   .panel-sidebar {
+    flex: 0 0 auto;
+    width: 100%;
     position: relative;
     height: auto;
     top: auto;
     max-height: 40vh;
     border-right: none;
     border-bottom: 1px solid var(--border-color);
+  }
+
+  .panel-sidebar.is-collapsed {
+    width: 100%;
+    height: 34px;
+    min-height: 34px;
+    max-height: 34px;
   }
 
   .tabs-bar {
