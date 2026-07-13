@@ -1127,6 +1127,30 @@ test_that("mapped SCC AF files are pooled into one AF bank size request", {
     expect_false("UnstainedDead.fcs" %in% out$af_bank_info$sources$file)
 })
 
+test_that("legacy ordinary AF_Internal mappings are canonicalized as AF bank sources", {
+    control_df <- data.frame(
+        filename = c(
+            "Reference Group_Unstained (Cells).fcs",
+            "Reference Group_Unstained_Fbs (Cells).fcs",
+            "Reference Group_Unstained_Tumor (Cells).fcs"
+        ),
+        fluorophore = c("AF", "AF_Internal", "AF_Internal"),
+        marker = "Autofluorescence",
+        channel = c("V7-A", "V7-A", "UV7-A"),
+        control.type = "cells",
+        stringsAsFactors = FALSE
+    )
+
+    normalized <- spectreasy:::.normalize_build_reference_control_df(control_df)
+
+    expect_equal(normalized$fluorophore, c("AF", "AF_2", "AF_3"))
+    expect_true(all(spectreasy:::.is_primary_af_control_row(
+        fluorophore = normalized$fluorophore,
+        marker = normalized$marker,
+        filename = normalized$filename
+    )))
+})
+
 test_that("viability controls auto-use dead cell AF negatives", {
     control_df <- data.frame(
         filename = c(

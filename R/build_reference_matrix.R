@@ -36,6 +36,7 @@
             control_df$marker[is.na(control_df$marker)] <- ""
         }
         control_df <- .assign_reference_automatic_negatives(control_df)
+        control_df <- .canonicalize_primary_af_labels(control_df)
     }
 
     control_df

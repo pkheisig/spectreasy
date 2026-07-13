@@ -615,7 +615,7 @@
     } else if (.is_dead_af_filename(fn)) {
         fluor <- "AF_dead"
     } else if (grepl("Unstained|US_UT", fn, ignore.case = TRUE)) {
-        fluor <- "AF_Internal"
+        fluor <- "AF"
     }
     marker <- .infer_marker_from_filename(
         fn,
@@ -757,7 +757,6 @@
         .control_file_get_expected_af_channel(cytometer),
         channel_alias_map = channel_alias_map
     )
-    auto_af_files <- character(0)
 
     for (i in seq_len(nrow(df))) {
         fn <- df$filename[i]
@@ -801,7 +800,6 @@
             df$fluorophore[i] <- new_tag
             df$marker[i] <- "Autofluorescence"
             df$control.type[i] <- "cells"
-            auto_af_files <- c(auto_af_files, fn)
         }
 
         current_fluor <- trimws(as.character(df$fluorophore[i]))
@@ -857,28 +855,14 @@
         }
     }
 
-    list(df = df, auto_af_files = auto_af_files)
+    df
 }
 
-.finalize_control_file_df <- function(df, scc_files, auto_af_files = character()) {
+.finalize_control_file_df <- function(df, scc_files) {
     if (!("universal.negative" %in% colnames(df))) {
         df$universal.negative <- ""
     }
     bead_negative_files <- scc_files[vapply(scc_files, .control_file_is_bead_negative_filename, logical(1))]
-    primary_af_candidates <- scc_files[grep("Unstained|US_UT", scc_files, ignore.case = TRUE)]
-    dead_af_files <- scc_files[.is_dead_af_filename(scc_files)]
-    primary_af_candidates <- setdiff(primary_af_candidates, bead_negative_files)
-    primary_af_candidates <- setdiff(primary_af_candidates, dead_af_files)
-    auto_af_files <- auto_af_files[!vapply(auto_af_files, .control_file_is_bead_negative_filename, logical(1))]
-    auto_af_files <- auto_af_files[!.is_dead_af_filename(auto_af_files)]
-    auto_af_primary <- if (length(auto_af_files) > 0) auto_af_files[1] else ""
-    primary_af_file <- if (length(primary_af_candidates) > 0) {
-        primary_af_candidates[1]
-    } else if (nzchar(auto_af_primary)) {
-        auto_af_primary
-    } else {
-        ""
-    }
 
     df$control.type <- tolower(trimws(as.character(df$control.type)))
     df$control.type[is.na(df$control.type)] <- ""
@@ -919,11 +903,7 @@
     is_af_row <- grepl("^AF($|_)", as.character(df$fluorophore), ignore.case = TRUE) & !bead_negative_row
     df$control.type[is_af_row] <- "cells"
 
-    if (primary_af_file != "") {
-        df$fluorophore[df$filename == primary_af_file] <- "AF"
-        df$marker[df$filename == primary_af_file] <- "Autofluorescence"
-        df$control.type[df$filename == primary_af_file] <- "cells"
-    }
+    df <- .canonicalize_primary_af_labels(df)
 
     dead_negative_file <- df$filename[dead_af_row]
     dead_negative_file <- dead_negative_file[nzchar(dead_negative_file)]
@@ -964,7 +944,8 @@
 #' `is.viability`. It auto-detects `control.type` from filename tokens
 #' (for example `"beads"` or `"cells"`). Unstained/negative bead files are
 #' denoted as `AF_beads` with `control.type = "beads"` so they can be used
-#' as bead-background negatives.
+#' as bead-background negatives. Ordinary unstained cell controls are numbered
+#' `AF`, `AF_2`, `AF_3`, and so on, and are pooled as AF-bank sources.
 #' @export
 #' @examples
 #' make_example_ff <- function(main, n = 250) {
@@ -1014,7 +995,7 @@ create_control_file <- function(input_folder = "scc",
     ref <- .prepare_control_file_reference(cytometer_resolved)
     df <- .build_control_file_scc_df(scc_files, ref = ref, custom_fluorophores = custom_fluorophores)
 
-    annotated <- .annotate_control_file_rows(
+    df <- .annotate_control_file_rows(
         df = df,
         input_folder = input_folder,
         cytometer = cytometer_resolved,
@@ -1022,9 +1003,8 @@ create_control_file <- function(input_folder = "scc",
         ref = ref
     )
     df <- .finalize_control_file_df(
-        df = annotated$df,
-        scc_files = scc_files,
-        auto_af_files = annotated$auto_af_files
+        df = df,
+        scc_files = scc_files
     )
 
     utils::write.csv(df, output_file, row.names = FALSE, quote = TRUE)

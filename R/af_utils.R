@@ -98,3 +98,65 @@
 
     (fluor_flag | (legacy_internal_flag & file_flag) | (marker_flag & file_flag) | file_flag) & !is_bead
 }
+
+.canonicalize_primary_af_labels <- function(control_df) {
+    if (is.null(control_df) || !is.data.frame(control_df) || nrow(control_df) == 0L ||
+            !("fluorophore" %in% colnames(control_df))) {
+        return(control_df)
+    }
+
+    n <- nrow(control_df)
+    fluor <- trimws(as.character(control_df$fluorophore))
+    fluor[is.na(fluor)] <- ""
+    marker <- if ("marker" %in% colnames(control_df)) {
+        out <- trimws(as.character(control_df$marker))
+        out[is.na(out)] <- ""
+        out
+    } else {
+        rep("", n)
+    }
+    filename <- if ("filename" %in% colnames(control_df)) {
+        out <- trimws(as.character(control_df$filename))
+        out[is.na(out)] <- ""
+        out
+    } else {
+        rep("", n)
+    }
+    control_type <- if ("control.type" %in% colnames(control_df)) {
+        out <- tolower(trimws(as.character(control_df$control.type)))
+        out[is.na(out)] <- ""
+        out
+    } else {
+        rep("", n)
+    }
+
+    af_context <- .is_af_marker(marker) | .is_af_filename(filename)
+    legacy_internal <- grepl("^AF_INTERNAL$", fluor, ignore.case = TRUE)
+    candidates <- .is_primary_af_fluorophore(fluor) |
+        (legacy_internal & af_context) |
+        (!nzchar(fluor) & af_context)
+    special_rows <- .is_dead_af_control_row(
+        fluorophore = fluor,
+        marker = marker,
+        filename = filename,
+        control_type = control_type
+    ) | control_type == "beads" |
+        grepl("^AF_BEADS$", fluor, ignore.case = TRUE)
+    candidates <- candidates & !special_rows
+
+    idx <- which(candidates)
+    if (length(idx) > 0L) {
+        control_df$fluorophore[idx] <- c(
+            "AF",
+            if (length(idx) > 1L) paste0("AF_", seq.int(2L, length(idx))) else NULL
+        )
+        if ("marker" %in% colnames(control_df)) {
+            control_df$marker[idx] <- "Autofluorescence"
+        }
+        if ("control.type" %in% colnames(control_df)) {
+            control_df$control.type[idx] <- "cells"
+        }
+    }
+
+    control_df
+}

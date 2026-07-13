@@ -33,7 +33,8 @@ The generated file contains only columns that usually need review:
 `is.viability`. It auto-detects `control.type` from filename tokens
 (for example `"beads"` or `"cells"`). Unstained/negative bead files are
 denoted as `AF_beads` with `control.type = "beads"` so they can be used
-as bead-background negatives.
+as bead-background negatives. Ordinary unstained cell controls are numbered
+`AF`, `AF_2`, `AF_3`, and so on, and are pooled as AF-bank sources.
 }
 \description{
 Generates a spectreasy-compatible control CSV.

@@ -125,6 +125,27 @@ testthat::test_that("create_control_file recognizes fluor and control type from 
     testthat::expect_equal(by_file[["scc_cells_AF_UnstainedDead.fcs"]]$control.type[[1]], "cells")
 })
 
+testthat::test_that("multiple unstained cell controls receive canonical AF bank labels", {
+    scc_dir <- tempfile("spectreasy_multi_af_")
+    dir.create(scc_dir, recursive = TRUE, showWarnings = FALSE)
+    files <- c(
+        "Reference Group_Unstained (Cells)_2026_06_24_13_22_05.fcs",
+        "Reference Group_Unstained_Fbs (Cells)_2026_06_24_13_25_34.fcs",
+        "Reference Group_Unstained_Tumor (Cells)_2026_06_24_13_24_24.fcs"
+    )
+    testthat::expect_true(all(file.create(file.path(scc_dir, files))))
+
+    df <- spectreasy::create_control_file(
+        input_folder = scc_dir,
+        output_file = tempfile(fileext = ".csv")
+    )
+
+    testthat::expect_equal(df$filename, files)
+    testthat::expect_equal(df$fluorophore, c("AF", "AF_2", "AF_3"))
+    testthat::expect_equal(df$marker, rep("Autofluorescence", 3L))
+    testthat::expect_equal(df$control.type, rep("cells", 3L))
+})
+
 testthat::test_that("detector fallback matches whole detector codes", {
     testthat::skip_if_not_installed("spectreasy")
 
