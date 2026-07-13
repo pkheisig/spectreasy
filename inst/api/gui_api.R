@@ -542,6 +542,55 @@ gate_normalize_control_type <- function(value) {
     if (startsWith(clean, "bead")) "beads" else "cells"
 }
 
+gate_negative_source_key <- function(value) {
+    tools::file_path_sans_ext(basename(trimws(as.character(value))))
+}
+
+gate_external_negative_available <- function(df) {
+    if (is.null(df) || nrow(df) == 0L) return(logical())
+
+    fluor <- trimws(as.character(df$fluorophore))
+    marker <- trimws(as.character(df$marker))
+    control_type <- as.character(df$control.type)
+    viability <- tolower(trimws(as.character(df$is.viability))) %in% c("true", "t", "1", "yes", "y")
+    bead_af <- control_type == "beads" & (
+        grepl("^AF_beads?$", fluor, ignore.case = TRUE) |
+            vapply(df$filename, spectreasy:::.reference_is_bead_negative_file, logical(1)) |
+            grepl("bead.*background", marker, ignore.case = TRUE)
+    )
+    dead_af <- spectreasy:::.is_dead_af_control_row(
+        fluorophore = fluor,
+        marker = marker,
+        filename = df$filename,
+        control_type = control_type
+    )
+    primary_af <- control_type != "beads" & !dead_af &
+        spectreasy:::.is_primary_af_control_row(
+            fluorophore = fluor,
+            marker = marker,
+            filename = df$filename
+        )
+
+    has_primary_af <- any(primary_af)
+    has_dead_af <- any(dead_af)
+    has_bead_af <- any(bead_af)
+    file_keys <- gate_negative_source_key(df$filename)
+    universal_negative <- trimws(as.character(df$universal.negative))
+    universal_upper <- toupper(universal_negative)
+    universal_keys <- gate_negative_source_key(universal_negative)
+    explicitly_mapped <- (universal_upper %in% c("TRUE", "AF") & has_primary_af) |
+        (nzchar(universal_keys) &
+            !universal_upper %in% c("FALSE", "TRUE", "AF") &
+            universal_keys %in% file_keys)
+
+    corresponding_source <- ifelse(
+        control_type == "beads",
+        has_bead_af,
+        ifelse(viability, has_dead_af, has_primary_af)
+    )
+    !df$is_af & (explicitly_mapped | corresponding_source)
+}
+
 gate_read_mapping <- function() {
     path <- get_gate_control_file()
     df <- if (file.exists(path)) {
@@ -581,14 +630,9 @@ gate_read_mapping <- function() {
     df$is_af <- grepl("^AF($|_|\\b)", df$fluorophore, ignore.case = TRUE) |
         grepl("autofluorescence|background", df$marker, ignore.case = TRUE)
     df$uses_histogram_gates <- !df$is_af
-    has_af_beads <- any(
-        df$is_af &
-            df$control.type == "beads" &
-            (grepl("^AF_beads?$", df$fluorophore, ignore.case = TRUE) |
-                grepl("bead.*background|unstained.*bead|bead.*negative", df$marker, ignore.case = TRUE))
-    )
+    external_negative_available <- gate_external_negative_available(df)
     df$uses_negative_histogram_gate <- df$uses_histogram_gates &
-        !(df$control.type == "beads" & has_af_beads)
+        !external_negative_available
     df$is_viability <- tolower(as.character(df$is.viability)) %in% c("true", "t", "1", "yes")
     df$id <- tools::file_path_sans_ext(basename(df$filename))
     df

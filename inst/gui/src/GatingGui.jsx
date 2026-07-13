@@ -1281,7 +1281,7 @@ function GatePlot({
             <button
               className={`btn-negative-gate ${active && drawActive && histogramGateType === 'negative' ? 'on' : ''}`}
               disabled={!negativeGateEnabled}
-              title={negativeGateEnabled ? 'Draw negative histogram gate' : 'AF_beads supplies the bead background'}
+              title={negativeGateEnabled ? 'Draw negative histogram gate' : 'A mapped external negative supplies the background'}
               onClick={(e) => onToggleHistogramGate('negative', e)}
             >
               Neg

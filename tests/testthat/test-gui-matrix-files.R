@@ -109,7 +109,7 @@ testthat::test_that("GUI gate file listing handles an empty project", {
     )
 })
 
-testthat::test_that("GUI disables bead SCC negative histograms when AF_beads is mapped", {
+testthat::test_that("GUI disables SCC negative histograms when corresponding external negatives exist", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
     testthat::skip_if_not(file.exists(api_path))
@@ -119,16 +119,19 @@ testthat::test_that("GUI disables bead SCC negative histograms when AF_beads is 
     project_dir <- tempfile("spectreasy_bead_negative_gui_")
     scc_dir <- file.path(project_dir, "scc")
     dir.create(scc_dir, recursive = TRUE)
-    filenames <- c("PE beads.fcs", "AF beads.fcs", "FITC cells.fcs")
+    filenames <- c(
+        "PE beads.fcs", "AF beads.fcs", "FITC cells.fcs", "AF cells.fcs",
+        "Zombie NIR cells.fcs", "AF dead cells.fcs", "APC cells.fcs"
+    )
     file.create(file.path(scc_dir, filenames))
     mapping <- data.frame(
         filename = filenames,
-        fluorophore = c("PE", "AF_beads", "FITC"),
-        marker = c("CD4", "Bead background", "CD8"),
-        channel = c("YG1-A", "YG1-A", "B1-A"),
-        control.type = c("beads", "beads", "cells"),
-        universal.negative = c("AF beads.fcs", "", "AF"),
-        is.viability = FALSE,
+        fluorophore = c("PE", "AF_beads", "FITC", "AF", "Zombie NIR", "AF_dead", "APC"),
+        marker = c("CD4", "Bead background", "CD8", "Autofluorescence", "Viability", "Dead cell background", "CD3"),
+        channel = c("YG1-A", "YG1-A", "B1-A", "B1-A", "R1-A", "R1-A", "R2-A"),
+        control.type = c("beads", "beads", "cells", "cells", "cells", "cells", "cells"),
+        universal.negative = c("AF beads.fcs", "", "AF", "", "AF dead cells.fcs", "", ""),
+        is.viability = c(FALSE, FALSE, FALSE, FALSE, TRUE, FALSE, FALSE),
         stringsAsFactors = FALSE
     )
     mapping_path <- file.path(project_dir, "fcs_mapping.csv")
@@ -143,7 +146,44 @@ testthat::test_that("GUI disables bead SCC negative histograms when AF_beads is 
     testthat::expect_false(by_file[["PE beads.fcs"]]$uses_negative_histogram_gate)
     testthat::expect_true(by_file[["PE beads.fcs"]]$uses_histogram_gates)
     testthat::expect_false(by_file[["AF beads.fcs"]]$uses_histogram_gates)
-    testthat::expect_true(by_file[["FITC cells.fcs"]]$uses_negative_histogram_gate)
+    testthat::expect_false(by_file[["FITC cells.fcs"]]$uses_negative_histogram_gate)
+    testthat::expect_false(by_file[["Zombie NIR cells.fcs"]]$uses_negative_histogram_gate)
+    testthat::expect_false(by_file[["APC cells.fcs"]]$uses_negative_histogram_gate)
+    testthat::expect_false(by_file[["AF cells.fcs"]]$uses_histogram_gates)
+    testthat::expect_false(by_file[["AF dead cells.fcs"]]$uses_histogram_gates)
+})
+
+testthat::test_that("GUI retains SCC negative histograms when the corresponding external source is absent", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    testthat::skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+    project_dir <- tempfile("spectreasy_missing_negative_gui_")
+    scc_dir <- file.path(project_dir, "scc")
+    dir.create(scc_dir, recursive = TRUE)
+    filenames <- c("FITC cells.fcs", "Zombie NIR cells.fcs", "PE beads.fcs")
+    file.create(file.path(scc_dir, filenames))
+    mapping <- data.frame(
+        filename = filenames,
+        fluorophore = c("FITC", "Zombie NIR", "PE"),
+        marker = c("CD8", "Viability", "CD4"),
+        channel = c("B1-A", "R1-A", "YG1-A"),
+        control.type = c("cells", "cells", "beads"),
+        universal.negative = "",
+        is.viability = c(FALSE, TRUE, FALSE),
+        stringsAsFactors = FALSE
+    )
+    mapping_path <- file.path(project_dir, "fcs_mapping.csv")
+    utils::write.csv(mapping, mapping_path, row.names = FALSE)
+    withr::local_options(list(
+        spectreasy.gating_scc_dir = scc_dir,
+        spectreasy.gating_control_file = mapping_path
+    ))
+
+    resolved <- api_env$gate_read_mapping()
+    testthat::expect_true(all(resolved$uses_negative_histogram_gate))
 })
 
 testthat::test_that("GUI histogram autogating creates positive and negative intervals with package defaults", {
