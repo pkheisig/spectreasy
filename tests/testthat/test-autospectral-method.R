@@ -137,13 +137,14 @@ test_that("Spectreasy calc_residuals applies AS-only soft decoder weights", {
     )
 })
 
-test_that("AutoSpectral SCC cleanup is opt-in and stores cleaned positive events", {
+test_that("SCC processing follows the selected unmixing method", {
     set.seed(101)
     wf <- make_autospectral_test_workflow(n = 650)
 
     regular <- spectreasy::build_reference_matrix(
         input_folder = wf$scc_dir,
         control_df = wf$control_df,
+        unmixing_method = "WLS",
         save_qc_plots = FALSE,
         seed = 101,
         subsample_n = 400
@@ -151,8 +152,7 @@ test_that("AutoSpectral SCC cleanup is opt-in and stores cleaned positive events
     autospectral <- spectreasy::build_reference_matrix(
         input_folder = wf$scc_dir,
         control_df = wf$control_df,
-        autospectral_scc_cleanup = TRUE,
-        clean_scc_with_unstained = TRUE,
+        unmixing_method = "AutoSpectral",
         save_qc_plots = FALSE,
         seed = 101,
         subsample_n = 400

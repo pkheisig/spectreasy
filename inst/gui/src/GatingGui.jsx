@@ -1842,6 +1842,9 @@ function App() {
     files.flatMap((file) => validateFileForConfirm(file, payloadCache[file.filename], gates))
   ), [files, payloadCache, gates])
   const histogramAutogateTargets = useMemo(() => files.filter(fileUsesHistogramGates), [files])
+  const histogramAutogateNegativeTargets = useMemo(() => (
+    histogramAutogateTargets.filter(fileUsesNegativeHistogramGate)
+  ), [histogramAutogateTargets])
   const histogramAutogateMissing = useMemo(() => (
     histogramAutogateTargets.filter((file) => (
       !gateIsFinalized(resolveGateForFile(gates, 'cell', file)) ||
@@ -2203,7 +2206,7 @@ function App() {
             <button
               className="auto-histogram-button"
               title={canAutogateHistograms
-                ? 'Auto-generate positive and negative histogram gates'
+                ? 'Auto-generate missing required histogram gates'
                 : histogramAutogateMissing.length > 0
                   ? 'Complete FSC/SSC and singlet gates for all non-AF controls first'
                   : 'No non-AF single-color controls are available'}
@@ -2553,6 +2556,11 @@ function App() {
         <div className="confirm-modal-overlay">
           <div className="confirm-modal">
             <h2>Auto-generate Histogram Gates?</h2>
+            <p>
+              Generate missing positive gates for {histogramAutogateTargets.length} controls.
+              {' '}{histogramAutogateNegativeTargets.length} also require an internal negative gate.
+              Existing gates are preserved.
+            </p>
             <div className="confirm-modal-actions">
               <button className="cancel-btn" onClick={() => setShowAutogateConfirmModal(false)}>Cancel</button>
               <button
@@ -2585,7 +2593,10 @@ function App() {
           <div className="initial-loading-card">
             <div className="initial-loading-spinner" aria-hidden="true" />
             <strong>Generating histogram gates...</strong>
-            <span>Positive + negative · {histogramAutogateTargets.length} controls</span>
+            <span>
+              Required gates · {histogramAutogateTargets.length} controls
+              {' · '}{histogramAutogateNegativeTargets.length} internal negatives
+            </span>
           </div>
         </div>
       )}

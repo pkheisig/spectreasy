@@ -4911,19 +4911,6 @@ function ConfigurableSettingsWorkspace({
           <label className="toggle-label">
             <input
               type="checkbox"
-              checked={control.cleanSccWithUnstained}
-              onChange={(event) =>
-                onSettingsChange("control", {
-                  cleanSccWithUnstained: event.target.checked,
-                })
-              }
-            />
-            <span className="toggle-ui" />
-            <span>Clean SCC with unstained</span>
-          </label>
-          <label className="toggle-label">
-            <input
-              type="checkbox"
               checked={control.saveQcPlots}
               onChange={(event) =>
                 onSettingsChange("control", {

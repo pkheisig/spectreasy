@@ -132,7 +132,6 @@ export type ControlSettings = {
   saveQcPlots: boolean
   saveReport: boolean
   outputFormat: 'html' | 'pdf'
-  cleanSccWithUnstained: boolean
   sccBackgroundMethod: 'scatter_knn' | 'none'
   sccBackgroundK: number
   spectralVariantSomNodes: number
@@ -226,7 +225,6 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       saveQcPlots: true,
       saveReport: true,
       outputFormat: 'html',
-      cleanSccWithUnstained: true,
       sccBackgroundMethod: 'scatter_knn',
       sccBackgroundK: 2,
       spectralVariantSomNodes: 16,

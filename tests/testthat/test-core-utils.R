@@ -31,6 +31,15 @@ test_that("obsolete scatter-intensity gating is absent from the public and inter
     ))
 })
 
+test_that("SCC background cleanup is method-driven without overlapping booleans", {
+    expect_false("clean_scc_with_unstained" %in% names(formals(spectreasy::unmix_controls)))
+    expect_false("clean_scc_with_unstained" %in% names(formals(spectreasy::build_reference_matrix)))
+    expect_false("autospectral_scc_cleanup" %in% names(formals(spectreasy::build_reference_matrix)))
+    expect_identical(formals(spectreasy::build_reference_matrix)$unmixing_method, "Spectreasy")
+    expect_true("scc_background_method" %in% names(formals(spectreasy::unmix_controls)))
+    expect_true("scc_background_method" %in% names(formals(spectreasy::build_reference_matrix)))
+})
+
 test_that("derive_unmixing_matrix returns finite matrix with expected dims", {
     M <- matrix(c(
         1, 0.2, 0.1,
@@ -1289,6 +1298,42 @@ test_that("AutoSpectral internal background prefers a manual histogram negative 
     expect_equal(as.numeric(negative), c(10, 5))
     expect_identical(attr(negative, "source"), "manual_negative_gate")
     expect_equal(attr(negative, "scc_background")$spectra[, "B1-A"], rep(10, 20))
+})
+
+test_that("spectral SCC processing resolves automatic positive and negative histogram gates", {
+    set.seed(12)
+    peak <- 10^c(stats::rnorm(500, 2.5, 0.12), stats::rnorm(1000, 5.5, 0.10))
+    gated <- data.frame(
+        `FSC-A` = seq_along(peak),
+        `SSC-A` = seq_along(peak) * 2,
+        `B1-A` = peak,
+        `YG1-A` = peak * 0.2,
+        check.names = FALSE
+    )
+    config <- list(
+        histogram_pct_beads = 0.98,
+        histogram_direction_beads = "right",
+        histogram_pct_cells = 0.35,
+        histogram_direction_cells = "right"
+    )
+
+    positive <- spectreasy:::.resolve_reference_positive_histogram_gate(
+        gated_data = as.matrix(gated), peak_channel = "B1-A",
+        filename = "cells.fcs", sample_type = "cells",
+        manual_gates = list(), config = config, row_info = data.frame()
+    )
+    negative <- spectreasy:::.reference_histogram_negative_source(
+        gated_data = as.matrix(gated), peak_channel = "B1-A",
+        filename = "cells.fcs", sample_type = "cells",
+        manual_gates = list(), detector_names = c("B1-A", "YG1-A"),
+        fsc = "FSC-A", ssc = "SSC-A", hist_info = positive$hist_info
+    )
+
+    expect_lt(nrow(positive$final_gated_data), nrow(gated))
+    expect_true(all(positive$final_gated_data[, "B1-A"] >= positive$hist_info$gate_min))
+    expect_true(all(positive$final_gated_data[, "B1-A"] <= positive$hist_info$gate_max))
+    expect_identical(attr(negative, "source"), "automatic_negative_gate")
+    expect_lt(unname(negative[["B1-A"]]), positive$hist_info$gate_min)
 })
 
 test_that("cell histogram gating keeps full middle negative mode for bright controls", {

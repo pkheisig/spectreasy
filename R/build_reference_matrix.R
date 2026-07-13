@@ -812,6 +812,44 @@
     )
 }
 
+.resolve_reference_positive_histogram_gate <- function(gated_data,
+                                                       peak_channel,
+                                                       filename,
+                                                       sample_type,
+                                                       manual_gates,
+                                                       config,
+                                                       row_info) {
+    manual <- .apply_reference_manual_positive_gate(
+        gated_data = gated_data,
+        peak_channel = peak_channel,
+        filename = filename,
+        sample_type = sample_type,
+        manual_gates = manual_gates
+    )
+    if (!is.null(manual)) return(manual)
+
+    peak_vals <- gated_data[, peak_channel]
+    hist_info <- .compute_reference_histogram_gate(
+        peak_vals = peak_vals,
+        sample_type = sample_type,
+        histogram_pct_beads = config$histogram_pct_beads,
+        histogram_direction_beads = config$histogram_direction_beads,
+        histogram_pct_cells = config$histogram_pct_cells,
+        histogram_direction_cells = config$histogram_direction_cells,
+        is_viability = nrow(row_info) > 0 &&
+            "is.viability" %in% colnames(row_info) &&
+            toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
+    )
+    keep <- is.finite(peak_vals) &
+        peak_vals >= hist_info$gate_min & peak_vals <= hist_info$gate_max
+    keep[is.na(keep)] <- FALSE
+    if (sum(keep) < 10L) return(NULL)
+    list(
+        final_gated_data = gated_data[keep, , drop = FALSE],
+        hist_info = hist_info
+    )
+}
+
 .reference_histogram_negative_source <- function(gated_data,
                                                   peak_channel,
                                                   filename,
@@ -819,7 +857,8 @@
                                                   manual_gates,
                                                   detector_names,
                                                   fsc,
-                                                  ssc) {
+                                                  ssc,
+                                                  hist_info = NULL) {
     if (!all(c(peak_channel, detector_names, fsc, ssc) %in% colnames(gated_data))) return(NULL)
 
     gate <- .reference_manual_gate(manual_gates, "negative", filename, sample_type)
@@ -832,6 +871,22 @@
         if (all(is.finite(limits)) && limits[2] > limits[1]) {
             keep <- gated_data[, peak_channel] >= limits[1] & gated_data[, peak_channel] <= limits[2]
             source <- "manual_negative_gate"
+        }
+    }
+    if (is.null(keep) && !is.null(hist_info) && !is.null(hist_info$vals_log)) {
+        neg_min <- as.numeric(attr(hist_info$vals_log, "neg_raw_min", exact = TRUE))[1]
+        neg_max <- as.numeric(attr(hist_info$vals_log, "neg_raw_max", exact = TRUE))[1]
+        if (!is.finite(neg_min) || !is.finite(neg_max) || neg_max <= neg_min) {
+            neg_min_log <- as.numeric(attr(hist_info$vals_log, "neg_log_min", exact = TRUE))[1]
+            neg_max_log <- as.numeric(attr(hist_info$vals_log, "neg_log_max", exact = TRUE))[1]
+            if (is.finite(neg_min_log) && is.finite(neg_max_log) && neg_max_log > neg_min_log) {
+                neg_min <- 10^neg_min_log
+                neg_max <- 10^neg_max_log
+            }
+        }
+        if (is.finite(neg_min) && is.finite(neg_max) && neg_max > neg_min) {
+            keep <- gated_data[, peak_channel] >= neg_min & gated_data[, peak_channel] <= neg_max
+            source <- "automatic_negative_gate"
         }
     }
     if (is.null(keep) || sum(keep, na.rm = TRUE) < 10L) {
@@ -3406,8 +3461,18 @@
     .spectreasy_console_field("SCC", paste0(fluor_name, " (", sn, ") -> ", peak_channel))
 
     peak_vals <- scatter_info$gated_data[, peak_channel]
-    if (isTRUE(.get_reference_config_value(config, "autospectral_scc_cleanup", FALSE))) {
-        autospectral_clean_data <- scatter_info$gated_data
+    if (isTRUE(.get_reference_config_value(config, "spectral_scc_pipeline", FALSE))) {
+        positive_gate <- .resolve_reference_positive_histogram_gate(
+            gated_data = scatter_info$gated_data,
+            peak_channel = peak_channel,
+            filename = sn_ext,
+            sample_type = sample_info$type,
+            manual_gates = config$manual_gates,
+            config = config,
+            row_info = row_info
+        )
+        if (is.null(positive_gate)) return(NULL)
+        autospectral_clean_data <- positive_gate$final_gated_data
         internal_negative <- .reference_histogram_negative_source(
             gated_data = scatter_info$gated_data,
             peak_channel = peak_channel,
@@ -3416,20 +3481,11 @@
             manual_gates = config$manual_gates,
             detector_names = metadata$detector_names,
             fsc = scatter_info$fsc,
-            ssc = scatter_info$ssc
+            ssc = scatter_info$ssc,
+            hist_info = positive_gate$hist_info
         )
-        autospectral_positive <- .apply_reference_manual_positive_gate(
-            gated_data = autospectral_clean_data,
-            peak_channel = peak_channel,
-            filename = sn_ext,
-            sample_type = sample_info$type,
-            manual_gates = config$manual_gates
-        )
-        if (!is.null(autospectral_positive)) {
-            autospectral_clean_data <- autospectral_positive$final_gated_data
-        }
         autospectral_peak_vals <- autospectral_clean_data[, peak_channel]
-        use_external_background <- isTRUE(.get_reference_config_value(config, "clean_scc_with_unstained", FALSE))
+        use_background_subtraction <- isTRUE(.get_reference_config_value(config, "scc_background_enabled", FALSE))
         negative_source <- .resolve_reference_scc_negative_source(
             row_info = row_info,
             sample_type = sample_info$type,
@@ -3438,9 +3494,9 @@
             universal_negatives = universal_negatives,
             bead_negative = bead_negative
         )
-        selected_background <- if (isTRUE(use_external_background)) negative_source$background else NULL
-        selected_negative <- if (isTRUE(use_external_background)) negative_source$negative else NULL
-        if (isTRUE(use_external_background) && is.null(selected_negative) && !is.null(internal_negative)) {
+        selected_background <- if (isTRUE(use_background_subtraction)) negative_source$background else NULL
+        selected_negative <- if (isTRUE(use_background_subtraction)) negative_source$negative else NULL
+        if (isTRUE(use_background_subtraction) && is.null(selected_negative) && !is.null(internal_negative)) {
             selected_negative <- internal_negative
             selected_background <- attr(internal_negative, "scc_background", exact = TRUE)
         }
@@ -3467,11 +3523,7 @@
             gate_min = extraction$gate_min,
             gate_max = extraction$gate_max
         )
-        qc_hist_info <- if (!is.null(autospectral_positive) && !is.null(autospectral_positive$hist_info)) {
-            autospectral_positive$hist_info
-        } else {
-            hist_info
-        }
+        qc_hist_info <- positive_gate$hist_info
 
         selected_peak <- autospectral_peak_vals[extraction$positive_idx]
         neg_vals <- autospectral_peak_vals[order(autospectral_peak_vals, decreasing = FALSE)[seq_len(max(1L, floor(0.10 * length(autospectral_peak_vals))))]]
@@ -3547,34 +3599,18 @@
         ))
     }
 
-    manual_positive <- .apply_reference_manual_positive_gate(
+    positive_gate <- .resolve_reference_positive_histogram_gate(
         gated_data = scatter_info$gated_data,
         peak_channel = peak_channel,
         filename = sn_ext,
         sample_type = sample_info$type,
-        manual_gates = config$manual_gates
+        manual_gates = config$manual_gates,
+        config = config,
+        row_info = row_info
     )
-    if (!is.null(manual_positive)) {
-        hist_info <- manual_positive$hist_info
-        final_gated_data <- manual_positive$final_gated_data
-    } else {
-        hist_info <- .compute_reference_histogram_gate(
-            peak_vals = peak_vals,
-            sample_type = sample_info$type,
-            histogram_pct_beads = config$histogram_pct_beads,
-            histogram_direction_beads = config$histogram_direction_beads,
-            histogram_pct_cells = config$histogram_pct_cells,
-            histogram_direction_cells = config$histogram_direction_cells,
-            is_viability = nrow(row_info) > 0 &&
-                "is.viability" %in% colnames(row_info) &&
-                toupper(trimws(as.character(row_info$is.viability[1]))) == "TRUE"
-        )
-
-        final_gated_data <- scatter_info$gated_data[peak_vals >= hist_info$gate_min & peak_vals <= hist_info$gate_max, ]
-    }
-    if (nrow(final_gated_data) < 10) {
-        return(NULL)
-    }
+    if (is.null(positive_gate)) return(NULL)
+    hist_info <- positive_gate$hist_info
+    final_gated_data <- positive_gate$final_gated_data
 
     # Stain Index Calculation
     mfi_pos <- stats::median(final_gated_data[, peak_channel], na.rm = TRUE)
@@ -3790,15 +3826,14 @@
 #' @param gate_contour_beads Contour probability for bead gating ellipse/hull.
 #' @param gate_contour_cells Contour probability for cell gating ellipse/hull.
 #' @param subsample_n Maximum number of events used for GMM fitting per file.
-#' @param autospectral_scc_cleanup Logical; if `TRUE`, use the
-#'   AutoSpectral-style SCC spectral cleanup after the standard FSC/SSC gate.
-#'   This is intended to be enabled by `unmix_controls(unmixing_method =
-#'   "AutoSpectral")`.
-#' @param clean_scc_with_unstained Logical; when `autospectral_scc_cleanup =
-#'   TRUE`, subtract matching unstained/negative background events before
-#'   calculating SCC spectra.
-#' @param scc_background_method Background subtraction method for AutoSpectral
-#'   SCC cleanup (`"scatter_knn"` or `"none"`).
+#' @param unmixing_method SCC processing method. `"Spectreasy"` and
+#'   `"AutoSpectral"` first apply the saved positive histogram gate or the same
+#'   automatic histogram fallback used by legacy methods, then enable spectral
+#'   SCC selection, resolved-negative background subtraction, and
+#'   spectral-variant learning. Legacy methods stop after calculating the
+#'   conventional histogram-gated reference spectrum.
+#' @param scc_background_method Background subtraction method for Spectreasy/
+#'   AutoSpectral SCC cleanup (`"scatter_knn"` or `"none"`).
 #' @param scc_background_k Number of nearest unstained/negative events averaged
 #'   for scatter-matched SCC background subtraction.
 #' @param autospectral_n_candidates Number of peak-bright SCC candidate events
@@ -3809,7 +3844,7 @@
 #'   AutoSpectral-style SCC selector.
 #' @param refine Logical; if `TRUE`, refine the fixed-size k-means AF bank with
 #'   native AutoSpectral-style unstained residual modulation. This is only
-#'   supported with `autospectral_scc_cleanup = TRUE`.
+#'   supported with `unmixing_method = "AutoSpectral"`.
 #'
 #' @return Numeric matrix with rows = fluorophores and columns = detectors
 #'   (normalized spectra). The matrix carries SCC-derived detector noise floors
@@ -3855,8 +3890,7 @@ build_reference_matrix <- function(
   gate_contour_beads = 0.95,
   gate_contour_cells = 0.90,
   subsample_n = 5000,
-  autospectral_scc_cleanup = FALSE,
-  clean_scc_with_unstained = FALSE,
+  unmixing_method = "Spectreasy",
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 2L,
   autospectral_n_candidates = 1000L,
@@ -3865,9 +3899,11 @@ build_reference_matrix <- function(
   refine = FALSE
 ) {
     control_df <- .normalize_build_reference_control_df(control_df)
+    unmixing_method <- .normalize_unmix_method(unmixing_method)
+    use_autospectral <- .is_autospectral_style_method(unmixing_method)
     refine <- .validate_reference_refine_arg(refine)
-    if (isTRUE(refine) && !isTRUE(autospectral_scc_cleanup)) {
-        stop("refine = TRUE is only supported with autospectral_scc_cleanup = TRUE.", call. = FALSE)
+    if (isTRUE(refine) && !identical(unmixing_method, "AutoSpectral")) {
+        stop("refine = TRUE is only supported with unmixing_method = \"AutoSpectral\".", call. = FALSE)
     }
     af_args <- .validate_build_reference_af_args(
         af_n_bands = af_n_bands,
@@ -3880,9 +3916,9 @@ build_reference_matrix <- function(
     af_min_cluster_events <- af_args$af_min_cluster_events
     af_min_cluster_proportion <- af_args$af_min_cluster_proportion
     scc_background_args <- .validate_scc_background_args(
-        clean_scc_with_unstained = isTRUE(autospectral_scc_cleanup) && isTRUE(clean_scc_with_unstained),
         scc_background_method = scc_background_method,
-        scc_background_k = scc_background_k
+        scc_background_k = scc_background_k,
+        enabled = use_autospectral
     )
     autospectral_n_candidates <- .normalize_positive_integer(autospectral_n_candidates, "autospectral_n_candidates")
     autospectral_n_spectral <- .normalize_positive_integer(autospectral_n_spectral, "autospectral_n_spectral")
@@ -3922,8 +3958,8 @@ build_reference_matrix <- function(
         cytometer = cytometer,
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
-        autospectral_scc_cleanup = isTRUE(autospectral_scc_cleanup),
-        clean_scc_with_unstained = scc_background_args$enabled,
+        spectral_scc_pipeline = use_autospectral,
+        scc_background_enabled = scc_background_args$enabled,
         scc_background_method = scc_background_args$method,
         scc_background_k = scc_background_args$k,
         autospectral_n_candidates = autospectral_n_candidates,
@@ -3977,7 +4013,7 @@ build_reference_matrix <- function(
             af_data_raw = af_profiles$af_data_raw,
             universal_negatives = universal_negatives,
             bead_negative = bead_negative,
-            scc_background = if (isTRUE(config$autospectral_scc_cleanup) && isTRUE(config$clean_scc_with_unstained)) {
+            scc_background = if (isTRUE(config$spectral_scc_pipeline) && isTRUE(config$scc_background_enabled)) {
                 af_profiles$scc_background
             } else {
                 NULL

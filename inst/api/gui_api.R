@@ -1230,7 +1230,7 @@ function(max_points = 3000) {
     list(payloads = payloads, max_points = as.integer(max_points))
 }
 
-#* Auto-generate positive and negative histogram gates for all non-AF controls
+#* Auto-generate the required histogram gates for all non-AF controls
 #* @post /gate_histogram_autogate
 function(req) {
     tryCatch({
@@ -2136,7 +2136,6 @@ function(req) {
             manual_gating = FALSE,
             manual_gate_file = gate_file,
             gating_file = gate_file,
-            clean_scc_with_unstained = gui_workflow_bool(body, "clean_scc_with_unstained", TRUE),
             scc_background_method = gui_workflow_value(body, "scc_background_method", "scatter_knn"),
             scc_background_k = gui_workflow_number(body, "scc_background_k", 2, integer = TRUE, minimum = 1),
             spectral_variant_som_nodes = gui_workflow_number(body, "spectral_variant_som_nodes", 16, integer = TRUE, minimum = 1),

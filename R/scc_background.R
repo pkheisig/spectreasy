@@ -1,13 +1,13 @@
 # Internal helpers for scatter-matched SCC background subtraction.
 
-.validate_scc_background_args <- function(clean_scc_with_unstained,
-                                          scc_background_method,
-                                          scc_background_k) {
+.validate_scc_background_args <- function(scc_background_method,
+                                          scc_background_k,
+                                          enabled = TRUE) {
     method <- match.arg(scc_background_method, c("scatter_knn", "none"))
-    clean_scc_with_unstained <- .normalize_scalar_logical(clean_scc_with_unstained, "clean_scc_with_unstained")
+    enabled <- .normalize_scalar_logical(enabled, "enabled")
     k <- .normalize_positive_integer(scc_background_k, "scc_background_k")
     list(
-        enabled = isTRUE(clean_scc_with_unstained) && method != "none",
+        enabled = isTRUE(enabled) && method != "none",
         method = method,
         k = k
     )

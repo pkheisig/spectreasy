@@ -25,7 +25,6 @@ unmix_controls(
   manual_gating = TRUE,
   manual_gate_file = "ssc_gate_config.csv",
   gating_file = manual_gate_file,
-  clean_scc_with_unstained = TRUE,
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 2L,
   spectral_variant_som_nodes = 16L,
@@ -62,7 +61,9 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 `"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
 `AutoSpectral` keeps the k-means AF bank controlled by `af_n_bands`,
 then uses OLS after AF matching plus AutoSpectral-style SCC cleanup and
-spectral variants. `Spectreasy` uses the same cleanup and variant
+spectral variants. Both spectral methods first restrict stained SCC events
+with the saved positive histogram gate or the automatic histogram fallback.
+`Spectreasy` uses the same cleanup and variant
 machinery, then blends the AutoSpectral-style OLS marker fit with a
 marker-only OLS anchor using decoder-projected AF impact weights.}
 
@@ -109,12 +110,10 @@ compatibility; prefer `gating_file` in new code.}
 example `file.path(getwd(), "ssc_gate_config.csv")`. If supplied explicitly,
 the file must exist. Defaults to `manual_gate_file`.}
 
-\item{clean_scc_with_unstained}{Logical; when `unmixing_method =
-`"AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative
-background events before calculating SCC spectra.}
-
-\item{scc_background_method}{Background subtraction method for AutoSpectral
-SCC cleanup (`"scatter_knn"` or `"none"`).}
+\item{scc_background_method}{Background subtraction method for Spectreasy/
+AutoSpectral SCC cleanup (`"scatter_knn"` or `"none"`). The default enables
+scatter-matched subtraction from the resolved external or internal negative
+source; use `"none"` only to opt out explicitly.}
 
 \item{scc_background_k}{Number of nearest unstained/negative events averaged
 for scatter-matched SCC background subtraction.}

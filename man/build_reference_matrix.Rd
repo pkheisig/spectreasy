@@ -29,8 +29,7 @@ build_reference_matrix(
   gate_contour_beads = 0.95,
   gate_contour_cells = 0.9,
   subsample_n = 5000,
-  autospectral_scc_cleanup = FALSE,
-  clean_scc_with_unstained = FALSE,
+  unmixing_method = "Spectreasy",
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 2L,
   autospectral_n_candidates = 1000L,
@@ -103,17 +102,15 @@ For example, `0.08` excludes events below 8\% of the per-file high FSC scale.}
 
 \item{subsample_n}{Maximum number of events used for GMM fitting per file.}
 
-\item{autospectral_scc_cleanup}{Logical; if `TRUE`, use the
-AutoSpectral-style SCC spectral cleanup after the standard FSC/SSC gate.
-This is intended to be enabled by `unmix_controls(unmixing_method =
-"AutoSpectral")`.}
+\item{unmixing_method}{SCC processing method. `"Spectreasy"` and
+`"AutoSpectral"` first apply the saved positive histogram gate or the same
+automatic histogram fallback used by legacy methods, then enable spectral
+SCC selection, resolved-negative background subtraction, and
+spectral-variant learning. Legacy methods stop after calculating the
+conventional histogram-gated reference spectrum.}
 
-\item{clean_scc_with_unstained}{Logical; when `autospectral_scc_cleanup =
-TRUE`, subtract matching unstained/negative background events before
-calculating SCC spectra.}
-
-\item{scc_background_method}{Background subtraction method for AutoSpectral
-SCC cleanup (`"scatter_knn"` or `"none"`).}
+\item{scc_background_method}{Background subtraction method for Spectreasy/
+AutoSpectral SCC cleanup (`"scatter_knn"` or `"none"`).}
 
 \item{scc_background_k}{Number of nearest unstained/negative events averaged
 for scatter-matched SCC background subtraction.}
@@ -129,7 +126,7 @@ AutoSpectral-style SCC selector.}
 
 \item{refine}{Logical; if `TRUE`, refine the fixed-size k-means AF bank with
 native AutoSpectral-style unstained residual modulation. This is only
-supported with `autospectral_scc_cleanup = TRUE`.}
+supported with `unmixing_method = "AutoSpectral"`.}
 }
 \value{
 Numeric matrix with rows = fluorophores and columns = detectors

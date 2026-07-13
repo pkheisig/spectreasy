@@ -332,7 +332,9 @@
 #'   `"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
 #'   `AutoSpectral` keeps the k-means AF bank controlled by `af_n_bands`,
 #'   then uses OLS after AF matching plus AutoSpectral-style SCC cleanup and
-#'   spectral variants. `Spectreasy` uses the same cleanup and variant
+#'   spectral variants. Both spectral methods first restrict stained SCC events
+#'   with the saved positive histogram gate or the automatic histogram fallback.
+#'   `Spectreasy` uses the same cleanup and variant
 #'   machinery, then blends the AutoSpectral-style OLS marker fit with a
 #'   marker-only OLS anchor using decoder-projected AF impact weights.
 #' @param unmix_scatter_panel_size_mm Panel size for SCC unmixing scatter matrix plot.
@@ -365,11 +367,10 @@
 #' @param gating_file Optional gate CSV to reuse without launching the GUI, for
 #'   example `file.path(getwd(), "ssc_gate_config.csv")`. If supplied explicitly,
 #'   the file must exist. Defaults to `manual_gate_file`.
-#' @param clean_scc_with_unstained Logical; when `unmixing_method =
-#'   `"AutoSpectral"` or `"Spectreasy"`, subtract matching unstained/negative
-#'   background events before calculating SCC spectra.
-#' @param scc_background_method Background subtraction method for AutoSpectral
-#'   SCC cleanup (`"scatter_knn"` or `"none"`).
+#' @param scc_background_method Background subtraction method for Spectreasy/
+#'   AutoSpectral SCC cleanup (`"scatter_knn"` or `"none"`). The default enables
+#'   scatter-matched subtraction from the resolved external or internal negative
+#'   source; use `"none"` only to opt out explicitly.
 #' @param scc_background_k Number of nearest unstained/negative events averaged
 #'   for scatter-matched SCC background subtraction.
 #' @param spectral_variant_som_nodes Number of nodes used per fluorophore when
@@ -434,7 +435,6 @@ unmix_controls <- function(
     manual_gating = TRUE,
     manual_gate_file = "ssc_gate_config.csv",
     gating_file = manual_gate_file,
-    clean_scc_with_unstained = TRUE,
     scc_background_method = c("scatter_knn", "none"),
     scc_background_k = 2L,
     spectral_variant_som_nodes = 16L,
@@ -477,9 +477,9 @@ unmix_controls <- function(
         spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
     }
     scc_background_args <- .validate_scc_background_args(
-        clean_scc_with_unstained = use_autospectral && isTRUE(clean_scc_with_unstained),
         scc_background_method = scc_background_method,
-        scc_background_k = scc_background_k
+        scc_background_k = scc_background_k,
+        enabled = use_autospectral
     )
     .with_optional_seed(seed)
     extra_args <- list(...)
@@ -590,8 +590,7 @@ unmix_controls <- function(
         af_min_cluster_events = af_min_cluster_events,
         af_min_cluster_proportion = af_min_cluster_proportion,
         manual_gate_file = manual_gate_file,
-        autospectral_scc_cleanup = use_autospectral,
-        clean_scc_with_unstained = scc_background_args$enabled,
+        unmixing_method = unmixing_method,
         scc_background_method = scc_background_args$method,
         scc_background_k = scc_background_args$k,
         autospectral_n_candidates = autospectral_n_candidates,
@@ -750,9 +749,8 @@ unmix_controls <- function(
                     n_threads = n_threads,
                     save_qc_plots = save_qc_plots,
                     manual_gating = manual_gating,
-                    clean_scc_with_unstained = clean_scc_with_unstained,
-                    scc_background_method = scc_background_method,
-                    scc_background_k = scc_background_k,
+                    scc_background_method = scc_background_args$method,
+                    scc_background_k = scc_background_args$k,
                     spectral_variant_som_nodes = spectral_variant_som_nodes,
                     spectral_variant_top_k = spectral_variant_top_k,
                     spectral_variant_cosine_threshold = spectral_variant_cosine_threshold,

@@ -401,7 +401,6 @@ export default function CockpitApp() {
             save_qc_plots: control.saveQcPlots,
             save_report: control.saveReport,
             output_format: control.outputFormat,
-            clean_scc_with_unstained: control.cleanSccWithUnstained,
             scc_background_method: control.sccBackgroundMethod,
             scc_background_k: control.sccBackgroundK,
             spectral_variant_som_nodes: control.spectralVariantSomNodes,
