@@ -1817,7 +1817,6 @@ function App() {
   const canAutogateHistograms = gatesLoaded && histogramAutogateTargets.length > 0 && histogramAutogateMissing.length === 0 && !histogramAutogating
   const canConfirm = gatesLoaded && files.length > 0 && confirmIssues.length === 0
   const confirmIssueLines = useMemo(() => formatConfirmIssues(confirmIssues), [confirmIssues])
-  const importCompatibilityNotice = status.startsWith('Loaded ') && status.includes('ignored')
   const initialLoading = !status.startsWith('Could not') && (!gatesLoaded || (files.length > 0 && (!preloadComplete || !payload)))
   const singletWarningText = currentFile.is_af && gateIsFinalized(singletGate) && singletsFilteredEvents.length < MIN_CONFIRM_EVENTS
     ? `Only ${singletsFilteredEvents.length.toLocaleString()} events in singlets`
@@ -2020,7 +2019,17 @@ function App() {
   }
 
   async function applyLoadedConfigRows(rows, sourceName, headers = REQUIRED_GATE_CSV_COLUMNS) {
-    const compatible = reconcileGateCsvRows(rows, files)
+    const fileData = await useApi('/gate_files')
+    const currentFiles = (fileData.files || []).filter((file) => file.file_exists)
+    setFiles(currentFiles)
+    setMetadata(fileData.metadata || {})
+    setSelected((current) => (
+      currentFiles.some((file) => file.filename === current)
+        ? current
+        : currentFiles[0]?.filename || ''
+    ))
+
+    const compatible = reconcileGateCsvRows(rows, currentFiles)
     validateGateCsvRows(compatible.rows, headers)
     const parsed = parseConfigRows(compatible.rows)
     setGates(parsed.gates)
@@ -2036,18 +2045,7 @@ function App() {
     }).catch(() => null)
     const cfg = await useApi('/gate_configs')
     setConfigs(cfg.configs || [])
-    if (compatible.ignoredRowCount > 0) {
-      const ignoredNames = compatible.ignoredFiles.slice(0, 4).join(', ')
-      const more = compatible.ignoredFiles.length > 4 ? ` +${compatible.ignoredFiles.length - 4} more` : ''
-      setStatus(
-        `Loaded ${compatible.rows.length} compatible rows from ${sourceName}; ` +
-        `ignored ${compatible.ignoredRowCount} row${compatible.ignoredRowCount === 1 ? '' : 's'} ` +
-        `for missing file${compatible.ignoredFiles.length === 1 ? '' : 's'}: ` +
-        `${ignoredNames}${more}. Group gates apply to current files.`,
-      )
-    } else {
-      setStatus(`Loaded ${compatible.rows.length} rows from ${sourceName}`)
-    }
+    setStatus(`Loaded ${compatible.rows.length} rows from ${sourceName}`)
   }
 
   async function loadConfigFromPicker() {
@@ -2104,7 +2102,12 @@ function App() {
       if (result.success === false) throw new Error(result.error || 'Histogram autogating failed')
       setGates((previous) => ({ ...previous, ...(result.gates || {}) }))
       setSpectrumCache({})
-      setStatus(`Auto-generated positive and negative histogram gates for ${result.files_processed} controls`)
+      const generated = Number(result.gates_generated ?? Object.keys(result.gates || {}).length)
+      const preserved = Number(result.gates_preserved ?? 0)
+      setStatus(
+        `Auto-generated ${generated} missing histogram gate${generated === 1 ? '' : 's'} ` +
+        `for ${result.files_processed} controls; preserved ${preserved} existing gate${preserved === 1 ? '' : 's'}.`,
+      )
     } catch (err) {
       setStatus(`Could not auto-generate histogram gates: ${err.message}`)
     } finally {
@@ -2208,7 +2211,7 @@ function App() {
           </div>
         </header>
 
-        {(status.startsWith('Could not') || (gatesLoaded && files.length === 0) || importCompatibilityNotice) && (
+        {(status.startsWith('Could not') || (gatesLoaded && files.length === 0)) && (
           <div
             className={`gating-status-banner ${status.startsWith('Could not') ? 'is-error' : ''}`}
             role={status.startsWith('Could not') ? 'alert' : 'status'}
@@ -2216,16 +2219,12 @@ function App() {
             <strong>
               {status.startsWith('Could not')
                 ? 'Controls could not be loaded'
-                : importCompatibilityNotice
-                  ? 'Gate CSV loaded with missing files ignored'
-                  : 'No control files found'}
+                : 'No control files found'}
             </strong>
             <span>
               {status.startsWith('Could not')
                 ? status
-                : importCompatibilityNotice
-                  ? status
-                  : 'Add FCS control files to the configured SCC folder, then reopen or refresh the gating GUI.'}
+                : 'Add FCS control files to the configured SCC folder, then reopen or refresh the gating GUI.'}
             </span>
           </div>
         )}

@@ -190,6 +190,67 @@ testthat::test_that("GUI histogram autogates serialize as scalar 1D intervals", 
     testthat::expect_identical(wire$vertices[[2]]$y, 0L)
 })
 
+testthat::test_that("GUI histogram autogating preserves existing intervals", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) {
+        api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    }
+    testthat::skip_if_not(file.exists(api_path))
+    testthat::skip_if_not_installed("flowCore")
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+
+    api_env$gate_read_mapping <- function() {
+        data.frame(
+            filename = "control.fcs",
+            channel = "R1-A",
+            control.type = "cells",
+            is_af = FALSE,
+            is_viability = FALSE,
+            stringsAsFactors = FALSE
+        )
+    }
+    api_env$gate_read_fcs <- function(path) {
+        flowCore::flowFrame(matrix(seq_len(100), ncol = 1, dimnames = list(NULL, "R1-A")))
+    }
+    api_env$gate_apply_polygon_gate <- function(expr, gate) expr
+    api_env$gate_histogram_autogate_ranges <- function(...) {
+        list(positive = c(60, 100), negative = c(1, 40))
+    }
+
+    polygon <- list(
+        mode = "scatter",
+        vertices = list(
+            list(x = 0, y = 0), list(x = 1, y = 0),
+            list(x = 1, y = 1), list(x = 0, y = 1)
+        )
+    )
+    gates <- list()
+    gates[["cell:cells"]] <- polygon
+    gates[["singlet:cells"]] <- polygon
+    gates[["positive:control.fcs"]] <- api_env$gate_histogram_interval(
+        "positive", "control.fcs", "R1-A", c(55, 95)
+    )
+
+    generated <- api_env$gate_autogenerate_histograms(gates)
+
+    testthat::expect_setequal(names(generated$gates), "negative:control.fcs")
+    testthat::expect_equal(generated$gates_generated, 1L)
+    testthat::expect_equal(generated$gates_preserved, 1L)
+
+    gates[["negative:control.fcs"]] <- api_env$gate_histogram_interval(
+        "negative", "control.fcs", "R1-A", c(1, 40)
+    )
+    api_env$gate_read_fcs <- function(path) stop("FCS should not be read when both gates exist")
+
+    preserved <- api_env$gate_autogenerate_histograms(gates)
+
+    testthat::expect_length(preserved$gates, 0L)
+    testthat::expect_equal(preserved$gates_generated, 0L)
+    testthat::expect_equal(preserved$gates_preserved, 2L)
+})
+
 testthat::test_that("GUI spectrum renderer keeps an empty plot for zero events", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) {

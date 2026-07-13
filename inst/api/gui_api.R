@@ -694,6 +694,17 @@ gate_is_finalized_polygon <- function(gate) {
     !is.null(verts) && nrow(verts) >= 3 && all(is.finite(verts))
 }
 
+gate_is_finalized_histogram <- function(gate) {
+    if (is.null(gate)) return(FALSE)
+    mode <- as.character(gate_value(gate, "mode", ""))[1]
+    if (!nzchar(mode) || mode %in% c("missing", "blocked")) return(FALSE)
+    verts <- gate_vertices_matrix(gate)
+    if (is.null(verts) || !all(is.finite(verts))) return(FALSE)
+    if (identical(mode, "separator")) return(nrow(verts) >= 1L)
+    if (mode %in% c("positive_1d", "negative_1d")) return(nrow(verts) >= 2L)
+    nrow(verts) >= 3L
+}
+
 gate_histogram_autogate_ranges <- function(peak_vals,
                                            sample_type,
                                            is_viability = FALSE,
@@ -779,7 +790,15 @@ gate_autogenerate_histograms <- function(gates) {
     }
 
     generated <- list()
+    preserved_count <- 0L
     for (item in resolved) {
+        positive_key <- paste0("positive:", item$filename)
+        negative_key <- paste0("negative:", item$filename)
+        keep_positive <- gate_is_finalized_histogram(gates[[positive_key]])
+        keep_negative <- gate_is_finalized_histogram(gates[[negative_key]])
+        preserved_count <- preserved_count + as.integer(keep_positive) + as.integer(keep_negative)
+        if (keep_positive && keep_negative) next
+
         path <- file.path(get_gate_scc_dir(), item$filename)
         ff <- gate_read_fcs(path)
         expr <- flowCore::exprs(ff)
@@ -802,14 +821,23 @@ gate_autogenerate_histograms <- function(gates) {
             sample_type = item$control_type,
             is_viability = isTRUE(item$row$is_viability[1])
         )
-        generated[[paste0("positive:", item$filename)]] <- gate_histogram_interval(
-            "positive", item$filename, peak, ranges$positive
-        )
-        generated[[paste0("negative:", item$filename)]] <- gate_histogram_interval(
-            "negative", item$filename, peak, ranges$negative
-        )
+        if (!keep_positive) {
+            generated[[positive_key]] <- gate_histogram_interval(
+                "positive", item$filename, peak, ranges$positive
+            )
+        }
+        if (!keep_negative) {
+            generated[[negative_key]] <- gate_histogram_interval(
+                "negative", item$filename, peak, ranges$negative
+            )
+        }
     }
-    list(gates = generated, files_processed = nrow(targets))
+    list(
+        gates = generated,
+        files_processed = nrow(targets),
+        gates_generated = length(generated),
+        gates_preserved = preserved_count
+    )
 }
 
 gate_detector_labels <- function(det_info, spec_channels) {
@@ -1121,7 +1149,9 @@ function(req) {
         list(
             success = TRUE,
             gates = result$gates,
-            files_processed = result$files_processed
+            files_processed = result$files_processed,
+            gates_generated = result$gates_generated,
+            gates_preserved = result$gates_preserved
         )
     }, error = function(e) {
         list(success = FALSE, error = conditionMessage(e))
