@@ -45,6 +45,7 @@
         n_threads = 1L,
         save_qc_plots = FALSE,
         save_report = TRUE,
+        output_format = "html",
         scc_background_method = c("scatter_knn", "none"),
         scc_background_k = 2L,
         spectral_variant_som_nodes = 16L,
@@ -57,7 +58,8 @@
         autospectral_n_candidates = 1000L,
         autospectral_n_spectral = 200L,
         autospectral_min_events = 10L,
-        refine = FALSE
+        refine = FALSE,
+        unmix_threads = NULL
         # Additional build_reference_matrix() arguments can be passed here.
     )
 
@@ -69,21 +71,33 @@
             "scc_reference_matrix.csv"
         ),
         scc_dir = "scc",
-        output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
+        output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.html",
         control_file = "fcs_mapping.csv",
         cytometer = "auto",
         unmixing_method = "WLS",
         qc_plot_dir = file.path("spectreasy_outputs", "scc_report_plots"),
         save_qc_pngs = FALSE,
         qc_metrics_dir = NULL,
+        unmixed_list = NULL,
+        qc_summary = NULL,
+        report_plot_dir = NULL,
+        pd = NULL,
+        af_bank_info = NULL,
+        cleanup_report_plot_dir = FALSE,
         unmix_scatter_max_points = 1000,
         unmix_scatter_axis_limit = NULL,
-        seed = NULL
+        seed = NULL,
+        output_format = "html",
+        overwrite = "version",
+        report_plots = list(),
+        report_run_settings = list(),
+        report_artifact_paths = list()
         # Additional build_reference_matrix() arguments can be passed here.
     )
 
     unmixed <- unmix_samples(
         sample_dir = "samples",
+        samples_dir = NULL,
         M = NULL,
         unmixing_matrix_file = file.path(
             "spectreasy_outputs",
@@ -110,9 +124,11 @@
         ),
         write_fcs = TRUE,
         save_report = TRUE,
+        output_format = "html",
         save_qc_plots = FALSE,
         qc_plot_dir = NULL,
-        subsample_n = NULL,
+        plot_n_events = 10000L,
+        chunk_size = 50000L,
         seed = NULL,
         return_type = c("list", "flowSet", "SingleCellExperiment"),
         verbose = TRUE
@@ -155,7 +171,7 @@
             "unmix_controls",
             "scc_reference_matrix.csv"
         ),
-        output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
+        output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.html",
         unmixing_method = NULL,
         res_list = NULL,
         pd = NULL,
@@ -170,7 +186,71 @@
         nxn_all_samples = FALSE,
         qc_plot_dir = NULL,
         save_qc_pngs = FALSE,
-        qc_metrics_dir = NULL
+        qc_metrics_dir = NULL,
+        output_format = "html",
+        overwrite = "version",
+        report_run_settings = list(),
+        report_artifact_paths = list()
+    )
+
+    # Lower-level reusable HTML report workflow. Most users can call
+    # qc_controls(..., output_format = "html") or
+    # qc_samples(..., output_format = "html") directly instead.
+    control_report_data <- collect_control_report_data(
+        M = ctrl$M,
+        scc_dir = "scc",
+        control_file = "fcs_mapping.csv",
+        cytometer = "auto",
+        unmixing_method = "Spectreasy",
+        unmixed_list = ctrl$unmixed_list,
+        qc_summary = NULL,
+        report_plot_dir = NULL,
+        pd = NULL,
+        af_bank_info = NULL,
+        matrix_source = ctrl$reference_matrix_file,
+        artifact_paths = list(),
+        plots = list(),
+        warnings = character(),
+        run_settings = list(),
+        project_path = getwd(),
+        plot_dir = NULL
+    )
+
+    sample_report_data <- collect_sample_report_data(
+        results = unmixed,
+        M = ctrl$M,
+        unmixing_method = "Spectreasy",
+        res_list = NULL,
+        pd = NULL,
+        matrix_source = ctrl$reference_matrix_file,
+        detector_noise_file = ctrl$detector_noise_file,
+        spectral_variant_library_file = NULL,
+        output_dir = file.path(
+            "spectreasy_outputs",
+            "unmix_samples",
+            "unmixed_fcs"
+        ),
+        qc_metrics_dir = NULL,
+        artifact_paths = list(),
+        warnings = character(),
+        run_settings = list(),
+        project_path = getwd(),
+        max_events_per_sample = 1000,
+        overview_files_per_page = 15,
+        matrix_markers_per_page = 20,
+        sample_nxn_rows_per_page = 10,
+        sample_nxn_max_points = max_events_per_sample,
+        sample_nxn_transform = "none",
+        sample_nxn_asinh_cofactor = 150,
+        sample_nxn_axis_limit = NULL,
+        nxn_all_samples = FALSE,
+        plot_dir = NULL
+    )
+
+    html_report <- render_qc_html_report(
+        report_data = sample_report_data,
+        output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.html",
+        overwrite = "version"
     )
 
     # -------------------------------------------------------------------------
@@ -184,7 +264,8 @@
         samples_dir = NULL,
         port = 8000,
         open_browser = TRUE,
-        dev_mode = FALSE
+        dev_mode = FALSE,
+        unmixing_method = "Spectreasy"
     )
 
     build_panel(
@@ -265,6 +346,7 @@
         seed = NULL,
         default_sample_type = "beads",
         cytometer = "auto",
+        manual_gate_file = NULL,
         unmixing_method = "Spectreasy",
         scc_background_method = c("scatter_knn", "none"),
         scc_background_k = 2L,
@@ -301,9 +383,9 @@
         spectral_variant_top_k = 3L,
         spectral_variant_min_abundance = 1,
         spectral_variant_positive_fraction = 0.02,
-        spectral_variant_min_improvement = 0.01
+        spectral_variant_min_improvement = 0.01,
         # Spectreasy only:
-        # , spectreasy_weight_quantile = 0.9
+        spectreasy_weight_quantile = 0.9
     )
 
     W <- derive_unmixing_matrix(
