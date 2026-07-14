@@ -159,6 +159,7 @@ plot_spectra <- function(ref_matrix,
                          peak_label_max = 40L,
                          peak_label_size = 2.6) {
     ref_matrix <- .as_reference_matrix(ref_matrix, "ref_matrix")
+    unit <- .match_arg_ci(unit, c("in", "cm", "mm", "px"), "unit")
     detectors <- colnames(ref_matrix)
     if (is.null(pd)) {
         pd_attr <- attr(ref_matrix, "detector_pd")
@@ -235,7 +236,7 @@ plot_spectra <- function(ref_matrix,
     if (is.logical(annotate_mode)) {
         do_annotate_peaks <- isTRUE(annotate_mode)
     } else {
-        annotate_mode <- match.arg(as.character(annotate_mode)[1], c("auto", "always", "never"))
+        annotate_mode <- .match_arg_ci(as.character(annotate_mode)[1], c("auto", "always", "never"), "annotate_peaks")
         do_annotate_peaks <- if (identical(annotate_mode, "always")) {
             TRUE
         } else if (identical(annotate_mode, "never")) {
@@ -415,7 +416,7 @@ plot_spectra <- function(ref_matrix,
     if (is.null(axis_limit)) {
         return(NULL)
     }
-    transform <- match.arg(transform)
+    transform <- .match_arg_ci(transform, c("none", "asinh"), "transform")
     axis_limit <- suppressWarnings(as.numeric(axis_limit)[1])
     if (!is.finite(axis_limit) || axis_limit <= 0) {
         return(NULL)
@@ -434,7 +435,7 @@ plot_spectra <- function(ref_matrix,
                                             transform = c("none", "asinh"),
                                             asinh_cofactor = 150,
                                             axis_limit = NULL) {
-    transform <- match.arg(transform)
+    transform <- .match_arg_ci(transform, c("none", "asinh"), "transform")
     fixed_limits <- .compute_unmix_fixed_scatter_limits(
         axis_limit = axis_limit,
         transform = transform,
@@ -673,7 +674,7 @@ plot_unmixing_scatter_matrix <- function(
     panel_size_mm = 30,
     seed = NULL
 ) {
-    transform <- match.arg(transform)
+    transform <- .match_arg_ci(transform, c("none", "asinh"), "transform")
     .with_optional_seed(seed)
 
     data_list <- .extract_unmix_scatter_data_list(unmixed_list)

@@ -138,6 +138,19 @@
     x
 }
 
+.match_arg_ci <- function(x, choices, arg_name) {
+    if (length(x) == 0L || is.null(x) || is.na(x[1]) || !is.character(x)) {
+        stop(arg_name, " must be one of: ", paste(choices, collapse = ", "), ".", call. = FALSE)
+    }
+    key <- tolower(trimws(x[1]))
+    choice_keys <- tolower(choices)
+    hit <- match(key, choice_keys)
+    if (is.na(hit)) {
+        stop(arg_name, " must be one of: ", paste(choices, collapse = ", "), ".", call. = FALSE)
+    }
+    choices[hit]
+}
+
 .normalize_numeric_scalar <- function(x, arg_name, lower = -Inf, upper = Inf) {
     if (!is.numeric(x) || length(x) != 1L || is.na(x) || !is.finite(x) || x < lower || x > upper) {
         range_text <- if (is.finite(lower) && is.finite(upper)) {

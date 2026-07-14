@@ -127,8 +127,10 @@ test_that("qc_samples accepts unmix_samples results directly", {
     expect_true(file.exists(pdf_out))
 
     # Test default output file behavior
-    default_pdf <- "spectreasy_outputs/unmix_samples/qc_samples_report.pdf"
-    if (file.exists(default_pdf)) file.remove(default_pdf)
+    default_workdir <- tempfile("spectreasy_default_report_")
+    dir.create(default_workdir)
+    withr::local_dir(default_workdir)
+    default_html <- "spectreasy_outputs/unmix_samples/qc_samples_report.html"
     expect_no_error(
         suppressMessages(
             spectreasy::qc_samples(
@@ -137,8 +139,7 @@ test_that("qc_samples accepts unmix_samples results directly", {
             )
         )
     )
-    expect_true(file.exists(default_pdf))
-    file.remove(default_pdf)
+    expect_true(file.exists(default_html))
 })
 
 test_that("qc_samples has stable pages and no recommendation page", {

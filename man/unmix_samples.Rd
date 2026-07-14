@@ -25,7 +25,7 @@ unmix_samples(
   output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
   write_fcs = TRUE,
   save_report = TRUE,
-  output_format = c("pdf", "html"),
+  report_format = "html",
   save_qc_plots = FALSE,
   qc_plot_dir = NULL,
   plot_n_events = 10000L,
@@ -112,8 +112,8 @@ Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
 sample QC metric CSVs from the in-memory unmixing results without rerunning
 unmixing. Defaults to `TRUE`.}
 
-\item{output_format}{Report format, either `"pdf"` (the backward-compatible
-default) or `"html"`. Only the selected format is written.}
+\item{report_format}{Report format, either `"html"` (default) or `"pdf"`.
+Only the selected format is written. Matching is case-insensitive.}
 
 \item{save_qc_plots}{Logical; if `TRUE`, save QC report plots as PNG files
 in `qc_plot_dir` while creating the report.}

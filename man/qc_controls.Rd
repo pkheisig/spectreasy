@@ -9,7 +9,7 @@ qc_controls(
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
   scc_dir = "scc",
-  output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
+  output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.html",
   control_file = "fcs_mapping.csv",
   cytometer = "auto",
   unmixing_method = "WLS",
@@ -25,7 +25,7 @@ qc_controls(
   unmix_scatter_max_points = 1000,
   unmix_scatter_axis_limit = NULL,
   seed = NULL,
-  output_format = NULL,
+  report_format = "html",
   overwrite = c("version", "overwrite", "error"),
   report_plots = list(),
   report_run_settings = list(),
@@ -43,7 +43,8 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
 \item{scc_dir}{Directory containing SCC FCS files.}
 
-\item{output_file}{Path to save the PDF report. Defaults to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.}
+\item{output_file}{Path to save the report. Defaults to
+`"spectreasy_outputs/unmix_controls/qc_controls_report.html"`.}
 
 \item{control_file}{Control mapping CSV path.}
 
@@ -61,7 +62,7 @@ when `save_qc_pngs = TRUE`.}
 for report assembly and removed afterward.}
 
 \item{qc_metrics_dir}{Optional directory where plot-ready SCC QC metric
-CSVs are written alongside the PDF report.}
+CSVs are written alongside the report.}
 
 \item{unmixed_list}{Optional precomputed SCC unmixing results from
 [unmix_controls()]. When supplied with `M`, the report reuses these results
@@ -91,8 +92,8 @@ ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 
-\item{output_format}{Optional report format. When omitted, `.html` and `.pdf`
-output filename extensions are inferred; otherwise use `"html"` or `"pdf"`.}
+\item{report_format}{Report format, `"html"` (default) or `"pdf"`.
+Matching is case-insensitive.}
 
 \item{overwrite}{HTML collision policy: create a versioned filename
 (recommended), overwrite, or error. Existing PDF behavior is unchanged.}
@@ -112,7 +113,7 @@ Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
   `qc_plot_dir` is `NULL` unless `save_qc_pngs = TRUE`.
 }
 \description{
-Builds a reference matrix from single-color controls, assembles a PDF report
+Builds a reference matrix from single-color controls, assembles a QC report
 for pre-unmix review, and can optionally retain the intermediate QC PNG plots.
 }
 \examples{

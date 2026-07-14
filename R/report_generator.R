@@ -585,7 +585,7 @@
     if (is.null(axis_limit)) {
         return(NULL)
     }
-    transform <- match.arg(transform)
+    transform <- .match_arg_ci(transform, c("none", "asinh"), "transform")
     axis_limit <- suppressWarnings(as.numeric(axis_limit)[1])
     if (!is.finite(axis_limit) || axis_limit <= 0) {
         return(NULL)
@@ -655,7 +655,7 @@
                                               asinh_cofactor = 150,
                                               max_points = 3000,
                                               fixed_limits = NULL) {
-    transform <- match.arg(transform)
+    transform <- .match_arg_ci(transform, c("none", "asinh"), "transform")
     row_markers <- intersect(as.character(row_markers), markers)
     col_markers <- intersect(as.character(col_markers), markers)
     if (length(row_markers) == 0 || length(col_markers) == 0) {
@@ -828,7 +828,7 @@
                                                   asinh_cofactor = 150,
                                                   axis_limit = NULL,
                                                   all_samples = FALSE) {
-    transform <- match.arg(transform)
+    transform <- .match_arg_ci(transform, c("none", "asinh"), "transform")
     if (!("File" %in% colnames(results_df))) {
         return(list())
     }
@@ -904,7 +904,7 @@
                                                    asinh_cofactor = 150,
                                                    axis_limit = NULL,
                                                    seed = NULL) {
-    transform <- match.arg(transform)
+    transform <- .match_arg_ci(transform, c("none", "asinh"), "transform")
     .with_optional_seed(seed)
 
     data_list <- .extract_unmix_scatter_data_list(unmixed_list)
@@ -997,7 +997,8 @@
 #' @param unmixing_matrix_file Optional CSV path to a saved reference matrix.
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
-#' @param output_file Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.
+#' @param output_file Output report path. Defaults to
+#'   `"spectreasy_outputs/unmix_samples/qc_samples_report.html"`.
 #' @param unmixing_method Unmixing method used to create `results`
 #'   (`"AutoSpectral"`, `"Spectreasy"`, `"OLS"`, `"WLS"`, `"RWLS"`, or
 #'   `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
@@ -1027,11 +1028,11 @@
 #' @param qc_plot_dir Directory where report PNG plots are written when
 #'   `save_qc_pngs = TRUE`.
 #' @param save_qc_pngs Logical; if `TRUE`, save report plot pages as PNG files
-#'   alongside the PDF report.
+#'   alongside the report.
 #' @param qc_metrics_dir Optional directory where plot-ready QC metric
-#'   CSVs are written alongside the PDF report.
-#' @param output_format Optional report format. When omitted, `.html` and `.pdf`
-#'   output filename extensions are inferred; otherwise use `"html"` or `"pdf"`.
+#'   CSVs are written alongside the report.
+#' @param report_format Report format, `"html"` (default) or `"pdf"`.
+#'   Matching is case-insensitive.
 #' @param overwrite HTML collision policy: create a versioned filename
 #'   (recommended), overwrite, or error. Existing PDF behavior is unchanged.
 #' @param report_run_settings Additional workflow settings recorded in HTML.
@@ -1067,7 +1068,7 @@
 qc_samples <- function(results,
                        M = NULL,
                        unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
-                       output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
+                       output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.html",
                        unmixing_method = NULL,
                        res_list = NULL,
                        pd = NULL,
@@ -1083,17 +1084,23 @@ qc_samples <- function(results,
                        qc_plot_dir = NULL,
                        save_qc_pngs = FALSE,
                        qc_metrics_dir = NULL,
-                       output_format = NULL,
+                       report_format = "html",
                        overwrite = c("version", "overwrite", "error"),
                        report_run_settings = list(),
                        report_artifact_paths = list()) {
     output_file_missing <- missing(output_file)
-    output_spec <- .report_output_spec(output_file, output_format, default_format = "pdf", output_missing = output_file_missing)
+    report_format_missing <- missing(report_format)
+    output_spec <- .report_output_spec(
+        output_file,
+        if (report_format_missing) NULL else report_format,
+        default_format = "html",
+        output_missing = output_file_missing
+    )
     output_file <- output_spec$path
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the QC report.", call. = FALSE)
     }
-    sample_nxn_transform <- match.arg(sample_nxn_transform)
+    sample_nxn_transform <- .match_arg_ci(sample_nxn_transform, c("none", "asinh"), "sample_nxn_transform")
     method_attr <- attr(results, "method")
     if (is.null(unmixing_method)) {
         unmixing_method <- if (!is.null(method_attr)) method_attr else "Spectreasy"
@@ -1159,7 +1166,7 @@ qc_samples <- function(results,
                     sample_nxn_axis_limit = sample_nxn_axis_limit,
                     nxn_all_samples = nxn_all_samples,
                     save_qc_pngs = save_qc_pngs,
-                    output_format = "html"
+                    report_format = "html"
                 ),
                 report_run_settings
             ),

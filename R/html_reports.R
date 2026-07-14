@@ -126,30 +126,30 @@
     x
 }
 
-.report_output_spec <- function(output_file, output_format = NULL, default_format = "pdf", output_missing = FALSE) {
+.report_output_spec <- function(output_file, report_format = NULL, default_format = "html", output_missing = FALSE) {
     if (is.null(output_file) || length(output_file) != 1L || is.na(output_file) ||
         !is.character(output_file) || !nzchar(trimws(output_file))) {
         stop("output_file must be a single non-empty file path.", call. = FALSE)
     }
     ext <- tolower(tools::file_ext(.report_scalar(output_file, "")))
     inferred <- if (ext %in% c("html", "htm")) "html" else if (identical(ext, "pdf")) "pdf" else NULL
-    if (is.null(output_format) || length(output_format) == 0L || is.na(output_format[1]) || !nzchar(output_format[1])) {
-        output_format <- inferred %||% default_format
+    if (is.null(report_format) || length(report_format) == 0L || is.na(report_format[1]) || !nzchar(report_format[1])) {
+        report_format <- inferred %||% default_format
     }
-    output_format <- match.arg(tolower(output_format[1]), c("html", "pdf"))
+    report_format <- .match_arg_ci(report_format, c("html", "pdf"), "report_format")
     if (isTRUE(output_missing)) {
-        output_file <- sub("\\.(html?|pdf)$", paste0(".", output_format), output_file, ignore.case = TRUE)
-        ext <- output_format
+        output_file <- sub("\\.(html?|pdf)$", paste0(".", report_format), output_file, ignore.case = TRUE)
+        ext <- report_format
     }
     if (!ext %in% c("html", "htm", "pdf")) {
-        output_file <- paste0(output_file, ".", output_format)
-        ext <- output_format
+        output_file <- paste0(output_file, ".", report_format)
+        ext <- report_format
     }
-    if ((identical(output_format, "html") && !ext %in% c("html", "htm")) ||
-        (identical(output_format, "pdf") && !identical(ext, "pdf"))) {
-        stop("output_format = '", output_format, "' conflicts with output_file extension '.", ext, "'.", call. = FALSE)
+    if ((identical(report_format, "html") && !ext %in% c("html", "htm")) ||
+        (identical(report_format, "pdf") && !identical(ext, "pdf"))) {
+        stop("report_format = '", report_format, "' conflicts with output_file extension '.", ext, "'.", call. = FALSE)
     }
-    list(format = output_format, path = as.character(output_file)[1])
+    list(format = report_format, path = as.character(output_file)[1])
 }
 
 .report_versioned_path <- function(path) {
@@ -164,7 +164,7 @@
 }
 
 .report_resolve_overwrite <- function(path, overwrite = c("version", "overwrite", "error")) {
-    overwrite <- match.arg(overwrite)
+    overwrite <- .match_arg_ci(overwrite, c("version", "overwrite", "error"), "overwrite")
     if (!file.exists(path) || identical(overwrite, "overwrite")) return(path)
     if (identical(overwrite, "version")) return(.report_versioned_path(path))
     stop("Report already exists: ", path, ". Use overwrite = 'overwrite' or 'version'.", call. = FALSE)
@@ -481,7 +481,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     if (is.null(M)) stop("No reference matrix provided for the sample HTML report.",call.=FALSE)
     M <- .as_reference_matrix(M,"M")
     method <- .normalize_unmix_method(unmixing_method %||% attr(results,"method") %||% "Spectreasy")
-    sample_nxn_transform <- match.arg(sample_nxn_transform)
+    sample_nxn_transform <- .match_arg_ci(sample_nxn_transform, c("none", "asinh"), "sample_nxn_transform")
     report_results <- if(is.data.frame(results)) .cap_qc_report_results_df(results,max_events_per_sample) else .cap_qc_report_results_list(results,max_events_per_sample)
     results_df <- .normalize_qc_report_results_df(report_results)
     if(!"File" %in% colnames(results_df)) stop("results must contain a 'File' column.",call.=FALSE)
@@ -496,8 +496,53 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     similarity <- if(sum(!af_rows)>1L) calculate_similarity_matrix(M[!af_rows,,drop=FALSE]) else NULL
     spread <- NULL
     nps <- if(!identical(method,"NNLS")) tryCatch(calculate_nps(results_df),error=function(e) NULL) else NULL
+    if (.report_has_rows(nps) && "Marker" %in% colnames(nps)) {
+        nps <- nps[!grepl("^AF($|_)", nps$Marker, ignore.case = TRUE), , drop = FALSE]
+    }
     detector_rms <- if(!is.null(res_list)) tryCatch(.compute_qc_report_detector_rms(res_list,M=M,pd=pd,unmixing_method=method),error=function(e) NULL) else NULL
     reconstruction <- if(!is.null(res_list)) tryCatch(.compute_qc_report_sample_rms(res_list,M=M,unmixing_method=method),error=function(e) NULL) else NULL
+    qc_metrics_dir <- .prepare_qc_report_metrics_dir(qc_metrics_dir)
+    if (!is.null(qc_metrics_dir)) {
+        if (any(!af_rows)) {
+            .write_qc_report_matrix_metric(
+                M[!af_rows, , drop = FALSE],
+                file.path(qc_metrics_dir, "reference_spectra.csv"),
+                row_id = "fluorophore"
+            )
+        }
+        if (any(af_rows)) {
+            .write_qc_report_matrix_metric(
+                M[af_rows, , drop = FALSE],
+                file.path(qc_metrics_dir, "af_bank_spectra.csv"),
+                row_id = "af_band"
+            )
+        }
+        if (!is.null(similarity)) {
+            .write_qc_report_matrix_metric(
+                similarity,
+                file.path(qc_metrics_dir, "fluorophore_spectral_similarity.csv"),
+                row_id = "fluorophore"
+            )
+        }
+        if (.report_has_rows(nps)) {
+            .write_qc_report_csv(
+                nps,
+                file.path(qc_metrics_dir, "negative_population_spread.csv")
+            )
+        }
+        if (.report_has_rows(detector_rms)) {
+            .write_qc_report_csv(
+                detector_rms,
+                file.path(qc_metrics_dir, "rms_residual_per_detector.csv")
+            )
+        }
+        if (.report_has_rows(reconstruction)) {
+            .write_qc_report_csv(
+                reconstruction,
+                file.path(qc_metrics_dir, "detector_reconstruction_error.csv")
+            )
+        }
+    }
     plot_dir <- plot_dir %||% tempfile("spectreasy_sample_html_plots_")
     dir.create(plot_dir,recursive=TRUE,showWarnings=FALSE)
     reference_file <- if(any(!af_rows)) .report_plot_file(plot_spectra(M[!af_rows,,drop=FALSE],pd=pd,output_file=NULL),file.path(plot_dir,"reference_spectra.png")) else NULL
@@ -661,7 +706,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
 }
 
 .report_nxn_link_html <- function(paths, report_type = c("sample", "control")) {
-    report_type <- match.arg(report_type)
+    report_type <- .match_arg_ci(report_type, c("sample", "control"), "report_type")
     if (is.null(paths) || !length(paths)) return("<p class=\"note\">No NxN scatter matrix was available for this run.</p>")
     labels <- names(paths)
     if (is.null(labels) || length(labels) != length(paths) || any(!nzchar(labels))) {
@@ -737,7 +782,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
 }
 
 .report_resolve_bundle <- function(path, overwrite, report_data = NULL) {
-    overwrite <- match.arg(overwrite, c("version", "overwrite", "error"))
+    overwrite <- .match_arg_ci(overwrite, c("version", "overwrite", "error"), "overwrite")
     paths_exist <- function(candidate) {
         companion_paths <- if (is.null(report_data)) character() else .report_nxn_companion_paths(candidate, report_data)
         any(file.exists(c(candidate, companion_paths)))

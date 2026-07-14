@@ -1,5 +1,9 @@
 # spectreasy 1.0.0
 
+- Report APIs now use `report_format` instead of `output_format`, with HTML as
+  the default. Enumerated string arguments are matched case-insensitively
+  across the public workflow, reporting, gating, and plotting interfaces.
+
 ## New
 
 - Added `unmix_controls()` as the main SCC workflow entry point.

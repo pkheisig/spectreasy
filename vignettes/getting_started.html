@@ -698,15 +698,15 @@ default.</p>
 </div>
 <div id="generate-quality-control-reports-optional" class="section level2">
 <h2>6. Generate quality control reports (optional)</h2>
-<p>After unmixing, you can generate comprehensive PDF reports to inspect
-the quality of both the single-color controls and the unmixed
-experimental samples.</p>
+<p>After unmixing, you can generate comprehensive HTML reports by default
+to inspect the quality of both the single-color controls and the unmixed
+experimental samples. Use <code>report_format = &quot;pdf&quot;</code> for PDF output.</p>
 <div id="single-color-control-scc-report" class="section level3">
 <h3>Single-Color Control (SCC) Report</h3>
 <p>The SCC report reviews gating, peak channels, and signal
 distributions for each control file. By default, it writes the report to
-<code>&quot;spectreasy_outputs/unmix_samples/qc_controls_report.pdf&quot;</code>.</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>scc_report_file <span class="ot">&lt;-</span> <span class="fu">file.path</span>(project_dir, <span class="st">&quot;spectreasy_outputs&quot;</span>, <span class="st">&quot;unmix_samples&quot;</span>, <span class="st">&quot;qc_controls_report.pdf&quot;</span>)</span>
+<code>&quot;spectreasy_outputs/unmix_controls/qc_controls_report.html&quot;</code>.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>scc_report_file <span class="ot">&lt;-</span> <span class="fu">file.path</span>(project_dir, <span class="st">&quot;spectreasy_outputs&quot;</span>, <span class="st">&quot;unmix_controls&quot;</span>, <span class="st">&quot;qc_controls_report.html&quot;</span>)</span>
 <span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a></span>
 <span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a><span class="co"># qc_controls(scc_dir = file.path(project_dir, &quot;scc&quot;), cytometer = &quot;Aurora&quot;, seed = 1)</span></span>
 <span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="fu">qc_controls</span>(</span>
@@ -724,8 +724,8 @@ distributions for each control file. By default, it writes the report to
 <p>The overall sample report visualizes unmixing quality across samples,
 including spectra overlays, detector residuals, spread matrices, and
 marker scatter plots. By default, it writes the report to
-<code>&quot;spectreasy_outputs/unmix_samples/qc_samples_report.pdf&quot;</code>.</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>qc_report_file <span class="ot">&lt;-</span> <span class="fu">file.path</span>(project_dir, <span class="st">&quot;spectreasy_outputs&quot;</span>, <span class="st">&quot;unmix_samples&quot;</span>, <span class="st">&quot;qc_samples_report.pdf&quot;</span>)</span>
+<code>&quot;spectreasy_outputs/unmix_samples/qc_samples_report.html&quot;</code>.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>qc_report_file <span class="ot">&lt;-</span> <span class="fu">file.path</span>(project_dir, <span class="st">&quot;spectreasy_outputs&quot;</span>, <span class="st">&quot;unmix_samples&quot;</span>, <span class="st">&quot;qc_samples_report.html&quot;</span>)</span>
 <span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a></span>
 <span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a><span class="co"># qc_samples(results = unmixed, M = ctrl$M)</span></span>
 <span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a><span class="fu">qc_samples</span>(</span>

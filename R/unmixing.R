@@ -774,8 +774,8 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param save_report Logical; if `TRUE`, write a sample QC report and
 #'   sample QC metric CSVs from the in-memory unmixing results without rerunning
 #'   unmixing. Defaults to `TRUE`.
-#' @param output_format Report format, either `"pdf"` (the backward-compatible
-#'   default) or `"html"`. Only the selected format is written.
+#' @param report_format Report format, either `"html"` (default) or `"pdf"`.
+#'   Only the selected format is written. Matching is case-insensitive.
 #' @param save_qc_plots Logical; if `TRUE`, save QC report plots as PNG files
 #'   in `qc_plot_dir` while creating the report.
 #' @param qc_plot_dir Directory for sample QC report PNG files when
@@ -856,7 +856,7 @@ unmix_samples <- function(sample_dir = "samples",
                           output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
                           write_fcs = TRUE,
                           save_report = TRUE,
-                          output_format = c("pdf", "html"),
+                          report_format = "html",
                           save_qc_plots = FALSE,
                           qc_plot_dir = NULL,
                           plot_n_events = 10000L,
@@ -866,8 +866,12 @@ unmix_samples <- function(sample_dir = "samples",
                           verbose = TRUE) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     unmixing_matrix_file_missing <- missing(unmixing_matrix_file)
-    return_type <- match.arg(return_type)
-    output_format <- match.arg(output_format)
+    return_type <- .match_arg_ci(
+        return_type,
+        c("list", "flowSet", "SingleCellExperiment"),
+        "return_type"
+    )
+    report_format <- .match_arg_ci(report_format, c("html", "pdf"), "report_format")
     write_fcs <- .normalize_scalar_logical(write_fcs, "write_fcs")
     save_report <- .normalize_scalar_logical(save_report, "save_report")
     save_qc_plots <- .normalize_scalar_logical(save_qc_plots, "save_qc_plots")
@@ -1124,7 +1128,7 @@ unmix_samples <- function(sample_dir = "samples",
 
     if (isTRUE(save_report)) {
         qc_samples_dir <- .next_safe_output_dir(.default_unmix_samples_report_dir(output_dir))
-        output_file <- file.path(qc_samples_dir, paste0("qc_samples_report.", output_format))
+        output_file <- file.path(qc_samples_dir, paste0("qc_samples_report.", report_format))
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
         report_res <- qc_samples(
             results = results,
@@ -1134,7 +1138,7 @@ unmix_samples <- function(sample_dir = "samples",
             qc_metrics_dir = qc_samples_dir,
             qc_plot_dir = qc_plot_dir,
             save_qc_pngs = save_qc_plots,
-            output_format = output_format,
+            report_format = report_format,
             overwrite = "overwrite",
             report_artifact_paths = list(
                 matrix = if (!isTRUE(unmixing_matrix_file_missing)) unmixing_matrix_file else NULL,

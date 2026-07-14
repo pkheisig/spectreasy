@@ -17,6 +17,12 @@ gating_options <- function(histogram_pct_beads = 0.98,
                            histogram_direction_beads = "right",
                            histogram_pct_cells = 0.35,
                            histogram_direction_cells = "right") {
+    histogram_direction_beads <- .match_arg_ci(
+        histogram_direction_beads, c("right", "both", "left"), "histogram_direction_beads"
+    )
+    histogram_direction_cells <- .match_arg_ci(
+        histogram_direction_cells, c("right", "both", "left"), "histogram_direction_cells"
+    )
     list(
         histogram_pct_beads = histogram_pct_beads,
         histogram_direction_beads = histogram_direction_beads,

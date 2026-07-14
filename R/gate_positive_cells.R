@@ -21,6 +21,9 @@
 gate_positive_cells <- function(mat,
                                 histogram_pct = 0.98,
                                 histogram_direction = "right") {
+    histogram_direction <- .match_arg_ci(
+        histogram_direction, c("right", "both", "left"), "histogram_direction"
+    )
     # Identify peak channel by variance
     peak_channel <- which.max(apply(mat, 2, var))
     peak_vals <- mat[, peak_channel]

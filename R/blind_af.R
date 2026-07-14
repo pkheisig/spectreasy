@@ -202,7 +202,7 @@
                                        candidate_quantile = 0.90,
                                        strategy = c("residual", "low_marker"),
                                        min_events = 25L) {
-    strategy <- match.arg(strategy)
+    strategy <- .match_arg_ci(strategy, c("residual", "low_marker"), "strategy")
     R <- as.matrix(res_obj$residuals)
     Rpos <- pmax(R, 0)
     signal <- rowSums(Rpos)
@@ -244,7 +244,7 @@
                                   strategy = c("residual", "low_marker"),
                                   min_events = 25L,
                                   seed = NULL) {
-    strategy <- match.arg(strategy)
+    strategy <- .match_arg_ci(strategy, c("residual", "low_marker"), "strategy")
     candidate_shapes <- list()
     candidate_counts <- integer(length(splits))
 

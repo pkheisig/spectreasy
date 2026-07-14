@@ -412,7 +412,7 @@ export default function CockpitApp() {
             seed: control.seed,
             save_qc_plots: control.saveQcPlots,
             save_report: control.saveReport,
-            output_format: control.outputFormat,
+            report_format: control.outputFormat,
             scc_background_method: control.sccBackgroundMethod,
             scc_background_k: control.sccBackgroundK,
             spectral_variant_som_nodes: control.spectralVariantSomNodes,
@@ -449,7 +449,7 @@ export default function CockpitApp() {
               estimate_af: sample.estimateAf,
               write_fcs: sample.writeFcs,
               save_report: sample.saveReport,
-              output_format: sample.outputFormat,
+              report_format: sample.outputFormat,
               save_qc_plots: sample.saveQcPlots,
               plot_n_events: sample.plotNEvents,
               chunk_size: sample.chunkSize,
@@ -471,7 +471,7 @@ export default function CockpitApp() {
             : {
                 projectPath: settings.projectPath,
                 report_type: "control",
-                output_format: control.outputFormat,
+                report_format: control.outputFormat,
                 overwrite: window.prompt(
                   "Existing report behavior: version (recommended), overwrite, or cancel",
                   "version",

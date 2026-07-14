@@ -21,7 +21,7 @@ unmix_controls(
   n_threads = 1L,
   save_qc_plots = FALSE,
   save_report = TRUE,
-  output_format = c("pdf", "html"),
+  report_format = "html",
   manual_gating = TRUE,
   manual_gate_file = "ssc_gate_config.csv",
   gating_file = manual_gate_file,
@@ -94,8 +94,8 @@ intensity-gate, and spectrum PNGs under `output_dir`.}
 \item{save_report}{Logical; if `TRUE`, write the SCC QC report
 automatically after controls are unmixed. Defaults to `TRUE`.}
 
-\item{output_format}{Report format, either `"pdf"` (the backward-compatible
-default) or `"html"`. Only the selected format is written.}
+\item{report_format}{Report format, either `"html"` (default) or `"pdf"`.
+Only the selected format is written. Matching is case-insensitive.}
 
 \item{manual_gating}{Logical; if `TRUE` (default), launch the manual control
 gating GUI before building the SCC reference matrix. If `FALSE`, the GUI is

@@ -45,7 +45,7 @@
         n_threads = 1L,
         save_qc_plots = FALSE,
         save_report = TRUE,
-        output_format = "html",
+        report_format = "html",
         scc_background_method = c("scatter_knn", "none"),
         scc_background_k = 2L,
         spectral_variant_som_nodes = 16L,
@@ -87,7 +87,7 @@
         unmix_scatter_max_points = 1000,
         unmix_scatter_axis_limit = NULL,
         seed = NULL,
-        output_format = "html",
+        report_format = "html",
         overwrite = "version",
         report_plots = list(),
         report_run_settings = list(),
@@ -124,7 +124,7 @@
         ),
         write_fcs = TRUE,
         save_report = TRUE,
-        output_format = "html",
+        report_format = "html",
         save_qc_plots = FALSE,
         qc_plot_dir = NULL,
         plot_n_events = 10000L,
@@ -187,15 +187,15 @@
         qc_plot_dir = NULL,
         save_qc_pngs = FALSE,
         qc_metrics_dir = NULL,
-        output_format = "html",
+        report_format = "html",
         overwrite = "version",
         report_run_settings = list(),
         report_artifact_paths = list()
     )
 
     # Lower-level reusable HTML report workflow. Most users can call
-    # qc_controls(..., output_format = "html") or
-    # qc_samples(..., output_format = "html") directly instead.
+    # qc_controls(..., report_format = "html") or
+    # qc_samples(..., report_format = "html") directly instead.
     control_report_data <- collect_control_report_data(
         M = ctrl$M,
         scc_dir = "scc",

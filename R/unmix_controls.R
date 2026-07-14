@@ -180,7 +180,7 @@
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
         spectral_variant_library_rds = file.path(output_dir, "scc_spectral_variants.rds"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
-        qc_report_pdf = file.path(output_dir, "qc_controls", "qc_controls_report.pdf")
+        qc_report_html = file.path(output_dir, "qc_controls", "qc_controls_report.html")
     )
 }
 
@@ -355,8 +355,8 @@
 #'   intensity-gate, and spectrum PNGs under `output_dir`.
 #' @param save_report Logical; if `TRUE`, write the SCC QC report
 #'   automatically after controls are unmixed. Defaults to `TRUE`.
-#' @param output_format Report format, either `"pdf"` (the backward-compatible
-#'   default) or `"html"`. Only the selected format is written.
+#' @param report_format Report format, either `"html"` (default) or `"pdf"`.
+#'   Only the selected format is written. Matching is case-insensitive.
 #' @param manual_gating Logical; if `TRUE` (default), launch the manual control
 #'   gating GUI before building the SCC reference matrix. If `FALSE`, the GUI is
 #'   skipped; an existing `gating_file`/`manual_gate_file` is still reused when
@@ -431,7 +431,7 @@ unmix_controls <- function(
     n_threads = 1L,
     save_qc_plots = FALSE,
     save_report = TRUE,
-    output_format = c("pdf", "html"),
+    report_format = "html",
     manual_gating = TRUE,
     manual_gate_file = "ssc_gate_config.csv",
     gating_file = manual_gate_file,
@@ -454,7 +454,7 @@ unmix_controls <- function(
     manual_gate_file_missing <- missing(manual_gate_file)
     gating_file_missing <- missing(gating_file)
     n_threads_missing <- missing(n_threads)
-    output_format <- match.arg(output_format)
+    report_format <- .match_arg_ci(report_format, c("html", "pdf"), "report_format")
     if (!is.null(unmix_threads)) {
         if (!n_threads_missing && !identical(as.integer(n_threads[1]), as.integer(unmix_threads[1]))) {
             stop("n_threads and unmix_threads must match when both are supplied.", call. = FALSE)
@@ -462,7 +462,11 @@ unmix_controls <- function(
         n_threads <- unmix_threads
     }
     n_threads <- .normalize_unmix_threads(n_threads)
-    auto_unknown_fluor_policy <- match.arg(auto_unknown_fluor_policy)
+    auto_unknown_fluor_policy <- .match_arg_ci(
+        auto_unknown_fluor_policy,
+        c("by_channel", "empty", "filename"),
+        "auto_unknown_fluor_policy"
+    )
     unmixing_method <- .normalize_unmix_method(unmixing_method)
     use_autospectral <- .is_autospectral_style_method(unmixing_method)
     use_refine <- identical(unmixing_method, "AutoSpectral")
@@ -569,7 +573,7 @@ unmix_controls <- function(
     output_file <- NULL
     if (isTRUE(save_report)) {
         qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
-        output_file <- file.path(qc_controls_dir, paste0("qc_controls_report.", output_format))
+        output_file <- file.path(qc_controls_dir, paste0("qc_controls_report.", report_format))
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
     }
     build_qc_plots <- isTRUE(save_qc_plots) || isTRUE(save_report)
@@ -727,7 +731,7 @@ unmix_controls <- function(
                 unmix_scatter_max_points = 1000,
                 seed = seed,
                 unmixing_matrix_file = output_paths$reference_matrix_csv,
-                output_format = output_format,
+                report_format = report_format,
                 overwrite = "overwrite",
                 report_plots = list(spectra = p_spectra, af = p_af_spectra, unmixing_scatter = p_scatter),
                 report_artifact_paths = list(

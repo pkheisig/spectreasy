@@ -3900,6 +3900,13 @@ build_reference_matrix <- function(
 ) {
     control_df <- .normalize_build_reference_control_df(control_df)
     unmixing_method <- .normalize_unmix_method(unmixing_method)
+    default_sample_type <- .match_arg_ci(default_sample_type, c("beads", "cells"), "default_sample_type")
+    histogram_direction_beads <- .match_arg_ci(
+        histogram_direction_beads, c("right", "both", "left"), "histogram_direction_beads"
+    )
+    histogram_direction_cells <- .match_arg_ci(
+        histogram_direction_cells, c("right", "both", "left"), "histogram_direction_cells"
+    )
     use_autospectral <- .is_autospectral_style_method(unmixing_method)
     refine <- .validate_reference_refine_arg(refine)
     if (isTRUE(refine) && !identical(unmixing_method, "AutoSpectral")) {

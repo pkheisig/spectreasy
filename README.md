@@ -8,7 +8,7 @@
 - **Reference Background Handling**: Use unstained cell controls for AF extraction and unstained bead controls as bead backgrounds when present
 - **Advanced Unmixing Algorithms**: Spectreasy builds on the `AutoSpectral` idea with per-cell AF matching and spectral variants. In addition, it ajusts AF extraction for each marker, depending on the AF's influence on it.
 - **Other Unmixing Algorithms**: OLS, NNLS, WLS and RWLS (robust WLS) are supported
-- **SCC Diagnostics & Visualization**: Generate PDF reports to inspect SCC spectra, gating plots, and various QC metrics
+- **SCC Diagnostics & Visualization**: Generate HTML or PDF reports to inspect SCC spectra, gating plots, and various QC metrics
 - **Browser Tools**: Interactive control gating, spectral panel builder, and manual matrix adjustment modules
 - **Bioconductor-Native In-Memory Workflows**: `unmix_samples()` accepts `flowSet` and `SingleCellExperiment`, and can return either container
 
@@ -129,9 +129,9 @@ Clicking Confirm saves the gate CSV, closes the GUI server, and lets the same `u
 - `spectreasy_outputs/unmix_controls/unmixed_fcs/*.fcs` -> your unmixed SCC and unstained control files
 - `fcs_mapping.csv` -> SCC and unstained control file mapping
 - `ssc_gate_config.csv` -> manual SCC gate definitions when the gating GUI is used
-- `spectreasy_outputs/unmix_controls/qc_controls_report.pdf` -> PDF report with SCC overview and QC plots (see details below)
+- `spectreasy_outputs/unmix_controls/qc_controls_report.html` -> HTML report with SCC overview and QC plots (see details below)
 
-2) These are already part of qc_controls_report.pdf and only saved separately when save_qc_plots = TRUE so you can use the plot somewhere as a standalone PNG file. 
+2) These are already part of `qc_controls_report.html` and only saved separately when `save_qc_plots = TRUE`, so you can use the plot somewhere as a standalone PNG file.
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
 - `spectreasy_outputs/unmix_controls/scc_spectra.png`
 - `spectreasy_outputs/unmix_controls/scc_af_spectra.png`
@@ -180,7 +180,7 @@ and returns a named list with one element per sample.
 
 ## 6. Review quality control reports
 
-`unmix_controls()` and `unmix_samples()` generate comprehensive PDF reports by default.
+`unmix_controls()` and `unmix_samples()` generate comprehensive HTML reports by default. Use `report_format = "pdf"` when a PDF is preferred.
 
 ### Single-Color Control (SCC) Report
 

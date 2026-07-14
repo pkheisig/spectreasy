@@ -324,7 +324,7 @@
 
 #' Generate SCC QC Report
 #'
-#' Builds a reference matrix from single-color controls, assembles a PDF report
+#' Builds a reference matrix from single-color controls, assembles a QC report
 #' for pre-unmix review, and can optionally retain the intermediate QC PNG plots.
 #'
 #' @param M Optional precomputed reference matrix. If omitted, the report uses the
@@ -333,7 +333,8 @@
 #'   Used when `M` is not supplied. By default this points to the reference matrix
 #'   produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).
 #' @param scc_dir Directory containing SCC FCS files.
-#' @param output_file Path to save the PDF report. Defaults to `"spectreasy_outputs/unmix_controls/qc_controls_report.pdf"`.
+#' @param output_file Path to save the report. Defaults to
+#'   `"spectreasy_outputs/unmix_controls/qc_controls_report.html"`.
 #' @param control_file Control mapping CSV path.
 #' @param cytometer Cytometer name passed to [build_reference_matrix()]. The
 #'   default, `"auto"`, infers the cytometer from FCS detector names when possible.
@@ -345,7 +346,7 @@
 #'   `qc_plot_dir`. If `FALSE` (default), PNGs are written to a temporary directory
 #'   for report assembly and removed afterward.
 #' @param qc_metrics_dir Optional directory where plot-ready SCC QC metric
-#'   CSVs are written alongside the PDF report.
+#'   CSVs are written alongside the report.
 #' @param unmixed_list Optional precomputed SCC unmixing results from
 #'   [unmix_controls()]. When supplied with `M`, the report reuses these results
 #'   instead of unmixing SCC files again.
@@ -365,8 +366,8 @@
 #'   SCC unmixing scatter matrix. The default `NULL` uses local per-panel
 #'   ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
-#' @param output_format Optional report format. When omitted, `.html` and `.pdf`
-#'   output filename extensions are inferred; otherwise use `"html"` or `"pdf"`.
+#' @param report_format Report format, `"html"` (default) or `"pdf"`.
+#'   Matching is case-insensitive.
 #' @param overwrite HTML collision policy: create a versioned filename
 #'   (recommended), overwrite, or error. Existing PDF behavior is unchanged.
 #' @param report_plots Optional named list of precomputed spectra, AF, and SCC
@@ -389,7 +390,7 @@ qc_controls <- function(
     M = NULL,
     unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
     scc_dir = "scc",
-    output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.pdf",
+    output_file = "spectreasy_outputs/unmix_controls/qc_controls_report.html",
     control_file = "fcs_mapping.csv",
     cytometer = "auto",
     unmixing_method = "WLS",
@@ -405,7 +406,7 @@ qc_controls <- function(
     unmix_scatter_max_points = 1000,
     unmix_scatter_axis_limit = NULL,
     seed = NULL,
-    output_format = NULL,
+    report_format = "html",
     overwrite = c("version", "overwrite", "error"),
     report_plots = list(),
     report_run_settings = list(),
@@ -413,7 +414,13 @@ qc_controls <- function(
     ...
 ) {
     output_file_missing <- missing(output_file)
-    output_spec <- .report_output_spec(output_file, output_format, default_format = "pdf", output_missing = output_file_missing)
+    report_format_missing <- missing(report_format)
+    output_spec <- .report_output_spec(
+        output_file,
+        if (report_format_missing) NULL else report_format,
+        default_format = "html",
+        output_missing = output_file_missing
+    )
     output_file <- output_spec$path
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the SCC report.", call. = FALSE)
@@ -558,7 +565,7 @@ qc_controls <- function(
                     unmix_scatter_axis_limit = unmix_scatter_axis_limit,
                     seed = seed,
                     save_qc_pngs = save_qc_pngs,
-                    output_format = "html"
+                    report_format = "html"
                 ),
                 report_run_settings
             ),

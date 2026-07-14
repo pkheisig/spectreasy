@@ -286,7 +286,7 @@ gate_pick_csv_file_linux <- function(mode, initial_dir, default_name) {
 }
 
 gate_pick_csv_file <- function(mode = c("open", "save")) {
-    mode <- match.arg(mode)
+    mode <- match.arg(tolower(mode[1]), c("open", "save"))
     initial_dir <- gate_working_dir()
     if (!dir.exists(initial_dir)) {
         initial_dir <- gate_working_dir()
@@ -2131,7 +2131,7 @@ function(req) {
             n_threads = gui_workflow_number(body, "unmix_threads", 1, integer = TRUE, minimum = 1),
             save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
-            output_format = tolower(gui_workflow_value(body, "output_format", "pdf")),
+            report_format = gui_workflow_value(body, "report_format", "html"),
             manual_gating = FALSE,
             manual_gate_file = gate_file,
             gating_file = gate_file,
@@ -2200,7 +2200,7 @@ function(req) {
             output_dir = output_dir,
             write_fcs = gui_workflow_bool(body, "write_fcs", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
-            output_format = tolower(gui_workflow_value(body, "output_format", "pdf")),
+            report_format = gui_workflow_value(body, "report_format", "html"),
             save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
             plot_n_events = gui_workflow_number(body, "plot_n_events", 10000, integer = TRUE, minimum = 1),
             chunk_size = gui_workflow_number(body, "chunk_size", 50000, integer = TRUE, minimum = 1),
@@ -2329,8 +2329,8 @@ function(req) {
 function(req) {
     body <- gui_workflow_body(req)
     report_type <- tolower(gui_workflow_value(body, "report_type", "control"))
-    output_format <- tolower(gui_workflow_value(body, "output_format", "html"))
-    if (!output_format %in% c("html", "pdf")) {
+    report_format <- tolower(gui_workflow_value(body, "report_format", "html"))
+    if (!report_format %in% c("html", "pdf")) {
         return(list(success = FALSE, error = "Report format must be 'html' or 'pdf'."))
     }
     overwrite <- tolower(gui_workflow_value(body, "overwrite", "version"))
@@ -2349,21 +2349,21 @@ function(req) {
             M <- spectreasy:::.read_unmixing_matrix_csv(matrix_file)
             report_dir <- file.path(root, "spectreasy_outputs", "unmix_controls", "qc_controls")
             dir.create(report_dir, recursive = TRUE, showWarnings = FALSE)
-            report_file <- file.path(report_dir, paste0("qc_controls_report.", output_format))
+            report_file <- file.path(report_dir, paste0("qc_controls_report.", report_format))
             spectreasy::qc_controls(
                 M = M,
                 unmixing_matrix_file = matrix_file,
                 scc_dir = file.path(root, "scc"),
                 control_file = file.path(root, "fcs_mapping.csv"),
                 output_file = report_file,
-                output_format = output_format,
+                report_format = report_format,
                 overwrite = overwrite
             )
         }
     )
     if (!isTRUE(run$success)) return(run)
     report_path <- if (is.list(run$result) && !is.null(run$result$output_file)) run$result$output_file else report_file
-    run$result <- list(report_file = report_path, output_format = output_format)
+    run$result <- list(report_file = report_path, report_format = report_format)
     run
 }
 

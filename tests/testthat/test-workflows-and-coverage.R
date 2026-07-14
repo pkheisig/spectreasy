@@ -555,8 +555,8 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
     expect_false(file.exists(file.path(qc_metrics_dir, "directional_spread_score.csv")))
 
     # Test default output file behavior
-    default_pdf <- "spectreasy_outputs/unmix_controls/qc_controls_report.pdf"
-    if (file.exists(default_pdf)) file.remove(default_pdf)
+    default_html <- "spectreasy_outputs/unmix_controls/qc_controls_report.html"
+    if (file.exists(default_html)) file.remove(default_html)
     
     out_default <- spectreasy::qc_controls(
         scc_dir = wf$scc_dir,
@@ -566,8 +566,8 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
         seed = 1,
         subsample_n = 400
     )
-    expect_true(file.exists(default_pdf))
-    file.remove(default_pdf)
+    expect_true(file.exists(default_html))
+    file.remove(default_html)
 })
 
 test_that("qc_controls does not retain QC PNGs unless requested", {

@@ -974,7 +974,11 @@ create_control_file <- function(input_folder = "scc",
                                 unknown_fluor_policy = c("empty", "by_channel", "filename"),
                                 output_file = "fcs_mapping.csv",
                                 custom_fluorophores = NULL) {
-    unknown_fluor_policy <- match.arg(unknown_fluor_policy)
+    unknown_fluor_policy <- .match_arg_ci(
+        unknown_fluor_policy,
+        c("empty", "by_channel", "filename"),
+        "unknown_fluor_policy"
+    )
     if (!dir.exists(input_folder)) {
         .spectreasy_stop_missing_directory(input_folder, label = "input_folder")
     }

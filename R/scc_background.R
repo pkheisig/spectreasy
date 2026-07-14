@@ -3,7 +3,7 @@
 .validate_scc_background_args <- function(scc_background_method,
                                           scc_background_k,
                                           enabled = TRUE) {
-    method <- match.arg(scc_background_method, c("scatter_knn", "none"))
+    method <- .match_arg_ci(scc_background_method, c("scatter_knn", "none"), "scc_background_method")
     enabled <- .normalize_scalar_logical(enabled, "enabled")
     k <- .normalize_positive_integer(scc_background_k, "scc_background_k")
     list(

@@ -19,7 +19,7 @@ test_that("sample HTML report follows PDF plot order and writes an NxN companion
         results,
         M = M,
         output_file = path,
-        output_format = "html",
+        report_format = "html",
         qc_plot_dir = png_dir,
         save_qc_pngs = FALSE,
         sample_nxn_rows_per_page = 2,
@@ -146,7 +146,7 @@ test_that("control HTML report uses supplied matrix without rebuilding controls"
         scc_dir = missing_scc,
         control_file = tempfile(fileext = ".csv"),
         output_file = path,
-        output_format = "html",
+        report_format = "html",
         unmixing_method = "OLS",
         qc_plot_dir = png_dir,
         save_qc_pngs = FALSE
@@ -233,7 +233,7 @@ test_that("HTML writes one standalone one-page viewer per selected sample matrix
         results,
         M = M,
         output_file = tempfile(fileext = ".html"),
-        output_format = "html",
+        report_format = "html",
         nxn_all_samples = TRUE,
         sample_nxn_rows_per_page = 2,
         sample_nxn_max_points = 30
@@ -284,9 +284,9 @@ test_that("report format and filename extensions are validated", {
     M <- rbind(FITC = c(1, 0.1), PE = c(0.1, 1))
     colnames(M) <- c("B1-A", "YG1-A")
     results <- data.frame(File = rep("sample", 8), FITC = stats::rnorm(8), PE = stats::rnorm(8))
-    expect_error(qc_samples(results, M = M, output_file = tempfile(fileext = ".pdf"), output_format = "html"), "conflicts")
-    expect_error(qc_samples(results, M = M, output_file = tempfile(fileext = ".html"), output_format = "pdf"), "conflicts")
-    expect_error(qc_samples(results, M = M, output_format = "both"), "arg")
+    expect_error(qc_samples(results, M = M, output_file = tempfile(fileext = ".pdf"), report_format = "html"), "conflicts")
+    expect_error(qc_samples(results, M = M, output_file = tempfile(fileext = ".html"), report_format = "pdf"), "conflicts")
+    expect_error(qc_samples(results, M = M, report_format = "both"), "report_format")
     inferred <- qc_samples(results, M = M, output_file = tempfile(fileext = ".html"), sample_nxn_max_points = 8)
     expect_identical(inferred$format, "html")
 })
@@ -296,7 +296,7 @@ test_that("report output paths must be non-empty scalar strings", {
 
     for (path in invalid_paths) {
         expect_error(
-            spectreasy:::.report_output_spec(path, output_format = "html"),
+            spectreasy:::.report_output_spec(path, report_format = "html"),
             "output_file must be a single non-empty file path",
             fixed = TRUE
         )
@@ -310,7 +310,7 @@ test_that("HTML report wrappers fail clearly for missing scientific inputs", {
     expect_error(collect_sample_report_data(NULL, M), "No unmixed results")
     expect_error(collect_sample_report_data(results, NULL), "No reference matrix")
     expect_error(
-        qc_samples(results, unmixing_matrix_file = tempfile("missing_matrix_"), output_format = "html"),
+        qc_samples(results, unmixing_matrix_file = tempfile("missing_matrix_"), report_format = "html"),
         "not found"
     )
 })
@@ -320,11 +320,11 @@ test_that("HTML overwrite policy versions, overwrites, errors, and detects stale
     colnames(M) <- c("B1-A", "YG1-A")
     results <- data.frame(File = rep("sample", 8), FITC = stats::rnorm(8), PE = stats::rnorm(8))
     target <- tempfile(fileext = ".html")
-    first <- qc_samples(results, M = M, output_file = target, output_format = "html", overwrite = "overwrite", sample_nxn_max_points = 8)
-    second <- qc_samples(results, M = M, output_file = target, output_format = "html", overwrite = "version", sample_nxn_max_points = 8)
+    first <- qc_samples(results, M = M, output_file = target, report_format = "html", overwrite = "overwrite", sample_nxn_max_points = 8)
+    second <- qc_samples(results, M = M, output_file = target, report_format = "html", overwrite = "version", sample_nxn_max_points = 8)
     expect_false(identical(first$output_file, second$output_file))
     expect_match(basename(second$output_file), "_v001\\.html$")
-    expect_error(qc_samples(results, M = M, output_file = target, output_format = "html", overwrite = "error", sample_nxn_max_points = 8), "already exists")
+    expect_error(qc_samples(results, M = M, output_file = target, report_format = "html", overwrite = "error", sample_nxn_max_points = 8), "already exists")
 
     source <- tempfile(fileext = ".csv")
     writeLines("x", source)

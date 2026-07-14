@@ -9,7 +9,7 @@ qc_samples(
   M = NULL,
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
-  output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.pdf",
+  output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.html",
   unmixing_method = NULL,
   res_list = NULL,
   pd = NULL,
@@ -25,7 +25,7 @@ qc_samples(
   qc_plot_dir = NULL,
   save_qc_pngs = FALSE,
   qc_metrics_dir = NULL,
-  output_format = NULL,
+  report_format = "html",
   overwrite = c("version", "overwrite", "error"),
   report_run_settings = list(),
   report_artifact_paths = list()
@@ -45,7 +45,8 @@ check.names = FALSE)`.}
 Used when `M` is not supplied. By default this points to the reference matrix
 produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 
-\item{output_file}{Output PDF file path. Defaults to `"spectreasy_outputs/unmix_samples/qc_samples_report.pdf"`.}
+\item{output_file}{Output report path. Defaults to
+`"spectreasy_outputs/unmix_samples/qc_samples_report.html"`.}
 
 \item{unmixing_method}{Unmixing method used to create `results`
 (`"AutoSpectral"`, `"Spectreasy"`, `"OLS"`, `"WLS"`, `"RWLS"`, or
@@ -89,13 +90,13 @@ If `FALSE` (default), only include NxN pages for the first sample in `results`.}
 `save_qc_pngs = TRUE`.}
 
 \item{save_qc_pngs}{Logical; if `TRUE`, save report plot pages as PNG files
-alongside the PDF report.}
+alongside the report.}
 
 \item{qc_metrics_dir}{Optional directory where plot-ready QC metric
-CSVs are written alongside the PDF report.}
+CSVs are written alongside the report.}
 
-\item{output_format}{Optional report format. When omitted, `.html` and `.pdf`
-output filename extensions are inferred; otherwise use `"html"` or `"pdf"`.}
+\item{report_format}{Report format, `"html"` (default) or `"pdf"`.
+Matching is case-insensitive.}
 
 \item{overwrite}{HTML collision policy: create a versioned filename
 (recommended), overwrite, or error. Existing PDF behavior is unchanged.}
