@@ -527,6 +527,278 @@ struct WlsBestAfWorker : public RcppParallel::Worker {
     }
 };
 
+struct NnlsWorker : public RcppParallel::Worker {
+    const arma::mat& Y;
+    const arma::mat& A;
+    const double tol;
+    const int max_outer;
+    const int max_inner;
+    arma::mat& A_out;
+
+    NnlsWorker(const arma::mat& Y,
+               const arma::mat& A,
+               const double tol,
+               const int max_outer,
+               const int max_inner,
+               arma::mat& A_out)
+        : Y(Y), A(A), tol(tol), max_outer(max_outer), max_inner(max_inner), A_out(A_out) {}
+
+    void operator()(std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            const arma::vec b = Y.row(i).t();
+            const arma::vec x = nnls_lawson_hanson_cpp(A, b, tol, max_outer, max_inner);
+            A_out.row(i) = x.t();
+        }
+    }
+};
+
+struct WlsWorker : public RcppParallel::Worker {
+    const arma::mat& Y;
+    const arma::mat& M;
+    const arma::vec& noise_floor;
+    const arma::vec& signal_scale;
+    const double max_weight_ratio;
+    const double tol;
+    arma::mat& A_out;
+
+    WlsWorker(const arma::mat& Y,
+              const arma::mat& M,
+              const arma::vec& noise_floor,
+              const arma::vec& signal_scale,
+              const double max_weight_ratio,
+              const double tol,
+              arma::mat& A_out)
+        : Y(Y), M(M), noise_floor(noise_floor), signal_scale(signal_scale),
+          max_weight_ratio(max_weight_ratio), tol(tol), A_out(A_out) {}
+
+    void operator()(std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            const arma::vec y = Y.row(i).t();
+            const arma::vec weights = wls_event_weights_cpp(y, noise_floor, signal_scale, max_weight_ratio);
+            const arma::vec coeffs = weighted_lsq_coeffs_cpp(M, y, weights, tol);
+            A_out.row(i) = coeffs.t();
+        }
+    }
+};
+
+struct RwlsWorker : public RcppParallel::Worker {
+    const arma::mat& Y;
+    const arma::mat& M;
+    const arma::vec& noise_floor;
+    const arma::vec& signal_scale;
+    const double max_weight_ratio;
+    const double huber_k;
+    const int max_iter;
+    const double robust_tol;
+    const double tol;
+    arma::mat& A_out;
+
+    RwlsWorker(const arma::mat& Y,
+               const arma::mat& M,
+               const arma::vec& noise_floor,
+               const arma::vec& signal_scale,
+               const double max_weight_ratio,
+               const double huber_k,
+               const int max_iter,
+               const double robust_tol,
+               const double tol,
+               arma::mat& A_out)
+        : Y(Y), M(M), noise_floor(noise_floor), signal_scale(signal_scale),
+          max_weight_ratio(max_weight_ratio), huber_k(huber_k), max_iter(max_iter),
+          robust_tol(robust_tol), tol(tol), A_out(A_out) {}
+
+    void operator()(std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            const arma::vec y = Y.row(i).t();
+            const arma::vec weights = wls_event_weights_cpp(y, noise_floor, signal_scale, max_weight_ratio);
+            const arma::vec coeffs = robust_weighted_lsq_coeffs_cpp(
+                M, y, weights, huber_k, max_iter, robust_tol, tol
+            );
+            A_out.row(i) = coeffs.t();
+        }
+    }
+};
+
+struct AutospectralAssignmentWorker : public RcppParallel::Worker {
+    const arma::mat& Y;
+    const arma::mat& unmixed_markers;
+    const arma::mat& v_library;
+    const arma::mat& r_library;
+    const arma::vec& denominator;
+    const arma::uvec& valid_indices;
+    RcppParallel::RVector<int> assignments;
+
+    AutospectralAssignmentWorker(const arma::mat& Y,
+                                 const arma::mat& unmixed_markers,
+                                 const arma::mat& v_library,
+                                 const arma::mat& r_library,
+                                 const arma::vec& denominator,
+                                 const arma::uvec& valid_indices,
+                                 Rcpp::IntegerVector assignments)
+        : Y(Y), unmixed_markers(unmixed_markers), v_library(v_library),
+          r_library(r_library), denominator(denominator), valid_indices(valid_indices),
+          assignments(assignments) {}
+
+    void operator()(std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            double best_error = std::numeric_limits<double>::infinity();
+            arma::uword best_k = valid_indices(0);
+            for (arma::uword vk = 0; vk < valid_indices.n_elem; ++vk) {
+                const arma::uword k = valid_indices(vk);
+                double numerator = 0.0;
+                for (arma::uword j = 0; j < Y.n_cols; ++j) {
+                    numerator += Y(i, j) * r_library(j, k);
+                }
+                const double af_scale = numerator / denominator(k);
+                double error = 0.0;
+                for (arma::uword marker = 0; marker < unmixed_markers.n_cols; ++marker) {
+                    error += std::abs(unmixed_markers(i, marker) - af_scale * v_library(marker, k));
+                }
+                if (error < best_error) {
+                    best_error = error;
+                    best_k = k;
+                }
+            }
+            assignments[i] = static_cast<int>(best_k + 1);
+        }
+    }
+};
+
+void unmix_best_af_event(const arma::mat& Y,
+                         const arma::uvec& fluor_idx,
+                         const arma::uvec& af_idx,
+                         const std::string& method,
+                         const arma::vec& noise_floor,
+                         const arma::vec& signal_scale,
+                         const double max_weight_ratio,
+                         const double tol,
+                         const int max_outer,
+                         const int max_inner,
+                         const int rwls_max_iter,
+                         const std::vector<arma::mat>& X_list,
+                         const std::vector<arma::mat>& A_list,
+                         const std::vector<arma::mat>& P_list,
+                         const std::vector<bool>& ols_candidate_ok,
+                         arma::mat& A_out,
+                         const arma::uword i) {
+    const arma::vec y = Y.row(i).t();
+    arma::vec event_weights;
+    if (method == "WLS" || method == "RWLS") {
+        event_weights = wls_event_weights_cpp(y, noise_floor, signal_scale, max_weight_ratio);
+    }
+
+    double min_rss = std::numeric_limits<double>::max();
+    arma::uword best_k = 0;
+    arma::vec best_coeffs(fluor_idx.n_elem + 1, arma::fill::zeros);
+    bool have_best_coeffs = false;
+
+    for (arma::uword k = 0; k < af_idx.n_elem; ++k) {
+        double rss;
+        arma::vec coeffs_k(fluor_idx.n_elem + 1, arma::fill::zeros);
+        const arma::mat& X_k = X_list[k];
+        const arma::mat& A_k = A_list[k];
+
+        if (method == "WLS" || method == "RWLS") {
+            coeffs_k = weighted_lsq_coeffs_cpp(X_k, y, event_weights, tol);
+            const arma::vec resid = y - A_k * coeffs_k;
+            rss = arma::dot(event_weights % resid, resid);
+        } else if (method == "NNLS") {
+            coeffs_k = nnls_lawson_hanson_cpp(A_k, y, tol, max_outer, max_inner);
+            const arma::vec resid = y - A_k * coeffs_k;
+            rss = arma::dot(resid, resid);
+        } else {
+            if (!ols_candidate_ok[k]) {
+                continue;
+            }
+            const arma::vec resid = y - P_list[k] * y;
+            rss = arma::dot(resid, resid);
+        }
+
+        if (rss < min_rss) {
+            min_rss = rss;
+            best_k = k;
+            best_coeffs = coeffs_k;
+            have_best_coeffs = (method == "WLS" || method == "NNLS");
+        }
+    }
+
+    const arma::mat& X_best = X_list[best_k];
+    const arma::mat& A_best = A_list[best_k];
+    arma::vec coeffs(fluor_idx.n_elem + 1, arma::fill::zeros);
+    if (method == "OLS") {
+        const arma::mat AtA = A_best.t() * A_best;
+        coeffs = safe_inverse_cpp(AtA, tol) * A_best.t() * y;
+    } else if (method == "WLS") {
+        coeffs = have_best_coeffs
+            ? best_coeffs
+            : weighted_lsq_coeffs_cpp(X_best, y, event_weights, tol);
+    } else if (method == "RWLS") {
+        coeffs = robust_weighted_lsq_coeffs_cpp(
+            X_best, y, event_weights, 1.345, rwls_max_iter, 1e-6, tol
+        );
+    } else if (method == "NNLS") {
+        coeffs = nnls_lawson_hanson_cpp(A_best, y, tol, max_outer, max_inner);
+    }
+
+    for (arma::uword f = 0; f < fluor_idx.n_elem; ++f) {
+        A_out(i, fluor_idx(f)) = coeffs(f);
+    }
+    A_out(i, af_idx(best_k)) = coeffs(fluor_idx.n_elem);
+}
+
+struct BestAfWorker : public RcppParallel::Worker {
+    const arma::mat& Y;
+    const arma::uvec& fluor_idx;
+    const arma::uvec& af_idx;
+    const std::string& method;
+    const arma::vec& noise_floor;
+    const arma::vec& signal_scale;
+    const double max_weight_ratio;
+    const double tol;
+    const int max_outer;
+    const int max_inner;
+    const int rwls_max_iter;
+    const std::vector<arma::mat>& X_list;
+    const std::vector<arma::mat>& A_list;
+    const std::vector<arma::mat>& P_list;
+    const std::vector<bool>& ols_candidate_ok;
+    arma::mat& A_out;
+
+    BestAfWorker(const arma::mat& Y,
+                 const arma::uvec& fluor_idx,
+                 const arma::uvec& af_idx,
+                 const std::string& method,
+                 const arma::vec& noise_floor,
+                 const arma::vec& signal_scale,
+                 const double max_weight_ratio,
+                 const double tol,
+                 const int max_outer,
+                 const int max_inner,
+                 const int rwls_max_iter,
+                 const std::vector<arma::mat>& X_list,
+                 const std::vector<arma::mat>& A_list,
+                 const std::vector<arma::mat>& P_list,
+                 const std::vector<bool>& ols_candidate_ok,
+                 arma::mat& A_out)
+        : Y(Y), fluor_idx(fluor_idx), af_idx(af_idx), method(method),
+          noise_floor(noise_floor), signal_scale(signal_scale),
+          max_weight_ratio(max_weight_ratio), tol(tol), max_outer(max_outer),
+          max_inner(max_inner), rwls_max_iter(rwls_max_iter), X_list(X_list),
+          A_list(A_list), P_list(P_list), ols_candidate_ok(ols_candidate_ok),
+          A_out(A_out) {}
+
+    void operator()(std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            unmix_best_af_event(
+                Y, fluor_idx, af_idx, method, noise_floor, signal_scale,
+                max_weight_ratio, tol, max_outer, max_inner, rwls_max_iter,
+                X_list, A_list, P_list, ols_candidate_ok, A_out,
+                static_cast<arma::uword>(i)
+            );
+        }
+    }
+};
+
 } // namespace
 
 // [[Rcpp::export]]
@@ -534,16 +806,19 @@ arma::mat spectreasy_nnls_unmix_cpp(const arma::mat& Y,
                                     const arma::mat& M,
                                     const double tol = 1e-10,
                                     const int max_outer = 500,
-                                    const int max_inner = 500) {
+                                    const int max_inner = 500,
+                                    const int n_threads = 1) {
     const arma::uword n_cells = Y.n_rows;
     const arma::uword n_markers = M.n_rows;
     arma::mat A_out(n_cells, n_markers, arma::fill::zeros);
     arma::mat A = M.t();
 
-    for (arma::uword i = 0; i < n_cells; ++i) {
-        arma::vec b = Y.row(i).t();
-        arma::vec x = nnls_lawson_hanson_cpp(A, b, tol, max_outer, max_inner);
-        A_out.row(i) = x.t();
+    NnlsWorker worker(Y, A, tol, max_outer, max_inner, A_out);
+    const int threads = std::max(1, n_threads);
+    if (threads > 1 && n_cells > 1) {
+        RcppParallel::parallelFor(0, n_cells, worker, 128, threads);
+    } else {
+        worker(0, n_cells);
     }
 
     return A_out;
@@ -555,16 +830,21 @@ arma::mat spectreasy_wls_unmix_cpp(const arma::mat& Y,
                                    const arma::vec& noise_floor,
                                    const arma::vec& signal_scale,
                                    const double max_weight_ratio = 1600.0,
-                                   const double tol = 1e-10) {
+                                   const double tol = 1e-10,
+                                   const int n_threads = 1) {
     const arma::uword n_cells = Y.n_rows;
     const arma::uword n_markers = M.n_rows;
     arma::mat A_out(n_cells, n_markers, arma::fill::zeros);
 
-    for (arma::uword i = 0; i < n_cells; ++i) {
-        arma::vec y = Y.row(i).t();
-        arma::vec weights = wls_event_weights_cpp(y, noise_floor, signal_scale, max_weight_ratio);
-        arma::vec coeffs = weighted_lsq_coeffs_cpp(M, y, weights, tol);
-        A_out.row(i) = coeffs.t();
+    if (noise_floor.n_elem != Y.n_cols || signal_scale.n_elem != Y.n_cols) {
+        Rcpp::stop("WLS noise_floor and signal_scale must match the number of detectors.");
+    }
+    WlsWorker worker(Y, M, noise_floor, signal_scale, max_weight_ratio, tol, A_out);
+    const int threads = std::max(1, n_threads);
+    if (threads > 1 && n_cells > 1) {
+        RcppParallel::parallelFor(0, n_cells, worker, 128, threads);
+    } else {
+        worker(0, n_cells);
     }
 
     return A_out;
@@ -579,21 +859,61 @@ arma::mat spectreasy_rwls_unmix_cpp(const arma::mat& Y,
                                     const double huber_k = 1.345,
                                     const int max_iter = 1,
                                     const double robust_tol = 1e-6,
-                                    const double tol = 1e-10) {
+                                    const double tol = 1e-10,
+                                    const int n_threads = 1) {
     const arma::uword n_cells = Y.n_rows;
     const arma::uword n_markers = M.n_rows;
     arma::mat A_out(n_cells, n_markers, arma::fill::zeros);
 
-    for (arma::uword i = 0; i < n_cells; ++i) {
-        arma::vec y = Y.row(i).t();
-        arma::vec weights = wls_event_weights_cpp(y, noise_floor, signal_scale, max_weight_ratio);
-        arma::vec coeffs = robust_weighted_lsq_coeffs_cpp(
-            M, y, weights, huber_k, max_iter, robust_tol, tol
-        );
-        A_out.row(i) = coeffs.t();
+    if (noise_floor.n_elem != Y.n_cols || signal_scale.n_elem != Y.n_cols) {
+        Rcpp::stop("WLS noise_floor and signal_scale must match the number of detectors.");
+    }
+    RwlsWorker worker(
+        Y, M, noise_floor, signal_scale, max_weight_ratio,
+        huber_k, max_iter, robust_tol, tol, A_out
+    );
+    const int threads = std::max(1, n_threads);
+    if (threads > 1 && n_cells > 1) {
+        RcppParallel::parallelFor(0, n_cells, worker, 128, threads);
+    } else {
+        worker(0, n_cells);
     }
 
     return A_out;
+}
+
+// [[Rcpp::export]]
+Rcpp::IntegerVector spectreasy_autospectral_assign_cpp(const arma::mat& Y,
+                                                        const arma::mat& unmixed_markers,
+                                                        const arma::mat& v_library,
+                                                        const arma::mat& r_library,
+                                                        const arma::vec& denominator,
+                                                        const arma::uvec& valid_indices,
+                                                        const int n_threads = 1) {
+    if (Y.n_rows != unmixed_markers.n_rows || Y.n_cols != r_library.n_rows ||
+        v_library.n_rows != unmixed_markers.n_cols ||
+        v_library.n_cols != r_library.n_cols || denominator.n_elem != r_library.n_cols) {
+        Rcpp::stop("AutoSpectral assignment inputs have incompatible dimensions.");
+    }
+    if (valid_indices.n_elem == 0) {
+        Rcpp::stop("AutoSpectral assignment requires at least one valid AF spectrum.");
+    }
+    if (valid_indices.max() >= r_library.n_cols) {
+        Rcpp::stop("AutoSpectral assignment valid_indices are out of bounds.");
+    }
+
+    Rcpp::IntegerVector assignments(Y.n_rows, 1);
+    AutospectralAssignmentWorker worker(
+        Y, unmixed_markers, v_library, r_library, denominator,
+        valid_indices, assignments
+    );
+    const int threads = std::max(1, n_threads);
+    if (threads > 1 && Y.n_rows > 1) {
+        RcppParallel::parallelFor(0, Y.n_rows, worker, 128, threads);
+    } else {
+        worker(0, Y.n_rows);
+    }
+    return assignments;
 }
 
 // [[Rcpp::export]]
@@ -680,81 +1000,16 @@ arma::mat spectreasy_unmix_best_af_cpp(const arma::mat& Y,
         Rcpp::stop("No usable AF candidate model for OLS unmixing; all candidate matrices are singular or ill-conditioned.");
     }
 
-    for (arma::uword i = 0; i < n_cells; ++i) {
-        arma::vec y = Y.row(i).t();
-        arma::vec event_weights;
-        if (method == "WLS" || method == "RWLS") {
-            event_weights = wls_event_weights_cpp(y, noise_floor, signal_scale, max_weight_ratio);
-        }
-
-        // 1. Find the best AF band index k*. For WLS, use weighted RSS;
-        // otherwise use the existing OLS projection selection.
-        double min_rss = std::numeric_limits<double>::max();
-        arma::uword best_k = 0;
-        arma::vec best_coeffs(n_fluors + 1, arma::fill::zeros);
-        bool have_best_coeffs = false;
-
-        for (arma::uword k = 0; k < n_af; ++k) {
-            double rss;
-            arma::vec coeffs_k(n_fluors + 1, arma::fill::zeros);
-            const arma::mat& X_k = X_list[k];
-            const arma::mat& A_k = A_list[k];
-
-            if (method == "WLS" || method == "RWLS") {
-                coeffs_k = weighted_lsq_coeffs_cpp(X_k, y, event_weights, tol);
-                arma::vec resid = y - A_k * coeffs_k;
-                rss = arma::dot(event_weights % resid, resid);
-            } else if (method == "NNLS") {
-                coeffs_k = nnls_lawson_hanson_cpp(A_k, y, tol, max_outer, max_inner);
-                arma::vec resid = y - A_k * coeffs_k;
-                rss = arma::dot(resid, resid);
-            } else {
-                if (!ols_candidate_ok[k]) {
-                    continue;
-                }
-                arma::vec resid = y - P_list[k] * y;
-                rss = arma::dot(resid, resid);
-            }
-
-            if (rss < min_rss) {
-                min_rss = rss;
-                best_k = k;
-                best_coeffs = coeffs_k;
-                have_best_coeffs = (method == "WLS" || method == "NNLS");
-            }
-        }
-
-        // 2. Build the model matrix X for the selected best_k.
-        if (min_rss == std::numeric_limits<double>::max()) {
-            Rcpp::stop("No usable AF candidate model for event %d; all candidate matrices are singular or ill-conditioned.", static_cast<int>(i + 1));
-        }
-
-        const arma::mat& X_best = X_list[best_k];
-        const arma::mat& A_best = A_list[best_k];
-
-        // 3. Unmix the cell using the selected model.
-        arma::vec coeffs(n_fluors + 1, arma::fill::zeros);
-        if (method == "OLS") {
-            arma::mat AtA = A_best.t() * A_best;
-            coeffs = safe_inverse_cpp(AtA, tol) * A_best.t() * y;
-        } else if (method == "WLS") {
-            if (have_best_coeffs) {
-                coeffs = best_coeffs;
-            } else {
-                arma::vec weights = event_weights;
-                coeffs = weighted_lsq_coeffs_cpp(X_best, y, weights, tol);
-            }
-        } else if (method == "RWLS") {
-            coeffs = robust_weighted_lsq_coeffs_cpp(X_best, y, event_weights, 1.345, rwls_max_iter, 1e-6, tol);
-        } else if (method == "NNLS") {
-            coeffs = nnls_lawson_hanson_cpp(A_best, y, tol, max_outer, max_inner);
-        }
-
-        // 4. Map the resulting coefficients back to the full reference matrix layout.
-        for (arma::uword f = 0; f < n_fluors; ++f) {
-            A_out(i, fluor_idx(f)) = coeffs(f);
-        }
-        A_out(i, af_idx(best_k)) = coeffs(n_fluors);
+    BestAfWorker worker(
+        Y, fluor_idx, af_idx, method, noise_floor, signal_scale,
+        max_weight_ratio, tol, max_outer, max_inner, rwls_max_iter,
+        X_list, A_list, P_list, ols_candidate_ok, A_out
+    );
+    const int threads = std::max(1, n_threads);
+    if (threads > 1 && n_cells > 1) {
+        RcppParallel::parallelFor(0, n_cells, worker, 128, threads);
+    } else {
+        worker(0, n_cells);
     }
 
     if (method == "OLS" && skipped_ols_candidates > 0) {

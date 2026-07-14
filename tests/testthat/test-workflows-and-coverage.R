@@ -380,7 +380,7 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
         output_dir = output_dir,
         unmixing_method = "OLS",
         n_threads = 2,
-        save_qc_plots = TRUE,
+        save_qc_png = TRUE,
         seed = 1,
         subsample_n = 400
     )

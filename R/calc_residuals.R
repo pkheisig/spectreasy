@@ -2,7 +2,7 @@
     .normalize_positive_integer(rwls_max_iter, "rwls_max_iter")
 }
 
-.normalize_unmix_threads <- function(n_threads) {
+.normalize_n_threads <- function(n_threads) {
     .normalize_positive_integer(n_threads, "n_threads")
 }
 
@@ -33,7 +33,7 @@
     if (method %in% c("AutoSpectral", "Spectreasy")) "OLS" else method
 }
 
-.unmix_with_fixed_reference <- function(Y, M, method, wls_noise, rwls_max_iter) {
+.unmix_with_fixed_reference <- function(Y, M, method, wls_noise, rwls_max_iter, n_threads = 1L) {
     if (method == "OLS") {
         matrix_to_invert <- M %*% t(M)
         if (rcond(matrix_to_invert) < 1e-10) {
@@ -42,7 +42,7 @@
         return(Y %*% t(M) %*% solve(matrix_to_invert))
     }
     if (method == "NNLS") {
-        return(spectreasy_nnls_unmix_cpp(Y = Y, M = M))
+        return(spectreasy_nnls_unmix_cpp(Y = Y, M = M, n_threads = n_threads))
     }
     if (method == "WLS") {
         return(spectreasy_wls_unmix_cpp(
@@ -50,7 +50,8 @@
             M = M,
             noise_floor = wls_noise$noise_floor,
             signal_scale = wls_noise$signal_scale,
-            max_weight_ratio = wls_noise$max_weight_ratio
+            max_weight_ratio = wls_noise$max_weight_ratio,
+            n_threads = n_threads
         ))
     }
     if (method == "RWLS") {
@@ -60,7 +61,8 @@
             noise_floor = wls_noise$noise_floor,
             signal_scale = wls_noise$signal_scale,
             max_weight_ratio = wls_noise$max_weight_ratio,
-            max_iter = rwls_max_iter
+            max_iter = rwls_max_iter,
+            n_threads = n_threads
         ))
     }
     stop("method must be one of: AutoSpectral, Spectreasy, OLS, NNLS, WLS, RWLS", call. = FALSE)
@@ -118,7 +120,7 @@
     weights
 }
 
-.spectreasy_marker_only_baseline_fit <- function(Y, M) {
+.spectreasy_marker_only_baseline_fit <- function(Y, M, n_threads = 1L) {
     af_match <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
     marker_M <- M[!af_match, , drop = FALSE]
     if (nrow(marker_M) == 0L) {
@@ -129,14 +131,15 @@
         M = marker_M,
         method = "OLS",
         wls_noise = list(noise_floor = numeric(0), signal_scale = numeric(0), max_weight_ratio = .default_wls_max_weight_ratio()),
-        rwls_max_iter = 1L
+        rwls_max_iter = 1L,
+        n_threads = n_threads
     )
     colnames(baseline) <- rownames(marker_M)
     baseline
 }
 
-.apply_spectreasy_decoder_blend <- function(Y, M, autospectral_A, spectreasy_weight_quantile = 0.9) {
-    baseline_A <- .spectreasy_marker_only_baseline_fit(Y = Y, M = M)
+.apply_spectreasy_decoder_blend <- function(Y, M, autospectral_A, spectreasy_weight_quantile = 0.9, n_threads = 1L) {
+    baseline_A <- .spectreasy_marker_only_baseline_fit(Y = Y, M = M, n_threads = n_threads)
     out_A <- autospectral_A
     marker_weights <- .decoder_projected_af_marker_weights(
         M,
@@ -151,7 +154,7 @@
     out_A
 }
 
-.autospectral_assign_af_fluorophores <- function(Y, marker_spectra, af_spectra, tol = 1e-10) {
+.autospectral_assign_af_fluorophores <- function(Y, marker_spectra, af_spectra, tol = 1e-10, n_threads = 1L) {
     Y <- as.matrix(Y)
     marker_spectra <- as.matrix(marker_spectra)
     af_spectra <- as.matrix(af_spectra)
@@ -176,19 +179,19 @@
         return(rep(1L, nrow(Y)))
     }
 
-    numerator <- Y %*% r_library
-    k_matrix <- matrix(0, nrow = nrow(Y), ncol = nrow(af_spectra))
-    k_matrix[, valid] <- sweep(numerator[, valid, drop = FALSE], 2, denominator[valid], "/")
     unmixed_markers <- Y %*% t(unmixing_matrix)
-    error_matrix <- matrix(Inf, nrow = nrow(Y), ncol = nrow(af_spectra))
-    for (i in which(valid)) {
-        adjusted <- unmixed_markers - k_matrix[, i, drop = FALSE] %*% t(v_library[, i, drop = FALSE])
-        error_matrix[, i] <- rowSums(abs(adjusted))
-    }
-    max.col(-error_matrix, ties.method = "first")
+    as.integer(spectreasy_autospectral_assign_cpp(
+        Y = Y,
+        unmixed_markers = unmixed_markers,
+        v_library = v_library,
+        r_library = r_library,
+        denominator = denominator,
+        valid_indices = as.integer(which(valid) - 1L),
+        n_threads = n_threads
+    ))
 }
 
-.autospectral_unmix_legacy <- function(Y, M, tol = 1e-10) {
+.autospectral_unmix_legacy <- function(Y, M, tol = 1e-10, n_threads = 1L) {
     Y <- as.matrix(Y)
     M <- .as_reference_matrix(M, "M")
     af_match <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
@@ -200,7 +203,8 @@
             M = M,
             method = "OLS",
             wls_noise = list(noise_floor = numeric(0), signal_scale = numeric(0), max_weight_ratio = .default_wls_max_weight_ratio()),
-            rwls_max_iter = 1L
+            rwls_max_iter = 1L,
+            n_threads = n_threads
         )
         return(list(
             A = A,
@@ -229,7 +233,8 @@
         Y = Y,
         marker_spectra = marker_spectra,
         af_spectra = af_assignment_spectra,
-        tol = tol
+        tol = tol,
+        n_threads = n_threads
     )
     selected_af <- af_assignment_map[assignments_raw]
     selected_af[!is.finite(selected_af)] <- 1L
@@ -245,7 +250,8 @@
             M = X,
             method = "OLS",
             wls_noise = list(noise_floor = numeric(0), signal_scale = numeric(0), max_weight_ratio = .default_wls_max_weight_ratio()),
-            rwls_max_iter = 1L
+            rwls_max_iter = 1L,
+            n_threads = n_threads
         )
         A[event_idx, rows] <- coeff
         fitted[event_idx, ] <- coeff %*% X
@@ -283,8 +289,10 @@
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
-#' @param n_threads Positive integer; number of threads to use for event-wise
-#'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
+#' @param n_threads Positive integer; number of threads for event-wise
+#'   AutoSpectral/Spectreasy AF assignment and NNLS/WLS/RWLS fitting. OLS uses
+#'   vectorized matrix operations. The default, 1, keeps explicit event loops
+#'   single-threaded.
 #' @param spectral_variant_library Optional per-fluorophore spectral-variant
 #'   library learned from single-color controls. Used only with
 #'   `method = "AutoSpectral"` or `"Spectreasy"`.
@@ -352,7 +360,7 @@ calc_residuals <- function(flow_frame,
     }
     M <- .as_reference_matrix(M, "M")
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
-    n_threads <- .normalize_unmix_threads(n_threads)
+    n_threads <- .normalize_n_threads(n_threads)
     spectral_variant_top_k <- .normalize_positive_integer(spectral_variant_top_k, "spectral_variant_top_k")
     spectral_variant_min_abundance <- .normalize_numeric_scalar(
         spectral_variant_min_abundance, "spectral_variant_min_abundance", lower = 0
@@ -434,7 +442,7 @@ calc_residuals <- function(flow_frame,
 
     autospectral_fit <- NULL
     if (.is_autospectral_style_method(method)) {
-        autospectral_fit <- .autospectral_unmix_legacy(Y = Y, M = M)
+        autospectral_fit <- .autospectral_unmix_legacy(Y = Y, M = M, n_threads = n_threads)
         A <- autospectral_fit$A
         Fitted <- autospectral_fit$fitted
     } else if (sum(af_match) > 1) {
@@ -461,14 +469,15 @@ calc_residuals <- function(flow_frame,
             }
             A <- Y %*% Mt %*% solve(matrix_to_invert)
         } else if (solver_method == "NNLS") {
-            A <- spectreasy_nnls_unmix_cpp(Y = Y, M = M)
+            A <- spectreasy_nnls_unmix_cpp(Y = Y, M = M, n_threads = n_threads)
         } else if (solver_method == "WLS") {
             A <- spectreasy_wls_unmix_cpp(
                 Y = Y,
                 M = M,
                 noise_floor = wls_noise$noise_floor,
                 signal_scale = wls_noise$signal_scale,
-                max_weight_ratio = wls_noise$max_weight_ratio
+                max_weight_ratio = wls_noise$max_weight_ratio,
+                n_threads = n_threads
             )
         } else if (solver_method == "RWLS") {
             A <- spectreasy_rwls_unmix_cpp(
@@ -477,7 +486,8 @@ calc_residuals <- function(flow_frame,
                 noise_floor = wls_noise$noise_floor,
                 signal_scale = wls_noise$signal_scale,
                 max_weight_ratio = wls_noise$max_weight_ratio,
-                max_iter = rwls_max_iter
+                max_iter = rwls_max_iter,
+                n_threads = n_threads
             )
         }
     }
@@ -492,6 +502,7 @@ calc_residuals <- function(flow_frame,
             wls_noise = wls_noise,
             rwls_max_iter = rwls_max_iter,
             spectral_variant_library = spectral_variant_library,
+            n_threads = n_threads,
             top_k = spectral_variant_top_k,
             min_abundance = spectral_variant_min_abundance,
             positive_fraction = spectral_variant_positive_fraction,
@@ -507,7 +518,8 @@ calc_residuals <- function(flow_frame,
             Y = Y,
             M = M,
             autospectral_A = A,
-            spectreasy_weight_quantile = spectreasy_weight_quantile
+            spectreasy_weight_quantile = spectreasy_weight_quantile,
+            n_threads = n_threads
         )
         spectreasy_decoder_weights <- attr(A, "spectreasy_decoder_weights")
         Fitted <- A %*% M

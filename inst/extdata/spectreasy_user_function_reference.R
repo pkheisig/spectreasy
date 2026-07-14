@@ -43,7 +43,7 @@
         gating_file = manual_gate_file,
         rwls_max_iter = 1L,
         n_threads = 1L,
-        save_qc_plots = FALSE,
+        save_qc_png = FALSE,
         save_report = TRUE,
         report_format = "html",
         scc_background_method = c("scatter_knn", "none"),
@@ -58,8 +58,7 @@
         autospectral_n_candidates = 1000L,
         autospectral_n_spectral = 200L,
         autospectral_min_events = 10L,
-        refine = FALSE,
-        unmix_threads = NULL
+        autospectral_refine = FALSE
         # Additional build_reference_matrix() arguments can be passed here.
     )
 
@@ -354,6 +353,7 @@
         autospectral_n_spectral = 200L,
         autospectral_min_events = 10L,
         refine = FALSE,
+        n_threads = 1L,
         histogram_pct_beads = 0.98,
         histogram_direction_beads = "right",
         histogram_pct_cells = 0.35,

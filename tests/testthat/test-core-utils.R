@@ -290,7 +290,11 @@ test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_false("subsample_n" %in% names(formals(spectreasy::unmix_samples)))
     expect_true("rwls_max_iter" %in% names(formals(spectreasy::unmix_controls)))
     expect_true("n_threads" %in% names(formals(spectreasy::unmix_controls)))
-    expect_true("unmix_threads" %in% names(formals(spectreasy::unmix_controls)))
+    expect_false("unmix_threads" %in% names(formals(spectreasy::unmix_controls)))
+    expect_true("save_qc_png" %in% names(formals(spectreasy::unmix_controls)))
+    expect_true("autospectral_refine" %in% names(formals(spectreasy::unmix_controls)))
+    expect_false("save_qc_plots" %in% names(formals(spectreasy::unmix_controls)))
+    expect_false("refine" %in% names(formals(spectreasy::unmix_controls)))
     expect_true("estimate_af" %in% names(formals(spectreasy::unmix_samples)))
     expect_true("unmixing_method" %in% names(formals(spectreasy::adjust_matrix)))
     expect_false(formals(spectreasy::unmix_samples)$estimate_af)
@@ -300,15 +304,23 @@ test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_equal(formals(spectreasy::adjust_matrix)$unmixing_method, "Spectreasy")
 })
 
-test_that("unmix_controls validates canonical and compatibility thread arguments", {
+test_that("unmix_controls validates n_threads", {
     expect_error(
         spectreasy::unmix_controls(scc_dir = tempfile(), n_threads = 0),
         "n_threads must be an integer >= 1"
     )
-    expect_error(
-        spectreasy::unmix_controls(scc_dir = tempfile(), n_threads = 2, unmix_threads = 3),
-        "n_threads and unmix_threads must match"
-    )
+})
+
+test_that("unmix_controls rejects removed parameter names", {
+    for (removed_arg in c("unmix_threads", "save_qc_plots", "refine")) {
+        args <- list(scc_dir = tempfile())
+        args[[removed_arg]] <- FALSE
+        expect_error(
+            do.call(spectreasy::unmix_controls, args),
+            paste0("no longer accepts: ", removed_arg),
+            fixed = TRUE
+        )
+    }
 })
 
 test_that("calc_residuals multi-AF RWLS honors rwls_max_iter", {
@@ -540,6 +552,77 @@ test_that("multi-AF WLS threading matches single-threaded output", {
         spectreasy::calc_residuals(ff, M, method = "WLS", n_threads = 0),
         "n_threads must be an integer >= 1"
     )
+})
+
+test_that("event-wise solvers match across thread counts", {
+    set.seed(20260714)
+    M <- rbind(
+        FITC = c(1.00, 0.20, 0.05, 0.02),
+        PE = c(0.08, 1.00, 0.18, 0.04),
+        APC = c(0.03, 0.10, 1.00, 0.20),
+        AF = c(0.30, 0.24, 0.15, 0.10),
+        AF_2 = c(0.07, 0.17, 0.29, 0.40)
+    )
+    colnames(M) <- c("B1-A", "YG1-A", "R1-A", "V1-A")
+    n <- 320L
+    marker_coeffs <- matrix(rexp(n * 3L, rate = 0.02), nrow = n)
+    af_choice <- sample.int(2L, n, replace = TRUE)
+    af_coeffs <- matrix(0, nrow = n, ncol = 2L)
+    af_coeffs[cbind(seq_len(n), af_choice)] <- rexp(n, rate = 0.025)
+    Y <- cbind(marker_coeffs, af_coeffs) %*% M
+    colnames(Y) <- colnames(M)
+    ff <- flowCore::flowFrame(Y)
+
+    for (method in c("AutoSpectral", "Spectreasy", "OLS", "NNLS", "WLS", "RWLS")) {
+        args <- list(flow_frame = ff, M = M, method = method)
+        if (identical(method, "RWLS")) args$rwls_max_iter <- 2L
+        single <- do.call(spectreasy::calc_residuals, c(args, list(n_threads = 1L)))
+        threaded <- do.call(spectreasy::calc_residuals, c(args, list(n_threads = 2L)))
+        expect_equal(
+            as.matrix(threaded[, rownames(M)]),
+            as.matrix(single[, rownames(M)]),
+            tolerance = 1e-8,
+            info = method
+        )
+    }
+})
+
+test_that("threaded AutoSpectral AF assignment preserves the reference calculation", {
+    set.seed(20260715)
+    marker_spectra <- rbind(
+        FITC = c(1.00, 0.12, 0.03, 0.01),
+        PE = c(0.06, 1.00, 0.14, 0.02)
+    )
+    af_spectra <- rbind(
+        AF = c(0.35, 0.28, 0.16, 0.10),
+        AF_2 = c(0.08, 0.17, 0.31, 0.42),
+        AF_3 = c(0.18, 0.35, 0.22, 0.16)
+    )
+    colnames(marker_spectra) <- colnames(af_spectra) <- paste0("D", 1:4)
+    Y <- matrix(rexp(320L * 4L, rate = 0.01), ncol = 4L)
+    colnames(Y) <- colnames(marker_spectra)
+
+    unmixing_matrix <- solve(marker_spectra %*% t(marker_spectra), marker_spectra)
+    marker_t <- t(marker_spectra)
+    v_library <- unmixing_matrix %*% t(af_spectra)
+    r_library <- t(af_spectra) - marker_t %*% v_library
+    denominator <- colSums(r_library^2)
+    numerator <- Y %*% r_library
+    k_matrix <- sweep(numerator, 2, denominator, "/")
+    unmixed_markers <- Y %*% t(unmixing_matrix)
+    error_matrix <- vapply(seq_len(nrow(af_spectra)), function(i) {
+        rowSums(abs(unmixed_markers - k_matrix[, i, drop = FALSE] %*% t(v_library[, i, drop = FALSE])))
+    }, numeric(nrow(Y)))
+    expected <- max.col(-error_matrix, ties.method = "first")
+
+    single <- spectreasy:::.autospectral_assign_af_fluorophores(
+        Y, marker_spectra, af_spectra, n_threads = 1L
+    )
+    threaded <- spectreasy:::.autospectral_assign_af_fluorophores(
+        Y, marker_spectra, af_spectra, n_threads = 2L
+    )
+    expect_identical(single, expected)
+    expect_identical(threaded, expected)
 })
 
 test_that("saved static unmixing matrices are rejected where reference matrices are expected", {

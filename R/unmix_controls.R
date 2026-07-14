@@ -349,9 +349,11 @@
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
-#' @param n_threads Positive integer; number of threads to use for event-wise
-#'   multi-AF WLS/RWLS SCC unmixing. The default, 1, keeps execution single-threaded.
-#' @param save_qc_plots Logical; whether to write per-control FSC/SSC,
+#' @param n_threads Positive integer; number of threads for event-wise
+#'   AutoSpectral/Spectreasy AF assignment and NNLS/WLS/RWLS SCC fitting. OLS
+#'   uses vectorized matrix operations. The default, 1, keeps explicit event
+#'   loops single-threaded.
+#' @param save_qc_png Logical; whether to write per-control FSC/SSC,
 #'   intensity-gate, and spectrum PNGs under `output_dir`.
 #' @param save_report Logical; if `TRUE`, write the SCC QC report
 #'   automatically after controls are unmixed. Defaults to `TRUE`.
@@ -393,11 +395,9 @@
 #'   kept for spectrum calculation by the AutoSpectral-style selector.
 #' @param autospectral_min_events Minimum event count required by the
 #'   AutoSpectral-style SCC selector.
-#' @param refine Logical; when `unmixing_method = "AutoSpectral"`, refine the
+#' @param autospectral_refine Logical; when `unmixing_method = "AutoSpectral"`, refine the
 #'   fixed-size k-means AF bank with native AutoSpectral-style unstained residual
 #'   modulation. `TRUE` is rejected for all other unmixing methods.
-#' @param unmix_threads Deprecated compatibility alias for `n_threads`. New code
-#'   should use `n_threads`.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #'
 #' @return List with `M`, `W`, `unmixed_list`, the effective `gating_mode`, the
@@ -430,7 +430,7 @@ unmix_controls <- function(
     af_min_cluster_proportion = 0.005,
     rwls_max_iter = 1L,
     n_threads = 1L,
-    save_qc_plots = FALSE,
+    save_qc_png = FALSE,
     save_report = TRUE,
     report_format = "html",
     gating_mode = "interactive",
@@ -447,27 +447,20 @@ unmix_controls <- function(
     autospectral_n_candidates = 1000L,
     autospectral_n_spectral = 200L,
     autospectral_min_events = 10L,
-    refine = FALSE,
-    unmix_threads = NULL,
+    autospectral_refine = FALSE,
     ...
 ) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     manual_gate_file_missing <- missing(manual_gate_file)
     gating_file_missing <- missing(gating_file)
-    n_threads_missing <- missing(n_threads)
     report_format <- .match_arg_ci(report_format, c("html", "pdf"), "report_format")
     gating_mode <- .match_arg_ci(
         gating_mode,
         c("interactive", "reuse", "automatic"),
         "gating_mode"
     )
-    if (!is.null(unmix_threads)) {
-        if (!n_threads_missing && !identical(as.integer(n_threads[1]), as.integer(unmix_threads[1]))) {
-            stop("n_threads and unmix_threads must match when both are supplied.", call. = FALSE)
-        }
-        n_threads <- unmix_threads
-    }
-    n_threads <- .normalize_unmix_threads(n_threads)
+    n_threads <- .normalize_n_threads(n_threads)
+    save_qc_png <- .normalize_scalar_logical(save_qc_png, "save_qc_png")
     auto_unknown_fluor_policy <- .match_arg_ci(
         auto_unknown_fluor_policy,
         c("by_channel", "empty", "filename"),
@@ -476,9 +469,9 @@ unmix_controls <- function(
     unmixing_method <- .normalize_unmix_method(unmixing_method)
     use_autospectral <- .is_autospectral_style_method(unmixing_method)
     use_refine <- identical(unmixing_method, "AutoSpectral")
-    refine <- .validate_reference_refine_arg(refine)
-    if (isTRUE(refine) && !use_refine) {
-        stop("refine = TRUE is only accepted when unmixing_method = \"AutoSpectral\".", call. = FALSE)
+    autospectral_refine <- .validate_reference_refine_arg(autospectral_refine)
+    if (isTRUE(autospectral_refine) && !use_refine) {
+        stop("autospectral_refine = TRUE is only accepted when unmixing_method = \"AutoSpectral\".", call. = FALSE)
     }
     if (!identical(unmixing_method, "Spectreasy") && !spectreasy_weight_quantile_missing) {
         stop("spectreasy_weight_quantile is only accepted when unmixing_method = \"Spectreasy\".", call. = FALSE)
@@ -493,6 +486,14 @@ unmix_controls <- function(
     )
     .with_optional_seed(seed)
     extra_args <- list(...)
+    removed_args <- intersect(names(extra_args), c("unmix_threads", "save_qc_plots", "refine"))
+    if (length(removed_args) > 0L) {
+        stop(
+            "unmix_controls() no longer accepts: ", paste(removed_args, collapse = ", "),
+            ". Use n_threads, save_qc_png, and autospectral_refine.",
+            call. = FALSE
+        )
+    }
     if ("manual_gating" %in% names(extra_args)) {
         stop(
             "manual_gating has been replaced by gating_mode. Use ",
@@ -603,8 +604,8 @@ unmix_controls <- function(
         output_file <- file.path(qc_controls_dir, paste0("qc_controls_report.", report_format))
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
     }
-    build_qc_plots <- isTRUE(save_qc_plots) || isTRUE(save_report)
-    build_output_folder <- if (isTRUE(save_qc_plots)) {
+    build_qc_plots <- isTRUE(save_qc_png) || isTRUE(save_report)
+    build_output_folder <- if (isTRUE(save_qc_png)) {
         output_dir
     } else if (isTRUE(save_report)) {
         tempfile("scc_report_plots_")
@@ -627,7 +628,8 @@ unmix_controls <- function(
         autospectral_n_candidates = autospectral_n_candidates,
         autospectral_n_spectral = autospectral_n_spectral,
         autospectral_min_events = autospectral_min_events,
-        refine = refine,
+        refine = autospectral_refine,
+        n_threads = n_threads,
         seed = seed
     ), extra_args)
     M <- do.call(build_reference_matrix, build_args)
@@ -675,7 +677,7 @@ unmix_controls <- function(
     p_spectra <- if (nrow(M_fluor) > 0) {
         .run_optional_unmix_artifact(
             "SCC spectra plot",
-            plot_spectra(M_fluor, pd = meta_info$pd, output_file = if (isTRUE(save_qc_plots)) output_paths$spectra_file else NULL)
+            plot_spectra(M_fluor, pd = meta_info$pd, output_file = if (isTRUE(save_qc_png)) output_paths$spectra_file else NULL)
         )
     } else {
         NULL
@@ -684,7 +686,7 @@ unmix_controls <- function(
     p_af_spectra <- if (nrow(M_af) > 0) {
         .run_optional_unmix_artifact(
             "AF spectra plot",
-            plot_spectra(M_af, pd = meta_info$pd, output_file = if (isTRUE(save_qc_plots)) output_paths$af_spectra_file else NULL)
+            plot_spectra(M_af, pd = meta_info$pd, output_file = if (isTRUE(save_qc_png)) output_paths$af_spectra_file else NULL)
         )
     } else {
         NULL
@@ -728,7 +730,7 @@ unmix_controls <- function(
             sample_to_marker = marker_mapping$sample_to_marker,
             markers = scatter_markers,
             marker_display = NULL,
-            output_file = if (isTRUE(save_qc_plots)) output_paths$unmixing_scatter_png else NULL,
+            output_file = if (isTRUE(save_qc_png)) output_paths$unmixing_scatter_png else NULL,
             transform = "none",
             panel_size_mm = unmix_scatter_panel_size_mm,
             seed = seed
@@ -747,14 +749,14 @@ unmix_controls <- function(
                 cytometer = cytometer,
                 unmixing_method = unmixing_method,
                 qc_plot_dir = qc_controls_dir,
-                save_qc_pngs = save_qc_plots,
+                save_qc_pngs = save_qc_png,
                 qc_metrics_dir = qc_controls_dir,
                 unmixed_list = unmixed_list,
                 qc_summary = attr(M, "qc_summary"),
                 report_plot_dir = attr(M, "qc_plot_dir"),
                 pd = meta_info$pd,
                 af_bank_info = attr(M, "af_bank_info"),
-                cleanup_report_plot_dir = !isTRUE(save_qc_plots),
+                cleanup_report_plot_dir = !isTRUE(save_qc_png),
                 unmix_scatter_max_points = 1000,
                 seed = seed,
                 unmixing_matrix_file = output_paths$reference_matrix_csv,
@@ -778,7 +780,7 @@ unmix_controls <- function(
                     af_min_cluster_proportion = af_min_cluster_proportion,
                     rwls_max_iter = rwls_max_iter,
                     n_threads = n_threads,
-                    save_qc_plots = save_qc_plots,
+                    save_qc_png = save_qc_png,
                     gating_mode = gating_mode_used,
                     scc_background_method = scc_background_args$method,
                     scc_background_k = scc_background_args$k,
@@ -791,7 +793,7 @@ unmix_controls <- function(
                     autospectral_n_candidates = autospectral_n_candidates,
                     autospectral_n_spectral = autospectral_n_spectral,
                     autospectral_min_events = autospectral_min_events,
-                    refine = refine
+                    autospectral_refine = autospectral_refine
                 )
             )
         )
@@ -815,16 +817,16 @@ unmix_controls <- function(
         qc_metrics_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
         qc_report = qc_report,
         qc_report_data = if (is.list(qc_report)) qc_report$report_data else NULL,
-        spectra_file = if (isTRUE(save_qc_plots)) output_paths$spectra_file else NULL,
-        af_spectra_file = if (isTRUE(save_qc_plots) && nrow(M_af) > 0) output_paths$af_spectra_file else NULL,
-        unmixing_scatter_file = if (isTRUE(save_qc_plots)) output_paths$unmixing_scatter_png else NULL,
-        qc_plot_dir = if (isTRUE(save_qc_plots)) output_dir else NULL,
+        spectra_file = if (isTRUE(save_qc_png)) output_paths$spectra_file else NULL,
+        af_spectra_file = if (isTRUE(save_qc_png) && nrow(M_af) > 0) output_paths$af_spectra_file else NULL,
+        unmixing_scatter_file = if (isTRUE(save_qc_png)) output_paths$unmixing_scatter_png else NULL,
+        qc_plot_dir = if (isTRUE(save_qc_png)) output_dir else NULL,
         gating_mode = gating_mode_used,
         gating_file = manual_gate_file,
         static_unmixing_matrix_method = static_info$static_unmixing_matrix_method,
         spectra_plot = p_spectra,
         af_spectra_plot = p_af_spectra,
         unmixing_scatter_plot = p_scatter,
-        refine = refine
+        autospectral_refine = autospectral_refine
     ))
 }

@@ -421,9 +421,9 @@ export default function CockpitApp() {
             subsample_n: control.subsampleN,
             unmix_scatter_panel_size_mm: control.unmixScatterPanelSizeMm,
             rwls_max_iter: control.rwlsMaxIter,
-            unmix_threads: control.unmixThreads,
+            n_threads: control.unmixThreads,
             seed: control.seed,
-            save_qc_plots: control.saveQcPlots,
+            save_qc_png: control.saveQcPlots,
             save_report: control.saveReport,
             report_format: control.outputFormat,
             scc_background_method: control.sccBackgroundMethod,
@@ -438,7 +438,7 @@ export default function CockpitApp() {
             autospectral_n_candidates: control.autospectralNCandidates,
             autospectral_n_spectral: control.autospectralNSpectral,
             autospectral_min_events: control.autospectralMinEvents,
-            refine: control.refine,
+            autospectral_refine: control.refine,
           }
         : action === "sample"
           ? {

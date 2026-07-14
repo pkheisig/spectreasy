@@ -81,7 +81,7 @@ ctrl <- unmix_controls(
   auto_unknown_fluor_policy = "by_channel",
   gating_mode = "interactive",
   unmix_scatter_panel_size_mm = 30,
-  save_qc_plots = TRUE
+  save_qc_png = TRUE
 )
 ```
 
@@ -132,7 +132,7 @@ Clicking Confirm saves the gate CSV, closes the GUI server, and lets the same `u
 - `spectreasy_outputs/unmix_controls/qc_controls_report.html` -> HTML report with SCC overview and QC plots (see details below)
 - `spectreasy_outputs/unmix_controls/qc_controls_report_nxn.png` -> high-resolution control NxN matrix linked from the HTML report
 
-2) These are already part of `qc_controls_report.html` and only saved separately when `save_qc_plots = TRUE`, so you can use the plot somewhere as a standalone PNG file.
+2) These are already part of `qc_controls_report.html` and only saved separately when `save_qc_png = TRUE`, so you can use the plot somewhere as a standalone PNG file.
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`
 - `spectreasy_outputs/unmix_controls/scc_spectra.png`
 - `spectreasy_outputs/unmix_controls/scc_af_spectra.png`

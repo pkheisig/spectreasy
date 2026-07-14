@@ -26,7 +26,7 @@
             af_min_cluster_proportion = 0.005,
             rwls_max_iter = 1L,
             n_threads = 1L,
-            save_qc_plots = FALSE,
+            save_qc_png = FALSE,
             gating_mode = "interactive",
             scc_background_method = "scatter_knn",
             scc_background_k = 2L,
@@ -39,7 +39,7 @@
             autospectral_n_candidates = 1000L,
             autospectral_n_spectral = 200L,
             autospectral_min_events = 10L,
-            refine = FALSE,
+            autospectral_refine = FALSE,
             unmix_scatter_max_points = 1000,
             unmix_scatter_axis_limit = NULL,
             save_qc_pngs = FALSE
@@ -48,14 +48,14 @@
             auto_create_mapping = "Auto-create mapping", auto_unknown_fluor_policy = "Unknown fluor policy",
             unmix_scatter_panel_size_mm = "Scatter panel size (mm)", seed = "Seed",
             af_min_cluster_events = "Minimum AF cluster events", af_min_cluster_proportion = "Minimum AF cluster proportion",
-            rwls_max_iter = "RWLS iterations", n_threads = "Threads", save_qc_plots = "Save QC plots",
+            rwls_max_iter = "RWLS iterations", n_threads = "Threads", save_qc_png = "Save QC PNGs",
             gating_mode = "Gating mode", scc_background_method = "SCC background method",
             scc_background_k = "SCC background neighbours", spectral_variant_som_nodes = "Spectral variant SOM nodes",
             spectral_variant_top_k = "Spectral variant top K", spectral_variant_cosine_threshold = "Variant cosine threshold",
             spectral_variant_max_variants = "Maximum spectral variants", spectral_variant_min_events = "Minimum variant events",
             spectreasy_weight_quantile = "Spectreasy weight quantile", autospectral_n_candidates = "AutoSpectral candidates",
             autospectral_n_spectral = "AutoSpectral spectra", autospectral_min_events = "AutoSpectral minimum events",
-            refine = "AutoSpectral refinement", unmix_scatter_max_points = "Control NxN events",
+            autospectral_refine = "AutoSpectral refinement", unmix_scatter_max_points = "Control NxN events",
             unmix_scatter_axis_limit = "Control NxN axis limit", save_qc_pngs = "Save report PNGs"
         )
     } else {

@@ -249,6 +249,7 @@ test_that("AF refinement helper returns fixed-size refined k-means bank", {
         af_max_cells = 1000,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
+        n_threads = 2L,
         seed = 103,
         verbose = FALSE
     )
@@ -262,12 +263,12 @@ test_that("AF refinement helper returns fixed-size refined k-means bank", {
     expect_true(all(refined$signatures <= 1))
 })
 
-test_that("unmix_controls accepts refine only for AutoSpectral", {
+test_that("unmix_controls accepts autospectral_refine only for AutoSpectral", {
     expect_error(
         spectreasy::unmix_controls(
             scc_dir = tempfile("missing_scc_"),
             unmixing_method = "WLS",
-            refine = TRUE,
+            autospectral_refine = TRUE,
             save_report = FALSE
         ),
         "unmixing_method = \"AutoSpectral\""
@@ -276,7 +277,7 @@ test_that("unmix_controls accepts refine only for AutoSpectral", {
         spectreasy::unmix_controls(
             scc_dir = tempfile("missing_scc_"),
             unmixing_method = "Spectreasy",
-            refine = TRUE,
+            autospectral_refine = TRUE,
             save_report = FALSE
         ),
         "unmixing_method = \"AutoSpectral\""
@@ -345,7 +346,7 @@ test_that("AutoSpectral refine rewrites AF bank metadata while preserving fixed 
         control_file = control_csv,
         output_dir = tempfile("spectreasy_as_refine_"),
         unmixing_method = "AutoSpectral",
-        refine = TRUE,
+        autospectral_refine = TRUE,
         af_n_bands = 2,
         spectral_variant_min_events = 20,
         save_report = FALSE,
@@ -359,5 +360,5 @@ test_that("AutoSpectral refine rewrites AF bank metadata while preserving fixed 
     expect_true(isTRUE(af_info$refine))
     expect_equal(af_info$selection$method, "kmeans_refined_fixed")
     expect_equal(af_info$selection$requested_bands, 2)
-    expect_true(isTRUE(ctrl$refine))
+    expect_true(isTRUE(ctrl$autospectral_refine))
 })

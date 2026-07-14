@@ -12,8 +12,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // spectreasy_nnls_unmix_cpp
-arma::mat spectreasy_nnls_unmix_cpp(const arma::mat& Y, const arma::mat& M, const double tol, const int max_outer, const int max_inner);
-RcppExport SEXP _spectreasy_spectreasy_nnls_unmix_cpp(SEXP YSEXP, SEXP MSEXP, SEXP tolSEXP, SEXP max_outerSEXP, SEXP max_innerSEXP) {
+arma::mat spectreasy_nnls_unmix_cpp(const arma::mat& Y, const arma::mat& M, const double tol, const int max_outer, const int max_inner, const int n_threads);
+RcppExport SEXP _spectreasy_spectreasy_nnls_unmix_cpp(SEXP YSEXP, SEXP MSEXP, SEXP tolSEXP, SEXP max_outerSEXP, SEXP max_innerSEXP, SEXP n_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -22,13 +22,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const double >::type tol(tolSEXP);
     Rcpp::traits::input_parameter< const int >::type max_outer(max_outerSEXP);
     Rcpp::traits::input_parameter< const int >::type max_inner(max_innerSEXP);
-    rcpp_result_gen = Rcpp::wrap(spectreasy_nnls_unmix_cpp(Y, M, tol, max_outer, max_inner));
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(spectreasy_nnls_unmix_cpp(Y, M, tol, max_outer, max_inner, n_threads));
     return rcpp_result_gen;
 END_RCPP
 }
 // spectreasy_wls_unmix_cpp
-arma::mat spectreasy_wls_unmix_cpp(const arma::mat& Y, const arma::mat& M, const arma::vec& noise_floor, const arma::vec& signal_scale, const double max_weight_ratio, const double tol);
-RcppExport SEXP _spectreasy_spectreasy_wls_unmix_cpp(SEXP YSEXP, SEXP MSEXP, SEXP noise_floorSEXP, SEXP signal_scaleSEXP, SEXP max_weight_ratioSEXP, SEXP tolSEXP) {
+arma::mat spectreasy_wls_unmix_cpp(const arma::mat& Y, const arma::mat& M, const arma::vec& noise_floor, const arma::vec& signal_scale, const double max_weight_ratio, const double tol, const int n_threads);
+RcppExport SEXP _spectreasy_spectreasy_wls_unmix_cpp(SEXP YSEXP, SEXP MSEXP, SEXP noise_floorSEXP, SEXP signal_scaleSEXP, SEXP max_weight_ratioSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -38,13 +39,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const arma::vec& >::type signal_scale(signal_scaleSEXP);
     Rcpp::traits::input_parameter< const double >::type max_weight_ratio(max_weight_ratioSEXP);
     Rcpp::traits::input_parameter< const double >::type tol(tolSEXP);
-    rcpp_result_gen = Rcpp::wrap(spectreasy_wls_unmix_cpp(Y, M, noise_floor, signal_scale, max_weight_ratio, tol));
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(spectreasy_wls_unmix_cpp(Y, M, noise_floor, signal_scale, max_weight_ratio, tol, n_threads));
     return rcpp_result_gen;
 END_RCPP
 }
 // spectreasy_rwls_unmix_cpp
-arma::mat spectreasy_rwls_unmix_cpp(const arma::mat& Y, const arma::mat& M, const arma::vec& noise_floor, const arma::vec& signal_scale, const double max_weight_ratio, const double huber_k, const int max_iter, const double robust_tol, const double tol);
-RcppExport SEXP _spectreasy_spectreasy_rwls_unmix_cpp(SEXP YSEXP, SEXP MSEXP, SEXP noise_floorSEXP, SEXP signal_scaleSEXP, SEXP max_weight_ratioSEXP, SEXP huber_kSEXP, SEXP max_iterSEXP, SEXP robust_tolSEXP, SEXP tolSEXP) {
+arma::mat spectreasy_rwls_unmix_cpp(const arma::mat& Y, const arma::mat& M, const arma::vec& noise_floor, const arma::vec& signal_scale, const double max_weight_ratio, const double huber_k, const int max_iter, const double robust_tol, const double tol, const int n_threads);
+RcppExport SEXP _spectreasy_spectreasy_rwls_unmix_cpp(SEXP YSEXP, SEXP MSEXP, SEXP noise_floorSEXP, SEXP signal_scaleSEXP, SEXP max_weight_ratioSEXP, SEXP huber_kSEXP, SEXP max_iterSEXP, SEXP robust_tolSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -57,7 +59,25 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const int >::type max_iter(max_iterSEXP);
     Rcpp::traits::input_parameter< const double >::type robust_tol(robust_tolSEXP);
     Rcpp::traits::input_parameter< const double >::type tol(tolSEXP);
-    rcpp_result_gen = Rcpp::wrap(spectreasy_rwls_unmix_cpp(Y, M, noise_floor, signal_scale, max_weight_ratio, huber_k, max_iter, robust_tol, tol));
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(spectreasy_rwls_unmix_cpp(Y, M, noise_floor, signal_scale, max_weight_ratio, huber_k, max_iter, robust_tol, tol, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// spectreasy_autospectral_assign_cpp
+Rcpp::IntegerVector spectreasy_autospectral_assign_cpp(const arma::mat& Y, const arma::mat& unmixed_markers, const arma::mat& v_library, const arma::mat& r_library, const arma::vec& denominator, const arma::uvec& valid_indices, const int n_threads);
+RcppExport SEXP _spectreasy_spectreasy_autospectral_assign_cpp(SEXP YSEXP, SEXP unmixed_markersSEXP, SEXP v_librarySEXP, SEXP r_librarySEXP, SEXP denominatorSEXP, SEXP valid_indicesSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type Y(YSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type unmixed_markers(unmixed_markersSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type v_library(v_librarySEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type r_library(r_librarySEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type denominator(denominatorSEXP);
+    Rcpp::traits::input_parameter< const arma::uvec& >::type valid_indices(valid_indicesSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(spectreasy_autospectral_assign_cpp(Y, unmixed_markers, v_library, r_library, denominator, valid_indices, n_threads));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -86,9 +106,10 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_spectreasy_spectreasy_nnls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_nnls_unmix_cpp, 5},
-    {"_spectreasy_spectreasy_wls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_wls_unmix_cpp, 6},
-    {"_spectreasy_spectreasy_rwls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_rwls_unmix_cpp, 9},
+    {"_spectreasy_spectreasy_nnls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_nnls_unmix_cpp, 6},
+    {"_spectreasy_spectreasy_wls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_wls_unmix_cpp, 7},
+    {"_spectreasy_spectreasy_rwls_unmix_cpp", (DL_FUNC) &_spectreasy_spectreasy_rwls_unmix_cpp, 10},
+    {"_spectreasy_spectreasy_autospectral_assign_cpp", (DL_FUNC) &_spectreasy_spectreasy_autospectral_assign_cpp, 7},
     {"_spectreasy_spectreasy_unmix_best_af_cpp", (DL_FUNC) &_spectreasy_spectreasy_unmix_best_af_cpp, 13},
     {NULL, NULL, 0}
 };

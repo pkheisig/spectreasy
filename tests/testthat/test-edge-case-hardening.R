@@ -51,7 +51,7 @@ test_that("unmixing validates event data and scalar options before numeric kerne
     expect_error(spectreasy::calc_residuals(ff_bad, M, method = "OLS"), "non-finite values.*B1-A \\(1\\)")
     expect_error(spectreasy:::.normalize_unmix_chunk_size(1.5), "integer >= 1")
     expect_error(spectreasy:::.normalize_unmix_plot_n_events(c(10, 20)), "length 1")
-    expect_error(spectreasy:::.normalize_unmix_threads("2"), "integer >= 1")
+    expect_error(spectreasy:::.normalize_n_threads("2"), "integer >= 1")
 
     M_reserved <- M
     rownames(M_reserved)[1] <- "Time"

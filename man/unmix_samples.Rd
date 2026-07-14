@@ -67,8 +67,10 @@ OLS anchor using decoder-projected AF impact weights.}
 iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
-\item{n_threads}{Positive integer; number of threads to use for event-wise
-multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
+\item{n_threads}{Positive integer; number of threads for event-wise
+AutoSpectral/Spectreasy AF assignment and NNLS/WLS/RWLS fitting. OLS uses
+vectorized matrix operations. The default, 1, keeps explicit event loops
+single-threaded.}
 
 \item{spectral_variant_library}{Optional in-memory AutoSpectral
 spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`

@@ -2,15 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildViewSettingRows, parseViewSettings } from './gatingViewSettings.js'
 
-test('viewport settings round-trip with control-type and file scopes', () => {
+test('viewport settings round-trip with global scatter and file histogram scopes', () => {
   const views = {
     cell: {
-      cells: { x: [10, 20], y: [30, 40] },
-      beads: { x: [100, 200], y: [300, 400] },
+      global: { x: [10, 200], y: [30, 400] },
     },
     singlet: {
-      cells: { x: [11, 21], y: [31, 41] },
-      beads: { x: [101, 201], y: [301, 401] },
+      global: { x: [11, 201], y: [31, 401] },
     },
     histogram: {
       'one.fcs': { x: [-5, 55], y: null },
@@ -24,6 +22,16 @@ test('viewport settings round-trip with control-type and file scopes', () => {
   assert.deepEqual(parsed.singlet, views.singlet)
   assert.deepEqual(parsed.histogram, { 'one.fcs': { x: [-5, 55], y: null } })
   assert.equal(rows.some((row) => row.filename === 'removed.fcs'), false)
+})
+
+test('legacy control-type scatter views migrate to one fixed global envelope', () => {
+  const parsed = parseViewSettings([
+    { gate_type: 'setting', scope: 'cells', x_channel: 'view_cell', y_channel: 'x_domain', x: 10, y: 20 },
+    { gate_type: 'setting', scope: 'beads', x_channel: 'view_cell', y_channel: 'x_domain', x: 100, y: 200 },
+    { gate_type: 'setting', scope: 'cells', x_channel: 'view_cell', y_channel: 'y_domain', x: 30, y: 40 },
+    { gate_type: 'setting', scope: 'beads', x_channel: 'view_cell', y_channel: 'y_domain', x: 300, y: 400 },
+  ])
+  assert.deepEqual(parsed.cell, { global: { x: [10, 200], y: [30, 400] } })
 })
 
 test('invalid or incomplete viewport rows are ignored', () => {

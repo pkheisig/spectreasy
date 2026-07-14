@@ -230,6 +230,7 @@
                                       af_max_cells,
                                       af_min_cluster_events,
                                       af_min_cluster_proportion,
+                                      n_threads = 1L,
                                       seed = NULL,
                                       problem_quantile = 0.99,
                                       contaminant_threshold = 0.99,
@@ -272,7 +273,8 @@
     assignments <- .autospectral_assign_af_fluorophores(
         Y = af_events,
         marker_spectra = marker_spectra,
-        af_spectra = base_af
+        af_spectra = base_af,
+        n_threads = n_threads
     )
     assignments[!is.finite(assignments) | assignments < 1L | assignments > nrow(base_af)] <- 1L
 
@@ -3805,6 +3807,8 @@
 #'   events required to keep a k-means AF cluster. The default `0.005` means
 #'   0.5\% of the AF events used for extraction.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
+#' @param n_threads Positive integer; number of threads used for event-wise
+#'   AutoSpectral AF assignment during AF-bank refinement.
 #' @param default_sample_type Fallback type when filename heuristics are ambiguous (`"beads"` or `"cells"`).
 #' @param cytometer Cytometer name used as a channel-mapping hint. The default,
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
@@ -3896,10 +3900,12 @@ build_reference_matrix <- function(
   autospectral_n_candidates = 1000L,
   autospectral_n_spectral = 200L,
   autospectral_min_events = 10L,
-  refine = FALSE
+  refine = FALSE,
+  n_threads = 1L
 ) {
     control_df <- .normalize_build_reference_control_df(control_df)
     unmixing_method <- .normalize_unmix_method(unmixing_method)
+    n_threads <- .normalize_n_threads(n_threads)
     default_sample_type <- .match_arg_ci(default_sample_type, c("beads", "cells"), "default_sample_type")
     histogram_direction_beads <- .match_arg_ci(
         histogram_direction_beads, c("right", "both", "left"), "histogram_direction_beads"
@@ -4060,6 +4066,7 @@ build_reference_matrix <- function(
             af_max_cells = af_max_cells,
             af_min_cluster_events = af_min_cluster_events,
             af_min_cluster_proportion = af_min_cluster_proportion,
+            n_threads = n_threads,
             seed = seed,
             verbose = TRUE
         )

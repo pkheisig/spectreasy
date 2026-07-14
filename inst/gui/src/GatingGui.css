@@ -1023,6 +1023,21 @@ body.dark .auto-histogram-button:disabled {
     linear-gradient(180deg, rgba(104, 115, 110, 0.08), rgba(104, 115, 110, 0.02));
 }
 
+.spectrum-gate-required {
+  width: 100%;
+  min-height: 112px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 82%, var(--canvas));
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
 .gate-path {
   fill: rgba(214, 82, 56, 0.16);
   stroke: var(--accent-2);

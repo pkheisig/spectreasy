@@ -1,5 +1,14 @@
 # spectreasy 1.0.0
 
+- Renamed the canonical `unmix_controls()` arguments `save_qc_plots` to
+  `save_qc_png` and `refine` to `autospectral_refine`, and removed the former
+  `unmix_threads` argument in favor of `n_threads`. The old names are no longer
+  accepted by `unmix_controls()`.
+
+- `n_threads` now covers event-wise AutoSpectral/Spectreasy AF assignment,
+  NNLS, WLS, and RWLS fitting, including multi-AF OLS/NNLS candidate fitting.
+  Dense fixed-reference OLS remains a vectorized matrix operation.
+
 - Control HTML reports now save their complete NxN scatter matrix as a linked,
   high-resolution PNG instead of creating a standalone NxN HTML viewer. Points
   are larger and more opaque so sparse events remain visible when zooming.

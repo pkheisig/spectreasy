@@ -35,7 +35,8 @@ build_reference_matrix(
   autospectral_n_candidates = 1000L,
   autospectral_n_spectral = 200L,
   autospectral_min_events = 10L,
-  refine = FALSE
+  refine = FALSE,
+  n_threads = 1L
 )
 }
 \arguments{
@@ -127,6 +128,9 @@ AutoSpectral-style SCC selector.}
 \item{refine}{Logical; if `TRUE`, refine the fixed-size k-means AF bank with
 native AutoSpectral-style unstained residual modulation. This is only
 supported with `unmixing_method = "AutoSpectral"`.}
+
+\item{n_threads}{Positive integer; number of threads used for event-wise
+AutoSpectral AF assignment during AF-bank refinement.}
 }
 \value{
 Numeric matrix with rows = fluorophores and columns = detectors

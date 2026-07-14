@@ -55,8 +55,10 @@ non-negative event signal in the WLS variance model.}
 iterations used when `method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
-\item{n_threads}{Positive integer; number of threads to use for event-wise
-multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.}
+\item{n_threads}{Positive integer; number of threads for event-wise
+AutoSpectral/Spectreasy AF assignment and NNLS/WLS/RWLS fitting. OLS uses
+vectorized matrix operations. The default, 1, keeps explicit event loops
+single-threaded.}
 
 \item{spectral_variant_library}{Optional per-fluorophore spectral-variant
 library learned from single-color controls. Used only with

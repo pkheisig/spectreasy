@@ -331,6 +331,7 @@
                                                  wls_noise,
                                                  rwls_max_iter,
                                                  spectral_variant_library,
+                                                 n_threads = 1L,
                                                  top_k = 3L,
                                                  min_abundance = 1,
                                                  positive_fraction = 0.02,
@@ -415,7 +416,8 @@
                 M = X,
                 method = method,
                 wls_noise = wls_noise,
-                rwls_max_iter = rwls_max_iter
+                rwls_max_iter = rwls_max_iter,
+                n_threads = n_threads
             ),
             error = function(e) NULL
         )

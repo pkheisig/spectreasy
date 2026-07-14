@@ -19,7 +19,7 @@ unmix_controls(
   af_min_cluster_proportion = 0.005,
   rwls_max_iter = 1L,
   n_threads = 1L,
-  save_qc_plots = FALSE,
+  save_qc_png = FALSE,
   save_report = TRUE,
   report_format = "html",
   gating_mode = "interactive",
@@ -36,8 +36,7 @@ unmix_controls(
   autospectral_n_candidates = 1000L,
   autospectral_n_spectral = 200L,
   autospectral_min_events = 10L,
-  refine = FALSE,
-  unmix_threads = NULL,
+  autospectral_refine = FALSE,
   ...
 )
 }
@@ -85,10 +84,12 @@ events required to keep a k-means AF cluster. Default is 0.005.}
 iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
-\item{n_threads}{Positive integer; number of threads to use for event-wise
-multi-AF WLS/RWLS SCC unmixing. The default, 1, keeps execution single-threaded.}
+\item{n_threads}{Positive integer; number of threads for event-wise
+AutoSpectral/Spectreasy AF assignment and NNLS/WLS/RWLS SCC fitting. OLS
+uses vectorized matrix operations. The default, 1, keeps explicit event
+loops single-threaded.}
 
-\item{save_qc_plots}{Logical; whether to write per-control FSC/SSC,
+\item{save_qc_png}{Logical; whether to write per-control FSC/SSC,
 intensity-gate, and spectrum PNGs under `output_dir`.}
 
 \item{save_report}{Logical; if `TRUE`, write the SCC QC report
@@ -147,12 +148,9 @@ kept for spectrum calculation by the AutoSpectral-style selector.}
 \item{autospectral_min_events}{Minimum event count required by the
 AutoSpectral-style SCC selector.}
 
-\item{refine}{Logical; when `unmixing_method = "AutoSpectral"`, refine the
+\item{autospectral_refine}{Logical; when `unmixing_method = "AutoSpectral"`, refine the
 fixed-size k-means AF bank with native AutoSpectral-style unstained residual
 modulation. `TRUE` is rejected for all other unmixing methods.}
-
-\item{unmix_threads}{Deprecated compatibility alias for `n_threads`. New code
-should use `n_threads`.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }

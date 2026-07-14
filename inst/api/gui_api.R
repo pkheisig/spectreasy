@@ -754,6 +754,18 @@ gate_is_finalized_histogram <- function(gate) {
     nrow(verts) >= 3L
 }
 
+gate_spectrum_gates <- function(cache, filename, control_type, is_af = FALSE) {
+    gates <- list(
+        cell = gate_cached_gate(cache, "cell", filename, control_type),
+        singlet = gate_cached_gate(cache, "singlet", filename, control_type),
+        positive = gate_cached_gate(cache, "positive", filename, control_type)
+    )
+    gates$ready <- gate_is_finalized_polygon(gates$cell) &&
+        gate_is_finalized_polygon(gates$singlet) &&
+        (isTRUE(is_af) || gate_is_finalized_histogram(gates$positive))
+    gates
+}
+
 gate_histogram_autogate_ranges <- function(peak_vals,
                                            sample_type,
                                            is_viability = FALSE,
@@ -1004,11 +1016,30 @@ gate_build_spectrum_plot <- function(expr_filtered, spec_channels, det_info, dar
     gate_plot_to_base64(p_spec)
 }
 
-gate_spectrum_for_file <- function(filename, dark_mode = FALSE) {
+gate_spectrum_for_file <- function(filename, dark_mode = FALSE, gates = NULL) {
     df <- gate_read_mapping()
     name <- gate_safe_basename(filename)
     row <- df[df$filename == name, , drop = FALSE]
     if (nrow(row) == 0) stop("File is not present in mapping: ", name, call. = FALSE)
+    if (is.null(gates)) {
+        cache_data <- getOption("spectreasy.gating_state_cache")
+        gates <- if (!is.null(cache_data)) cache_data$gates else NULL
+    }
+    control_type <- gate_normalize_control_type(row$control.type[1])
+    spectrum_gates <- gate_spectrum_gates(
+        gates,
+        filename = name,
+        control_type = control_type,
+        is_af = isTRUE(row$is_af[1])
+    )
+    if (!isTRUE(spectrum_gates$ready)) return(NULL)
+
+    cache_slot <- paste0(name, "::", if (isTRUE(dark_mode)) "dark" else "light")
+    spectrum_cache <- getOption("spectreasy.gating_spectrum_cache", list())
+    gate_signature <- spectrum_gates[c("cell", "singlet", "positive")]
+    cached <- spectrum_cache[[cache_slot]]
+    if (!is.null(cached) && identical(cached$gates, gate_signature)) return(cached$image)
+
     path <- file.path(get_gate_scc_dir(), name)
     ff <- gate_read_fcs(path)
     expr <- flowCore::exprs(ff)
@@ -1021,24 +1052,23 @@ gate_spectrum_for_file <- function(filename, dark_mode = FALSE) {
     peak <- as.character(row$channel[1])
     if (!peak %in% colnames(expr)) peak <- spec_channels[which.max(apply(expr[, spec_channels, drop = FALSE], 2, stats::var, na.rm = TRUE))]
 
-    cache_data <- getOption("spectreasy.gating_state_cache")
-    cache <- if (!is.null(cache_data)) cache_data$gates else NULL
-    control_type <- gate_normalize_control_type(row$control.type[1])
-
     expr_filtered <- expr
-    expr_filtered <- gate_apply_polygon_gate(expr_filtered, gate_cached_gate(cache, "cell", name, control_type))
-    expr_filtered <- gate_apply_polygon_gate(expr_filtered, gate_cached_gate(cache, "singlet", name, control_type))
+    expr_filtered <- gate_apply_polygon_gate(expr_filtered, spectrum_gates$cell)
+    expr_filtered <- gate_apply_polygon_gate(expr_filtered, spectrum_gates$singlet)
     if (!isTRUE(row$is_af[1])) {
-        expr_filtered <- gate_apply_positive_gate(expr_filtered, gate_cached_gate(cache, "positive", name, control_type), peak)
+        expr_filtered <- gate_apply_positive_gate(expr_filtered, spectrum_gates$positive, peak)
     }
-    gate_build_spectrum_plot(expr_filtered, spec_channels, det_info, dark_mode = dark_mode)
+    image <- gate_build_spectrum_plot(expr_filtered, spec_channels, det_info, dark_mode = dark_mode)
+    spectrum_cache[[cache_slot]] <- list(gates = gate_signature, image = image)
+    options(spectreasy.gating_spectrum_cache = spectrum_cache)
+    image
 }
 
-gate_payload_for_file <- function(filename, max_points = 3000L) {
+gate_payload_for_file <- function(filename, max_points = 3000L, cache_result = TRUE) {
     name <- gate_safe_basename(filename)
     cache_key <- paste(name, max_points, sep = "::")
     cache <- getOption("spectreasy.gating_payload_cache", list())
-    if (!is.null(cache[[cache_key]])) return(cache[[cache_key]])
+    if (isTRUE(cache_result) && !is.null(cache[[cache_key]])) return(cache[[cache_key]])
 
     df <- gate_read_mapping()
     row <- df[df$filename == name, , drop = FALSE]
@@ -1095,8 +1125,28 @@ gate_payload_for_file <- function(filename, max_points = 3000L) {
         ),
         events = out
     )
-    cache[[cache_key]] <- payload
-    options(spectreasy.gating_payload_cache = cache)
+    if (isTRUE(cache_result)) {
+        cache[[cache_key]] <- payload
+        options(spectreasy.gating_payload_cache = cache)
+    }
+    payload
+}
+
+gate_compact_payload <- function(payload) {
+    events <- payload$events
+    matrix_values <- as.matrix(events)
+    storage.mode(matrix_values) <- "double"
+    connection <- rawConnection(raw(), open = "wb")
+    on.exit(close(connection), add = TRUE)
+    writeBin(as.numeric(matrix_values), connection, size = 4L, endian = "little")
+    encoded <- jsonlite::base64_enc(rawConnectionValue(connection))
+    payload$events <- NULL
+    payload$events_compact <- list(
+        format = "float32-column-major",
+        fields = colnames(matrix_values),
+        rows = nrow(matrix_values),
+        data = encoded
+    )
     payload
 }
 
@@ -1226,6 +1276,28 @@ function(max_points = 3000) {
     list(payloads = payloads, max_points = as.integer(max_points))
 }
 
+#* Preload all SCC controls in a compact float32 representation
+#* @get /gate_preload_compact
+#* @param max_points
+function(max_points = 3000) {
+    df <- gate_read_mapping()
+    payloads <- lapply(df$filename, function(filename) {
+        tryCatch({
+            payload <- gate_payload_for_file(
+                filename = filename,
+                max_points = max_points,
+                cache_result = FALSE
+            )
+            compact <- gate_compact_payload(payload)
+            rm(payload)
+            compact
+        }, error = function(e) {
+            list(error = conditionMessage(e), filename = filename)
+        })
+    })
+    list(payloads = payloads, max_points = as.integer(max_points))
+}
+
 #* Auto-generate the required histogram gates for all non-AF controls
 #* @post /gate_histogram_autogate
 function(req) {
@@ -1254,6 +1326,29 @@ function(filename, dark = "false") {
         list(spectrum = gate_spectrum_for_file(filename = filename, dark_mode = dark_mode)),
         error = function(e) list(error = conditionMessage(e), spectrum = NULL)
     )
+}
+
+#* Render and cache spectra for one or more SCC controls using explicit gates
+#* @post /gate_spectra
+function(req) {
+    tryCatch({
+        body <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
+        filenames <- unlist(body$filenames, use.names = FALSE)
+        filenames <- as.character(filenames[nzchar(as.character(filenames))])
+        dark_mode <- isTRUE(body$dark) ||
+            tolower(as.character(body$dark)[1]) %in% c("true", "1", "yes")
+        gates <- body$gates
+        spectra <- stats::setNames(lapply(filenames, function(filename) {
+            gate_spectrum_for_file(
+                filename = filename,
+                dark_mode = dark_mode,
+                gates = gates
+            )
+        }), filenames)
+        list(success = TRUE, spectra = spectra)
+    }, error = function(e) {
+        list(success = FALSE, error = conditionMessage(e), spectra = list())
+    })
 }
 
 #* List gate CSV files
@@ -2130,8 +2225,8 @@ function(req) {
             gate_contour_cells = gui_workflow_number(body, "gate_contour_cells", 0.9, minimum = 0),
             subsample_n = gui_workflow_number(body, "subsample_n", 5000, integer = TRUE, minimum = 1),
             rwls_max_iter = gui_workflow_number(body, "rwls_max_iter", 1, integer = TRUE, minimum = 1),
-            n_threads = gui_workflow_number(body, "unmix_threads", 1, integer = TRUE, minimum = 1),
-            save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
+            n_threads = gui_workflow_number(body, "n_threads", 1, integer = TRUE, minimum = 1),
+            save_qc_png = gui_workflow_bool(body, "save_qc_png", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
             report_format = gui_workflow_value(body, "report_format", "html"),
             gating_mode = gui_workflow_value(
@@ -2151,7 +2246,7 @@ function(req) {
             autospectral_n_candidates = gui_workflow_number(body, "autospectral_n_candidates", 1000, integer = TRUE, minimum = 1),
             autospectral_n_spectral = gui_workflow_number(body, "autospectral_n_spectral", 200, integer = TRUE, minimum = 1),
             autospectral_min_events = gui_workflow_number(body, "autospectral_min_events", 10, integer = TRUE, minimum = 1),
-            refine = gui_workflow_bool(body, "refine", FALSE)
+            autospectral_refine = gui_workflow_bool(body, "autospectral_refine", FALSE)
         ),
         gui_method_optional_args(method, body)
     )

@@ -69,7 +69,6 @@ const HISTOGRAM_TRANSFORMS = [
   { value: 'log10', label: 'Log10' },
   { value: 'biexponential', label: 'Biexponential' },
 ]
-const PRELOAD_POINTS = 100000
 const MIN_CONFIRM_EVENTS = 200
 const REQUIRED_GATE_CSV_COLUMNS = ['gate_type', 'scope', 'filename', 'x_channel', 'y_channel', 'plot_mode', 'vertex_index', 'x', 'y']
 const PLOT_WIDTH = 520
@@ -248,7 +247,7 @@ function makeScale(domain, range) {
   }
 }
 
-function pointInPolygon(point, polygon) {
+function pointInPolygonValues(x, y, polygon) {
   if (!polygon || polygon.length < 3) return false
   let inside = false
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -256,10 +255,14 @@ function pointInPolygon(point, polygon) {
     const yi = polygon[i].y
     const xj = polygon[j].x
     const yj = polygon[j].y
-    const intersect = yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi
+    const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi
     if (intersect) inside = !inside
   }
   return inside
+}
+
+function pointInPolygon(point, polygon) {
+  return pointInPolygonValues(point.x, point.y, polygon)
 }
 
 function gateKey(type, filename, controlType, forceFile = false) {
@@ -288,13 +291,43 @@ function displayEventsForLimit(events, maxPoints) {
   return out
 }
 
-function payloadFilename(item) {
-  if (!item) return ''
-  if (typeof item.filename === 'string') return item.filename
-  if (Array.isArray(item.file) && item.file[0]?.filename) return item.file[0].filename
-  if (Array.isArray(item.file?.filename)) return item.file.filename[0]
-  if (typeof item.file?.filename === 'string') return item.file.filename
-  return ''
+function decodeCompactPayload(value) {
+  const payload = unboxGuiState(value)
+  const compact = payload?.events_compact
+  if (compact?.format !== 'float32-column-major' || typeof compact.data !== 'string') return payload
+  const binary = window.atob(compact.data.replace(/\s/g, ''))
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return {
+    ...payload,
+    events_compact: {
+      format: compact.format,
+      fields: Array.isArray(compact.fields) ? compact.fields : [compact.fields],
+      rows: Number(compact.rows) || 0,
+      values: new Float32Array(bytes.buffer),
+    },
+  }
+}
+
+function materializePayloadEvents(payload, maxPoints) {
+  if (Array.isArray(payload?.events)) return displayEventsForLimit(payload.events, maxPoints)
+  const compact = payload?.events_compact
+  const rows = Number(compact?.rows) || 0
+  const fields = compact?.fields || []
+  const values = compact?.values
+  if (!rows || !fields.length || !(values instanceof Float32Array)) return []
+  const limit = Math.min(rows, normalizeEventCount(maxPoints))
+  const step = rows / Math.max(limit, 1)
+  const events = new Array(limit)
+  for (let outputIndex = 0; outputIndex < limit; outputIndex++) {
+    const rowIndex = Math.floor(outputIndex * step)
+    const event = {}
+    for (let fieldIndex = 0; fieldIndex < fields.length; fieldIndex++) {
+      event[fields[fieldIndex]] = values[fieldIndex * rows + rowIndex]
+    }
+    events[outputIndex] = event
+  }
+  return events
 }
 
 function filterPolygonEvents(events, gate, xField, yField) {
@@ -503,12 +536,91 @@ function resolveGateForFile(gates, type, file) {
   return gates[`${type}:${controlType}`] || null
 }
 
+function spectrumGateState(gates, file) {
+  const cell = resolveGateForFile(gates, 'cell', file)
+  const singlet = resolveGateForFile(gates, 'singlet', file)
+  const positive = resolveGateForFile(gates, 'positive', file)
+  const usesHistogram = fileUsesHistogramGates(file)
+  return {
+    cell,
+    singlet,
+    positive,
+    usesHistogram,
+    eligible: gateIsFinalized(cell) &&
+      gateIsFinalized(singlet) &&
+      (!usesHistogram || gateIsFinalized(positive)),
+  }
+}
+
+function spectrumCacheKeyForFile(gates, file, darkMode) {
+  const state = spectrumGateState(gates, file)
+  if (!state.eligible) return ''
+  const relevantGates = {
+    cell: state.cell,
+    singlet: state.singlet,
+    positive: state.usesHistogram ? state.positive : null,
+  }
+  return `${file.filename}:${darkMode ? 'dark' : 'light'}:${JSON.stringify(relevantGates)}`
+}
+
+function payloadEventSource(payload) {
+  if (Array.isArray(payload?.events)) {
+    return {
+      rows: payload.events.length,
+      value: (rowIndex, field) => payload.events[rowIndex]?.[field],
+    }
+  }
+  const compact = payload?.events_compact
+  const rows = Number(compact?.rows) || 0
+  const fields = compact?.fields || []
+  const values = compact?.values
+  if (!rows || !fields.length || !(values instanceof Float32Array)) return null
+  const fieldIndices = new Map(fields.map((field, index) => [field, index]))
+  return {
+    rows,
+    value(rowIndex, field) {
+      const fieldIndex = fieldIndices.get(field)
+      return fieldIndex === undefined ? NaN : values[fieldIndex * rows + rowIndex]
+    },
+  }
+}
+
+function filterPayloadPolygon(source, inputIndices, gate, xField, yField) {
+  if (!source || !gateIsFinalized(gate)) return []
+  const output = []
+  const count = inputIndices ? inputIndices.length : source.rows
+  for (let i = 0; i < count; i++) {
+    const rowIndex = inputIndices ? inputIndices[i] : i
+    const x = source.value(rowIndex, xField)
+    const y = source.value(rowIndex, yField)
+    if (Number.isFinite(x) && Number.isFinite(y) && pointInPolygonValues(x, y, gate.vertices)) {
+      output.push(rowIndex)
+    }
+  }
+  return output
+}
+
+function countPayloadHistogram(source, inputIndices, gate, field = 'peak') {
+  if (!source || !gateIsFinalized(gate)) return 0
+  const vertices = gate.vertices || []
+  const limits = vertices.map((point) => Number(point.x)).filter(Number.isFinite)
+  if (!limits.length) return 0
+  const lo = Math.min(...limits)
+  const hi = Math.max(...limits)
+  let count = 0
+  for (const rowIndex of inputIndices || []) {
+    const value = source.value(rowIndex, field)
+    if (gate.mode === 'separator' ? value >= lo : value >= lo && value <= hi) count += 1
+  }
+  return count
+}
+
 function validateFileForConfirm(file, payload, gates) {
   const filename = file?.filename || ''
   const issues = []
-  const events = Array.isArray(payload?.events) ? payload.events : []
+  const source = payloadEventSource(payload)
   if (!filename) return issues
-  if (!events.length) {
+  if (!source?.rows) {
     issues.push({ filename, message: 'events are still loading' })
     return issues
   }
@@ -518,12 +630,8 @@ function validateFileForConfirm(file, payload, gates) {
   if (!gateIsFinalized(cellGate)) issues.push({ filename, message: 'cell gate unfinished' })
   if (!gateIsFinalized(singletGate)) issues.push({ filename, message: 'singlet gate unfinished' })
 
-  const cells = gateIsFinalized(cellGate)
-    ? filterPolygonEvents(events, cellGate, cellGate.xChannel, cellGate.yChannel)
-    : []
-  const singlets = gateIsFinalized(singletGate)
-    ? filterPolygonEvents(cells, singletGate, singletGate.xChannel, singletGate.yChannel)
-    : []
+  const cells = filterPayloadPolygon(source, null, cellGate, cellGate?.xChannel, cellGate?.yChannel)
+  const singlets = filterPayloadPolygon(source, cells, singletGate, singletGate?.xChannel, singletGate?.yChannel)
 
   if (!fileUsesHistogramGates(file)) {
     if (gateIsFinalized(singletGate) && singlets.length < MIN_CONFIRM_EVENTS) {
@@ -538,9 +646,9 @@ function validateFileForConfirm(file, payload, gates) {
     return issues
   }
 
-  const positive = summarizeGate(singlets, positiveGate, 'peak', 'count', 'histogram')
-  if (positive.count < MIN_CONFIRM_EVENTS) {
-    issues.push({ filename, message: `positive gate has only ${positive.count.toLocaleString()} events` })
+  const positiveCount = countPayloadHistogram(source, singlets, positiveGate)
+  if (positiveCount < MIN_CONFIRM_EVENTS) {
+    issues.push({ filename, message: `positive gate has only ${positiveCount.toLocaleString()} events` })
   }
   return issues
 }
@@ -812,40 +920,68 @@ const DARK_DENSITY_PALETTE = Array.from({ length: DENSITY_PALETTE.length }, (_, 
   return `hsla(${hue}, 100%, ${lightness}%, 0.94)`
 })
 
-function computeDensityBuckets(points, xField, yField) {
+function computeDensityBuckets(points, xField, yField, xDomain, yDomain) {
   const n = points.length
   const buckets = Array.from({ length: DENSITY_PALETTE.length }, () => [])
   if (n === 0) return buckets
 
   const xs = points.map((p) => p[xField])
   const ys = points.map((p) => p[yField])
-  const minX = Math.min(...xs)
-  const maxX = Math.max(...xs)
-  const minY = Math.min(...ys)
-  const maxY = Math.max(...ys)
+  const [minX, maxX] = xDomain || [Math.min(...xs), Math.max(...xs)]
+  const [minY, maxY] = yDomain || [Math.min(...ys), Math.max(...ys)]
 
   const rx = maxX - minX || 1
   const ry = maxY - minY || 1
 
-  const numBins = 160
+  // Build a smooth density field, then sample it continuously at every event.
+  // Assigning one density to every event in a hard grid cell makes the colour
+  // field look tiled when a long scatter tail compresses the main population
+  // into a relatively small part of the plot.
+  const numBins = 256
   const gridSide = numBins + 1
-  const grid = new Uint32Array(gridSide * gridSide)
+  const grid = new Float32Array(gridSide * gridSide)
 
   points.forEach((p) => {
+    if (p[xField] < minX || p[xField] > maxX || p[yField] < minY || p[yField] > maxY) return
     const bx = clamp(Math.floor(((p[xField] - minX) / rx) * numBins), 0, numBins)
     const by = clamp(Math.floor(((p[yField] - minY) / ry) * numBins), 0, numBins)
     grid[by * gridSide + bx] += 1
   })
 
-  // Precompute Gaussian weights for an 11x11 window (radius = 5)
+  // A separable Gaussian blur gives every grid node a local density estimate.
+  // Bilinear sampling below removes the remaining cell boundaries.
   const sigma = 2.0
-  const kernel = []
-  const radius = 5
-  for (let dx = -radius; dx <= radius; dx++) {
-    for (let dy = -radius; dy <= radius; dy++) {
-      const distSq = dx * dx + dy * dy
-      const weight = Math.exp(-distSq / (2 * sigma * sigma))
-      kernel.push({ dx, dy, weight })
+  const radius = Math.ceil(sigma * 3)
+  const kernel = new Float32Array(radius * 2 + 1)
+  let kernelSum = 0
+  for (let offset = -radius; offset <= radius; offset++) {
+    const weight = Math.exp(-(offset * offset) / (2 * sigma * sigma))
+    kernel[offset + radius] = weight
+    kernelSum += weight
+  }
+  for (let i = 0; i < kernel.length; i++) kernel[i] /= kernelSum
+
+  const horizontal = new Float32Array(grid.length)
+  const smoothed = new Float32Array(grid.length)
+  for (let y = 0; y < gridSide; y++) {
+    const row = y * gridSide
+    for (let x = 0; x < gridSide; x++) {
+      let sum = 0
+      for (let offset = -radius; offset <= radius; offset++) {
+        const nx = clamp(x + offset, 0, numBins)
+        sum += grid[row + nx] * kernel[offset + radius]
+      }
+      horizontal[row + x] = sum
+    }
+  }
+  for (let y = 0; y < gridSide; y++) {
+    for (let x = 0; x < gridSide; x++) {
+      let sum = 0
+      for (let offset = -radius; offset <= radius; offset++) {
+        const ny = clamp(y + offset, 0, numBins)
+        sum += horizontal[ny * gridSide + x] * kernel[offset + radius]
+      }
+      smoothed[y * gridSide + x] = sum
     }
   }
 
@@ -853,18 +989,20 @@ function computeDensityBuckets(points, xField, yField) {
   let maxD = 1
   for (let pointIndex = 0; pointIndex < n; pointIndex++) {
     const p = points[pointIndex]
-    const bx = clamp(Math.floor(((p[xField] - minX) / rx) * numBins), 0, numBins)
-    const by = clamp(Math.floor(((p[yField] - minY) / ry) * numBins), 0, numBins)
-    let sum = 0
-    for (let i = 0; i < kernel.length; i++) {
-      const k = kernel[i]
-      const nx = bx + k.dx
-      const ny = by + k.dy
-      const count = nx < 0 || nx > numBins || ny < 0 || ny > numBins ? 0 : grid[ny * gridSide + nx]
-      sum += count * k.weight
-    }
-    densities[pointIndex] = sum
-    if (sum > maxD) maxD = sum
+    if (p[xField] < minX || p[xField] > maxX || p[yField] < minY || p[yField] > maxY) continue
+    const gx = clamp(((p[xField] - minX) / rx) * numBins, 0, numBins)
+    const gy = clamp(((p[yField] - minY) / ry) * numBins, 0, numBins)
+    const x0 = Math.floor(gx)
+    const y0 = Math.floor(gy)
+    const x1 = Math.min(x0 + 1, numBins)
+    const y1 = Math.min(y0 + 1, numBins)
+    const tx = gx - x0
+    const ty = gy - y0
+    const top = smoothed[y0 * gridSide + x0] * (1 - tx) + smoothed[y0 * gridSide + x1] * tx
+    const bottom = smoothed[y1 * gridSide + x0] * (1 - tx) + smoothed[y1 * gridSide + x1] * tx
+    const density = top * (1 - ty) + bottom * ty
+    densities[pointIndex] = density
+    if (density > maxD) maxD = density
   }
 
   for (let i = 0; i < n; i++) {
@@ -983,7 +1121,9 @@ function GatePlot({
   const displayGate = draft?.length ? { vertices: draft } : renderGate
   const densityBuckets = useMemo(() => {
     if (mode !== 'scatter') return []
-    return computeDensityBuckets(events, xField, yField)
+    const densityXDomain = extent(events.map((event) => event[xField]))
+    const densityYDomain = extent(events.map((event) => event[yField]))
+    return computeDensityBuckets(events, xField, yField, densityXDomain, densityYDomain)
   }, [events, mode, xField, yField])
 
   const xTicks = useMemo(() => getTicks(xDomain, 5), [xDomain])
@@ -1795,7 +1935,10 @@ function App() {
   const [viewSettings, setViewSettings] = useState({ cell: {}, singlet: {}, histogram: {} })
   const [spectrum, setSpectrum] = useState(null)
   const [spectrumCache, setSpectrumCache] = useState({})
+  const [spectraPrecomputing, setSpectraPrecomputing] = useState(false)
   const loadInputRef = useRef(null)
+  const payloadCacheRef = useRef({})
+  const spectrumBatchRef = useRef('')
 
   // Sync dark mode class to document body
   useEffect(() => {
@@ -1924,84 +2067,161 @@ function App() {
     return () => clearTimeout(timer)
   }, [gates, files, pointSize, maxPoints, histogramBins, histogramTransform, viewSettings, gatesLoaded])
 
+  const selectedSpectrumFile = files.find((file) => file.filename === selected) || {}
+  const selectedSpectrumState = spectrumGateState(gates, selectedSpectrumFile)
+  const spectrumEligible = Boolean(selected) && selectedSpectrumState.eligible
+  const spectrumUsesHistogramGate = selectedSpectrumState.usesHistogram
+  const spectrumCacheKey = spectrumCacheKeyForFile(gates, selectedSpectrumFile, darkMode)
+  const cachedSpectrum = spectrumCacheKey ? spectrumCache[spectrumCacheKey] : null
+  const allSpectraEligible = gatesLoaded && preloadComplete && files.length > 0 &&
+    files.every((file) => spectrumGateState(gates, file).eligible)
+  const missingSpectrumFiles = useMemo(() => (
+    allSpectraEligible
+      ? files.filter((file) => !spectrumCache[spectrumCacheKeyForFile(gates, file, darkMode)])
+      : []
+  ), [allSpectraEligible, files, gates, darkMode, spectrumCache])
+  const spectrumBatchKey = allSpectraEligible
+    ? `${darkMode ? 'dark' : 'light'}:${files.map((file) => spectrumCacheKeyForFile(gates, file, darkMode)).join('|')}`
+    : ''
+
   useEffect(() => {
-    if (!selected || !gatesLoaded) return
-    const selectedFile = files.find((file) => file.filename === selected) || {}
-    const selectedControlType = fileControlType(selectedFile)
-    const relevantGates = {
-      cell: gates[`cell:${selected}`] || gates[`cell:${selectedControlType}`] || null,
-      singlet: gates[`singlet:${selected}`] || gates[`singlet:${selectedControlType}`] || null,
-      positive: gates[`positive:${selected}`] || null,
+    if (!gatesLoaded || !preloadComplete || !spectrumEligible) {
+      setSpectrum(null)
+      return undefined
     }
-    const cacheKey = `${selected}:${darkMode ? 'dark' : 'light'}:${JSON.stringify(relevantGates)}`
-    if (spectrumCache[cacheKey]) {
-      setSpectrum(spectrumCache[cacheKey])
+    if (cachedSpectrum) {
+      setSpectrum(cachedSpectrum)
       return
     }
     setSpectrum(null)
+    if (allSpectraEligible) return undefined
+    const controller = new AbortController()
+    let disposed = false
     const timer = setTimeout(() => {
-      useApi(`/gate_spectrum?filename=${encodeURIComponent(selected)}&dark=${darkMode ? 'true' : 'false'}`)
+      useApi('/gate_spectra', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filenames: [selected], gates, dark: darkMode }),
+        signal: controller.signal,
+      })
         .then((data) => {
-          const image = data?.spectrum || null
+          if (disposed) return
+          const spectra = unboxGuiState(data?.spectra || {})
+          const spectrumValue = spectra?.[selected]
+          const image = typeof spectrumValue === 'string' ? spectrumValue : null
           setSpectrum(image)
           if (image) {
-            setSpectrumCache((prev) => ({ ...prev, [cacheKey]: image }))
+            setSpectrumCache((prev) => ({ ...prev, [spectrumCacheKey]: image }))
           }
         })
-        .catch(() => setSpectrum(null))
-    }, 800)
-    return () => clearTimeout(timer)
-  }, [selected, gates, gatesLoaded, files, spectrumCache, darkMode])
-
-  useEffect(() => {
-    if (!files.length) return
-    setStatus('Preloading controls')
-    setPreloadComplete(false)
-    useApi(`/gate_preload?max_points=${PRELOAD_POINTS}`)
-      .then((data) => {
-        const next = {}
-        ;(data.payloads || []).forEach((item) => {
-          const filename = payloadFilename(item)
-          if (filename && !item.error) next[filename] = item
+        .catch((error) => {
+          if (!disposed && error?.name !== 'AbortError') setSpectrum(null)
         })
-        setPayloadCache(next)
-        const active = selected || files[0]?.filename
-        if (active && next[active]) setPayload(next[active])
-        setDraft([])
-        setDrawActive(false)
-        setPreloadComplete(true)
-        setStatus('Ready')
-      })
-      .catch((err) => {
-        setPreloadComplete(true)
-        setStatus(`Could not preload events: ${err.message}`)
-      })
-  }, [files])
+    }, 800)
+    return () => {
+      disposed = true
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [selected, darkMode, gates, gatesLoaded, preloadComplete, spectrumEligible, spectrumCacheKey, cachedSpectrum, allSpectraEligible])
 
   useEffect(() => {
-    if (!selected) return
-    if (payloadCache[selected]) {
-      setPayload(payloadCache[selected])
-      setDraft([])
-      setDrawActive(false)
-      setStatus('Ready')
-      return
-    }
-    if (!preloadComplete) return
-    setStatus(`Loading ${selected}`)
-    useApi(`/gate_events?filename=${encodeURIComponent(selected)}&max_points=${PRELOAD_POINTS}`)
+    if (!allSpectraEligible || !missingSpectrumFiles.length || !spectrumBatchKey) return undefined
+    if (spectrumBatchRef.current === spectrumBatchKey) return undefined
+    spectrumBatchRef.current = spectrumBatchKey
+    const controller = new AbortController()
+    let disposed = false
+    setSpectraPrecomputing(true)
+    setStatus('Precomputing spectra')
+    useApi('/gate_spectra', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filenames: missingSpectrumFiles.map((file) => file.filename),
+        gates,
+        dark: darkMode,
+      }),
+      signal: controller.signal,
+    })
       .then((data) => {
-        setPayloadCache((prev) => ({ ...prev, [selected]: data }))
-        setPayload(data)
-        setDraft([])
-        setDrawActive(false)
+        if (disposed) return
+        if (data?.success === false) throw new Error(data.error || 'Spectrum precomputation failed')
+        const spectra = unboxGuiState(data?.spectra || {})
+        setSpectrumCache((previous) => {
+          const next = { ...previous }
+          missingSpectrumFiles.forEach((file) => {
+            const image = spectra?.[file.filename]
+            const key = spectrumCacheKeyForFile(gates, file, darkMode)
+            if (key && typeof image === 'string') next[key] = image
+          })
+          return next
+        })
         setStatus('Ready')
       })
-      .catch((err) => setStatus(`Could not load events: ${err.message}`))
-  }, [selected, payloadCache, preloadComplete])
+      .catch((error) => {
+        if (disposed || error?.name === 'AbortError') return
+        spectrumBatchRef.current = ''
+        setStatus(`Could not precompute spectra: ${error.message}`)
+      })
+      .finally(() => {
+        if (!disposed) setSpectraPrecomputing(false)
+      })
+    return () => {
+      disposed = true
+      controller.abort()
+    }
+  }, [allSpectraEligible, missingSpectrumFiles, spectrumBatchKey, gates, darkMode])
 
-  const currentFile = payload?.file?.[0] || files.find((f) => f.filename === selected) || {}
-  const events = useMemo(() => displayEventsForLimit(payload?.events || [], maxPoints), [payload, maxPoints])
+  useEffect(() => {
+    if (!files.length) return undefined
+    const requestedPoints = normalizeEventCount(maxPoints)
+    const controller = new AbortController()
+    let disposed = false
+    setPayload(null)
+    setPayloadCache({})
+    payloadCacheRef.current = {}
+    setPreloadComplete(false)
+    setStatus('Preloading controls')
+
+    useApi(`/gate_preload_compact?max_points=${requestedPoints}`, {
+      signal: controller.signal,
+    })
+      .then((data) => {
+        if (disposed) return
+        const next = {}
+        ;(data?.payloads || []).forEach((item) => {
+          const decoded = decodeCompactPayload(item)
+          const filename = decoded?.file?.filename || decoded?.filename
+          if (filename && !decoded?.error) next[filename] = decoded
+        })
+        payloadCacheRef.current = next
+        setPayloadCache(next)
+        setPreloadComplete(true)
+        setStatus('Ready')
+      })
+      .catch((error) => {
+        if (disposed || error?.name === 'AbortError') return
+        setPreloadComplete(true)
+        setStatus(`Could not preload controls: ${error.message}`)
+      })
+
+    return () => {
+      disposed = true
+      controller.abort()
+    }
+  }, [files, maxPoints])
+
+  useEffect(() => {
+    if (!preloadComplete || !selected) return
+    const nextPayload = payloadCacheRef.current[selected] || null
+    setPayload(nextPayload)
+    setDraft([])
+    setDrawActive(false)
+    setStatus(nextPayload ? 'Ready' : `Could not find preloaded events for ${selected}`)
+  }, [selected, preloadComplete])
+
+  const currentFile = payload?.file || files.find((f) => f.filename === selected) || {}
+  const events = useMemo(() => materializePayloadEvents(payload, maxPoints), [payload, maxPoints])
   const labels = payload?.labels || metadata.labels || {}
   const channels = payload?.channels || {}
   const domains = payload?.domains || {}
@@ -2378,10 +2598,6 @@ function App() {
     try {
       const [handle] = await openPicker({
         multiple: false,
-        types: [{
-          description: 'CSV files',
-          accept: { 'text/csv': ['.csv'] },
-        }],
       })
       if (!handle) return
       const file = await handle.getFile()
@@ -2633,7 +2849,7 @@ function App() {
             <input
               ref={loadInputRef}
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv"
               className="hidden-file-input"
               onChange={(event) => loadConfigFromFile(event.target.files?.[0] || null)}
             />
@@ -2731,8 +2947,8 @@ function App() {
             onDragEnd={handleDragEnd}
             xDomain={domainForChannel(cellAxes.x, domains.fsc_a)}
             yDomain={domainForChannel(cellAxes.y, domains.ssc_a)}
-            viewDomain={viewSettings.cell?.[controlType] || null}
-            onViewDomainChange={(view) => updateViewSetting('cell', controlType, view)}
+            viewDomain={viewSettings.cell?.global || null}
+            onViewDomainChange={(view) => updateViewSetting('cell', 'global', view)}
             statsText={cellGate ? `${cellSummary.count.toLocaleString()} (${cellSummary.pct.toFixed(1)}%)` : null}
             drawActive={drawActive}
             pointSize={pointSize}
@@ -2803,8 +3019,8 @@ function App() {
             onDragEnd={handleDragEnd}
             xDomain={domainForChannel(singletAxes.x, domains.fsc_h)}
             yDomain={domainForChannel(singletAxes.y, domains.fsc_a)}
-            viewDomain={viewSettings.singlet?.[controlType] || null}
-            onViewDomainChange={(view) => updateViewSetting('singlet', controlType, view)}
+            viewDomain={viewSettings.singlet?.global || null}
+            onViewDomainChange={(view) => updateViewSetting('singlet', 'global', view)}
             statsText={singletGate ? `${singletSummary.count.toLocaleString()} (${singletSummary.pct.toFixed(1)}%)` : null}
             warningText={singletWarningText}
             drawActive={drawActive}
@@ -2940,8 +3156,17 @@ function App() {
                   alt="Detector Spectrum"
                   style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 6, border: '1px solid var(--line)' }}
                 />
+              ) : !spectrumEligible ? (
+                <div className="spectrum-gate-required">
+                  {spectrumUsesHistogramGate
+                    ? 'Complete the cell, singlet, and positive histogram gates to create the spectrum.'
+                    : 'Complete the cell and singlet gates to create the AF spectrum.'}
+                </div>
               ) : (
-                <div className="spectrum-placeholder" aria-label="Spectrum loading placeholder" />
+                <div
+                  className="spectrum-placeholder"
+                  aria-label={spectraPrecomputing ? 'Precomputing all spectra' : 'Spectrum loading placeholder'}
+                />
               )}
           </div>
         </div>

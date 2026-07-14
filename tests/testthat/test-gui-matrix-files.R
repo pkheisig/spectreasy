@@ -78,6 +78,83 @@ testthat::test_that("GUI spectrum gating keeps zero-event gate results empty", {
     testthat::expect_equal(nrow(api_env$gate_apply_positive_gate(expr, empty_positive_gate, "Peak-A")), 0L)
 })
 
+testthat::test_that("GUI spectrum generation requires the complete gate chain", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) {
+        api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    }
+    testthat::skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+
+    polygon <- list(
+        mode = "scatter",
+        xChannel = "FSC-A",
+        yChannel = "SSC-A",
+        vertices = list(
+            list(x = 0, y = 0),
+            list(x = 1, y = 0),
+            list(x = 1, y = 1)
+        )
+    )
+    positive <- list(
+        mode = "positive_1d",
+        vertices = list(list(x = 10, y = 0), list(x = 20, y = 0))
+    )
+    scatter_only <- list("cell:cells" = polygon, "singlet:cells" = polygon)
+
+    testthat::expect_false(api_env$gate_spectrum_gates(list(), "control.fcs", "cells")$ready)
+    testthat::expect_true(api_env$gate_spectrum_gates(scatter_only, "control.fcs", "cells", is_af = TRUE)$ready)
+    testthat::expect_false(api_env$gate_spectrum_gates(scatter_only, "control.fcs", "cells")$ready)
+    testthat::expect_true(api_env$gate_spectrum_gates(
+        c(scatter_only, list("positive:control.fcs" = positive)),
+        "control.fcs",
+        "cells"
+    )$ready)
+
+    api_env$gate_read_mapping <- function() data.frame(
+        filename = "control.fcs",
+        channel = "Peak-A",
+        control.type = "cells",
+        is_af = FALSE,
+        stringsAsFactors = FALSE
+    )
+    api_env$gate_read_fcs <- function(path) stop("FCS should not be read before gates are complete")
+    withr::local_options(list(spectreasy.gating_state_cache = list(gates = list())))
+    testthat::expect_null(api_env$gate_spectrum_for_file("control.fcs"))
+})
+
+testthat::test_that("GUI compact preload preserves float32 event columns", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) {
+        api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    }
+    testthat::skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+    payload <- list(events = data.frame(
+        event_index = c(1, 2),
+        fsc_a = c(12.5, 25.25),
+        check.names = FALSE
+    ))
+    compact <- api_env$gate_compact_payload(payload)
+    decoded <- readBin(
+        jsonlite::base64_dec(compact$events_compact$data),
+        what = "numeric",
+        n = 4,
+        size = 4,
+        endian = "little"
+    )
+
+    testthat::expect_null(compact[["events"]])
+    testthat::expect_identical(compact$events_compact$format, "float32-column-major")
+    testthat::expect_identical(compact$events_compact$fields, c("event_index", "fsc_a"))
+    testthat::expect_equal(compact$events_compact$rows, 2L)
+    testthat::expect_equal(decoded, c(1, 2, 12.5, 25.25), tolerance = 1e-6)
+})
+
 testthat::test_that("GUI gate file listing handles an empty project", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) {

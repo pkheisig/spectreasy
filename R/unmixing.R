@@ -741,8 +741,10 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
-#' @param n_threads Positive integer; number of threads to use for event-wise
-#'   multi-AF WLS/RWLS unmixing. The default, 1, keeps execution single-threaded.
+#' @param n_threads Positive integer; number of threads for event-wise
+#'   AutoSpectral/Spectreasy AF assignment and NNLS/WLS/RWLS fitting. OLS uses
+#'   vectorized matrix operations. The default, 1, keeps explicit event loops
+#'   single-threaded.
 #' @param spectral_variant_library Optional in-memory AutoSpectral
 #'   spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`
 #'   or `"Spectreasy"`.
@@ -919,7 +921,7 @@ unmix_samples <- function(sample_dir = "samples",
 
     method <- .normalize_unmix_method(unmixing_method)
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
-    n_threads <- .normalize_unmix_threads(n_threads)
+    n_threads <- .normalize_n_threads(n_threads)
     if (!identical(method, "Spectreasy") && !spectreasy_weight_quantile_missing) {
         stop("spectreasy_weight_quantile is only accepted when unmixing_method = \"Spectreasy\".", call. = FALSE)
     }

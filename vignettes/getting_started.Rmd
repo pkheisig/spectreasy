@@ -120,7 +120,7 @@ ctrl <- unmix_controls(
   unmixing_method = "Spectreasy",
   gating_mode = "automatic",
   unmix_scatter_panel_size_mm = 30,
-  save_qc_plots = TRUE,
+  save_qc_png = TRUE,
   seed = 1
 )
 
@@ -152,7 +152,7 @@ unmix_controls(
   auto_unknown_fluor_policy = "by_channel",
   unmixing_method = "Spectreasy",
   unmix_scatter_panel_size_mm = 30,
-  save_qc_plots = TRUE
+  save_qc_png = TRUE
 )
 ```
 
