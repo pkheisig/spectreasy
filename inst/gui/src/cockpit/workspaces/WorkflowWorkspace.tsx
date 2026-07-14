@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -8,7 +8,6 @@ import {
   ChevronDown,
   CircleCheckBig,
   Download,
-  FileText,
   FlaskConical,
   FolderOpen,
   GitCompare,
@@ -30,6 +29,7 @@ import type {
   AfSettings,
   Artifact,
   BackendStatus,
+  CockpitAppletId,
   ControlSettings,
   Job,
   MappingRow,
@@ -61,8 +61,7 @@ import {
 import { demoReports } from "../mockData";
 import { StatusPill } from "../components/StatusPill";
 import { AppearanceSettings } from "../components/AppearanceSettings";
-
-const GateEditor = lazy(() => import("../../GatingGui.jsx"));
+import { GuiSelect } from "../components/GuiSelect";
 
 export type WorkflowWorkspaceProps = {
   project: ProjectState;
@@ -73,7 +72,7 @@ export type WorkflowWorkspaceProps = {
   setMappingTab: (tab: "mapping" | "gating" | "build" | "qc") => void;
   onUpdateMapping: (id: string, patch: Partial<MappingRow>) => void;
   onRun: (
-    action: "control" | "sample" | "report" | "af",
+    action: "control" | "sample" | "control-report" | "sample-report" | "af",
     label: string,
   ) => void;
   onRefresh: () => void;
@@ -82,6 +81,7 @@ export type WorkflowWorkspaceProps = {
   onLoadPanel: () => void;
   panelPayload: PanelPayload | null;
   onSave: () => void;
+  onCreateMapping: () => void;
   settings: WorkflowSettings;
   onSettingsChange: (
     section: "projectPath" | "control" | "sample" | "af" | "appearance",
@@ -92,7 +92,7 @@ export type WorkflowWorkspaceProps = {
       | Partial<WorkflowSettings["appearance"]>
       | { projectPath: string },
   ) => void;
-  onOpenProject: (path: string) => void;
+  onOpenApplet: (applet: CockpitAppletId) => void;
   onSaveMapping?: () => void;
 };
 
@@ -209,188 +209,18 @@ function JobStrip({ job }: { job: Job }) {
   );
 }
 
-function OverviewWorkspace({
-  project,
-  onSectionChange,
-  onRefresh,
-}: {
-  project: ProjectState;
-  onSectionChange: (section: SectionId) => void;
-  onRefresh: () => void;
-}) {
-  const nextSteps = [
-    {
-      title: "Review 2 new samples",
-      detail: "Detector set matches selected matrix",
-      state: "warning",
-      section: "samples" as SectionId,
-    },
-    {
-      title: "Run sample unmixing",
-      detail: "Ready · 28 files · Spectreasy method",
-      state: "ready",
-      section: "samples" as SectionId,
-    },
-    {
-      title: "Regenerate sample QC",
-      detail: "Previous report is stale",
-      state: "stale",
-      section: "reports" as SectionId,
-    },
-  ];
-  return (
-    <>
-      <WorkspaceHeader
-        kicker="Project overview"
-        title={project.projectName}
-        description="Review project inputs, outputs, and workflow status."
-        action="Rescan project"
-        onAction={onRefresh}
-      />
-      <div className="hero-grid">
-        <div className="hero-card">
-          <div className="hero-card-top">
-            <span className="status-orb">
-              <span />
-            </span>
-            <span className="eyebrow">Project scan · just now</span>
-            <StatusPill state="complete" label="Ready for samples" compact />
-          </div>
-          <h2>Controls are ready for sample unmixing.</h2>
-          <p>
-            Reference matrix, gates, detector noise, and spectral variants are
-            current. Sample unmixing can run with the selected method.
-          </p>
-          <div className="hero-actions">
-            <button
-              className="button button-primary"
-              onClick={() => onSectionChange("samples")}
-            >
-              <Play size={14} fill="currentColor" /> Continue to samples
-            </button>
-            <button
-              className="button button-ghost"
-              onClick={() => onSectionChange("controls")}
-            >
-              Review controls <ArrowRight size={14} />
-            </button>
-          </div>
-          <div className="hero-foot">
-            <span>
-              <ShieldCheck size={14} /> All calculations stay in R
-            </span>
-            <span>
-              <LockKeyhole size={13} /> Local project
-            </span>
-          </div>
-        </div>
-        <div className="scan-card">
-          <div className="scan-orbit">
-            <div className="orbit-ring ring-one" />
-            <div className="orbit-ring ring-two" />
-            <div className="orbit-ring ring-three" />
-            <div className="orbit-core">
-              <span>94%</span>
-              <small>ready</small>
-            </div>
-          </div>
-          <div className="scan-copy">
-            <span className="eyebrow">Artifact coverage</span>
-            <strong>14 / 15</strong>
-            <span>expected outputs present</span>
-            <div className="scan-legend">
-              <span>
-                <i className="legend-dot current" /> Current
-              </span>
-              <span>
-                <i className="legend-dot stale" /> Stale
-              </span>
-              <span>
-                <i className="legend-dot user" /> Input
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="metrics-row">
-        <Metric value="14" label="control files" accent="accent-teal" />
-        <Metric value="28" label="sample files" />
-        <Metric value="3" label="matrices" accent="accent-amber" />
-        <Metric value="5" label="reports" accent="accent-coral" />
-        <Metric value="1" label="attention" accent="accent-red" />
-      </div>
-      <div className="two-column-grid">
-        <section className="surface-card next-card">
-          <SectionTitle
-            eyebrow="Suggested next"
-            title="Recommended next steps"
-            note="Actions are ordered by project dependencies."
-          />
-          <div className="next-list">
-            {nextSteps.map((step, index) => (
-              <button
-                className="next-row"
-                key={step.title}
-                onClick={() => onSectionChange(step.section)}
-              >
-                <span className="next-index">0{index + 1}</span>
-                <span className="next-row-copy">
-                  <strong>{step.title}</strong>
-                  <small>{step.detail}</small>
-                </span>
-                <StatusPill
-                  state={step.state as "warning" | "ready" | "stale"}
-                  compact
-                />
-                <ArrowRight size={15} />
-              </button>
-            ))}
-          </div>
-        </section>
-        <section className="surface-card manifest-card">
-          <SectionTitle
-            eyebrow="Run manifest"
-            title="run-014"
-            note="Control workflow · today at 09:48"
-          />
-          <div className="manifest-list">
-            <div>
-              <span>Method</span>
-              <strong>{project.method}</strong>
-            </div>
-            <div>
-              <span>Cytometer</span>
-              <strong>{project.cytometer}</strong>
-            </div>
-            <div>
-              <span>Outputs</span>
-              <strong>9 artifacts</strong>
-            </div>
-            <div>
-              <span>Duration</span>
-              <strong>04:12</strong>
-            </div>
-          </div>
-          <button className="text-action">
-            <FileText size={14} /> View run log <ArrowRight size={13} />
-          </button>
-        </section>
-      </div>
-    </>
-  );
-}
-
 function MappingWorkspace({
   project,
   onUpdateMapping,
   onRun,
-  onRefresh,
   mappingTab,
   setMappingTab,
   onSaveMapping,
+  onCreateMapping,
   settings,
   onSettingsChange,
   onViewReports,
+  onOpenApplet,
 }: Pick<
   WorkflowWorkspaceProps,
   | "project"
@@ -400,11 +230,18 @@ function MappingWorkspace({
   | "mappingTab"
   | "setMappingTab"
   | "onSaveMapping"
+  | "onCreateMapping"
   | "settings"
   | "onSettingsChange"
+  | "onOpenApplet"
 > & { onViewReports: () => void }) {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const negativeCandidates = useMemo(
+    () => project.mapping.filter((row) =>
+      row.marker.trim().toLowerCase() === "autofluorescence" || /^af(?:$|_|\b)/i.test(row.fluorophore.trim()),
+    ),
+    [project.mapping],
+  );
   const toggleRow = (id: string) =>
     setSelectedRows((rows) =>
       rows.includes(id) ? rows.filter((row) => row !== id) : [...rows, id],
@@ -413,36 +250,52 @@ function MappingWorkspace({
     <>
       <WorkspaceHeader
         kicker="Controls / control stage"
-        title="Make the reference trustworthy"
-        description="Map, gate, and unmix controls in one pass. Every downstream artifact is tied back to these choices."
+        title="Control processing"
+        description="Configure the control mapping, review gates, build the reference matrix, and inspect control QC."
       />
       <div className="subnav">
         <button
           className={mappingTab === "mapping" ? "is-active" : ""}
           onClick={() => setMappingTab("mapping")}
         >
-          01 Mapping <StatusPill state="complete" compact />
+          01 Mapping <StatusPill state={project.mapping.length ? "complete" : "idle"} compact />
         </button>
         <button
           className={mappingTab === "gating" ? "is-active" : ""}
-          onClick={() => setMappingTab("gating")}
+          onClick={() => onOpenApplet("control-gating")}
+          disabled={project.mapping.length === 0}
+          title={project.mapping.length === 0 ? "Create the control mapping first" : undefined}
         >
           02 Gating <StatusPill state="complete" compact />
         </button>
         <button
           className={mappingTab === "build" ? "is-active" : ""}
           onClick={() => setMappingTab("build")}
+          disabled={project.mapping.length === 0}
         >
           03 Build reference <StatusPill state="complete" compact />
         </button>
         <button
           className={mappingTab === "qc" ? "is-active" : ""}
           onClick={() => setMappingTab("qc")}
+          disabled={project.mapping.length === 0}
         >
           04 Control QC <StatusPill state="complete" compact />
         </button>
       </div>
-      {mappingTab === "mapping" && (
+      {mappingTab === "mapping" && project.mapping.length === 0 && (
+        <section className="surface-card mapping-empty-state">
+          <div>
+            <span className="eyebrow">Control mapping</span>
+            <h2>No control mapping created</h2>
+            <p>Create <code>fcs_mapping.csv</code> from the FCS files in the project's <code>scc</code> folder.</p>
+          </div>
+          <button className="button button-primary create-control-file-button" onClick={onCreateMapping}>
+            <Plus size={15} /> Create control file
+          </button>
+        </section>
+      )}
+      {mappingTab === "mapping" && project.mapping.length > 0 && (
         <section className="surface-card">
           <div className="card-toolbar">
             <div>
@@ -455,30 +308,10 @@ function MappingWorkspace({
               </h2>
             </div>
             <div className="toolbar-actions">
-              <button className="button button-ghost" onClick={onRefresh}>
-                <FolderOpen size={14} /> Use existing
-              </button>
-              <button className="button button-ghost" onClick={onRefresh}>
-                <Plus size={14} /> Create from folder
-              </button>
               <button className="button button-primary" onClick={onSaveMapping}>
                 <Save size={14} /> Save mapping
               </button>
             </div>
-          </div>
-          <div className="validation-banner">
-            <div className="banner-icon">
-              <CircleCheckBig size={17} />
-            </div>
-            <div>
-              <strong>Mapping validated</strong>
-              <span>
-                {project.mapping.length} rows · editable here
-              </span>
-            </div>
-            <button className="text-action" onClick={onRefresh}>
-              Run validation <ArrowRight size={13} />
-            </button>
           </div>
           <div className="mapping-tools">
             <label className="search-field compact-search">
@@ -500,21 +333,11 @@ function MappingWorkspace({
                   >
                     Set as cell
                   </button>
-                  <button
-                    className="text-action"
-                    onClick={() =>
-                      selectedRows.forEach((id) =>
-                        onUpdateMapping(id, { universalNegative: true }),
-                      )
-                    }
-                  >
-                    Set universal negative
-                  </button>
                 </>
               )}
             </div>
             <span className="table-note">
-              <Info size={13} /> Channel choices come from FCS metadata
+              <Info size={13} /> Channel and marker values are editable mapping fields
             </span>
           </div>
           <div className="mapping-table-wrap">
@@ -540,7 +363,7 @@ function MappingWorkspace({
                   <th>Marker</th>
                   <th>Channel</th>
                   <th>Type</th>
-                  <th>Negative</th>
+                  <th>Univ. neg.</th>
                   <th />
                 </tr>
               </thead>
@@ -584,24 +407,18 @@ function MappingWorkspace({
                       />
                     </td>
                     <td>
-                      <select
-                        className="table-select"
+                      <input
+                        className="table-input"
                         value={row.channel}
                         onChange={(event) =>
                           onUpdateMapping(row.id, {
                             channel: event.target.value,
                           })
                         }
-                      >
-                        <option>{row.channel}</option>
-                        <option>Violet 450 / B2</option>
-                        <option>Blue 530 / B3</option>
-                        <option>YellowGreen 586 / YG2</option>
-                        <option>Red 670 / R4</option>
-                      </select>
+                      />
                     </td>
                     <td>
-                      <select
+                      <GuiSelect
                         className="type-select"
                         value={row.controlType}
                         onChange={(event) =>
@@ -611,23 +428,26 @@ function MappingWorkspace({
                           })
                         }
                       >
-                        <option value="cell">Cell SCC</option>
+                        <option value="cell">Cell</option>
                         <option value="bead">Bead</option>
-                        <option value="unstained">Unstained</option>
-                        <option value="viability">Viability</option>
-                      </select>
+                      </GuiSelect>
                     </td>
                     <td>
-                      <input
-                        type="checkbox"
-                        checked={row.universalNegative}
+                      <GuiSelect
+                        className="negative-select"
+                        aria-label={`${row.file} universal negative`}
+                        value={row.universalNegative}
                         onChange={(event) =>
                           onUpdateMapping(row.id, {
-                            universalNegative: event.target.checked,
+                            universalNegative: event.target.value,
                           })
                         }
-                        aria-label={`${row.file} universal negative`}
-                      />
+                      >
+                        <option value="">None</option>
+                        {negativeCandidates.map((candidate) => (
+                          <option value={candidate.file} key={candidate.file}>{candidate.file}</option>
+                        ))}
+                      </GuiSelect>
                     </td>
                     <td>
                       {row.warning ? (
@@ -648,40 +468,9 @@ function MappingWorkspace({
               <AlertCircle size={14} /> Mapping edits are saved directly to the
               project CSV.
             </span>
-            <button
-              className="text-action"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-            >
-              <Settings2 size={14} /> {showAdvanced ? "Hide" : "Show"}{" "}
-              validation details <ChevronDown size={13} />
-            </button>
           </div>
-          {showAdvanced && (
-            <div className="advanced-drawer">
-              <div>
-                <span className="eyebrow">Blocking checks</span>
-                <strong>0 errors</strong>
-                <small>
-                  Every control has a readable FCS file and detector channel.
-                </small>
-              </div>
-              <div>
-                <span className="eyebrow">Advisories</span>
-                <strong>Review before run</strong>
-                <small>
-                  R will validate the mapping against the active SCC files.
-                </small>
-              </div>
-              <div>
-                <span className="eyebrow">Detector set</span>
-                <strong>Backend checked</strong>
-                <small>The chosen channel is sent to the workflow.</small>
-              </div>
-            </div>
-          )}
         </section>
       )}
-      {mappingTab === "gating" && <GatingEmbed />}
       {mappingTab === "build" && (
         <BuildReferencePanel
           settings={settings.control}
@@ -696,32 +485,6 @@ function MappingWorkspace({
         />
       )}
     </>
-  );
-}
-
-function GatingEmbed() {
-  return (
-    <section className="surface-card gating-embed">
-      <div className="gating-embed-note">
-        <span className="eyebrow">Live gate editor</span>
-        <strong>
-          Gate controls with the same CSV used by unmix_controls()
-        </strong>
-        <small>
-          The editor reads real FCS events from the active project and saves the
-          gate configuration directly.
-        </small>
-      </div>
-      <Suspense
-        fallback={
-          <div className="gating-embed-loading">
-            Loading the live gate editor…
-          </div>
-        }
-      >
-        <GateEditor />
-      </Suspense>
-    </section>
   );
 }
 
@@ -894,20 +657,20 @@ function GatingPanel({ onRun }: { onRun: WorkflowWorkspaceProps["onRun"] }) {
         </label>
         <label>
           Max points{" "}
-          <select defaultValue="50000">
+          <GuiSelect defaultValue="50000">
             <option>10,000</option>
             <option>50,000</option>
             <option>100,000</option>
-          </select>
+          </GuiSelect>
         </label>
         <label>
           Histogram transform{" "}
-          <select defaultValue="asinh">
+          <GuiSelect defaultValue="asinh">
             <option>Asinh</option>
             <option>Linear</option>
             <option>Log10</option>
             <option>Biexponential</option>
-          </select>
+          </GuiSelect>
         </label>
         <span className="settings-note">
           <Info size={14} /> Gate edits are tracked and saved as CSV.
@@ -938,7 +701,7 @@ function LegacyBuildReferencePanel({
       <div className="card-toolbar">
         <div>
           <span className="eyebrow">Reference build / control unmixing</span>
-          <h2>Turn controls into a trusted reference</h2>
+          <h2>Build reference matrix</h2>
           <p>
             One background job creates the matrix, noise floors, variants,
             unmixed controls, and QC report.
@@ -971,7 +734,7 @@ function LegacyBuildReferencePanel({
       <div className="run-controls">
         <label>
           <span>Unmixing method</span>
-          <select
+          <GuiSelect
             value={method}
             onChange={(event) => setMethod(event.target.value)}
           >
@@ -981,7 +744,7 @@ function LegacyBuildReferencePanel({
             <option>WLS</option>
             <option>RWLS</option>
             <option>NNLS</option>
-          </select>
+          </GuiSelect>
         </label>
         <label className="toggle-label">
           <input type="checkbox" defaultChecked />
@@ -1014,11 +777,11 @@ function LegacyBuildReferencePanel({
           </label>
           <label>
             SCC cleanup
-            <select defaultValue="median">
+            <GuiSelect defaultValue="median">
               <option>Median background</option>
               <option>None</option>
               <option>Robust spline</option>
-            </select>
+            </GuiSelect>
           </label>
           <label>
             Variant top-k
@@ -1067,7 +830,7 @@ function BuildReferencePanel({
       <div className="card-toolbar">
         <div>
           <span className="eyebrow">Reference build / control unmixing</span>
-          <h2>Turn controls into a trusted reference</h2>
+          <h2>Build reference matrix</h2>
           <p>
             One background job creates the matrix, noise floors, variants,
             unmixed controls, and QC report.
@@ -1109,7 +872,7 @@ function BuildReferencePanel({
       <div className="run-controls">
         <label>
           <span>Unmixing method</span>
-          <select
+          <GuiSelect
             value={settings.method}
             onChange={(event) =>
               onSettingsChange({ method: event.target.value })
@@ -1121,7 +884,7 @@ function BuildReferencePanel({
             <option>WLS</option>
             <option>RWLS</option>
             <option>NNLS</option>
-          </select>
+          </GuiSelect>
         </label>
         <label className="toggle-label">
           <input
@@ -1149,7 +912,7 @@ function BuildReferencePanel({
         </label>
         <label>
           <span>Report format</span>
-          <select
+          <GuiSelect
             value={settings.outputFormat}
             onChange={(event) =>
               onSettingsChange({
@@ -1159,7 +922,7 @@ function BuildReferencePanel({
           >
             <option value="html">HTML</option>
             <option value="pdf">PDF</option>
-          </select>
+          </GuiSelect>
         </label>
         <label className="toggle-label">
           <input
@@ -1208,7 +971,7 @@ function BuildReferencePanel({
           </label>
           {useSpectralPipeline && <label>
             Background
-            <select
+            <GuiSelect
               value={settings.sccBackgroundMethod}
               onChange={(event) =>
                 onSettingsChange({
@@ -1219,7 +982,7 @@ function BuildReferencePanel({
             >
               <option value="scatter_knn">Scatter KNN</option>
               <option value="none">None</option>
-            </select>
+            </GuiSelect>
           </label>}
           <label>
             Seed
@@ -1316,7 +1079,7 @@ function ControlReportPanel({
           </button>
           <button
             className="button button-primary"
-            onClick={() => onRun("report", "Render control QC report")}
+            onClick={() => onRun("control-report", "Render control QC report")}
           >
             <RefreshCcw size={14} /> Regenerate
           </button>
@@ -1395,7 +1158,7 @@ function ControlsWorkspace(
   return (
     <MappingWorkspace
       {...props}
-      onViewReports={() => props.onSectionChange("reports")}
+      onViewReports={() => props.onSectionChange("control-reports")}
       onSaveMapping={props.onSaveMapping ?? props.onSave}
     />
   );
@@ -1484,14 +1247,14 @@ function SamplesWorkspace({
             note="Reference matrices and adjusted matrices stay visibly distinct."
           />
           <label className="matrix-choice">
-            <select
+            <GuiSelect
               value={selectedMatrix}
               onChange={(event) => setSelectedMatrix(event.target.value)}
             >
               <option>reference_matrix.csv</option>
               <option>adjusted_matrix_v2.csv</option>
               <option>unmixing_matrix.csv</option>
-            </select>
+            </GuiSelect>
             <ChevronDown size={14} />
           </label>
           <div className="matrix-detail-list">
@@ -1515,7 +1278,7 @@ function SamplesWorkspace({
           <div className="matrix-current">
             <span className="artifact-dot dot-current" />
             <div>
-              <strong>Current and trusted</strong>
+              <strong>Current matrix</strong>
               <small>Inputs have not changed since build.</small>
             </div>
             <button
@@ -1568,7 +1331,7 @@ function SamplesWorkspace({
           </div>
           <button
             className="button button-ghost"
-            onClick={() => onSectionChange("reports")}
+            onClick={() => onSectionChange("sample-reports")}
           >
             View Sample Report <ArrowRight size={14} />
           </button>
@@ -1664,56 +1427,6 @@ function LegacyConfigurableSamplesWorkspace({
             Show all detected samples <ArrowRight size={13} />
           </button>
         </section>
-        <section className="surface-card matrix-select-card">
-          <SectionTitle
-            eyebrow="Run inputs"
-            title="Use a reference matrix"
-            note="Paths are relative to the active project folder."
-          />
-          <div className="settings-form">
-            <label>
-              Sample folder
-              <input
-                value={settings.sampleDir}
-                onChange={(event) =>
-                  onSettingsChange({ sampleDir: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              Reference matrix
-              <input
-                value={settings.matrixFile}
-                onChange={(event) =>
-                  onSettingsChange({ matrixFile: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              Detector noise file
-              <input
-                value={settings.detectorNoiseFile}
-                onChange={(event) =>
-                  onSettingsChange({ detectorNoiseFile: event.target.value })
-                }
-                placeholder="Optional"
-              />
-            </label>
-          </div>
-          <div className="matrix-current">
-            <span className="artifact-dot dot-current" />
-            <div>
-              <strong>{settings.matrixFile}</strong>
-              <small>Matrix path sent to the R backend</small>
-            </div>
-            <button
-              className="text-action"
-              onClick={() => onSectionChange("matrix")}
-            >
-              Tune <ArrowRight size={13} />
-            </button>
-          </div>
-        </section>
       </div>
       <section className="surface-card sample-run-card">
         <div className="card-toolbar">
@@ -1762,7 +1475,7 @@ function LegacyConfigurableSamplesWorkspace({
           <div className="settings-form-grid">
             <label>
               Unmixing method
-              <select
+              <GuiSelect
                 value={settings.method}
                 onChange={(event) =>
                   onSettingsChange({ method: event.target.value })
@@ -1774,7 +1487,7 @@ function LegacyConfigurableSamplesWorkspace({
                 <option>WLS</option>
                 <option>RWLS</option>
                 <option>NNLS</option>
-              </select>
+              </GuiSelect>
             </label>
             <label>
               Threads
@@ -1892,7 +1605,7 @@ function LegacyConfigurableSamplesWorkspace({
             </label>
             <label>
               Report format
-              <select
+              <GuiSelect
                 value={settings.outputFormat}
                 onChange={(event) =>
                   onSettingsChange({
@@ -1902,7 +1615,7 @@ function LegacyConfigurableSamplesWorkspace({
               >
                 <option value="html">HTML</option>
                 <option value="pdf">PDF</option>
-              </select>
+              </GuiSelect>
             </label>
             <label className="toggle-label">
               <input
@@ -1927,7 +1640,7 @@ function LegacyConfigurableSamplesWorkspace({
           </div>
           <button
             className="button button-ghost"
-            onClick={() => onSectionChange("reports")}
+            onClick={() => onSectionChange("sample-reports")}
           >
             View Sample Report <ArrowRight size={14} />
           </button>
@@ -1949,13 +1662,11 @@ function ConfigurableSamplesWorkspace({
   settings,
   onSettingsChange,
   onRun,
-  onSectionChange,
 }: {
   project: ProjectState;
   settings: SampleSettings;
   onSettingsChange: (patch: Partial<SampleSettings>) => void;
   onRun: WorkflowWorkspaceProps["onRun"];
-  onSectionChange: (section: SectionId) => void;
 }) {
   const [sampleFiles, setSampleFiles] = useState<string[]>([]);
   const [sampleFilter, setSampleFilter] = useState("");
@@ -2072,56 +1783,6 @@ function ConfigurableSamplesWorkspace({
             </span>
           )}
         </section>
-        <section className="surface-card matrix-select-card">
-          <SectionTitle
-            eyebrow="Run inputs"
-            title="Use a reference matrix"
-            note="Paths are relative to the active project folder."
-          />
-          <div className="settings-form">
-            <label>
-              Sample folder
-              <input
-                value={settings.sampleDir}
-                onChange={(event) =>
-                  onSettingsChange({ sampleDir: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              Reference matrix
-              <input
-                value={settings.matrixFile}
-                onChange={(event) =>
-                  onSettingsChange({ matrixFile: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              Detector noise file
-              <input
-                value={settings.detectorNoiseFile}
-                onChange={(event) =>
-                  onSettingsChange({ detectorNoiseFile: event.target.value })
-                }
-                placeholder="Optional"
-              />
-            </label>
-          </div>
-          <div className="matrix-current">
-            <span className="artifact-dot dot-current" />
-            <div>
-              <strong>{settings.matrixFile}</strong>
-              <small>Matrix path sent to the R backend</small>
-            </div>
-            <button
-              className="text-action"
-              onClick={() => onSectionChange("matrix")}
-            >
-              Tune <ArrowRight size={13} />
-            </button>
-          </div>
-        </section>
       </div>
       <section className="surface-card sample-run-card">
         <div className="card-toolbar">
@@ -2170,7 +1831,7 @@ function ConfigurableSamplesWorkspace({
           <div className="settings-form-grid">
             <label>
               Unmixing method
-              <select
+              <GuiSelect
                 value={settings.method}
                 onChange={(event) =>
                   onSettingsChange({ method: event.target.value })
@@ -2182,7 +1843,7 @@ function ConfigurableSamplesWorkspace({
                 <option>WLS</option>
                 <option>RWLS</option>
                 <option>NNLS</option>
-              </select>
+              </GuiSelect>
             </label>
             <label>
               Threads
@@ -2300,7 +1961,7 @@ function ConfigurableSamplesWorkspace({
             </label>
             <label>
               Report format
-              <select
+              <GuiSelect
                 value={settings.outputFormat}
                 onChange={(event) =>
                   onSettingsChange({
@@ -2310,7 +1971,7 @@ function ConfigurableSamplesWorkspace({
               >
                 <option value="html">HTML</option>
                 <option value="pdf">PDF</option>
-              </select>
+              </GuiSelect>
             </label>
             <label className="toggle-label">
               <input
@@ -2365,7 +2026,7 @@ function LegacyReportsWorkspace({
     <>
       <WorkspaceHeader
         kicker="Reports / shared QC data"
-        title="Read the run, not the folder tree"
+        title="Reports"
         description="HTML is the in-app view. PDF stays available for archival review, with both formats rendered from one cached report object."
       />
       <div className="reports-layout">
@@ -2377,7 +2038,7 @@ function LegacyReportsWorkspace({
             </div>
             <button
               className="button button-ghost"
-              onClick={() => onRun("report", "Render reports")}
+              onClick={() => onRun("control-report", "Render reports")}
             >
               <RefreshCcw size={14} /> Render reports
             </button>
@@ -2553,7 +2214,7 @@ function LegacyMatrixWorkspace({
     <>
       <WorkspaceHeader
         kicker="Matrix review / adjustment"
-        title="Tune with context"
+        title="Matrix adjustment"
         description="Inspect detector signatures and save an adjusted matrix as a new artifact. The R backend remains the source of every value."
       />
       <div className="matrix-header-card surface-card">
@@ -2676,28 +2337,31 @@ function LegacyMatrixWorkspace({
 
 function ReportsWorkspace({
   onRun,
+  kind,
 }: {
   onRun: WorkflowWorkspaceProps["onRun"];
+  kind: "control" | "sample";
 }) {
-  const [reports, setReports] = useState<Report[]>(demoReports);
-  const [selectedId, setSelectedId] = useState(demoReports[0].id);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [selectedId, setSelectedId] = useState("");
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadProjectReports().then((liveReports) => {
-        if (liveReports.length > 0) {
-          setReports(liveReports);
-          setSelectedId(liveReports[0].id);
+        const filtered = liveReports.filter((report) => report.type === (kind === "control" ? "Control QC" : "Sample QC"));
+        if (filtered.length > 0) {
+          setReports(filtered);
+          setSelectedId(filtered[0].id);
         }
       });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [kind]);
 
   const selectedReport =
     reports.find((report) => report.id === selectedId) ??
     reports[0] ??
-    demoReports[0];
+    ({ id: "empty", title: `No ${kind} QC report selected`, type: kind === "control" ? "Control QC" : "Sample QC", format: "HTML", run: "—", created: "—", status: "current", matrix: "—" } satisfies Report);
   const grouped = useMemo(
     () => ({
       current: reports.filter((report) => report.status === "current"),
@@ -2717,9 +2381,9 @@ function ReportsWorkspace({
   return (
     <>
       <WorkspaceHeader
-        kicker="Reports / shared QC data"
-        title="Read the run, not the folder tree"
-        description="Reports are discovered from the active project. Open the original HTML or PDF through the local R backend, or render a fresh control report."
+        kicker={`${kind === "control" ? "Controls" : "Samples"} / QC report`}
+        title={`${kind === "control" ? "Controls" : "Samples"} QC report`}
+        description={`Review ${kind} QC reports discovered in the active project or render a current report.`}
       />
       <div className="reports-layout">
         <section className="surface-card report-library">
@@ -2730,9 +2394,9 @@ function ReportsWorkspace({
             </div>
             <button
               className="button button-ghost"
-              onClick={() => onRun("report", "Render reports")}
+              onClick={() => onRun(kind === "control" ? "control-report" : "sample-report", `Render ${kind} QC report`)}
             >
-              <RefreshCcw size={14} /> Render reports
+              <RefreshCcw size={14} /> Render report
             </button>
           </div>
           <div className="report-group">
@@ -3001,7 +2665,7 @@ function MatrixWorkspace() {
     <div className="matrix-workspace">
       <WorkspaceHeader
         kicker="Matrix review / adjustment"
-        title="Tune with context"
+        title="Matrix adjustment"
         description="Inspect detector signatures and save an adjusted matrix as a new artifact. Every value shown here comes from the active R project."
       />
       <input
@@ -3022,7 +2686,7 @@ function MatrixWorkspace() {
           </p>
         </div>
         <div className="toolbar-actions">
-          <select
+          <GuiSelect
             className="matrix-file-select"
             value={filename}
             onChange={(event) => void load(event.target.value)}
@@ -3034,7 +2698,7 @@ function MatrixWorkspace() {
                 {file}
               </option>
             ))}
-          </select>
+          </GuiSelect>
           <button
             className="button button-ghost"
             onClick={() => uploadRef.current?.click()}
@@ -3219,7 +2883,7 @@ function LegacyPanelWorkspace({
     <>
       <WorkspaceHeader
         kicker="Panel builder / spectral design"
-        title="See the panel before you run it"
+        title="Spectral panel builder"
         description="Explore packaged theoretical spectra for Aurora, Discover, ID7000, and Xenith. No controls or samples required."
         action="Refresh library"
         onAction={onLoadPanel}
@@ -3231,16 +2895,16 @@ function LegacyPanelWorkspace({
           <p>Violet · Blue · YellowGreen · Red · UV</p>
         </div>
         <div className="panel-selects">
-          <select defaultValue="aurora">
+          <GuiSelect defaultValue="aurora">
             <option value="aurora">Aurora</option>
             <option>Discover</option>
             <option>ID7000</option>
             <option>Xenith</option>
-          </select>
-          <select defaultValue="5l">
+          </GuiSelect>
+          <GuiSelect defaultValue="5l">
             <option value="5l">5 laser configuration</option>
             <option>4 laser configuration</option>
-          </select>
+          </GuiSelect>
           <button className="button button-primary">
             <Download size={14} /> Export overview
           </button>
@@ -3412,7 +3076,7 @@ function PanelWorkspace({
     <>
       <WorkspaceHeader
         kicker="Panel builder / spectral design"
-        title="See the panel before you run it"
+        title="Spectral panel builder"
         description="Explore packaged theoretical spectra for the active cytometer and update overlap metrics as you select fluorophores."
         action="Refresh library"
         onAction={() => {
@@ -3427,7 +3091,7 @@ function PanelWorkspace({
           <p>Library and metrics are provided by the R backend.</p>
         </div>
         <div className="panel-selects">
-          <select
+          <GuiSelect
             value={cytometer}
             onChange={(event) => {
               setCytometer(event.target.value);
@@ -3438,8 +3102,8 @@ function PanelWorkspace({
             <option value="discover">Discover</option>
             <option value="id7000">ID7000</option>
             <option value="xenith">Xenith</option>
-          </select>
-          <select
+          </GuiSelect>
+          <GuiSelect
             value={configuration}
             onChange={(event) => {
               setConfiguration(event.target.value);
@@ -3449,7 +3113,7 @@ function PanelWorkspace({
             <option value="">Default configuration</option>
             <option value="5l">5 laser configuration</option>
             <option value="4l">4 laser configuration</option>
-          </select>
+          </GuiSelect>
           <button
             className="button button-primary"
             onClick={() => void exportOverview()}
@@ -3575,7 +3239,7 @@ function AfWorkspace({ onRun }: { onRun: WorkflowWorkspaceProps["onRun"] }) {
     <>
       <WorkspaceHeader
         kicker="AF profile library / global background"
-        title="Keep autofluorescence reusable"
+        title="Autofluorescence profiles"
         description="Extract once from an unstained file, inspect the bands, then apply a saved profile to the next reference matrix."
       />
       <div className="af-layout">
@@ -3590,10 +3254,10 @@ function AfWorkspace({ onRun }: { onRun: WorkflowWorkspaceProps["onRun"] }) {
           <div className="af-form">
             <label>
               Source FCS
-              <select defaultValue="unstained_cells.fcs">
+              <GuiSelect defaultValue="unstained_cells.fcs">
                 <option>unstained_cells.fcs</option>
                 <option>PBMC_unstained_2026-06-28.fcs</option>
-              </select>
+              </GuiSelect>
             </label>
             <label>
               AF band count
@@ -3696,7 +3360,7 @@ function LegacyConfigurableAfWorkspace({
     <>
       <WorkspaceHeader
         kicker="AF profile library / global background"
-        title="Keep autofluorescence reusable"
+        title="Autofluorescence profiles"
         description="Extract an AF profile from an unstained FCS file with parameters that stay visible and reproducible."
       />
       <div className="af-layout">
@@ -3879,11 +3543,13 @@ function LegacyConfigurableAfWorkspace({
 function ConfigurableAfWorkspace({
   settings,
   matrixFile,
+  sourceFiles,
   onSettingsChange,
   onRun,
 }: {
   settings: AfSettings;
   matrixFile: string;
+  sourceFiles: string[];
   onSettingsChange: (patch: Partial<AfSettings>) => void;
   onRun: WorkflowWorkspaceProps["onRun"];
 }) {
@@ -3931,7 +3597,7 @@ function ConfigurableAfWorkspace({
     <>
       <WorkspaceHeader
         kicker="AF profile library / global background"
-        title="Keep autofluorescence reusable"
+        title="Autofluorescence profiles"
         description="Extract an AF profile from an unstained FCS file, save it in R, and apply it to a new matrix copy when needed."
       />
       <div className="af-layout">
@@ -3946,12 +3612,15 @@ function ConfigurableAfWorkspace({
           <div className="af-form">
             <label>
               Source FCS
-              <input
+              <GuiSelect
                 value={settings.fcsFile}
                 onChange={(event) =>
                   onSettingsChange({ fcsFile: event.target.value })
                 }
-              />
+              >
+                {sourceFiles.length === 0 && <option value="">No AF controls available</option>}
+                {sourceFiles.map((file) => <option value={`scc/${file}`} key={file}>{file}</option>)}
+              </GuiSelect>
             </label>
             <label>
               Save as profile
@@ -4276,8 +3945,8 @@ function ExperimentalWorkspace({
         }
         title={
           comparison
-            ? "Compare methods on the same inputs"
-            : "Generate a trusted synthetic SCC"
+            ? "Method comparison"
+            : "Synthetic SCC generation"
         }
         description={
           comparison
@@ -4437,19 +4106,13 @@ function ExperimentalWorkspace({
 }
 
 function ConfigurableSettingsWorkspace({
-  backend,
   job,
   settings,
   onSettingsChange,
-  onOpenProject,
-  onSave,
 }: {
-  backend: BackendStatus;
   job: Job;
   settings: WorkflowSettings;
   onSettingsChange: WorkflowWorkspaceProps["onSettingsChange"];
-  onOpenProject: WorkflowWorkspaceProps["onOpenProject"];
-  onSave: () => void;
 }) {
   const control = settings.control;
   const sample = settings.sample;
@@ -4458,78 +4121,16 @@ function ConfigurableSettingsWorkspace({
   return (
     <>
       <WorkspaceHeader
-        kicker="Settings, logs & advanced tools"
-        title="Make every run reproducible"
-        description="The browser owns the project context and user-facing parameters. Spectreasy R remains responsible for validation and numerical work."
+        kicker="Settings"
+        title="Settings"
+        description="Workflow parameter values and appearance preferences are saved automatically when edited."
       />
       <div className="settings-grid">
         <section className="surface-card settings-card">
           <SectionTitle
-            eyebrow="Active project"
-            title="Choose the folder once"
-            note="All relative paths below are resolved from this folder."
-          />
-          <div className="settings-form">
-            <label>
-              Project path
-              <input
-                value={settings.projectPath}
-                onChange={(event) =>
-                  onSettingsChange(
-                    "projectPath" as never,
-                    { projectPath: event.target.value } as never,
-                  )
-                }
-              />
-            </label>
-            <button
-              className="button button-primary"
-              onClick={() => onOpenProject(settings.projectPath)}
-            >
-              <FolderOpen size={14} /> Open project in R
-            </button>
-          </div>
-          <div className="health-status">
-            <span
-              className={`health-orb ${backend.connected ? "is-connected" : ""}`}
-            />
-            <div>
-              <strong>
-                {backend.connected
-                  ? "Connected to Spectreasy R"
-                  : "Not connected"}
-              </strong>
-              <span>{backend.message}</span>
-            </div>
-            <StatusPill
-              state={backend.connected ? "connected" : "offline"}
-              compact
-            />
-          </div>
-          <div className="settings-list">
-            <div>
-              <span>Host</span>
-              <strong>127.0.0.1</strong>
-            </div>
-            <div>
-              <span>API port</span>
-              <strong>{backend.apiPort}</strong>
-            </div>
-            <div>
-              <span>Package</span>
-              <strong>{backend.version}</strong>
-            </div>
-            <div>
-              <span>Assets</span>
-              <strong>bundled locally</strong>
-            </div>
-          </div>
-        </section>
-        <section className="surface-card settings-card">
-          <SectionTitle
             eyebrow="Defaults"
             title="Workflow defaults"
-            note="These preferences persist in the local Spectreasy config."
+            note="These preferences are saved automatically in the local Spectreasy config."
           />
           <div className="settings-list">
             <div>
@@ -4559,12 +4160,6 @@ function ConfigurableSettingsWorkspace({
               </strong>
             </div>
           </div>
-          <button
-            className="button button-primary settings-save"
-            onClick={onSave}
-          >
-            <Save size={14} /> Save all settings
-          </button>
         </section>
       </div>
       <AppearanceSettings
@@ -4578,35 +4173,8 @@ function ConfigurableSettingsWorkspace({
         </summary>
         <div className="settings-form-grid">
           <label>
-            SCC folder
-            <input
-              value={control.sccDir}
-              onChange={(event) =>
-                onSettingsChange("control", { sccDir: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            Mapping CSV
-            <input
-              value={control.controlFile}
-              onChange={(event) =>
-                onSettingsChange("control", { controlFile: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            Output folder
-            <input
-              value={control.outputDir}
-              onChange={(event) =>
-                onSettingsChange("control", { outputDir: event.target.value })
-              }
-            />
-          </label>
-          <label>
             Cytometer
-            <select
+            <GuiSelect
               value={control.cytometer}
               onChange={(event) =>
                 onSettingsChange("control", { cytometer: event.target.value })
@@ -4618,11 +4186,11 @@ function ConfigurableSettingsWorkspace({
               <option value="aurora_4l">Cytek Aurora 4L</option>
               <option value="discover">Cytek Aurora Discover</option>
               <option value="id7000">Sony ID7000</option>
-            </select>
+            </GuiSelect>
           </label>
           <label>
             Unmixing method
-            <select
+            <GuiSelect
               value={control.method}
               onChange={(event) =>
                 onSettingsChange("control", { method: event.target.value })
@@ -4634,11 +4202,11 @@ function ConfigurableSettingsWorkspace({
               <option>WLS</option>
               <option>RWLS</option>
               <option>NNLS</option>
-            </select>
+            </GuiSelect>
           </label>
           <label>
             Unknown fluor policy
-            <select
+            <GuiSelect
               value={control.autoUnknownFluorPolicy}
               onChange={(event) =>
                 onSettingsChange("control", {
@@ -4650,17 +4218,7 @@ function ConfigurableSettingsWorkspace({
               <option value="by_channel">Infer by channel</option>
               <option value="empty">Leave empty</option>
               <option value="filename">Infer by filename</option>
-            </select>
-          </label>
-          <label>
-            Gate CSV
-            <input
-              value={control.gateFile}
-              onChange={(event) =>
-                onSettingsChange("control", { gateFile: event.target.value })
-              }
-              placeholder="Optional"
-            />
+            </GuiSelect>
           </label>
           <label>
             AF bands
@@ -4758,7 +4316,7 @@ function ConfigurableSettingsWorkspace({
           {useSpectralControlPipeline && <>
           <label>
             Background method
-            <select
+            <GuiSelect
               value={control.sccBackgroundMethod}
               onChange={(event) =>
                 onSettingsChange("control", {
@@ -4769,7 +4327,7 @@ function ConfigurableSettingsWorkspace({
             >
               <option value="scatter_knn">Scatter KNN</option>
               <option value="none">None</option>
-            </select>
+            </GuiSelect>
           </label>
           <label>
             Background K
@@ -4947,7 +4505,7 @@ function ConfigurableSettingsWorkspace({
           </label>
           <label>
             Control report format
-            <select
+            <GuiSelect
               value={control.outputFormat}
               onChange={(event) =>
                 onSettingsChange("control", {
@@ -4957,7 +4515,7 @@ function ConfigurableSettingsWorkspace({
             >
               <option value="html">HTML</option>
               <option value="pdf">PDF</option>
-            </select>
+            </GuiSelect>
           </label>
           {control.method === "AutoSpectral" && <label className="toggle-label">
             <input
@@ -4979,46 +4537,8 @@ function ConfigurableSettingsWorkspace({
         </summary>
         <div className="settings-form-grid">
           <label>
-            Sample folder
-            <input
-              value={sample.sampleDir}
-              onChange={(event) =>
-                onSettingsChange("sample", { sampleDir: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            Reference matrix
-            <input
-              value={sample.matrixFile}
-              onChange={(event) =>
-                onSettingsChange("sample", { matrixFile: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            Detector noise file
-            <input
-              value={sample.detectorNoiseFile}
-              onChange={(event) =>
-                onSettingsChange("sample", {
-                  detectorNoiseFile: event.target.value,
-                })
-              }
-            />
-          </label>
-          <label>
-            Output folder
-            <input
-              value={sample.outputDir}
-              onChange={(event) =>
-                onSettingsChange("sample", { outputDir: event.target.value })
-              }
-            />
-          </label>
-          <label>
             Method
-            <select
+            <GuiSelect
               value={sample.method}
               onChange={(event) =>
                 onSettingsChange("sample", { method: event.target.value })
@@ -5030,7 +4550,7 @@ function ConfigurableSettingsWorkspace({
               <option>WLS</option>
               <option>RWLS</option>
               <option>NNLS</option>
-            </select>
+            </GuiSelect>
           </label>
           <label>
             RWLS iterations
@@ -5200,7 +4720,7 @@ function ConfigurableSettingsWorkspace({
           </label>
           <label>
             Sample report format
-            <select
+            <GuiSelect
               value={sample.outputFormat}
               onChange={(event) =>
                 onSettingsChange("sample", {
@@ -5210,7 +4730,7 @@ function ConfigurableSettingsWorkspace({
             >
               <option value="html">HTML</option>
               <option value="pdf">PDF</option>
-            </select>
+            </GuiSelect>
           </label>
           <label className="toggle-label">
             <input
@@ -5233,15 +4753,6 @@ function ConfigurableSettingsWorkspace({
           <span>extract_af_profile</span>
         </summary>
         <div className="settings-form-grid">
-          <label>
-            Source FCS
-            <input
-              value={af.fcsFile}
-              onChange={(event) =>
-                onSettingsChange("af", { fcsFile: event.target.value })
-              }
-            />
-          </label>
           <label>
             AF bands
             <input
@@ -5383,7 +4894,7 @@ function ControlReferenceTuning({
         </label>
         <label>
           Default sample type
-          <select
+          <GuiSelect
             value={settings.defaultSampleType}
             onChange={(event) =>
               onSettingsChange({
@@ -5394,7 +4905,7 @@ function ControlReferenceTuning({
           >
             <option value="beads">Beads</option>
             <option value="cells">Cells</option>
-          </select>
+          </GuiSelect>
         </label>
         <label>
           Bead histogram width
@@ -5413,7 +4924,7 @@ function ControlReferenceTuning({
         </label>
         <label>
           Bead histogram direction
-          <select
+          <GuiSelect
             value={settings.histogramDirectionBeads}
             onChange={(event) =>
               onSettingsChange({
@@ -5425,7 +4936,7 @@ function ControlReferenceTuning({
             <option value="right">Right</option>
             <option value="both">Both</option>
             <option value="left">Left</option>
-          </select>
+          </GuiSelect>
         </label>
         <label>
           Cell histogram width
@@ -5444,7 +4955,7 @@ function ControlReferenceTuning({
         </label>
         <label>
           Cell histogram direction
-          <select
+          <GuiSelect
             value={settings.histogramDirectionCells}
             onChange={(event) =>
               onSettingsChange({
@@ -5456,7 +4967,7 @@ function ControlReferenceTuning({
             <option value="right">Right</option>
             <option value="both">Both</option>
             <option value="left">Left</option>
-          </select>
+          </GuiSelect>
         </label>
         <label>
           Outlier percentile
@@ -5597,7 +5108,7 @@ function SampleOutputTuning({
         </label>
         <label>
           Return type
-          <select
+          <GuiSelect
             value={settings.returnType}
             onChange={(event) =>
               onSettingsChange({
@@ -5608,7 +5119,7 @@ function SampleOutputTuning({
             <option value="list">List</option>
             <option value="flowSet">flowSet</option>
             <option value="SingleCellExperiment">SingleCellExperiment</option>
-          </select>
+          </GuiSelect>
         </label>
       </div>
     </section>
@@ -5628,7 +5139,7 @@ function SettingsWorkspace({
     <>
       <WorkspaceHeader
         kicker="Settings, logs & advanced tools"
-        title="Keep every run explainable"
+        title="Settings and logs"
         description="Project preferences, backend health, and every long-running action live here."
       />
       <div className="settings-grid">
@@ -5683,26 +5194,26 @@ function SettingsWorkspace({
             </label>
             <label>
               Default cytometer
-              <select defaultValue="Cytek Aurora 5L">
+              <GuiSelect defaultValue="Cytek Aurora 5L">
                 <option>Cytek Aurora 5L</option>
                 <option>Cytek Aurora 4L</option>
                 <option>Cytek Northern Lights</option>
-              </select>
+              </GuiSelect>
             </label>
             <label>
               Default report format
-              <select defaultValue="HTML">
+              <GuiSelect defaultValue="HTML">
                 <option>HTML</option>
                 <option>PDF</option>
-              </select>
+              </GuiSelect>
             </label>
             <label>
               Existing output behavior
-              <select defaultValue="New run folder">
+              <GuiSelect defaultValue="New run folder">
                 <option>New run folder</option>
                 <option>Ask every time</option>
                 <option>Overwrite with confirmation</option>
-              </select>
+              </GuiSelect>
             </label>
           </div>
           <button className="button button-primary" onClick={onSave}>
@@ -5772,17 +5283,10 @@ export function WorkflowWorkspace(
     onSectionChange: (section: SectionId) => void;
   },
 ) {
-  const { activeSection, project, backend, job, onSectionChange } = props;
+  const { activeSection, project, job } = props;
   return (
     <div className="workspace-content">
       <JobStrip job={job} />
-      {activeSection === "overview" && (
-        <OverviewWorkspace
-          project={project}
-          onSectionChange={onSectionChange}
-          onRefresh={props.onRefresh}
-        />
-      )}
       {activeSection === "controls" && <ControlsWorkspace {...props} />}
       {activeSection === "samples" && (
         <ConfigurableSamplesWorkspace
@@ -5790,11 +5294,13 @@ export function WorkflowWorkspace(
           settings={props.settings.sample}
           onSettingsChange={(patch) => props.onSettingsChange("sample", patch)}
           onRun={props.onRun}
-          onSectionChange={onSectionChange}
         />
       )}
-      {activeSection === "reports" && (
-        <ReportsWorkspace onRun={props.onRun} />
+      {activeSection === "control-reports" && (
+        <ReportsWorkspace onRun={props.onRun} kind="control" />
+      )}
+      {activeSection === "sample-reports" && (
+        <ReportsWorkspace onRun={props.onRun} kind="sample" />
       )}
       {activeSection === "matrix" && <MatrixWorkspace />}
       {activeSection === "panel" && (
@@ -5807,26 +5313,17 @@ export function WorkflowWorkspace(
         <ConfigurableAfWorkspace
           settings={props.settings.af}
           matrixFile={props.settings.sample.matrixFile}
+          sourceFiles={project.mapping.filter((row) => row.marker.trim().toLowerCase() === "autofluorescence" || /^af(?:$|_|\b)/i.test(row.fluorophore.trim())).map((row) => row.file)}
           onSettingsChange={(patch) => props.onSettingsChange("af", patch)}
           onRun={props.onRun}
-        />
-      )}
-      {(activeSection === "comparison" || activeSection === "simulator") && (
-        <ExperimentalWorkspace
-          kind={activeSection}
-          project={project}
-          settings={props.settings}
         />
       )}
       {activeSection === "settings" && (
         <>
           <ConfigurableSettingsWorkspace
-            backend={backend}
             job={job}
             settings={props.settings}
             onSettingsChange={props.onSettingsChange}
-            onOpenProject={props.onOpenProject}
-            onSave={props.onSave}
           />
           <ControlReferenceTuning
             settings={props.settings.control}
@@ -5853,6 +5350,7 @@ void LegacyConfigurableAfWorkspace;
 void LegacyConfigurableSamplesWorkspace;
 void LegacyReportsWorkspace;
 void LegacyExperimentalWorkspace;
+void ExperimentalWorkspace;
 void GatingPanel;
 void SamplesWorkspace;
 void AfWorkspace;

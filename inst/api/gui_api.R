@@ -1230,6 +1230,7 @@ function(req, res) {
     res$setHeader("Access-Control-Allow-Origin", "*")
     res$setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
     res$setHeader("Access-Control-Allow-Headers", "Content-Type")
+    res$setHeader("Access-Control-Allow-Private-Network", "true")
     res$setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
     res$setHeader("Pragma", "no-cache")
     res$setHeader("Expires", "0")
@@ -1287,6 +1288,35 @@ function() {
     list(files = df, metadata = meta, gate_file = get_gate_file())
 }
 
+#* Read the saved control mapping without synthesizing placeholder rows
+#* @get /control_mapping
+function() {
+    path <- get_gate_control_file()
+    if (!file.exists(path)) return(list(rows = data.frame(), exists = FALSE, path = path))
+    rows <- tryCatch(
+        utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE),
+        error = function(e) NULL
+    )
+    if (is.null(rows)) return(list(rows = data.frame(), exists = TRUE, path = path, error = "The existing fcs_mapping.csv could not be read."))
+    list(rows = rows, exists = TRUE, path = path)
+}
+
+#* Create fcs_mapping.csv from the active project's SCC folder
+#* @post /control_mapping/create
+function(req) {
+    tryCatch({
+        cytometer <- getOption("spectreasy.panel_cytometer", "auto")
+        if (is.null(cytometer) || length(cytometer) == 0L || is.na(cytometer[1]) || !nzchar(trimws(as.character(cytometer[1])))) cytometer <- "auto"
+        rows <- spectreasy::create_control_file(
+            input_folder = get_gate_scc_dir(),
+            cytometer = cytometer,
+            unknown_fluor_policy = "by_channel",
+            output_file = get_gate_control_file()
+        )
+        list(success = TRUE, path = get_gate_control_file(), rows = rows)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
 #* Save the control mapping edited in the cockpit
 #* @post /control_mapping
 function(req) {
@@ -1310,7 +1340,7 @@ function(req) {
             fluorophore = row_value(row, "fluorophore"),
             marker = row_value(row, "marker"),
             channel = row_value(row, "channel"),
-            control.type = row_value(row, c("controlType", "control.type"), "cells"),
+            control.type = if (grepl("bead", row_value(row, c("controlType", "control.type"), "cell"), ignore.case = TRUE)) "beads" else "cells",
             universal.negative = row_value(row, c("universalNegative", "universal.negative")),
             is.viability = row_value(row, c("isViability", "is.viability"), "FALSE"),
             stringsAsFactors = FALSE
@@ -2121,10 +2151,63 @@ gui_project_scan <- function(root) {
     )
 }
 
+gui_set_project_context <- function(project_path) {
+    if (!dir.exists(project_path)) stop("Project folder not found: ", project_path, call. = FALSE)
+    project_path <- normalizePath(project_path, mustWork = TRUE)
+    options(
+        spectreasy.project_dir = project_path,
+        spectreasy.matrix_dir = project_path,
+        spectreasy.samples_dir = file.path(project_path, "samples"),
+        spectreasy.gating_scc_dir = file.path(project_path, "scc"),
+        spectreasy.gating_control_file = file.path(project_path, "fcs_mapping.csv"),
+        spectreasy.gating_gate_file = file.path(project_path, "ssc_gate_config.csv"),
+        spectreasy.gating_payload_cache = list(),
+        spectreasy.gating_spectrum_cache = list(),
+        spectreasy.gating_detector_cache = list()
+    )
+    options(spectreasy.project_selected = TRUE)
+    project_path
+}
+
+gui_pick_project_directory <- function(initial_dir = path.expand("~")) {
+    initial_dir <- normalizePath(initial_dir, mustWork = FALSE)
+    if (identical(Sys.info()[["sysname"]], "Darwin")) {
+        script <- paste0(
+            "POSIX path of (choose folder with prompt \"Select Spectreasy project folder\" default location POSIX file ",
+            gate_applescript_quote(initial_dir), ")"
+        )
+        result <- suppressWarnings(system2("osascript", c("-e", shQuote(script)), stdout = TRUE, stderr = FALSE))
+        if (!is.null(attr(result, "status")) || length(result) == 0L) return(NULL)
+        return(sub("/$", "", trimws(result[[1]])))
+    }
+    if (.Platform$OS.type == "windows") {
+        result <- utils::choose.dir(default = initial_dir, caption = "Select Spectreasy project folder")
+        if (is.na(result)) return(NULL)
+        return(result)
+    }
+    picker <- Sys.which("zenity")
+    if (!nzchar(picker)) picker <- Sys.which("kdialog")
+    if (!nzchar(picker)) stop("No graphical folder picker is available. Install zenity or kdialog.", call. = FALSE)
+    args <- if (grepl("zenity$", picker)) c("--file-selection", "--directory", paste0("--filename=", initial_dir, "/")) else c("--getexistingdirectory", initial_dir)
+    result <- suppressWarnings(system2(picker, args, stdout = TRUE, stderr = FALSE))
+    if (!is.null(attr(result, "status")) || length(result) == 0L) return(NULL)
+    trimws(result[[1]])
+}
+
 #* Project scan and workflow prerequisites
 #* @get /project/status
 #* @param project_path Optional project directory
 function(project_path = "") {
+    if (!isTRUE(getOption("spectreasy.project_selected", TRUE)) &&
+        (is.null(project_path) || !nzchar(trimws(as.character(project_path)[1])))) {
+        return(list(
+            project_path = "",
+            files = character(),
+            scan = list(controls = 0, samples = 0, matrices = 0, reports = 0, gates = 0, qc_metrics = 0, spectral_variants = 0),
+            summary = "no project selected",
+            recommended_next_action = "Choose a project folder"
+        ))
+    }
     root <- if (is.null(project_path) || !nzchar(trimws(as.character(project_path)[1]))) get_matrix_dir() else as.character(project_path)[1]
     root <- normalizePath(root, mustWork = FALSE)
     gui_project_scan(root)
@@ -2224,19 +2307,21 @@ function(path = "", res) {
 function(req) {
     body <- gui_workflow_body(req)
     project_path <- gui_workflow_path(body, "projectPath", "", allow_empty = FALSE)
-    if (!dir.exists(project_path)) {
-        return(list(success = FALSE, error = paste("Project folder not found:", project_path)))
-    }
-    project_path <- normalizePath(project_path, mustWork = TRUE)
-    options(
-        spectreasy.project_dir = project_path,
-        spectreasy.matrix_dir = project_path,
-        spectreasy.samples_dir = file.path(project_path, "samples"),
-        spectreasy.gating_scc_dir = file.path(project_path, "scc"),
-        spectreasy.gating_control_file = file.path(project_path, "fcs_mapping.csv"),
-        spectreasy.gating_gate_file = file.path(project_path, "ssc_gate_config.csv")
-    )
-    list(success = TRUE, project = gui_project_scan(project_path))
+    tryCatch({
+        project_path <- gui_set_project_context(project_path)
+        list(success = TRUE, project = gui_project_scan(project_path))
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Open the native folder picker and activate the selected project
+#* @post /project/select
+function(req) {
+    tryCatch({
+        selected <- gui_pick_project_directory(get_matrix_dir())
+        if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
+        selected <- gui_set_project_context(selected)
+        list(success = TRUE, cancelled = FALSE, project = gui_project_scan(selected))
+    }, error = function(e) list(success = FALSE, cancelled = FALSE, error = conditionMessage(e)))
 }
 
 #* CORS preflight for workflow_control

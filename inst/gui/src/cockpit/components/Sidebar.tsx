@@ -12,13 +12,13 @@ type SidebarProps = {
 }
 
 const groupMeta: Array<{ name: string; icon: LucideIcon; section?: SectionId }> = [
-  { name: 'Project', icon: Folder, section: 'overview' },
+  { name: 'Project', icon: Folder },
   { name: 'Controls', icon: CircleDot, section: 'controls' },
   { name: 'Samples', icon: Layers3, section: 'samples' },
   { name: 'Gates', icon: Gauge, section: 'controls' },
   { name: 'Matrices', icon: Table2, section: 'matrix' },
-  { name: 'Reports', icon: FileCode2, section: 'reports' },
-  { name: 'QC Metrics', icon: Sparkles, section: 'reports' },
+  { name: 'Reports', icon: FileCode2, section: 'control-reports' },
+  { name: 'QC Metrics', icon: Sparkles, section: 'control-reports' },
   { name: 'AF Profiles', icon: CircleDot, section: 'af' },
   { name: 'Panel Builder', icon: PanelTop, section: 'panel' },
   { name: 'Logs', icon: TerminalSquare, section: 'settings' },

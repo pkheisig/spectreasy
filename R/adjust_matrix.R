@@ -59,6 +59,13 @@
     dirname(matrix_dir)
 }
 
+.gui_project_dir <- function(matrix_dir, mode) {
+    if (identical(mode, "cockpit")) {
+        return(normalizePath(matrix_dir, mustWork = FALSE))
+    }
+    .infer_project_dir_from_matrix_dir(matrix_dir)
+}
+
 .default_adjust_matrix_samples_dir <- function(matrix_dir = NULL) {
     project_dirs <- unique(c(getwd(), .infer_project_dir_from_matrix_dir(matrix_dir)))
     project_dirs <- project_dirs[nzchar(project_dirs)]
@@ -231,7 +238,9 @@
                                    panel_cytometer = NULL,
                                    gating_scc_dir = NULL,
                                    gating_control_file = NULL,
-                                   gating_gate_file = NULL) {
+                                   gating_gate_file = NULL,
+                                   hosted_frontend_url = NULL,
+                                   initial_project_selected = TRUE) {
     if (!requireNamespace("plumber", quietly = TRUE)) {
         stop(
             "Package 'plumber' is required for the spectreasy GUI. ",
@@ -269,10 +278,11 @@
         spectreasy.samples_dir = dirs$samples_dir,
         spectreasy.unmixing_method = unmixing_method,
         spectreasy.gui_mode = mode,
-        spectreasy.panel_cytometer = panel_cytometer
+        spectreasy.panel_cytometer = panel_cytometer,
+        spectreasy.project_selected = isTRUE(initial_project_selected)
     )
     if (!identical(mode, "control-gating")) {
-        project_dir <- .infer_project_dir_from_matrix_dir(dirs$matrix_dir)
+        project_dir <- .gui_project_dir(dirs$matrix_dir, mode = mode)
         if (is.null(project_dir) || !dir.exists(project_dir)) project_dir <- dirs$matrix_dir
         options(
             spectreasy.gating_scc_dir = file.path(project_dir, "scc"),
@@ -291,12 +301,16 @@
         )
     }
 
-    frontend <- .resolve_gui_frontend(
-        gui_path = paths$gui_path,
-        dist_path = paths$dist_path,
-        port = port,
-        dev_mode = dev_mode
-    )
+    frontend <- if (!is.null(hosted_frontend_url) && nzchar(trimws(hosted_frontend_url))) {
+        list(mode = "hosted", frontend_url = sub("/+$", "", trimws(hosted_frontend_url)))
+    } else {
+        .resolve_gui_frontend(
+            gui_path = paths$gui_path,
+            dist_path = paths$dist_path,
+            port = port,
+            dev_mode = dev_mode
+        )
+    }
 
     if (identical(frontend$mode, "dev")) {
         .start_gui_dev_server(
@@ -305,13 +319,19 @@
             npm_bin = frontend$npm_bin
         )
     }
-    frontend_url <- paste0(frontend$frontend_url, "?mode=", utils::URLencode(mode, reserved = TRUE))
+    query_separator <- if (grepl("?", frontend$frontend_url, fixed = TRUE)) "&" else "?"
+    frontend_url <- paste0(
+        frontend$frontend_url,
+        query_separator,
+        "mode=", utils::URLencode(mode, reserved = TRUE),
+        "&api=", utils::URLencode(paste0("http://127.0.0.1:", port), reserved = TRUE)
+    )
 
     .message_spectreasy_gui_startup(
         mode = mode,
         port = port,
         frontend_url = frontend_url,
-        asset_mode = if (identical(frontend$mode, "dev")) "Vite dev server" else "bundled package assets",
+        asset_mode = if (identical(frontend$mode, "dev")) "Vite dev server" else if (identical(frontend$mode, "hosted")) "GitHub Pages cockpit" else "bundled package assets",
         gate_file = if (identical(mode, "control-gating")) gate_paths$gate_file else NULL
     )
 
@@ -385,10 +405,9 @@ adjust_matrix <- function(matrix_dir = NULL,
 
 #' Launch the Spectreasy Cockpit
 #'
-#' Starts the complete local Spectreasy browser application. The current R
-#' working directory is used as the initial project folder; the project path,
-#' input folders, analysis method, numerical settings, gates, reports, and
-#' output locations can then be configured from inside the GUI.
+#' Starts the local Spectreasy R backend and opens the hosted cockpit. Choose
+#' the project folder from the Active project button in the header; the R
+#' working directory is not used as an implicit project.
 #'
 #' This is the recommended entry point for interactive use:
 #' `library(spectreasy); spectreasy_gui()`.
@@ -401,12 +420,18 @@ adjust_matrix <- function(matrix_dir = NULL,
 #'   spectreasy_gui()
 #' }
 spectreasy_gui <- function() {
-    project_dir <- normalizePath(getwd(), mustWork = TRUE)
+    project_dir <- file.path(tempdir(), "spectreasy-cockpit-session")
+    dir.create(project_dir, recursive = TRUE, showWarnings = FALSE)
     samples_dir <- file.path(project_dir, "samples")
     .launch_spectreasy_gui(
         matrix_dir = project_dir,
         samples_dir = samples_dir,
-        mode = "cockpit"
+        mode = "cockpit",
+        hosted_frontend_url = getOption(
+            "spectreasy.cockpit_url",
+            "https://pkheisig.github.io/spectreasy/"
+        ),
+        initial_project_selected = FALSE
     )
     invisible(NULL)
 }

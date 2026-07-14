@@ -136,6 +136,14 @@ test_that("adjust_matrix internal helpers validate packaged assets and dev-mode 
     dirs <- spectreasy:::.normalize_gui_dirs(tmp_matrix_dir)
     expect_equal(dirs$matrix_dir, normalizePath(tmp_matrix_dir))
     expect_match(dirs$samples_dir, "samples$")
+    expect_equal(
+        spectreasy:::.gui_project_dir(tmp_matrix_dir, mode = "cockpit"),
+        normalizePath(tmp_matrix_dir)
+    )
+    expect_equal(
+        spectreasy:::.gui_project_dir(tmp_matrix_dir, mode = "tuner"),
+        normalizePath(dirname(tmp_matrix_dir))
+    )
 
     old_wd <- getwd()
     tmp_wd <- tempfile("spectreasy_gui_default_")

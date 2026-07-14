@@ -3,16 +3,9 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import axios from 'axios';
 import { Moon, PanelLeftClose, PanelLeftOpen, Plus, Save, Sun, Trash2, Upload } from 'lucide-react';
 import './PanelBuilder.css';
+import { resolveApiBase } from './apiBase';
 
-const API_BASE = (() => {
-    const envBase = (import.meta.env.VITE_API_BASE as string | undefined)?.trim();
-    if (envBase) return envBase.replace(/\/$/, '');
-    if (typeof window !== 'undefined') {
-        if (window.location.port === '5174') return 'http://localhost:8000';
-        return window.location.origin.replace(/\/$/, '');
-    }
-    return 'http://localhost:8000';
-})();
+const API_BASE = resolveApiBase();
 
 const unboxGuiState = (value: unknown): unknown => {
     if (Array.isArray(value)) {

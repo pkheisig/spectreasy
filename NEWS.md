@@ -23,6 +23,7 @@
 
 ## New
 
+- Added the hosted Spectreasy cockpit with native project selection, schema-aligned control mapping, embedded analysis applets, and automatically persisted GUI settings.
 - Added `unmix_controls()` as the main SCC workflow entry point.
 - Added `unmix_samples()` support for loading a saved unmixing matrix file.
 - Added structured control-file preflight validation and auto-generation support.

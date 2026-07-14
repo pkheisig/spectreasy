@@ -1,11 +1,11 @@
 import {
   Contrast,
-  LayoutPanelLeft,
   Moon,
   Sun,
   Type,
 } from 'lucide-react'
 import type { AppearanceSettings as AppearanceSettingsValue } from '../types'
+import { GuiSelect } from './GuiSelect'
 
 type Props = {
   value: AppearanceSettingsValue
@@ -47,8 +47,8 @@ export function AppearanceSettings({ value, onChange }: Props) {
           <div className="appearance-group-heading">
             <Type size={16} />
             <div>
-              <strong>Scale and spacing</strong>
-              <small>Avenir Next and the Spectreasy accent colors stay fixed.</small>
+              <strong>Aesthetics</strong>
+              <small>Choose the typography, scale, spacing, and surface treatment.</small>
             </div>
           </div>
           <div className="appearance-field-grid">
@@ -65,8 +65,21 @@ export function AppearanceSettings({ value, onChange }: Props) {
               />
             </label>
             <label>
+              Font
+              <GuiSelect
+                aria-label="Interface font"
+                value={value.fontFamily}
+                onChange={(event) => onChange({ fontFamily: event.target.value as AppearanceSettingsValue['fontFamily'] })}
+              >
+                <option value="avenir">Avenir Next</option>
+                <option value="atkinson">Atkinson Hyperlegible</option>
+                <option value="source-sans">Source Sans</option>
+                <option value="system">System</option>
+              </GuiSelect>
+            </label>
+            <label>
               Density
-              <select
+              <GuiSelect
                 aria-label="Interface density"
                 value={value.density}
                 onChange={(event) => onChange({ density: event.target.value as AppearanceSettingsValue['density'] })}
@@ -74,7 +87,7 @@ export function AppearanceSettings({ value, onChange }: Props) {
                 <option value="compact">Compact</option>
                 <option value="comfortable">Comfortable</option>
                 <option value="spacious">Spacious</option>
-              </select>
+              </GuiSelect>
             </label>
             <label>
               Corner radius <strong>{value.cornerRadius}px</strong>
@@ -90,7 +103,7 @@ export function AppearanceSettings({ value, onChange }: Props) {
             </label>
             <label>
               Card depth
-              <select
+              <GuiSelect
                 aria-label="Card depth"
                 value={value.shadows}
                 onChange={(event) => onChange({ shadows: event.target.value as AppearanceSettingsValue['shadows'] })}
@@ -98,32 +111,18 @@ export function AppearanceSettings({ value, onChange }: Props) {
                 <option value="none">Flat</option>
                 <option value="subtle">Subtle</option>
                 <option value="raised">Raised</option>
-              </select>
+              </GuiSelect>
             </label>
           </div>
         </section>
 
         <section className="appearance-group">
           <div className="appearance-group-heading">
-            <LayoutPanelLeft size={16} />
+            <Contrast size={16} />
             <div>
               <strong>Navigation and behavior</strong>
               <small>Control how much supporting information stays visible.</small>
             </div>
-          </div>
-          <div className="appearance-field-grid">
-            <label>
-              Sidebar width
-              <select
-                aria-label="Sidebar width"
-                value={value.sidebarWidth}
-                onChange={(event) => onChange({ sidebarWidth: event.target.value as AppearanceSettingsValue['sidebarWidth'] })}
-              >
-                <option value="narrow">Narrow</option>
-                <option value="standard">Standard</option>
-                <option value="wide">Wide</option>
-              </select>
-            </label>
           </div>
           <div className="preference-toggles">
             <label><input type="checkbox" checked={value.showSectionCounts} onChange={(event) => onChange({ showSectionCounts: event.target.checked })} /><span>Show file counts</span></label>
