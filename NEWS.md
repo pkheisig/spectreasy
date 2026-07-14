@@ -1,5 +1,9 @@
 # spectreasy 1.0.0
 
+- Control HTML reports now save their complete NxN scatter matrix as a linked,
+  high-resolution PNG instead of creating a standalone NxN HTML viewer. Points
+  are larger and more opaque so sparse events remain visible when zooming.
+
 - `unmix_controls()` now uses `gating_mode = "interactive"`, `"reuse"`, or
   `"automatic"` in place of `manual_gating`. Interactive mode preloads an
   existing gate CSV, reuse mode requires it, and automatic mode uses GMM gates.

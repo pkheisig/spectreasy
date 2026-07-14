@@ -512,6 +512,10 @@ test_that("unmix_controls supports fixed AF k-means bands from SCC mapping", {
     )
     
     expect_true(all(c("FITC", "PE", "AF", "AF_2") %in% rownames(res$M)))
+    expect_length(res$qc_report$companion_files, 1)
+    expect_identical(tolower(tools::file_ext(res$qc_report$companion_files)), "png")
+    expect_true(file.exists(res$qc_report$companion_files))
+    expect_false(file.exists(sub("\\.png$", ".html", res$qc_report$companion_files)))
 })
 
 test_that("Plumber gui_api load_matrix and save_matrix filter and merge AF rows", {

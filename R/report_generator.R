@@ -747,6 +747,8 @@
                                             page_total,
                                             point_color = "#163B5C",
                                             axis_color = "#C75000",
+                                            point_size = 0.2,
+                                            point_alpha = 0.55,
                                             title = NULL) {
     if (is.null(title)) {
         title <- paste0("Sample NxN Scatter Matrix: ", sample_name)
@@ -780,8 +782,8 @@
         ggplot2::geom_point(
             data = panel_info$plot_df,
             ggplot2::aes(x = x, y = y, color = color),
-            alpha = 0.55,
-            size = 0.2,
+            alpha = point_alpha,
+            size = point_size,
             stroke = 0
         ) +
         ggplot2::scale_color_identity() +
@@ -903,6 +905,8 @@
                                                    transform = c("none", "asinh"),
                                                    asinh_cofactor = 150,
                                                    axis_limit = NULL,
+                                                   point_size = 0.2,
+                                                   point_alpha = 0.55,
                                                    seed = NULL) {
     transform <- .match_arg_ci(transform, c("none", "asinh"), "transform")
     .with_optional_seed(seed)
@@ -963,6 +967,8 @@
             sample_name = "Controls",
             page_idx = page_idx,
             page_total = page_total,
+            point_size = point_size,
+            point_alpha = point_alpha,
             title = "Control NxN Scatter Matrix"
         )
         k <- k + 1L

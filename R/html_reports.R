@@ -240,10 +240,10 @@
     x[, c(wanted, "control.class", "file.exists", "validation.warning"), drop=FALSE]
 }
 
-.report_plot_file <- function(plot, path, width=11, height=7) {
+.report_plot_file <- function(plot, path, width=11, height=7, dpi=150) {
     if (is.null(plot)) return(NULL)
     dir.create(dirname(path), recursive=TRUE, showWarnings=FALSE)
-    .with_known_qc_plot_warnings_suppressed(ggplot2::ggsave(path, plot=plot, width=width, height=height, units="in", dpi=150))
+    .with_known_qc_plot_warnings_suppressed(ggplot2::ggsave(path, plot=plot, width=width, height=height, units="in", dpi=dpi))
     path
 }
 
@@ -409,13 +409,21 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
             sample_to_marker = sample_to_marker,
             markers = rownames(M)[!af_rows],
             rows_per_page = max(2L, sum(!af_rows)),
-            max_points_per_sample = 1000
+            max_points_per_sample = 1000,
+            point_size = 0.35,
+            point_alpha = 0.82
         ), error = function(e) list())
     }
     if (!length(scatter_pages) && !is.null(plots$unmixing_scatter)) scatter_pages <- list(plots$unmixing_scatter)
     scatter_files <- if (length(scatter_pages)) {
         nxn_width <- max(12, min(30, sum(!af_rows) * 0.9))
-        .report_plot_file(scatter_pages[[1]], file.path(plot_dir, "control_nxn_full.png"), width = nxn_width, height = nxn_width)
+        .report_plot_file(
+            scatter_pages[[1]],
+            file.path(plot_dir, "control_nxn_full.png"),
+            width = nxn_width,
+            height = nxn_width,
+            dpi = 300
+        )
     } else character()
     if (length(scatter_files)) names(scatter_files) <- "Controls"
     control_panels <- .report_control_panels(report_plot_dir, qc_summary)
@@ -643,7 +651,11 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
         names(embedded) <- names(paths)
         embedded
     }
-    for (field in intersect(c("af", "reference", "similarity", "nps", "nxn", "detector_rms", "reconstruction"), names(manifest))) {
+    fields <- intersect(c("af", "reference", "similarity", "nps", "nxn", "detector_rms", "reconstruction"), names(manifest))
+    if (inherits(report_data, "spectreasy_control_report_data")) {
+        fields <- setdiff(fields, "nxn")
+    }
+    for (field in fields) {
         manifest[[field]] <- embed_paths(manifest[[field]])
     }
     if (length(manifest$controls)) {
@@ -714,14 +726,14 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     }
     links <- paste(vapply(seq_along(paths), function(i) {
         basename_path <- basename(paths[i])
-        label <- if (identical(report_type, "control")) "Open control NxN matrix" else paste0("Open ", labels[i], " NxN matrix")
+        label <- if (identical(report_type, "control")) "Open high-resolution control NxN matrix" else paste0("Open ", labels[i], " NxN matrix")
         paste0(
             "<a class=\"companion-link\" data-companion=\"", .report_html_escape(basename_path),
             "\" href=\"", .report_html_escape(basename_path), "\">", .report_html_escape(label), " &rarr;</a>"
         )
     }, character(1)), collapse = "")
     description <- if (identical(report_type, "control")) {
-        "The complete control NxN scatter matrix is stored in its own compact one-page viewer with zoom controls and two-dimensional scrolling."
+        "The complete control NxN scatter matrix is saved separately as a high-resolution PNG for detailed review and zooming."
     } else {
         "Each selected sample has its own compact one-page NxN viewer containing one complete matrix with zoom controls and two-dimensional scrolling."
     }
@@ -773,7 +785,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     if (!nrow(entries)) return(character())
     stem <- tools::file_path_sans_ext(basename(output_file))
     paths <- if (inherits(report_data, "spectreasy_control_report_data")) {
-        file.path(dirname(output_file), paste0(stem, "_nxn.html"))
+        file.path(dirname(output_file), paste0(stem, "_nxn.png"))
     } else {
         slugs <- .report_filename_slug(entries$label, fallback = "sample")
         file.path(dirname(output_file), paste0(stem, "_nxn_", slugs, ".html"))
@@ -804,16 +816,32 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     entries <- .report_nxn_entries(report_data)
     if (!nrow(entries)) return(character())
     if (length(output_files) != nrow(entries)) stop("NxN companion path count does not match the matrix plot count.", call. = FALSE)
+    is_control <- inherits(report_data, "spectreasy_control_report_data")
+    if (is_control) {
+        rendered <- vapply(seq_len(nrow(entries)), function(i) {
+            source <- entries$path[i]
+            target <- output_files[i]
+            if (.report_is_embedded_image(source)) {
+                payload <- sub("^data:image/(png|jpeg);base64,", "", source)
+                base64enc::base64decode(payload, output = target)
+            } else if (identical(normalizePath(source, mustWork = FALSE), normalizePath(target, mustWork = FALSE))) {
+                if (!file.exists(target)) stop("Control NxN PNG not found: ", target, call. = FALSE)
+            } else if (!file.copy(source, target, overwrite = TRUE)) {
+                stop("Could not write the control NxN PNG: ", target, call. = FALSE)
+            }
+            normalizePath(target, mustWork = TRUE)
+        }, character(1))
+        return(stats::setNames(rendered, entries$label))
+    }
     template <- system.file("report_templates", "nxn_report.html", package = "spectreasy")
     if (!nzchar(template)) template <- file.path("inst", "report_templates", "nxn_report.html")
     if (!file.exists(template)) stop("Spectreasy NxN HTML report template was not found.", call. = FALSE)
-    is_control <- inherits(report_data, "spectreasy_control_report_data")
     rendered <- vapply(seq_len(nrow(entries)), function(i) {
         html <- paste(readLines(template, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
-        report_label <- if (is_control) "Control NxN scatter matrix" else paste0("Sample NxN scatter matrix: ", entries$label[i])
+        report_label <- paste0("Sample NxN scatter matrix: ", entries$label[i])
         replacements <- list(
             "{{REPORT_TITLE}}" = paste("Spectreasy", report_label),
-            "{{REPORT_CLASS}}" = if (is_control) "report-control" else "report-sample",
+            "{{REPORT_CLASS}}" = "report-sample",
             "{{REPORT_HEADING}}" = report_label,
             "{{REPORT_META}}" = "One complete matrix - use the zoom controls and two-dimensional scrolling for detailed review",
             "{{MATRIX_LABEL}}" = .report_html_escape(entries$label[i]),
@@ -902,6 +930,14 @@ render_qc_html_report <- function(report_data, output_file, overwrite=c("version
     writeLines(html,output_file,useBytes=TRUE)
     companion_files <- character()
     if (length(nxn_companion_files)) companion_files <- .report_render_nxn_companions(report_data, nxn_companion_files)
+    if (inherits(report_data, "spectreasy_control_report_data") && length(companion_files)) {
+        report_data$plot_manifest$nxn <- companion_files
+        report_data$nxn_companion_files <- companion_files
+        report_data$artifacts <- rbind(
+            report_data$artifacts,
+            .report_artifacts(companion_files, roles = "High-resolution control NxN matrix")
+        )
+    }
     source_paths <- report_data$source_fingerprint$path %||% character()
     metadata <- list(output_file=normalizePath(output_file,mustWork=TRUE),companion_files=companion_files,assets_dir=NULL,self_contained=!include_nxn,format="html",report_type=report_data$report_type,created_at=report_data$created_at,source_fingerprint=report_data$source_fingerprint,stale=.report_is_stale(output_file,source_paths),report_data=report_data)
     class(metadata) <- c("spectreasy_report_result","list")

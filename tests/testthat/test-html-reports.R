@@ -218,19 +218,47 @@ test_that("control HTML groups each PDF control page once without duplicate plot
     expect_false(grepl("<table", paste(vapply(sections, `[[`, character(1), 2), collapse = ""), fixed = TRUE))
     expect_false(grepl("SCC AF spectra", paste(vapply(sections, `[[`, character(1), 2), collapse = ""), fixed = TRUE))
 
-    rendered <- render_qc_html_report(report_data, tempfile(fileext = ".html"), overwrite = "overwrite")
+    embedded_report_data <- spectreasy:::.report_embed_plot_manifest(report_data)
+    expect_identical(embedded_report_data$plot_manifest$nxn, report_data$plot_manifest$nxn)
+    expect_match(embedded_report_data$plot_manifest$reference, "data:image/png;base64,", fixed = TRUE)
+    expected_default_nxn <- spectreasy:::.report_nxn_companion_paths("qc_controls_report.html", embedded_report_data)
+    expect_identical(basename(expected_default_nxn), "qc_controls_report_nxn.png")
+    rendered <- render_qc_html_report(embedded_report_data, tempfile(fileext = ".html"), overwrite = "overwrite")
     expect_length(rendered$companion_files, 1)
     expect_named(rendered$companion_files, "Controls")
-    companion <- paste(readLines(rendered$companion_files, warn = FALSE), collapse = "\n")
-    expect_equal(length(strsplit(companion, "class=\"matrix-canvas\"", fixed = TRUE)[[1]]) - 1L, 1L)
-    expect_equal(length(strsplit(companion, "<img", fixed = TRUE)[[1]]) - 1L, 1L)
-    expect_false(grepl("<section", companion, fixed = TRUE))
+    expect_identical(tolower(tools::file_ext(rendered$companion_files)), "png")
+    expect_true(file.exists(rendered$companion_files))
+    expect_gt(file.info(rendered$companion_files)$size, 0)
+    expect_identical(rendered$report_data$plot_manifest$nxn, rendered$companion_files)
     main_html <- paste(readLines(rendered$output_file, warn = FALSE), collapse = "\n")
-    expect_match(main_html, "Open control NxN matrix", fixed = TRUE)
+    expect_match(main_html, "Open high-resolution control NxN matrix", fixed = TRUE)
+    expect_match(main_html, basename(rendered$companion_files), fixed = TRUE)
+    expect_false(grepl("qc_controls_report_nxn.html", main_html, fixed = TRUE))
     expect_match(main_html, "<section id=\"gating\"><h2><button type=\"button\">Gating</button>", fixed = TRUE)
     nxn_section <- regmatches(main_html, regexpr("<section id=\"nxn\".*?</section>", main_html, perl = TRUE))
     expect_length(nxn_section, 1)
     expect_false(grepl("<img", nxn_section, fixed = TRUE))
+})
+
+test_that("control HTML NxN points remain visible in the full high-resolution matrix", {
+    set.seed(19)
+    unmixed <- list(
+        fitc = data.frame(FITC = stats::rnorm(80, 10, 2), PE = stats::rnorm(80)),
+        pe = data.frame(FITC = stats::rnorm(80), PE = stats::rnorm(80, 10, 2))
+    )
+    pages <- spectreasy:::.build_qc_report_control_scatter_pages(
+        unmixed,
+        sample_to_marker = c(fitc = "FITC", pe = "PE"),
+        markers = c("FITC", "PE"),
+        rows_per_page = 2,
+        point_size = 0.35,
+        point_alpha = 0.82
+    )
+    expect_length(pages, 1)
+    point_layers <- Filter(function(layer) inherits(layer$geom, "GeomPoint"), pages[[1]]$layers)
+    expect_length(point_layers, 1)
+    expect_equal(point_layers[[1]]$aes_params$size, 0.35)
+    expect_equal(point_layers[[1]]$aes_params$alpha, 0.82)
 })
 
 test_that("HTML writes one standalone one-page viewer per selected sample matrix", {
