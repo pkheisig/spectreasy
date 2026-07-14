@@ -401,6 +401,7 @@ export default function CockpitApp() {
             auto_create_mapping: control.autoCreateMapping,
             auto_unknown_fluor_policy: control.autoUnknownFluorPolicy,
             gate_file: control.gateFile,
+            gating_mode: control.gateFile.trim().length > 0 ? "reuse" : "automatic",
             af_n_bands: control.afNBands,
             af_max_cells: control.afMaxCells,
             af_min_cluster_events: control.afMinClusterEvents,

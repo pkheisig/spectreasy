@@ -1,5 +1,9 @@
 # spectreasy 1.0.0
 
+- `unmix_controls()` now uses `gating_mode = "interactive"`, `"reuse"`, or
+  `"automatic"` in place of `manual_gating`. Interactive mode preloads an
+  existing gate CSV, reuse mode requires it, and automatic mode uses GMM gates.
+
 - Report APIs now use `report_format` instead of `output_format`, with HTML as
   the default. Enumerated string arguments are matched case-insensitively
   across the public workflow, reporting, gating, and plotting interfaces.

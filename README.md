@@ -70,7 +70,7 @@ For the remainder of this walkthrough, the commands are shown as they would be r
 ## 2. Start the control-stage workflow
 
 Run `unmix_controls()` first. If `fcs_mapping.csv` is missing, `auto_create_mapping = TRUE` creates it automatically and then pauses for review.
-By default, `manual_gating = TRUE`, so the browser-based gating GUI opens after the mapping file is confirmed. Default parameter values for unmix_controls() are included for clarity. You don't have to type those out.
+By default, `gating_mode = "interactive"`, so the browser-based gating GUI opens after the mapping file is confirmed and loads `ssc_gate_config.csv` when it already exists. Use `gating_mode = "reuse"` to require and reuse that CSV without opening the GUI, or `gating_mode = "automatic"` to use automatic GMM gating. Default parameter values for `unmix_controls()` are included for clarity; you do not have to type them out.
 
 ```r
 setwd(project_dir)
@@ -79,7 +79,7 @@ ctrl <- unmix_controls(
   scc_dir = "scc",
   auto_create_mapping = TRUE,
   auto_unknown_fluor_policy = "by_channel",
-  manual_gating = TRUE,
+  gating_mode = "interactive",
   unmix_scatter_panel_size_mm = 30,
   save_qc_plots = TRUE
 )
@@ -294,13 +294,13 @@ For re-runs (e.g., testing different `af_n_bands` or `unmixing_method`), you can
 
 ```r
 control_file <- file.path(project_dir, "fcs_mapping.csv")
-gating_file = file.path(project_dir, "ssc_gate_config.csv"),
+gating_file <- file.path(project_dir, "ssc_gate_config.csv")
 
 ctrl_noninteractive <- unmix_controls(
   scc_dir = file.path(project_dir, "scc"),
   control_file = control_file,
   gating_file = gating_file,
-  manual_gating = FALSE,
+  gating_mode = "reuse",
   cytometer = "auto",
   output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls_noninteractive"),
   seed = 1

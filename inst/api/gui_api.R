@@ -2099,6 +2099,8 @@ function(req) {
         gui_workflow_value(body, "gate_file", "ssc_gate_config.csv"),
         root = gui_workflow_root(body)
     )
+    gate_file_available <- length(gate_file) > 0L &&
+        !is.na(gate_file[1]) && nzchar(trimws(as.character(gate_file)[1]))
     control_args <- c(
         list(
             scc_dir = scc_dir,
@@ -2132,7 +2134,11 @@ function(req) {
             save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
             report_format = gui_workflow_value(body, "report_format", "html"),
-            manual_gating = FALSE,
+            gating_mode = gui_workflow_value(
+                body,
+                "gating_mode",
+                if (gate_file_available) "reuse" else "automatic"
+            ),
             manual_gate_file = gate_file,
             gating_file = gate_file,
             scc_background_method = gui_workflow_value(body, "scc_background_method", "scatter_knn"),

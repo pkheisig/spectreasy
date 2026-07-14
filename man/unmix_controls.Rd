@@ -22,7 +22,7 @@ unmix_controls(
   save_qc_plots = FALSE,
   save_report = TRUE,
   report_format = "html",
-  manual_gating = TRUE,
+  gating_mode = "interactive",
   manual_gate_file = "ssc_gate_config.csv",
   gating_file = manual_gate_file,
   scc_background_method = c("scatter_knn", "none"),
@@ -97,18 +97,18 @@ automatically after controls are unmixed. Defaults to `TRUE`.}
 \item{report_format}{Report format, either `"html"` (default) or `"pdf"`.
 Only the selected format is written. Matching is case-insensitive.}
 
-\item{manual_gating}{Logical; if `TRUE` (default), launch the manual control
-gating GUI before building the SCC reference matrix. If `FALSE`, the GUI is
-skipped; an existing `gating_file`/`manual_gate_file` is still reused when
-supplied.}
+\item{gating_mode}{Control-gating mode. `"interactive"` (default) opens the
+gating GUI and preloads `gating_file` when it exists; `"reuse"` skips the
+GUI and requires an existing gate CSV; `"automatic"` ignores any gate CSV
+and uses automatic GMM gating. Matching is case-insensitive.}
 
 \item{manual_gate_file}{Gate CSV written by [gate_controls()]. Relative paths
 are resolved from the current working directory. Kept for backwards
 compatibility; prefer `gating_file` in new code.}
 
-\item{gating_file}{Optional gate CSV to reuse without launching the GUI, for
-example `file.path(getwd(), "ssc_gate_config.csv")`. If supplied explicitly,
-the file must exist. Defaults to `manual_gate_file`.}
+\item{gating_file}{Gate CSV to preload in `"interactive"` mode or require in
+`"reuse"` mode, for example `file.path(getwd(), "ssc_gate_config.csv")`.
+Defaults to `manual_gate_file`.}
 
 \item{scc_background_method}{Background subtraction method for Spectreasy/
 AutoSpectral SCC cleanup (`"scatter_knn"` or `"none"`). The default enables
@@ -157,7 +157,8 @@ should use `n_threads`.}
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }
 \value{
-List with `M`, `W`, `unmixed_list`, and key output file paths,
+List with `M`, `W`, `unmixed_list`, the effective `gating_mode`, the
+  reused or created `gating_file` (when applicable), and key output paths,
   including `detector_noise_file` for the SCC-derived WLS noise floors.
 }
 \description{

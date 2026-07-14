@@ -357,16 +357,16 @@
 #'   automatically after controls are unmixed. Defaults to `TRUE`.
 #' @param report_format Report format, either `"html"` (default) or `"pdf"`.
 #'   Only the selected format is written. Matching is case-insensitive.
-#' @param manual_gating Logical; if `TRUE` (default), launch the manual control
-#'   gating GUI before building the SCC reference matrix. If `FALSE`, the GUI is
-#'   skipped; an existing `gating_file`/`manual_gate_file` is still reused when
-#'   supplied.
+#' @param gating_mode Control-gating mode. `"interactive"` (default) opens the
+#'   gating GUI and preloads `gating_file` when it exists; `"reuse"` skips the
+#'   GUI and requires an existing gate CSV; `"automatic"` ignores any gate CSV
+#'   and uses automatic GMM gating. Matching is case-insensitive.
 #' @param manual_gate_file Gate CSV written by [gate_controls()]. Relative paths
 #'   are resolved from the current working directory. Kept for backwards
 #'   compatibility; prefer `gating_file` in new code.
-#' @param gating_file Optional gate CSV to reuse without launching the GUI, for
-#'   example `file.path(getwd(), "ssc_gate_config.csv")`. If supplied explicitly,
-#'   the file must exist. Defaults to `manual_gate_file`.
+#' @param gating_file Gate CSV to preload in `"interactive"` mode or require in
+#'   `"reuse"` mode, for example `file.path(getwd(), "ssc_gate_config.csv")`.
+#'   Defaults to `manual_gate_file`.
 #' @param scc_background_method Background subtraction method for Spectreasy/
 #'   AutoSpectral SCC cleanup (`"scatter_knn"` or `"none"`). The default enables
 #'   scatter-matched subtraction from the resolved external or internal negative
@@ -400,7 +400,8 @@
 #'   should use `n_threads`.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #'
-#' @return List with `M`, `W`, `unmixed_list`, and key output file paths,
+#' @return List with `M`, `W`, `unmixed_list`, the effective `gating_mode`, the
+#'   reused or created `gating_file` (when applicable), and key output paths,
 #'   including `detector_noise_file` for the SCC-derived WLS noise floors.
 #' @export
 #' @examples
@@ -432,7 +433,7 @@ unmix_controls <- function(
     save_qc_plots = FALSE,
     save_report = TRUE,
     report_format = "html",
-    manual_gating = TRUE,
+    gating_mode = "interactive",
     manual_gate_file = "ssc_gate_config.csv",
     gating_file = manual_gate_file,
     scc_background_method = c("scatter_knn", "none"),
@@ -455,6 +456,11 @@ unmix_controls <- function(
     gating_file_missing <- missing(gating_file)
     n_threads_missing <- missing(n_threads)
     report_format <- .match_arg_ci(report_format, c("html", "pdf"), "report_format")
+    gating_mode <- .match_arg_ci(
+        gating_mode,
+        c("interactive", "reuse", "automatic"),
+        "gating_mode"
+    )
     if (!is.null(unmix_threads)) {
         if (!n_threads_missing && !identical(as.integer(n_threads[1]), as.integer(unmix_threads[1]))) {
             stop("n_threads and unmix_threads must match when both are supplied.", call. = FALSE)
@@ -487,6 +493,13 @@ unmix_controls <- function(
     )
     .with_optional_seed(seed)
     extra_args <- list(...)
+    if ("manual_gating" %in% names(extra_args)) {
+        stop(
+            "manual_gating has been replaced by gating_mode. Use ",
+            "gating_mode = 'interactive', 'reuse', or 'automatic'.",
+            call. = FALSE
+        )
+    }
 
     control_file <- .resolve_control_file_path(control_file)
     output_dir <- .normalize_unmix_controls_output_dir(output_dir)
@@ -532,17 +545,33 @@ unmix_controls <- function(
     .spectreasy_console_field("Method", unmixing_method)
     .spectreasy_console_field("AF bands", af_n_bands)
 
-    if (isTRUE(manual_gating)) {
+    gate_path_supplied <- length(manual_gate_file) > 0L &&
+        !is.na(manual_gate_file[1]) &&
+        nzchar(trimws(as.character(manual_gate_file)[1]))
+    if (gate_path_supplied) {
+        manual_gate_file <- normalizePath(as.character(manual_gate_file)[1], mustWork = FALSE)
+    } else {
+        manual_gate_file <- NULL
+    }
+    gate_file_exists <- !is.null(manual_gate_file) && file.exists(manual_gate_file)
+    gating_mode_used <- gating_mode
+
+    if (identical(gating_mode, "interactive")) {
         if (!interactive()) {
-            if (manual_gate_file_explicit && length(manual_gate_file) > 0 && !is.na(manual_gate_file[1]) && nzchar(trimws(as.character(manual_gate_file)[1]))) {
-                manual_gate_file <- normalizePath(as.character(manual_gate_file)[1], mustWork = FALSE)
-                if (!file.exists(manual_gate_file)) {
-                    stop("manual_gating = TRUE requires an interactive R session and the supplied gating_file does not exist: ", manual_gate_file, call. = FALSE)
-                }
-                warning("manual_gating = TRUE requires an interactive R session; reusing supplied gating_file instead.", call. = FALSE)
+            if (gate_file_exists) {
+                warning("gating_mode = 'interactive' requires an interactive R session; reusing the existing gating_file instead.", call. = FALSE)
+                gating_mode_used <- "reuse"
+                .spectreasy_console_field("Gate CSV", .spectreasy_console_path(manual_gate_file))
+            } else if (manual_gate_file_explicit) {
+                stop(
+                    "gating_mode = 'interactive' requires an interactive R session and the supplied gating_file does not exist: ",
+                    manual_gate_file,
+                    call. = FALSE
+                )
             } else {
-                warning("manual_gating = TRUE requires an interactive R session; continuing with automatic gating.", call. = FALSE)
+                warning("gating_mode = 'interactive' requires an interactive R session; continuing with automatic GMM gating.", call. = FALSE)
                 manual_gate_file <- NULL
+                gating_mode_used <- "automatic"
             }
         } else {
             manual_gate_file <- gate_controls(
@@ -552,20 +581,18 @@ unmix_controls <- function(
                 open_browser = TRUE
             )
         }
-    } else {
-        if (length(manual_gate_file) == 0 || is.na(manual_gate_file[1]) || !nzchar(trimws(as.character(manual_gate_file)[1]))) {
-            manual_gate_file <- NULL
-        } else {
-            manual_gate_file <- normalizePath(as.character(manual_gate_file)[1], mustWork = FALSE)
-            if (!file.exists(manual_gate_file)) {
-                if (manual_gate_file_explicit) {
-                    stop("gating_file not found: ", manual_gate_file, call. = FALSE)
-                }
-                manual_gate_file <- NULL
-            } else {
-                .spectreasy_console_field("Gate CSV", .spectreasy_console_path(manual_gate_file))
-            }
+    } else if (identical(gating_mode, "reuse")) {
+        if (is.null(manual_gate_file) || !file.exists(manual_gate_file)) {
+            stop(
+                "gating_mode = 'reuse' requires an existing gating_file: ",
+                if (is.null(manual_gate_file)) "<not supplied>" else manual_gate_file,
+                call. = FALSE
+            )
         }
+        .spectreasy_console_field("Gate CSV", .spectreasy_console_path(manual_gate_file))
+    } else {
+        manual_gate_file <- NULL
+        .spectreasy_console_field("Gating", "automatic (GMM)")
     }
 
     output_paths <- .unmix_output_paths(output_dir)
@@ -752,7 +779,7 @@ unmix_controls <- function(
                     rwls_max_iter = rwls_max_iter,
                     n_threads = n_threads,
                     save_qc_plots = save_qc_plots,
-                    manual_gating = manual_gating,
+                    gating_mode = gating_mode_used,
                     scc_background_method = scc_background_args$method,
                     scc_background_k = scc_background_args$k,
                     spectral_variant_som_nodes = spectral_variant_som_nodes,
@@ -792,6 +819,8 @@ unmix_controls <- function(
         af_spectra_file = if (isTRUE(save_qc_plots) && nrow(M_af) > 0) output_paths$af_spectra_file else NULL,
         unmixing_scatter_file = if (isTRUE(save_qc_plots)) output_paths$unmixing_scatter_png else NULL,
         qc_plot_dir = if (isTRUE(save_qc_plots)) output_dir else NULL,
+        gating_mode = gating_mode_used,
+        gating_file = manual_gate_file,
         static_unmixing_matrix_method = static_info$static_unmixing_matrix_method,
         spectra_plot = p_spectra,
         af_spectra_plot = p_af_spectra,

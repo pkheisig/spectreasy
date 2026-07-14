@@ -263,8 +263,9 @@ test_that("HTML writes one standalone one-page viewer per selected sample matrix
     expect_equal(length(strsplit(main_html, "class=\"companion-link\"", fixed = TRUE)[[1]]) - 1L, 2L)
 })
 
-test_that("manual GUI gating remains the default and its four PDF panels are reused", {
-    expect_true(isTRUE(formals(unmix_controls)$manual_gating))
+test_that("interactive GUI gating remains the default and its four PDF panels are reused", {
+    expect_identical(formals(unmix_controls)$gating_mode, "interactive")
+    expect_false("manual_gating" %in% names(formals(unmix_controls)))
 
     plot_root <- tempfile("manual_gate_panels_")
     for (directory in c("fsc_ssc", "singlet", "histogram", "spectrum")) {

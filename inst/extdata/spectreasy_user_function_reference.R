@@ -38,7 +38,7 @@
         af_n_bands = 100,
         af_min_cluster_events = 20,
         af_min_cluster_proportion = 0.005,
-        manual_gating = TRUE,
+        gating_mode = "interactive",
         manual_gate_file = "ssc_gate_config.csv",
         gating_file = manual_gate_file,
         rwls_max_iter = 1L,
@@ -145,7 +145,7 @@
         output_dir = "spectreasy_outputs/unmix_controls_spectreasy",
         unmixing_method = "Spectreasy",
         af_n_bands = 100,
-        manual_gating = TRUE,
+        gating_mode = "interactive",
         gating_file = file.path(getwd(), "ssc_gate_config.csv"),
         spectreasy_weight_quantile = 0.9
     )

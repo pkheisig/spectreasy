@@ -259,14 +259,79 @@ test_that("unmix_controls errors early for an explicit missing gating file", {
             control_file = control_csv,
             output_dir = output_dir,
             unmixing_method = "OLS",
-            manual_gating = FALSE,
+            gating_mode = "REUSE",
             gating_file = missing_gate,
             save_report = FALSE,
             seed = 1,
             subsample_n = 120
         ),
-        regexp = "gating_file not found"
+        regexp = "requires an existing gating_file"
     )
+})
+
+test_that("automatic gating ignores an explicitly missing gate file", {
+    wf <- make_synthetic_workflow()
+    output_dir <- tempfile("spectreasy_automatic_gate_")
+    control_csv <- tempfile(fileext = ".csv")
+    missing_gate <- tempfile(fileext = ".csv")
+    utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
+
+    expect_no_error(
+        spectreasy::unmix_controls(
+            scc_dir = wf$scc_dir,
+            control_file = control_csv,
+            output_dir = output_dir,
+            unmixing_method = "OLS",
+            gating_mode = "AUTOMATIC",
+            gating_file = missing_gate,
+            save_report = FALSE,
+            seed = 1,
+            subsample_n = 120
+        )
+    )
+})
+
+test_that("interactive gating reuses an existing gate file when no GUI session is available", {
+    wf <- make_synthetic_workflow()
+    output_dir <- tempfile("spectreasy_interactive_reuse_")
+    control_csv <- tempfile(fileext = ".csv")
+    gate_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(wf$control_df, control_csv, row.names = FALSE, quote = TRUE)
+    utils::write.csv(
+        data.frame(
+            gate_type = "setting",
+            scope = "global",
+            filename = "",
+            x_channel = "histogram_transform",
+            y_channel = "",
+            plot_mode = "setting",
+            vertex_index = 0,
+            x = "asinh",
+            y = "",
+            stringsAsFactors = FALSE
+        ),
+        gate_csv,
+        row.names = FALSE,
+        quote = TRUE
+    )
+
+    result <- NULL
+    expect_warning(
+        result <- spectreasy::unmix_controls(
+            scc_dir = wf$scc_dir,
+            control_file = control_csv,
+            output_dir = output_dir,
+            unmixing_method = "OLS",
+            gating_mode = "interactive",
+            gating_file = gate_csv,
+            save_report = FALSE,
+            seed = 1,
+            subsample_n = 120
+        ),
+        "reusing the existing gating_file"
+    )
+    expect_identical(result$gating_mode, "reuse")
+    expect_identical(result$gating_file, normalizePath(gate_csv, mustWork = TRUE))
 })
 
 test_that("common missing path errors are user friendly", {
