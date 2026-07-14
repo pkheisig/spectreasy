@@ -381,17 +381,6 @@ build_panel()
   <img src="man/figures/spectral_panel_builder.png" alt="Spectreasy spectral panel builder" width="100%" />
 </p>
 
-### Spectreasy Cockpit (recommended)
-
-The complete local browser application starts with one parameterless function. It opens in the current working directory, then lets you choose the project folder and configure paths, gates, methods, numerical values, QC/report options, and output locations from the GUI.
-
-```r
-library(spectreasy)
-spectreasy_gui()
-```
-
-The R console stays attached while the local app is open. Press `Ctrl + C` in that console to stop it. `adjust_matrix()` remains available as a lower-level compatibility entry point for scripts that already know which matrix directory to open.
-
 ### Matrix adjustment module
 
 `adjust_matrix()` opens the browser-based matrix adjustment module. By default, it looks for matrix files in `spectreasy_outputs/unmix_controls` under the current working directory, serves bundled browser assets, and runs locally through the R session. You can use it after `unmix_controls()` when you need to inspect or manually adjust an unmixing matrix in the browser to improve subsequent sample unxmixing.

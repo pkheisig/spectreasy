@@ -721,9 +721,9 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
         )
     }, character(1)), collapse = "")
     description <- if (identical(report_type, "control")) {
-        "The complete control NxN scatter matrix is stored in its own one-page viewer for browser zoom and two-dimensional scrolling."
+        "The complete control NxN scatter matrix is stored in its own compact one-page viewer with zoom controls and two-dimensional scrolling."
     } else {
-        "Each selected sample has its own one-page NxN viewer containing one complete matrix for browser zoom and two-dimensional scrolling."
+        "Each selected sample has its own compact one-page NxN viewer containing one complete matrix with zoom controls and two-dimensional scrolling."
     }
     paste0("<p>", description, "</p><div class=\"companion-links\">", links, "</div>")
 }
@@ -815,7 +815,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
             "{{REPORT_TITLE}}" = paste("Spectreasy", report_label),
             "{{REPORT_CLASS}}" = if (is_control) "report-control" else "report-sample",
             "{{REPORT_HEADING}}" = report_label,
-            "{{REPORT_META}}" = "One complete matrix - use browser zoom and two-dimensional scrolling for detailed review",
+            "{{REPORT_META}}" = "One complete matrix - use the zoom controls and two-dimensional scrolling for detailed review",
             "{{MATRIX_LABEL}}" = .report_html_escape(entries$label[i]),
             "{{MATRIX_IMAGE}}" = .report_image_uri(entries$path[i])
         )

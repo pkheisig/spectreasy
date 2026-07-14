@@ -13,10 +13,14 @@
     header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:20px; padding:14px 20px; color:white; background:#332722; box-shadow:0 8px 24px rgba(71,43,28,.16); }
     header h1 { flex:0 0 auto; margin:0; font-size:19px; font-weight:500; }
     header p { flex:1 1 auto; margin:0; color:#f0d8ca; font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
-    main { height:calc(100vh - 70px); padding:12px; }
-    .matrix-canvas { width:100%; height:100%; overflow:auto; border:1px solid var(--line); background:white; }
-    .matrix-canvas img { display:block; width:auto; max-width:none; height:auto; }
-    @media (max-width:760px) { header{position:relative;align-items:flex-start;flex-direction:column;gap:8px}main{height:calc(100vh - 110px);padding:8px} }
+    .zoom-controls { display:flex; flex:0 0 auto; align-items:center; gap:6px; }
+    .zoom-controls button { min-width:34px; height:32px; padding:0 10px; border:1px solid rgba(255,255,255,.28); border-radius:5px; color:white; background:rgba(255,255,255,.08); cursor:pointer; font:700 13px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .zoom-controls button:hover { border-color:var(--accent); background:rgba(255,255,255,.16); }
+    .zoom-controls output { min-width:48px; text-align:center; color:#f0d8ca; font:11px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    main { width:min(1120px,calc(100% - 40px)); margin:24px auto 36px; }
+    .matrix-canvas { width:100%; height:min(72vh,760px); min-height:420px; overflow:auto; border:1px solid var(--line); background:white; box-shadow:0 10px 32px rgba(71,43,28,.08); }
+    .matrix-canvas img { display:block; width:auto; max-width:none; height:auto; margin:auto; }
+    @media (max-width:760px) { header{position:relative;align-items:flex-start;flex-wrap:wrap;gap:8px}header p{flex-basis:100%}.zoom-controls{order:3}main{width:calc(100% - 16px);margin:8px auto 20px}.matrix-canvas{height:68vh;min-height:320px} }
     @media print { header{position:relative}main{height:auto;padding:0}.matrix-canvas{height:auto;overflow:visible;border:0}.matrix-canvas img{max-width:100%;height:auto} }
   </style>
 </head>
@@ -24,7 +28,37 @@
   <header>
     <h1>{{REPORT_HEADING}}</h1>
     <p>{{REPORT_META}}</p>
+    <div class="zoom-controls" aria-label="Matrix zoom controls">
+      <button type="button" data-zoom="out" aria-label="Zoom out">&minus;</button>
+      <button type="button" data-zoom="fit">Fit</button>
+      <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
+      <output id="zoom-value" aria-live="polite">100%</output>
+    </div>
   </header>
-  <main><div class="matrix-canvas"><img alt="NxN scatter matrix for {{MATRIX_LABEL}}" src="{{MATRIX_IMAGE}}"></div></main>
+  <main><div class="matrix-canvas"><img id="matrix-image" alt="NxN scatter matrix for {{MATRIX_LABEL}}" src="{{MATRIX_IMAGE}}"></div></main>
+  <script>
+    (function(){
+      var canvas=document.querySelector('.matrix-canvas');
+      var image=document.getElementById('matrix-image');
+      var output=document.getElementById('zoom-value');
+      var zoom=1;
+      function fitScale(){
+        if(!image.naturalWidth||!image.naturalHeight)return 1;
+        return Math.min(canvas.clientWidth/image.naturalWidth,canvas.clientHeight/image.naturalHeight,1);
+      }
+      function render(){
+        if(!image.naturalWidth)return;
+        image.style.width=Math.max(1,Math.round(image.naturalWidth*fitScale()*zoom))+'px';
+        output.value=Math.round(zoom*100)+'%';
+        output.textContent=output.value;
+      }
+      document.querySelector('[data-zoom="out"]').addEventListener('click',function(){zoom=Math.max(.4,zoom-.2);render()});
+      document.querySelector('[data-zoom="fit"]').addEventListener('click',function(){zoom=1;render();canvas.scrollTo(0,0)});
+      document.querySelector('[data-zoom="in"]').addEventListener('click',function(){zoom=Math.min(4,zoom+.2);render()});
+      image.addEventListener('load',render);
+      window.addEventListener('resize',render);
+      if(image.complete)render();
+    })();
+  </script>
 </body>
 </html>
