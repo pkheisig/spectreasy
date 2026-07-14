@@ -31,6 +31,8 @@ import {
   normalizePlotView,
   parseViewSettings,
 } from './gatingViewSettings.js'
+import SpectrumCanvas from './SpectrumCanvas.jsx'
+import { decodeSpectrumData } from './spectrumData.js'
 
 const API_BASE = (() => {
   const envBase = import.meta.env.VITE_API_BASE?.trim()
@@ -552,7 +554,7 @@ function spectrumGateState(gates, file) {
   }
 }
 
-function spectrumCacheKeyForFile(gates, file, darkMode) {
+function spectrumCacheKeyForFile(gates, file) {
   const state = spectrumGateState(gates, file)
   if (!state.eligible) return ''
   const relevantGates = {
@@ -560,7 +562,7 @@ function spectrumCacheKeyForFile(gates, file, darkMode) {
     singlet: state.singlet,
     positive: state.usesHistogram ? state.positive : null,
   }
-  return `${file.filename}:${darkMode ? 'dark' : 'light'}:${JSON.stringify(relevantGates)}`
+  return `${file.filename}:${JSON.stringify(relevantGates)}`
 }
 
 function payloadEventSource(payload) {
@@ -2071,17 +2073,17 @@ function App() {
   const selectedSpectrumState = spectrumGateState(gates, selectedSpectrumFile)
   const spectrumEligible = Boolean(selected) && selectedSpectrumState.eligible
   const spectrumUsesHistogramGate = selectedSpectrumState.usesHistogram
-  const spectrumCacheKey = spectrumCacheKeyForFile(gates, selectedSpectrumFile, darkMode)
+  const spectrumCacheKey = spectrumCacheKeyForFile(gates, selectedSpectrumFile)
   const cachedSpectrum = spectrumCacheKey ? spectrumCache[spectrumCacheKey] : null
   const allSpectraEligible = gatesLoaded && preloadComplete && files.length > 0 &&
     files.every((file) => spectrumGateState(gates, file).eligible)
   const missingSpectrumFiles = useMemo(() => (
     allSpectraEligible
-      ? files.filter((file) => !spectrumCache[spectrumCacheKeyForFile(gates, file, darkMode)])
+      ? files.filter((file) => !spectrumCache[spectrumCacheKeyForFile(gates, file)])
       : []
-  ), [allSpectraEligible, files, gates, darkMode, spectrumCache])
+  ), [allSpectraEligible, files, gates, spectrumCache])
   const spectrumBatchKey = allSpectraEligible
-    ? `${darkMode ? 'dark' : 'light'}:${files.map((file) => spectrumCacheKeyForFile(gates, file, darkMode)).join('|')}`
+    ? files.map((file) => spectrumCacheKeyForFile(gates, file)).join('|')
     : ''
 
   useEffect(() => {
@@ -2101,17 +2103,17 @@ function App() {
       useApi('/gate_spectra', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filenames: [selected], gates, dark: darkMode }),
+        body: JSON.stringify({ filenames: [selected], gates }),
         signal: controller.signal,
       })
         .then((data) => {
           if (disposed) return
           const spectra = unboxGuiState(data?.spectra || {})
           const spectrumValue = spectra?.[selected]
-          const image = typeof spectrumValue === 'string' ? spectrumValue : null
-          setSpectrum(image)
-          if (image) {
-            setSpectrumCache((prev) => ({ ...prev, [spectrumCacheKey]: image }))
+          const spectrumData = decodeSpectrumData(spectrumValue)
+          setSpectrum(spectrumData)
+          if (spectrumData) {
+            setSpectrumCache((prev) => ({ ...prev, [spectrumCacheKey]: spectrumData }))
           }
         })
         .catch((error) => {
@@ -2123,7 +2125,7 @@ function App() {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [selected, darkMode, gates, gatesLoaded, preloadComplete, spectrumEligible, spectrumCacheKey, cachedSpectrum, allSpectraEligible])
+  }, [selected, gates, gatesLoaded, preloadComplete, spectrumEligible, spectrumCacheKey, cachedSpectrum, allSpectraEligible])
 
   useEffect(() => {
     if (!allSpectraEligible || !missingSpectrumFiles.length || !spectrumBatchKey) return undefined
@@ -2139,7 +2141,6 @@ function App() {
       body: JSON.stringify({
         filenames: missingSpectrumFiles.map((file) => file.filename),
         gates,
-        dark: darkMode,
       }),
       signal: controller.signal,
     })
@@ -2150,9 +2151,9 @@ function App() {
         setSpectrumCache((previous) => {
           const next = { ...previous }
           missingSpectrumFiles.forEach((file) => {
-            const image = spectra?.[file.filename]
-            const key = spectrumCacheKeyForFile(gates, file, darkMode)
-            if (key && typeof image === 'string') next[key] = image
+            const spectrumData = decodeSpectrumData(spectra?.[file.filename])
+            const key = spectrumCacheKeyForFile(gates, file)
+            if (key && spectrumData) next[key] = spectrumData
           })
           return next
         })
@@ -2170,7 +2171,7 @@ function App() {
       disposed = true
       controller.abort()
     }
-  }, [allSpectraEligible, missingSpectrumFiles, spectrumBatchKey, gates, darkMode])
+  }, [allSpectraEligible, missingSpectrumFiles, spectrumBatchKey, gates])
 
   useEffect(() => {
     if (!files.length) return undefined
@@ -2637,9 +2638,20 @@ function App() {
         body: JSON.stringify({ gates }),
       })
       if (result.success === false) throw new Error(result.error || 'Histogram autogating failed')
-      setGates((previous) => pruneUnavailableNegativeGates({ ...previous, ...(result.gates || {}) }, files))
-      setSpectrumCache({})
-      const generated = Number(result.gates_generated ?? Object.keys(result.gates || {}).length)
+      const generatedGates = unboxGuiState(result.gates || {})
+      const nextGates = pruneUnavailableNegativeGates({ ...gates, ...generatedGates }, files)
+      const returnedSpectra = unboxGuiState(result.spectra || {})
+      setGates(nextGates)
+      setSpectrumCache((previous) => {
+        const next = { ...previous }
+        files.forEach((file) => {
+          const spectrumData = decodeSpectrumData(returnedSpectra?.[file.filename])
+          const key = spectrumCacheKeyForFile(nextGates, file)
+          if (key && spectrumData) next[key] = spectrumData
+        })
+        return next
+      })
+      const generated = Number(result.gates_generated ?? Object.keys(generatedGates).length)
       const preserved = Number(result.gates_preserved ?? 0)
       setStatus(
         `Auto-generated ${generated} missing histogram gate${generated === 1 ? '' : 's'} ` +
@@ -3151,11 +3163,7 @@ function App() {
           <div className="plot-panel spectrum-panel" style={{ minHeight: 'auto', padding: '16px 20px', width: '100%' }}>
               <h2 style={{ fontSize: 18, margin: '0 0 12px 0', color: 'var(--ink)' }}>Spectrum</h2>
               {spectrum ? (
-                <img
-                  src={spectrum}
-                  alt="Detector Spectrum"
-                  style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 6, border: '1px solid var(--line)' }}
-                />
+                <SpectrumCanvas spectrum={spectrum} darkMode={darkMode} />
               ) : !spectrumEligible ? (
                 <div className="spectrum-gate-required">
                   {spectrumUsesHistogramGate

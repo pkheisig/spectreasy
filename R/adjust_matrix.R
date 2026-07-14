@@ -284,7 +284,10 @@
         options(
             spectreasy.gating_scc_dir = gate_paths$scc_dir,
             spectreasy.gating_control_file = gate_paths$control_file,
-            spectreasy.gating_gate_file = gate_paths$gate_file
+            spectreasy.gating_gate_file = gate_paths$gate_file,
+            spectreasy.gating_payload_cache = list(),
+            spectreasy.gating_spectrum_cache = list(),
+            spectreasy.gating_detector_cache = list()
         )
     }
 

@@ -443,19 +443,21 @@ testthat::test_that("GUI histogram autogating preserves existing intervals", {
     generated <- api_env$gate_autogenerate_histograms(gates)
 
     testthat::expect_setequal(names(generated$gates), "negative:control.fcs")
+    testthat::expect_named(generated$spectra, "control.fcs")
     testthat::expect_equal(generated$gates_generated, 1L)
     testthat::expect_equal(generated$gates_preserved, 1L)
 
     gates[["negative:control.fcs"]] <- api_env$gate_histogram_interval(
         "negative", "control.fcs", "R1-A", c(1, 40)
     )
-    api_env$gate_read_fcs <- function(path) stop("FCS should not be read when both gates exist")
 
     preserved <- api_env$gate_autogenerate_histograms(gates)
 
     testthat::expect_length(preserved$gates, 0L)
     testthat::expect_equal(preserved$gates_generated, 0L)
     testthat::expect_equal(preserved$gates_preserved, 2L)
+    testthat::expect_named(preserved$spectra, "control.fcs")
+    testthat::expect_identical(as.character(preserved$spectra[[1]]$format), "spectrum-histogram-v1")
 })
 
 testthat::test_that("GUI histogram autogating omits bead negatives supplied by AF_beads", {
@@ -487,10 +489,11 @@ testthat::test_that("GUI histogram autogating omits bead negatives supplied by A
     generated <- api_env$gate_autogenerate_histograms(gates)
 
     testthat::expect_setequal(names(generated$gates), "positive:bead-scc.fcs")
+    testthat::expect_named(generated$spectra, "bead-scc.fcs")
     testthat::expect_equal(generated$gates_generated, 1L)
 })
 
-testthat::test_that("GUI spectrum renderer keeps an empty plot for zero events", {
+testthat::test_that("GUI spectrum binning keeps a compact empty spectrum for zero events", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) {
         api_path <- system.file("api/gui_api.R", package = "spectreasy")
@@ -505,16 +508,48 @@ testthat::test_that("GUI spectrum renderer keeps an empty plot for zero events",
         labels = c("B1-A", "YG1-A")
     )
     expr <- data.frame(`B1-A` = numeric(), `YG1-A` = numeric(), check.names = FALSE)
-    image <- api_env$gate_build_spectrum_plot(expr, c("B1-A", "YG1-A"), det_info)
-    dark_image <- api_env$gate_build_spectrum_plot(
-        expr,
-        c("B1-A", "YG1-A"),
-        det_info,
-        dark_mode = TRUE
+    spectrum <- api_env$gate_build_spectrum_data(
+        expr, c("B1-A", "YG1-A"), det_info
     )
 
-    testthat::expect_true(is.character(image))
-    testthat::expect_match(image, "^data:image/png;base64,")
-    testthat::expect_match(dark_image, "^data:image/png;base64,")
-    testthat::expect_false(identical(image, dark_image))
+    testthat::expect_identical(as.character(spectrum$format), "spectrum-histogram-v1")
+    testthat::expect_equal(unlist(spectrum$labels), c("B1-A", "YG1-A"))
+    testthat::expect_equal(as.integer(spectrum$event_count), 0L)
+    testthat::expect_identical(as.character(spectrum$counts$format), "uint32-column-major")
+    testthat::expect_equal(as.integer(spectrum$counts$rows), 150L)
+    testthat::expect_equal(as.integer(spectrum$counts$columns), 2L)
+    counts <- readBin(
+        jsonlite::base64_dec(as.character(spectrum$counts$data)),
+        what = "integer",
+        n = 300L,
+        size = 4L,
+        endian = "little"
+    )
+    testthat::expect_true(all(counts == 0L))
+})
+
+testthat::test_that("GUI detector metadata is computed once per parameter signature", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    testthat::skip_if_not(file.exists(api_path))
+    testthat::skip_if_not_installed("flowCore")
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+    frame <- flowCore::flowFrame(matrix(
+        seq_len(20), ncol = 2,
+        dimnames = list(NULL, c("B1-A", "YG1-A"))
+    ))
+    calls <- 0L
+    compute <- function(pd) {
+        calls <<- calls + 1L
+        list(names = pd$name, labels = pd$name)
+    }
+    withr::local_options(list(spectreasy.gating_detector_cache = list()))
+
+    first <- api_env$gate_detector_info(frame, compute_fun = compute)
+    second <- api_env$gate_detector_info(frame, compute_fun = compute)
+
+    testthat::expect_equal(calls, 1L)
+    testthat::expect_identical(second, first)
 })

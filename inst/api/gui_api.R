@@ -648,14 +648,6 @@ gate_scatter_channels <- function(col_names) {
     unique(hits)
 }
 
-gate_plot_to_base64 <- function(plot, width = 11.5, height = 3.2, dpi = 180) {
-    tmp <- tempfile(fileext = ".png")
-    on.exit(unlink(tmp), add = TRUE)
-    ggplot2::ggsave(tmp, plot = plot, width = width, height = height, dpi = dpi, device = "png")
-    raw_bytes <- readBin(tmp, "raw", file.info(tmp)$size)
-    paste0("data:image/png;base64,", jsonlite::base64_enc(raw_bytes))
-}
-
 gate_point_in_polygon <- function(x, y, poly) {
     n <- nrow(poly)
     inside <- rep(FALSE, length(x))
@@ -702,20 +694,25 @@ gate_cached_gate <- function(cache, gate_type, filename, control_type) {
 }
 
 gate_apply_polygon_gate <- function(expr, gate) {
-    verts <- gate_vertices_matrix(gate)
-    if (is.null(verts) || nrow(verts) < 3) return(expr)
-    x_channel <- as.character(gate_value(gate, "xChannel", ""))[1]
-    y_channel <- as.character(gate_value(gate, "yChannel", ""))[1]
-    if (!x_channel %in% colnames(expr) || !y_channel %in% colnames(expr)) return(expr)
-    keep <- gate_point_in_polygon(expr[, x_channel], expr[, y_channel], verts)
-    keep <- !is.na(keep) & keep
-    expr[keep, , drop = FALSE]
+    expr[gate_polygon_mask(expr, gate), , drop = FALSE]
 }
 
-gate_apply_positive_gate <- function(expr, gate, peak) {
-    if (is.null(gate) || !peak %in% colnames(expr)) return(expr)
+gate_polygon_mask <- function(expr, gate) {
+    keep_all <- rep(TRUE, nrow(expr))
     verts <- gate_vertices_matrix(gate)
-    if (is.null(verts) || nrow(verts) == 0) return(expr)
+    if (is.null(verts) || nrow(verts) < 3) return(keep_all)
+    x_channel <- as.character(gate_value(gate, "xChannel", ""))[1]
+    y_channel <- as.character(gate_value(gate, "yChannel", ""))[1]
+    if (!x_channel %in% colnames(expr) || !y_channel %in% colnames(expr)) return(keep_all)
+    keep <- gate_point_in_polygon(expr[, x_channel], expr[, y_channel], verts)
+    !is.na(keep) & keep
+}
+
+gate_positive_mask <- function(expr, gate, peak) {
+    keep_all <- rep(TRUE, nrow(expr))
+    if (is.null(gate) || !peak %in% colnames(expr)) return(keep_all)
+    verts <- gate_vertices_matrix(gate)
+    if (is.null(verts) || nrow(verts) == 0) return(keep_all)
     mode <- as.character(gate_value(gate, "mode", ""))[1]
     keep <- NULL
     if (identical(mode, "separator")) {
@@ -727,12 +724,15 @@ gate_apply_positive_gate <- function(expr, gate, peak) {
         x_channel <- as.character(gate_value(gate, "xChannel", peak))[1]
         y_channel <- as.character(gate_value(gate, "yChannel", ""))[1]
         if (!x_channel %in% colnames(expr)) x_channel <- peak
-        if (!y_channel %in% colnames(expr)) return(expr)
+        if (!y_channel %in% colnames(expr)) return(keep_all)
         keep <- gate_point_in_polygon(expr[, x_channel], expr[, y_channel], verts)
     }
-    if (is.null(keep)) return(expr)
-    keep <- !is.na(keep) & keep
-    expr[keep, , drop = FALSE]
+    if (is.null(keep)) return(keep_all)
+    !is.na(keep) & keep
+}
+
+gate_apply_positive_gate <- function(expr, gate, peak) {
+    expr[gate_positive_mask(expr, gate, peak), , drop = FALSE]
 }
 
 gate_is_finalized_polygon <- function(gate) {
@@ -887,6 +887,7 @@ gate_autogenerate_histograms <- function(gates) {
     }
 
     generated <- list()
+    spectra <- list()
     preserved_count <- 0L
     for (item in resolved) {
         positive_key <- paste0("positive:", item$filename)
@@ -894,44 +895,63 @@ gate_autogenerate_histograms <- function(gates) {
         keep_positive <- gate_is_finalized_histogram(gates[[positive_key]])
         keep_negative <- item$needs_negative && gate_is_finalized_histogram(gates[[negative_key]])
         preserved_count <- preserved_count + as.integer(keep_positive) + as.integer(keep_negative)
-        if (keep_positive && (!item$needs_negative || keep_negative)) next
 
         path <- file.path(get_gate_scc_dir(), item$filename)
         ff <- gate_read_fcs(path)
         expr <- flowCore::exprs(ff)
         peak <- as.character(item$row$channel[1])
         if (!peak %in% colnames(expr)) {
-            detectors <- tryCatch(
-                spectreasy::get_sorted_detectors(flowCore::pData(flowCore::parameters(ff)))$names,
-                error = function(e) colnames(expr)
-            )
+            det_info <- gate_detector_info(ff)
+            detectors <- if (is.null(det_info)) colnames(expr) else det_info$names
             detectors <- intersect(detectors, colnames(expr))
             if (length(detectors) == 0) {
                 stop("Could not resolve a peak channel for ", item$filename, ".", call. = FALSE)
             }
             peak <- detectors[which.max(apply(expr[, detectors, drop = FALSE], 2, stats::var, na.rm = TRUE))]
         }
-        gated <- gate_apply_polygon_gate(expr, item$cell_gate)
-        gated <- gate_apply_polygon_gate(gated, item$singlet_gate)
-        ranges <- gate_histogram_autogate_ranges(
-            gated[, peak],
-            sample_type = item$control_type,
-            is_viability = isTRUE(item$row$is_viability[1]),
-            include_negative = item$needs_negative
+        scatter_mask <- gate_polygon_mask(expr, item$cell_gate) &
+            gate_polygon_mask(expr, item$singlet_gate)
+        if (!keep_positive || (item$needs_negative && !keep_negative)) {
+            ranges <- gate_histogram_autogate_ranges(
+                expr[scatter_mask, peak],
+                sample_type = item$control_type,
+                is_viability = isTRUE(item$row$is_viability[1]),
+                include_negative = item$needs_negative
+            )
+            if (!keep_positive) {
+                generated[[positive_key]] <- gate_histogram_interval(
+                    "positive", item$filename, peak, ranges$positive
+                )
+            }
+            if (item$needs_negative && !keep_negative) {
+                generated[[negative_key]] <- gate_histogram_interval(
+                    "negative", item$filename, peak, ranges$negative
+                )
+            }
+        }
+        positive_gate <- if (keep_positive) gates[[positive_key]] else generated[[positive_key]]
+        spectrum_gates <- list(
+            cell = item$cell_gate,
+            singlet = item$singlet_gate,
+            positive = positive_gate
         )
-        if (!keep_positive) {
-            generated[[positive_key]] <- gate_histogram_interval(
-                "positive", item$filename, peak, ranges$positive
-            )
-        }
-        if (item$needs_negative && !keep_negative) {
-            generated[[negative_key]] <- gate_histogram_interval(
-                "negative", item$filename, peak, ranges$negative
-            )
-        }
+        spectrum <- gate_spectrum_data_from_loaded(
+            expr = expr,
+            ff = ff,
+            spectrum_gates = spectrum_gates,
+            peak = peak,
+            is_af = FALSE,
+            scatter_mask = scatter_mask
+        )
+        spectra[[item$filename]] <- gate_cache_spectrum(
+            item$filename,
+            spectrum_gates,
+            spectrum
+        )
     }
     list(
         gates = generated,
+        spectra = spectra,
         files_processed = nrow(targets),
         gates_generated = length(generated),
         gates_preserved = preserved_count
@@ -944,79 +964,130 @@ gate_detector_labels <- function(det_info, spec_channels) {
     labels
 }
 
-gate_build_spectrum_plot <- function(expr_filtered, spec_channels, det_info, dark_mode = FALSE) {
+gate_detector_signature <- function(pd) {
+    desc <- if ("desc" %in% colnames(pd)) as.character(pd$desc) else rep("", nrow(pd))
+    list(name = as.character(pd$name), desc = desc)
+}
+
+gate_detector_info <- function(ff, compute_fun = NULL) {
+    pd <- flowCore::pData(flowCore::parameters(ff))
+    signature <- gate_detector_signature(pd)
+    cache <- getOption("spectreasy.gating_detector_cache", list())
+    hit <- which(vapply(cache, function(entry) identical(entry$signature, signature), logical(1)))
+    if (length(hit) > 0) return(cache[[hit[1]]]$info)
+    if (is.null(compute_fun)) compute_fun <- spectreasy::get_sorted_detectors
+    info <- tryCatch(compute_fun(pd), error = function(e) NULL)
+    cache[[length(cache) + 1L]] <- list(signature = signature, info = info)
+    options(spectreasy.gating_detector_cache = cache)
+    info
+}
+
+gate_spectrum_counts_payload <- function(counts_mat) {
+    connection <- rawConnection(raw(), open = "wb")
+    on.exit(close(connection), add = TRUE)
+    writeBin(as.integer(counts_mat), connection, size = 4L, endian = "little")
+    list(
+        format = jsonlite::unbox("uint32-column-major"),
+        rows = jsonlite::unbox(nrow(counts_mat)),
+        columns = jsonlite::unbox(ncol(counts_mat)),
+        data = jsonlite::unbox(jsonlite::base64_enc(rawConnectionValue(connection)))
+    )
+}
+
+gate_build_spectrum_data <- function(expr_filtered, spec_channels, det_info) {
     labels <- gate_detector_labels(det_info, spec_channels)
     y_power <- 1.5
-    plot_background <- if (isTRUE(dark_mode)) "#0b1110" else "white"
-    plot_foreground <- if (isTRUE(dark_mode)) "#d9e1de" else "#333333"
-    spectrum_theme <- ggplot2::theme_minimal() +
-        ggplot2::theme(
-            text = ggplot2::element_text(color = plot_foreground),
-            axis.text = ggplot2::element_text(color = plot_foreground),
-            axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6, color = plot_foreground),
-            axis.title = ggplot2::element_text(color = plot_foreground),
-            legend.position = "none",
-            plot.background = ggplot2::element_rect(fill = plot_background, color = NA),
-            panel.background = ggplot2::element_rect(fill = plot_background, color = NA),
-            panel.grid.major = ggplot2::element_blank(),
-            panel.grid.minor = ggplot2::element_blank()
-        )
-    if (nrow(expr_filtered) == 0) {
-        max_y <- 6
-        y_breaks_orig <- 0:max_y
-        y_breaks_trans <- y_breaks_orig^y_power
-        y_labels <- vapply(y_breaks_orig, function(x) paste0("10^", x), character(1))
-        p_empty <- ggplot2::ggplot(data.frame(ch_idx = seq_along(spec_channels), y = 0), ggplot2::aes(ch_idx, y)) +
-            ggplot2::scale_x_continuous(breaks = seq_along(spec_channels), labels = labels) +
-            ggplot2::scale_y_continuous(limits = c(0, (max_y + 0.5)^y_power), breaks = y_breaks_trans, labels = y_labels) +
-            ggplot2::coord_cartesian(expand = FALSE) +
-            ggplot2::labs(title = NULL, x = NULL, y = "Intensity") +
-            spectrum_theme
-        return(gate_plot_to_base64(p_empty))
+    event_count <- nrow(expr_filtered)
+    if (event_count == 0) {
+        counts_mat <- matrix(0L, nrow = 150L, ncol = length(spec_channels))
+        return(list(
+            format = jsonlite::unbox("spectrum-histogram-v1"),
+            channels = as.list(spec_channels),
+            labels = as.list(labels),
+            bin_mid = as.list(seq(0, 6, length.out = 150L)),
+            bin_height = jsonlite::unbox(6 / 150),
+            max_y = jsonlite::unbox(6),
+            y_power = jsonlite::unbox(y_power),
+            min_bin_count = jsonlite::unbox(1L),
+            fill_limits = list(0, 1),
+            event_count = jsonlite::unbox(0L),
+            counts = gate_spectrum_counts_payload(counts_mat)
+        ))
     }
 
-    log_mat <- log10(pmax(expr_filtered[, spec_channels, drop = FALSE], 1e-3))
-    min_y <- floor(min(log_mat, na.rm = TRUE))
-    max_y <- ceiling(max(log_mat, na.rm = TRUE))
-    breaks <- seq(min_y, max_y, length.out = 151)
+    spectral_values <- if (identical(colnames(expr_filtered), spec_channels)) {
+        as.matrix(expr_filtered)
+    } else {
+        as.matrix(expr_filtered[, spec_channels, drop = FALSE])
+    }
+    log_mat <- log10(pmax(spectral_values, 1e-3))
+    finite <- log_mat[is.finite(log_mat)]
+    if (length(finite) == 0) {
+        return(gate_build_spectrum_data(expr_filtered[0, , drop = FALSE], spec_channels, det_info))
+    }
+    min_y <- floor(min(finite))
+    max_y <- ceiling(max(finite))
+    if (!is.finite(min_y)) min_y <- 0
+    if (!is.finite(max_y)) max_y <- 6
+    if (min_y == max_y) max_y <- min_y + 1
+    breaks <- seq(min_y, max_y, length.out = 151L)
     bin_mid <- (breaks[-1] + breaks[-length(breaks)]) / 2
     bin_height <- breaks[2] - breaks[1]
     counts_mat <- vapply(seq_len(ncol(log_mat)), function(j) {
-        as.numeric(graphics::hist(log_mat[, j], breaks = breaks, plot = FALSE)$counts)
-    }, numeric(length(bin_mid)))
-    rownames(counts_mat) <- as.character(seq_along(bin_mid))
-    colnames(counts_mat) <- as.character(seq_len(ncol(log_mat)))
-    dt_c <- as.data.frame(as.table(counts_mat), stringsAsFactors = FALSE)
-    names(dt_c) <- c("bin_idx", "ch_idx", "count")
-    dt_c$bin_idx <- as.integer(dt_c$bin_idx)
-    dt_c$ch_idx <- as.integer(dt_c$ch_idx)
-    dt_c$y_orig <- bin_mid[dt_c$bin_idx]
-    dt_c$fill <- log10(dt_c$count + 1)
-    min_bin_count <- if (nrow(expr_filtered) <= 3000) 1 else 3
-    dt_c <- dt_c[dt_c$count >= min_bin_count, , drop = FALSE]
-    if (nrow(dt_c) == 0) {
-        empty_expr <- expr_filtered[0, , drop = FALSE]
-        return(gate_build_spectrum_plot(empty_expr, spec_channels, det_info, dark_mode = dark_mode))
+        values <- log_mat[, j]
+        values <- values[is.finite(values)]
+        as.integer(graphics::hist(values, breaks = breaks, plot = FALSE)$counts)
+    }, integer(length(bin_mid)))
+    if (is.null(dim(counts_mat))) counts_mat <- matrix(counts_mat, ncol = 1L)
+    min_bin_count <- if (event_count <= 3000L) 1L else 3L
+    visible_counts <- counts_mat[counts_mat >= min_bin_count]
+    if (length(visible_counts) == 0) {
+        fill_limits <- c(0, 1)
+    } else {
+        fills <- log10(visible_counts + 1)
+        fill_limits <- c(min(fills), unname(stats::quantile(fills, 0.96, na.rm = TRUE)))
+        if (!is.finite(fill_limits[2]) || fill_limits[2] <= fill_limits[1]) {
+            fill_limits[2] <- fill_limits[1] + 1
+        }
     }
-    dt_c$y <- dt_c$y_orig^y_power
-    fill_lo <- min(dt_c$fill, na.rm = TRUE)
-    fill_hi <- stats::quantile(dt_c$fill, 0.96, na.rm = TRUE)
-    y_breaks_orig <- 0:ceiling(max_y)
-    y_breaks_trans <- y_breaks_orig^y_power
-    y_labels <- vapply(y_breaks_orig, function(x) paste0("10^", x), character(1))
-
-    p_spec <- ggplot2::ggplot(dt_c, ggplot2::aes(ch_idx, y, fill = fill)) +
-        ggplot2::geom_tile(width = 0.7, height = bin_height * 3) +
-        ggplot2::scale_fill_gradientn(colors = c("#0000FF", "#00FFFF", "#00FF00", "#FFFF00", "#FF0000"), limits = c(fill_lo, fill_hi), oob = scales::squish) +
-        ggplot2::scale_x_continuous(breaks = seq_along(spec_channels), labels = labels) +
-        ggplot2::scale_y_continuous(limits = c(0, (max_y + 0.5)^y_power), breaks = y_breaks_trans, labels = y_labels) +
-        ggplot2::coord_cartesian(expand = FALSE) +
-        ggplot2::labs(title = NULL, x = NULL, y = "Intensity") +
-        spectrum_theme
-    gate_plot_to_base64(p_spec)
+    list(
+        format = jsonlite::unbox("spectrum-histogram-v1"),
+        channels = as.list(spec_channels),
+        labels = as.list(labels),
+        bin_mid = as.list(unname(bin_mid)),
+        bin_height = jsonlite::unbox(unname(bin_height)),
+        max_y = jsonlite::unbox(max(0, max_y)),
+        y_power = jsonlite::unbox(y_power),
+        min_bin_count = jsonlite::unbox(min_bin_count),
+        fill_limits = as.list(unname(fill_limits)),
+        event_count = jsonlite::unbox(event_count),
+        counts = gate_spectrum_counts_payload(counts_mat)
+    )
 }
 
-gate_spectrum_for_file <- function(filename, dark_mode = FALSE, gates = NULL) {
+gate_spectrum_data_from_loaded <- function(expr, ff, spectrum_gates, peak, is_af = FALSE, scatter_mask = NULL) {
+    det_info <- gate_detector_info(ff)
+    if (is.null(det_info) || length(det_info$names) == 0) return(NULL)
+    spec_channels <- intersect(det_info$names, colnames(expr))
+    if (length(spec_channels) == 0) return(NULL)
+    if (is.null(scatter_mask)) {
+        scatter_mask <- gate_polygon_mask(expr, spectrum_gates$cell) &
+            gate_polygon_mask(expr, spectrum_gates$singlet)
+    }
+    keep <- scatter_mask
+    if (!isTRUE(is_af)) keep <- keep & gate_positive_mask(expr, spectrum_gates$positive, peak)
+    spectral_expr <- expr[keep, spec_channels, drop = FALSE]
+    gate_build_spectrum_data(spectral_expr, spec_channels, det_info)
+}
+
+gate_cache_spectrum <- function(filename, gates, spectrum) {
+    cache <- getOption("spectreasy.gating_spectrum_cache", list())
+    cache[[gate_safe_basename(filename)]] <- list(gates = gates, spectrum = spectrum)
+    options(spectreasy.gating_spectrum_cache = cache)
+    spectrum
+}
+
+gate_spectrum_for_file <- function(filename, gates = NULL) {
     df <- gate_read_mapping()
     name <- gate_safe_basename(filename)
     row <- df[df$filename == name, , drop = FALSE]
@@ -1034,34 +1105,29 @@ gate_spectrum_for_file <- function(filename, dark_mode = FALSE, gates = NULL) {
     )
     if (!isTRUE(spectrum_gates$ready)) return(NULL)
 
-    cache_slot <- paste0(name, "::", if (isTRUE(dark_mode)) "dark" else "light")
     spectrum_cache <- getOption("spectreasy.gating_spectrum_cache", list())
     gate_signature <- spectrum_gates[c("cell", "singlet", "positive")]
-    cached <- spectrum_cache[[cache_slot]]
-    if (!is.null(cached) && identical(cached$gates, gate_signature)) return(cached$image)
+    cached <- spectrum_cache[[name]]
+    if (!is.null(cached) && identical(cached$gates, gate_signature)) return(cached$spectrum)
 
     path <- file.path(get_gate_scc_dir(), name)
     ff <- gate_read_fcs(path)
     expr <- flowCore::exprs(ff)
-    pd <- flowCore::pData(flowCore::parameters(ff))
-    det_info <- tryCatch(spectreasy::get_sorted_detectors(pd), error = function(e) NULL)
-    if (is.null(det_info) || length(det_info$names) == 0) return(NULL)
-    spec_channels <- intersect(det_info$names, colnames(expr))
-    if (length(spec_channels) == 0) return(NULL)
-
     peak <- as.character(row$channel[1])
-    if (!peak %in% colnames(expr)) peak <- spec_channels[which.max(apply(expr[, spec_channels, drop = FALSE], 2, stats::var, na.rm = TRUE))]
-
-    expr_filtered <- expr
-    expr_filtered <- gate_apply_polygon_gate(expr_filtered, spectrum_gates$cell)
-    expr_filtered <- gate_apply_polygon_gate(expr_filtered, spectrum_gates$singlet)
-    if (!isTRUE(row$is_af[1])) {
-        expr_filtered <- gate_apply_positive_gate(expr_filtered, spectrum_gates$positive, peak)
+    if (!peak %in% colnames(expr)) {
+        det_info <- gate_detector_info(ff)
+        spec_channels <- if (is.null(det_info)) character() else intersect(det_info$names, colnames(expr))
+        if (length(spec_channels) == 0) return(NULL)
+        peak <- spec_channels[which.max(apply(expr[, spec_channels, drop = FALSE], 2, stats::var, na.rm = TRUE))]
     }
-    image <- gate_build_spectrum_plot(expr_filtered, spec_channels, det_info, dark_mode = dark_mode)
-    spectrum_cache[[cache_slot]] <- list(gates = gate_signature, image = image)
-    options(spectreasy.gating_spectrum_cache = spectrum_cache)
-    image
+    spectrum <- gate_spectrum_data_from_loaded(
+        expr = expr,
+        ff = ff,
+        spectrum_gates = spectrum_gates,
+        peak = peak,
+        is_af = isTRUE(row$is_af[1])
+    )
+    gate_cache_spectrum(name, gate_signature, spectrum)
 }
 
 gate_payload_for_file <- function(filename, max_points = 3000L, cache_result = TRUE) {
@@ -1081,7 +1147,8 @@ gate_payload_for_file <- function(filename, max_points = 3000L, cache_result = T
     scatter_channels <- gate_scatter_channels(colnames(expr))
     peak <- as.character(row$channel[1])
     if (!peak %in% colnames(expr)) {
-        det <- tryCatch(spectreasy::get_sorted_detectors(flowCore::pData(flowCore::parameters(ff)))$names, error = function(e) colnames(expr))
+        det_info <- gate_detector_info(ff)
+        det <- if (is.null(det_info)) colnames(expr) else det_info$names
         det <- intersect(det, colnames(expr))
         peak <- det[which.max(apply(expr[, det, drop = FALSE], 2, stats::var, na.rm = TRUE))]
     }
@@ -1307,6 +1374,7 @@ function(req) {
         list(
             success = TRUE,
             gates = result$gates,
+            spectra = result$spectra,
             files_processed = result$files_processed,
             gates_generated = result$gates_generated,
             gates_preserved = result$gates_preserved
@@ -1316,32 +1384,28 @@ function(req) {
     })
 }
 
-#* Render selected SCC spectrum for the current gate cache
+#* Compute selected SCC spectrum bins for the current gate cache
 #* @get /gate_spectrum
 #* @param filename
 #* @param dark
 function(filename, dark = "false") {
-    dark_mode <- tolower(as.character(dark)[1]) %in% c("true", "1", "yes")
     tryCatch(
-        list(spectrum = gate_spectrum_for_file(filename = filename, dark_mode = dark_mode)),
+        list(spectrum = gate_spectrum_for_file(filename = filename)),
         error = function(e) list(error = conditionMessage(e), spectrum = NULL)
     )
 }
 
-#* Render and cache spectra for one or more SCC controls using explicit gates
+#* Compute and cache spectrum bins for one or more SCC controls using explicit gates
 #* @post /gate_spectra
 function(req) {
     tryCatch({
         body <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
         filenames <- unlist(body$filenames, use.names = FALSE)
         filenames <- as.character(filenames[nzchar(as.character(filenames))])
-        dark_mode <- isTRUE(body$dark) ||
-            tolower(as.character(body$dark)[1]) %in% c("true", "1", "yes")
         gates <- body$gates
         spectra <- stats::setNames(lapply(filenames, function(filename) {
             gate_spectrum_for_file(
                 filename = filename,
-                dark_mode = dark_mode,
                 gates = gates
             )
         }), filenames)
