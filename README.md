@@ -8,7 +8,7 @@
 - **Reference Background Handling**: Use unstained cell controls for AF extraction and unstained bead controls as bead backgrounds when present
 - **Advanced Unmixing Algorithms**: Spectreasy builds on the `AutoSpectral` idea with per-cell AF matching and spectral variants. In addition, it ajusts AF extraction for each marker, depending on the AF's influence on it.
 - **Other Unmixing Algorithms**: OLS, NNLS, WLS and RWLS (robust WLS) are supported
-- **SCC Diagnostics & Visualization**: Generate HTML or PDF reports to inspect SCC spectra, gating plots, and various QC metrics
+- **SCC Diagnostics & Visualization**: Generate HTML reports by default to inspect SCC spectra, gating plots, and QC metrics, with PDF available through `report_format = "pdf"`
 - **Browser Tools**: Interactive control gating, spectral panel builder, and manual matrix adjustment modules
 - **Bioconductor-Native In-Memory Workflows**: `unmix_samples()` accepts `flowSet` and `SingleCellExperiment`, and can return either container
 
@@ -180,7 +180,17 @@ and returns a named list with one element per sample.
 
 ## 6. Review quality control reports
 
-`unmix_controls()` and `unmix_samples()` generate comprehensive HTML reports by default. Use `report_format = "pdf"` when a PDF is preferred.
+`unmix_controls()` and `unmix_samples()` generate comprehensive HTML reports by default. Set `report_format = "pdf"` when a PDF is preferred:
+
+```r
+# HTML is the default
+ctrl <- unmix_controls()
+unmixed <- unmix_samples()
+
+# Optional PDF output
+ctrl_pdf <- unmix_controls(report_format = "pdf")
+unmixed_pdf <- unmix_samples(report_format = "pdf")
+```
 
 ### Single-Color Control (SCC) Report
 
@@ -368,7 +378,7 @@ build_panel()
 ```
 
 <p align="center">
-  <img src="man/figures/spectral_panel_builder.png" width="100%" />
+  <img src="man/figures/spectral_panel_builder.png" alt="Spectreasy spectral panel builder" width="100%" />
 </p>
 
 ### Spectreasy Cockpit (recommended)
@@ -401,7 +411,7 @@ unmix_samples(
 ```
 
 <p align="center">
-  <img src="man/figures/matrix_adjustment.png" width="100%" />
+  <img src="man/figures/matrix_adjustment.png" alt="Spectreasy matrix adjustment module" width="100%" />
 </p>
 
 ---

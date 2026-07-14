@@ -1059,6 +1059,8 @@ function BuildReferencePanel({
   onSettingsChange: (patch: Partial<ControlSettings>) => void;
   onRun: WorkflowWorkspaceProps["onRun"];
 }) {
+  const method = settings.method;
+  const useSpectralPipeline = method === "Spectreasy" || method === "AutoSpectral";
   const [advanced, setAdvanced] = useState(false);
   return (
     <section className="surface-card run-card">
@@ -1204,7 +1206,7 @@ function BuildReferencePanel({
               }
             />
           </label>
-          <label>
+          {useSpectralPipeline && <label>
             Background
             <select
               value={settings.sccBackgroundMethod}
@@ -1218,7 +1220,7 @@ function BuildReferencePanel({
               <option value="scatter_knn">Scatter KNN</option>
               <option value="none">None</option>
             </select>
-          </label>
+          </label>}
           <label>
             Seed
             <input
@@ -1241,7 +1243,7 @@ function BuildReferencePanel({
               }
             />
           </label>
-          <label>
+          {useSpectralPipeline && <label>
             Variant top-k
             <input
               type="number"
@@ -1253,8 +1255,8 @@ function BuildReferencePanel({
                 })
               }
             />
-          </label>
-          <label>
+          </label>}
+          {method === "Spectreasy" && <label>
             Weight quantile
             <input
               type="number"
@@ -1268,7 +1270,7 @@ function BuildReferencePanel({
                 })
               }
             />
-          </label>
+          </label>}
         </div>
       )}
       <div className="run-footer">
@@ -4452,6 +4454,7 @@ function ConfigurableSettingsWorkspace({
   const control = settings.control;
   const sample = settings.sample;
   const af = settings.af;
+  const useSpectralControlPipeline = control.method === "Spectreasy" || control.method === "AutoSpectral";
   return (
     <>
       <WorkspaceHeader
@@ -4752,6 +4755,7 @@ function ConfigurableSettingsWorkspace({
               }
             />
           </label>
+          {useSpectralControlPipeline && <>
           <label>
             Background method
             <select
@@ -4901,6 +4905,7 @@ function ConfigurableSettingsWorkspace({
               }
             />
           </label>
+          </>}
           <label className="toggle-label">
             <input
               type="checkbox"
@@ -4954,7 +4959,7 @@ function ConfigurableSettingsWorkspace({
               <option value="pdf">PDF</option>
             </select>
           </label>
-          <label className="toggle-label">
+          {control.method === "AutoSpectral" && <label className="toggle-label">
             <input
               type="checkbox"
               checked={control.refine}
@@ -4964,7 +4969,7 @@ function ConfigurableSettingsWorkspace({
             />
             <span className="toggle-ui" />
             <span>Refine AutoSpectral matrix</span>
-          </label>
+          </label>}
         </div>
       </details>
       <details className="surface-card settings-section">

@@ -320,7 +320,15 @@ export default function CockpitApp() {
     }
     setSettings((current) => ({
       ...current,
-      [section]: { ...current[section], ...patch },
+      [section]: {
+        ...current[section],
+        ...patch,
+        ...(section === "control" &&
+        "method" in patch &&
+        patch.method !== "AutoSpectral"
+          ? { refine: false }
+          : {}),
+      },
     }));
   }
 
@@ -348,7 +356,11 @@ export default function CockpitApp() {
   function changeMethod(method: string) {
     setSettings((current) => ({
       ...current,
-      control: { ...current.control, method },
+      control: {
+        ...current.control,
+        method,
+        refine: method === "AutoSpectral" ? current.control.refine : false,
+      },
       sample: { ...current.sample, method },
     }));
     setProject((current) => ({ ...current, method }));
