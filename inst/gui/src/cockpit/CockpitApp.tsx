@@ -2,29 +2,34 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Menu,
   Moon,
+  FolderOpen,
   RefreshCcw,
-  Settings2,
+  Settings,
   Sparkles,
   Sun,
   X,
 } from "lucide-react";
 import {
   attemptWorkflowAction,
+  createControlMapping,
   downloadTextFile,
   initialBackendStatus,
   loadPanelPayload,
   loadProjectSnapshot,
   persistControlMapping,
   persistGuiState,
-  setProjectContext,
+  selectProjectFolder,
 } from "./api";
-import { demoProject } from "./mockData";
+import { emptyProject } from "./mockData";
 import { WorkflowRail } from "./components/WorkflowRail";
+import { GuiSelect } from "./components/GuiSelect";
+import { CockpitApplet } from "./components/CockpitApplet";
 import { WorkflowWorkspace } from "./workspaces/WorkflowWorkspace";
 import { defaultWorkflowSettings } from "./types";
 import type {
   Artifact,
   BackendStatus,
+  CockpitAppletId,
   Job,
   MappingRow,
   PanelPayload,
@@ -38,7 +43,6 @@ const emptyJob: Job = { label: "", state: "idle", progress: 0, subtask: "" };
 
 type TopBarProps = {
   project: ProjectState;
-  backend: BackendStatus;
   cytometer: string;
   method: string;
   darkMode: boolean;
@@ -47,12 +51,12 @@ type TopBarProps = {
   onMethodChange: (value: string) => void;
   onToggleTheme: () => void;
   onRefresh: () => void;
+  onSelectProject: () => void;
   onSettings: () => void;
 };
 
 function TopBar({
   project,
-  backend,
   cytometer,
   method,
   darkMode,
@@ -61,6 +65,7 @@ function TopBar({
   onMethodChange,
   onToggleTheme,
   onRefresh,
+  onSelectProject,
   onSettings,
 }: TopBarProps) {
   return (
@@ -76,16 +81,17 @@ function TopBar({
           <small>Spectral analysis</small>
         </div>
       </div>
-      <div className="project-switcher">
+      <button className="project-switcher" type="button" onClick={onSelectProject}>
+        <FolderOpen size={16} />
         <div>
           <span className="eyebrow">Active project</span>
           <strong>{project.projectName}</strong>
         </div>
-      </div>
+      </button>
       <div className="topbar-spacer" />
       <label className="context-select">
         <span className="chip-label">Cytometer</span>
-        <select
+        <GuiSelect
           aria-label="Cytometer"
           value={cytometer}
           onChange={(event) => onCytometerChange(event.target.value)}
@@ -97,11 +103,11 @@ function TopBar({
           <option value="discover">Cytek Aurora Discover</option>
           <option value="id7000">Sony ID7000</option>
           <option value="xenith">BD FACSDiscover Xenith</option>
-        </select>
+        </GuiSelect>
       </label>
       <label className="context-select method-select">
         <span className="chip-label">Method</span>
-        <select
+        <GuiSelect
           aria-label="Method"
           value={method}
           onChange={(event) => onMethodChange(event.target.value)}
@@ -112,20 +118,8 @@ function TopBar({
           <option>WLS</option>
           <option>RWLS</option>
           <option>NNLS</option>
-        </select>
+        </GuiSelect>
       </label>
-      <div
-        className="backend-chip"
-        title="R performs the calculations locally. This indicator only reports whether the browser can reach it."
-      >
-        <span
-          className={`backend-dot ${backend.connected ? "is-connected" : ""}`}
-        />
-        <div>
-          <span className="chip-label">Local R</span>
-          <strong>{backend.connected ? "Connected" : "Not connected"}</strong>
-        </div>
-      </div>
       <button
         className="topbar-icon"
         onClick={onRefresh}
@@ -149,7 +143,7 @@ function TopBar({
         aria-pressed={settingsActive}
         title={settingsActive ? "Return to workflow" : "Settings"}
       >
-        <Settings2 size={17} />
+        <Settings size={18} />
       </button>
     </header>
   );
@@ -157,10 +151,13 @@ function TopBar({
 
 export default function CockpitApp() {
   const [project, setProject] = useState<ProjectState>(() =>
-    structuredClone(demoProject),
+    structuredClone(emptyProject),
   );
   const [backend, setBackend] = useState<BackendStatus>(initialBackendStatus);
-  const [activeSection, setActiveSection] = useState<SectionId>("overview");
+  const [activeSection, setActiveSection] = useState<SectionId>("controls");
+  const [activeApplet, setActiveApplet] = useState<CockpitAppletId | null>(null);
+  const [sectionBeforeApplet, setSectionBeforeApplet] =
+    useState<SectionId>("controls");
   const [mappingTab, setMappingTab] = useState<
     "mapping" | "gating" | "build" | "qc"
   >("mapping");
@@ -168,15 +165,16 @@ export default function CockpitApp() {
   const [panelPayload, setPanelPayload] = useState<PanelPayload | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [settings, setSettings] = useState<WorkflowSettings>(() => {
-    const initial = defaultWorkflowSettings(demoProject.projectPath);
+    const initial = defaultWorkflowSettings('');
     const savedTheme = window.localStorage.getItem("spectreasy-theme");
     if (savedTheme === "light" || savedTheme === "dark") {
       initial.appearance.theme = savedTheme;
     }
     return initial;
   });
+  const [settingsReady, setSettingsReady] = useState(false);
   const [sectionBeforeSettings, setSectionBeforeSettings] =
-    useState<SectionId>("overview");
+    useState<SectionId>("controls");
   const darkMode = settings.appearance.theme === "dark";
 
   const refreshProject = useCallback(async (initial = false) => {
@@ -193,6 +191,11 @@ export default function CockpitApp() {
         const explicitCytometer = window.localStorage.getItem(
           "spectreasy-cytometer",
         );
+        const afFiles = snapshot.project.mapping
+          .filter((row) => row.marker.trim().toLowerCase() === "autofluorescence" || /^af(?:$|_|\b)/i.test(row.fluorophore.trim()))
+          .map((row) => `scc/${row.file}`);
+        const savedAf: Partial<WorkflowSettings["af"]> = saved.af ?? {};
+        const requestedAfFile = savedAf.fcsFile ?? current.af.fcsFile;
         return {
           ...current,
           ...saved,
@@ -200,6 +203,10 @@ export default function CockpitApp() {
           control: {
             ...current.control,
             ...savedControl,
+            sccDir: "scc",
+            controlFile: "fcs_mapping.csv",
+            outputDir: "spectreasy_outputs/unmix_controls",
+            gateFile: "ssc_gate_config.csv",
             method:
               savedControl.method ??
               snapshot.project.method ??
@@ -209,13 +216,21 @@ export default function CockpitApp() {
           sample: {
             ...current.sample,
             ...savedSample,
+            sampleDir: "samples",
+            matrixFile: "spectreasy_outputs/unmix_controls/scc_reference_matrix.csv",
+            detectorNoiseFile: "spectreasy_outputs/unmix_controls/scc_detector_noise.csv",
+            outputDir: "spectreasy_outputs/unmix_samples/unmixed_fcs",
             method:
               savedSample.method ??
               savedControl.method ??
               snapshot.project.method ??
               current.sample.method,
           },
-          af: { ...current.af, ...(saved.af ?? {}) },
+          af: {
+            ...current.af,
+            ...savedAf,
+            fcsFile: afFiles.includes(requestedAfFile) ? requestedAfFile : (afFiles[0] ?? ""),
+          },
           appearance: { ...current.appearance, ...(saved.appearance ?? {}) },
         };
       });
@@ -229,9 +244,23 @@ export default function CockpitApp() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void refreshProject(true), 0);
-    return () => window.clearTimeout(timer);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void refreshProject(true).finally(() => {
+        if (!cancelled) setSettingsReady(true);
+      });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [refreshProject]);
+
+  useEffect(() => {
+    if (!settingsReady) return;
+    const timer = window.setTimeout(() => void persistGuiState(project, settings), 450);
+    return () => window.clearTimeout(timer);
+  }, [project, settings, settingsReady]);
 
   useEffect(() => {
     if (job.state !== "running") return;
@@ -275,7 +304,6 @@ export default function CockpitApp() {
     const scale = appearance.fontScale / 100;
     root.dataset.theme = appearance.theme;
     root.dataset.density = appearance.density;
-    root.dataset.sidebar = appearance.sidebarWidth;
     root.dataset.shadows = appearance.shadows;
     root.dataset.contrast = appearance.highContrast ? "high" : "normal";
     root.dataset.texture = appearance.backgroundTexture ? "on" : "off";
@@ -284,6 +312,13 @@ export default function CockpitApp() {
     root.style.setProperty("--ui-zoom", String(scale));
     root.style.setProperty("--scaled-viewport-height", `${100 / scale}vh`);
     root.style.setProperty("--corner-radius", `${appearance.cornerRadius}px`);
+    const fonts = {
+      avenir: '"Avenir Next", Avenir, sans-serif',
+      atkinson: '"Atkinson Hyperlegible", "Arial Nova", sans-serif',
+      "source-sans": '"Source Sans 3", "Source Sans Pro", sans-serif',
+      system: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    };
+    root.style.setProperty("--ui-font", fonts[appearance.fontFamily]);
     window.localStorage.setItem("spectreasy-theme", appearance.theme);
   }, [settings.appearance]);
 
@@ -375,8 +410,32 @@ export default function CockpitApp() {
     setActiveSection("settings");
   }
 
+  function openApplet(applet: CockpitAppletId, section = activeSection) {
+    setSectionBeforeApplet(activeSection);
+    setActiveSection(section);
+    setActiveApplet(applet);
+  }
+
+  function navigateToSection(section: SectionId) {
+    if (section === "panel") {
+      openApplet("panel-builder", section);
+      return;
+    }
+    if (section === "matrix") {
+      openApplet("matrix-adjustment", section);
+      return;
+    }
+    setActiveSection(section);
+  }
+
+  function exitApplet() {
+    setActiveApplet(null);
+    setActiveSection(sectionBeforeApplet);
+    void refreshProject();
+  }
+
   async function runAction(
-    action: "control" | "sample" | "report" | "af",
+    action: "control" | "sample" | "control-report" | "sample-report" | "af",
     label: string,
   ) {
     setJob({
@@ -393,15 +452,15 @@ export default function CockpitApp() {
       action === "control"
         ? {
             projectPath: settings.projectPath,
-            scc_dir: control.sccDir,
-            control_file: control.controlFile,
-            output_dir: control.outputDir,
+            scc_dir: "scc",
+            control_file: "fcs_mapping.csv",
+            output_dir: "spectreasy_outputs/unmix_controls",
             method: control.method,
             cytometer: control.cytometer,
             auto_create_mapping: control.autoCreateMapping,
             auto_unknown_fluor_policy: control.autoUnknownFluorPolicy,
-            gate_file: control.gateFile,
-            gating_mode: control.gateFile.trim().length > 0 ? "reuse" : "automatic",
+            gate_file: "ssc_gate_config.csv",
+            gating_mode: "reuse",
             af_n_bands: control.afNBands,
             af_max_cells: control.afMaxCells,
             af_min_cluster_events: control.afMinClusterEvents,
@@ -443,10 +502,10 @@ export default function CockpitApp() {
         : action === "sample"
           ? {
               projectPath: settings.projectPath,
-              sample_dir: sample.sampleDir,
-              matrix_file: sample.matrixFile,
-              detector_noise_file: sample.detectorNoiseFile,
-              output_dir: sample.outputDir,
+              sample_dir: "samples",
+              matrix_file: "spectreasy_outputs/unmix_controls/scc_reference_matrix.csv",
+              detector_noise_file: "spectreasy_outputs/unmix_controls/scc_detector_noise.csv",
+              output_dir: "spectreasy_outputs/unmix_samples/unmixed_fcs",
               method: sample.method,
               rwls_max_iter: sample.rwlsMaxIter,
               n_threads: sample.nThreads,
@@ -483,15 +542,15 @@ export default function CockpitApp() {
               }
             : {
                 projectPath: settings.projectPath,
-                report_type: "control",
-                report_format: control.outputFormat,
+                report_type: action === "sample-report" ? "sample" : "control",
+                report_format: action === "sample-report" ? sample.outputFormat : control.outputFormat,
                 overwrite: window.prompt(
                   "Existing report behavior: version (recommended), overwrite, or cancel",
                   "version",
                 ) ?? "cancel",
               };
     if (
-      action === "report" &&
+      (action === "control-report" || action === "sample-report") &&
       (payload as Record<string, unknown>).overwrite === "cancel"
     ) {
       setJob(emptyJob);
@@ -517,25 +576,25 @@ export default function CockpitApp() {
     }
   }
 
-  async function saveProject() {
+  async function saveMapping() {
     const mapping = await persistControlMapping(project.mapping);
-    const saved = await persistGuiState(project, settings);
     if (mapping.success)
       setProject((current) => ({ ...current, mappingDirty: false }));
-    setToast(
-      saved && mapping.success
-        ? "Project preferences and control mapping saved to the local R config."
-        : "Project preferences saved for this browser session. Connect R to persist them.",
-    );
+    setToast(mapping.message);
   }
 
-  async function openProject(path: string) {
-    const response = await setProjectContext(path);
-    setToast(response.message);
+  async function chooseProject() {
+    const response = await selectProjectFolder();
+    if (!response.cancelled) setToast(response.message);
     if (response.success) {
-      setSettings((current) => ({ ...current, projectPath: path }));
-      await refreshProject();
+      await refreshProject(true);
     }
+  }
+
+  async function createMapping() {
+    const response = await createControlMapping();
+    setToast(response.message);
+    if (response.success) await refreshProject();
   }
 
   function downloadArtifact(artifact: Artifact) {
@@ -550,40 +609,35 @@ export default function CockpitApp() {
       Gates: "controls",
       Samples: "samples",
       Matrices: "matrix",
-      Reports: "reports",
-      "QC Metrics": "reports",
+      Reports: "control-reports",
+      "QC Metrics": "control-reports",
       "AF Profiles": "af",
       "Panel Builder": "panel",
       Logs: "settings",
     };
     const section = sectionMap[artifact.group];
-    if (section) setActiveSection(section);
+    if (section) navigateToSection(section);
   }
 
   const activeTitle = useMemo(
     () =>
       ({
-        overview: "Project setup",
         controls: "Controls",
         samples: "Samples",
-        reports: "Reports",
+        "control-reports": "Controls QC report",
+        "sample-reports": "Samples QC report",
         matrix: "Matrix review",
         panel: "Panel builder",
         af: "AF library",
-        comparison: "Method comparison",
-        simulator: "Synthetic SCC",
         settings: "Settings & logs",
       })[activeSection],
     [activeSection],
   );
 
   return (
-    <div
-      className={`cockpit-app ${activeSection === "controls" && mappingTab === "gating" ? "is-gating-editor" : ""}`}
-    >
+    <div className="cockpit-app">
       <TopBar
         project={project}
-        backend={backend}
         cytometer={settings.control.cytometer}
         method={settings.control.method}
         darkMode={darkMode}
@@ -594,6 +648,7 @@ export default function CockpitApp() {
           updateSettings("appearance", { theme: darkMode ? "light" : "dark" })
         }
         onRefresh={() => void refreshProject()}
+        onSelectProject={() => void chooseProject()}
         onSettings={toggleSettings}
       />
       <div className="app-body">
@@ -602,7 +657,9 @@ export default function CockpitApp() {
             activeSection={activeSection}
             project={project}
             showCounts={settings.appearance.showSectionCounts}
-            onChange={setActiveSection}
+            width={settings.appearance.sidebarWidth}
+            onWidthChange={(sidebarWidth) => updateSettings("appearance", { sidebarWidth })}
+            onChange={navigateToSection}
           />
           <div className="main-canvas">
             <div className="mobile-canvas-title">
@@ -623,11 +680,12 @@ export default function CockpitApp() {
               onSelectArtifact={selectArtifact}
               onLoadPanel={() => void loadPanel()}
               panelPayload={panelPayload}
-              onSave={() => void saveProject()}
-              onSectionChange={setActiveSection}
+              onSave={() => void saveMapping()}
+              onCreateMapping={() => void createMapping()}
+              onSectionChange={navigateToSection}
               settings={settings}
               onSettingsChange={updateSettings}
-              onOpenProject={openProject}
+              onOpenApplet={(applet) => openApplet(applet)}
             />
           </div>
         </main>
@@ -640,6 +698,9 @@ export default function CockpitApp() {
             <X size={14} />
           </button>
         </div>
+      )}
+      {activeApplet && (
+        <CockpitApplet applet={activeApplet} onExit={exitApplet} />
       )}
     </div>
   );

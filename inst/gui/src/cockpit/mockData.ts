@@ -19,13 +19,9 @@ export const demoArtifacts: Artifact[] = [
 ]
 
 export const demoMapping: MappingRow[] = [
-  { id: 'r1', file: 'unstained_cells.fcs', fluorophore: 'Unstained', marker: 'AF', channel: 'Violet 405 / B1', controlType: 'unstained', universalNegative: true },
-  { id: 'r2', file: 'bead_neg.fcs', fluorophore: 'Bead negative', marker: 'Bead negative', channel: 'Violet 405 / B1', controlType: 'bead', universalNegative: true },
-  { id: 'r3', file: 'BV421.fcs', fluorophore: 'BV421', marker: 'CD45', channel: 'Violet 450 / B2', controlType: 'cell', universalNegative: false },
-  { id: 'r4', file: 'FITC.fcs', fluorophore: 'FITC', marker: 'CD3', channel: 'Blue 530 / B3', controlType: 'cell', universalNegative: false },
-  { id: 'r5', file: 'PE.fcs', fluorophore: 'PE', marker: 'CD19', channel: 'YellowGreen 586 / YG2', controlType: 'cell', universalNegative: false },
-  { id: 'r6', file: 'APC.fcs', fluorophore: 'APC', marker: 'CD8', channel: 'Red 670 / R4', controlType: 'cell', universalNegative: false },
-  { id: 'r7', file: 'AF-viability.fcs', fluorophore: 'Zombie NIR', marker: 'Viability', channel: 'Red 780 / R7', controlType: 'viability', universalNegative: false, warning: 'No matched viability negative' },
+  { id: 'r1', file: 'af_cells.fcs', fluorophore: 'AF', marker: 'Autofluorescence', channel: 'V7-A', controlType: 'cell', universalNegative: '' },
+  { id: 'r2', file: 'af_beads.fcs', fluorophore: 'AF_bead', marker: 'Autofluorescence', channel: 'B3-A', controlType: 'bead', universalNegative: '' },
+  { id: 'r3', file: 'BV421.fcs', fluorophore: 'BV421', marker: 'CD45', channel: 'V1-A', controlType: 'cell', universalNegative: 'af_cells.fcs' },
 ]
 
 export const demoReports: Report[] = [
@@ -48,6 +44,20 @@ export const demoProject: ProjectState = {
   mappingDirty: false,
   gatesDirty: false,
   scan: { controls: 14, samples: 28, matrices: 3, reports: 5, qcMetrics: 1, spectralVariants: 1, gates: 1 },
+}
+
+export const emptyProject: ProjectState = {
+  projectName: 'Choose a project folder',
+  projectPath: '',
+  cytometer: 'Auto',
+  method: 'Spectreasy',
+  lastAction: '',
+  lastActionAt: '',
+  artifacts: [],
+  mapping: [],
+  mappingDirty: false,
+  gatesDirty: false,
+  scan: { controls: 0, samples: 0, matrices: 0, reports: 0, qcMetrics: 0, spectralVariants: 0, gates: 0 },
 }
 
 export const workflowStatus: Record<string, { state: 'complete' | 'ready' | 'warning' | 'blocked' | 'stale' | 'idle'; note: string }> = {

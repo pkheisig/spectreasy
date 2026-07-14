@@ -33,16 +33,9 @@ import {
 } from './gatingViewSettings.js'
 import SpectrumCanvas from './SpectrumCanvas.jsx'
 import { decodeSpectrumData } from './spectrumData.js'
+import { resolveApiBase } from './apiBase'
 
-const API_BASE = (() => {
-  const envBase = import.meta.env.VITE_API_BASE?.trim()
-  if (envBase) return envBase.replace(/\/$/, '')
-  if (typeof window !== 'undefined') {
-    if (window.location.port === '5174') return 'http://localhost:8000'
-    return window.location.origin.replace(/\/$/, '')
-  }
-  return 'http://localhost:8000'
-})()
+const API_BASE = resolveApiBase()
 const CONFIG_NAME = 'ssc_gate_config.csv'
 const GUI_MODULE = 'control_gating'
 
@@ -1900,7 +1893,7 @@ function GatePlot({
   )
 }
 
-function App() {
+function App({ embedded = false, onRequestExit = null }) {
   const [status, setStatus] = useState('Loading controls')
   const [files, setFiles] = useState([])
   const [metadata, setMetadata] = useState({})
@@ -2521,6 +2514,10 @@ function App() {
       const cfg = await useApi('/gate_configs')
       setConfigs(cfg.configs || [])
       if (closeAfter) {
+        if (embedded) {
+          onRequestExit?.()
+          return
+        }
         await useApi('/gate_shutdown', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
         window.close()
       }
@@ -2785,7 +2782,7 @@ function App() {
                   <div><dt>Histogram gates</dt><dd>Use Pos or Neg and click twice to define an interval. Neg is disabled when a matched external AF background exists. Clear removes histogram gates only for this SCC file.</dd></div>
                   <div><dt>Auto-gate</dt><dd>The starred histogram button creates only missing required histogram gates and preserves existing gates.</dd></div>
                   <div><dt>Plot view</dt><dd>Use the mouse wheel or Ctrl +/− to zoom scatter plots, then drag to pan. Histograms pan horizontally without zoom. Ctrl+0 resets the current view. Views are saved in the gate CSV.</dd></div>
-                  <div><dt>Axes and files</dt><dd>Click an underlined scatter-axis label to change its channel. Save and Load write or read the gate CSV; Confirm validates required gates and exits.</dd></div>
+                  <div><dt>Axes and files</dt><dd>Click an underlined scatter-axis label to change its channel. Save and Load write or read the gate CSV; Confirm validates required gates and {embedded ? 'returns to the cockpit' : 'exits'}.</dd></div>
                 </dl>
               </div>
             </div>
@@ -2875,7 +2872,7 @@ function App() {
               onBlur={() => setShowConfirmIssues(false)}
             >
               <button
-                title={canConfirm ? 'Export and close' : 'Finish required gates before confirming'}
+                title={canConfirm ? (embedded ? 'Save and return to cockpit' : 'Export and close') : 'Finish required gates before confirming'}
                 className="confirm"
                 disabled={!canConfirm}
                 onClick={() => { if (canConfirm) setShowConfirmModal(true) }}
@@ -3197,10 +3194,10 @@ function App() {
         <div className="confirm-modal-overlay">
           <div className="confirm-modal">
             <h2>Confirm Gating Configuration?</h2>
-            <p>Are you sure you want to save all gate configurations and exit the Gating GUI?</p>
+            <p>Are you sure you want to save all gate configurations and {embedded ? 'return to the cockpit' : 'exit the Gating GUI'}?</p>
             <div className="confirm-modal-actions">
               <button className="cancel-btn" onClick={() => setShowConfirmModal(false)}>Cancel</button>
-              <button className="confirm-btn" disabled={!canConfirm} onClick={() => { if (canConfirm) { setShowConfirmModal(false); saveConfig(true) } }}>Confirm & Exit</button>
+              <button className="confirm-btn" disabled={!canConfirm} onClick={() => { if (canConfirm) { setShowConfirmModal(false); saveConfig(true) } }}>{embedded ? 'Confirm & Return' : 'Confirm & Exit'}</button>
             </div>
           </div>
         </div>

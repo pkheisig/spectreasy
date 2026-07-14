@@ -1,14 +1,17 @@
 export type SectionId =
-  | 'overview'
   | 'controls'
   | 'samples'
-  | 'reports'
+  | 'control-reports'
+  | 'sample-reports'
   | 'matrix'
   | 'panel'
   | 'af'
-  | 'comparison'
-  | 'simulator'
   | 'settings'
+
+export type CockpitAppletId =
+  | 'control-gating'
+  | 'panel-builder'
+  | 'matrix-adjustment'
 
 export type ArtifactStatus = 'current' | 'stale' | 'user' | 'synthetic' | 'missing' | 'unknown'
 export type JobState = 'idle' | 'running' | 'complete' | 'failed'
@@ -32,8 +35,9 @@ export type MappingRow = {
   fluorophore: string
   marker: string
   channel: string
-  controlType: 'cell' | 'bead' | 'unstained' | 'viability'
-  universalNegative: boolean
+  controlType: 'cell' | 'bead'
+  universalNegative: string
+  isViability?: boolean
   warning?: string
 }
 
@@ -186,7 +190,8 @@ export type AppearanceSettings = {
   theme: 'light' | 'dark'
   density: 'compact' | 'comfortable' | 'spacious'
   fontScale: number
-  sidebarWidth: 'narrow' | 'standard' | 'wide'
+  fontFamily: 'avenir' | 'atkinson' | 'source-sans' | 'system'
+  sidebarWidth: number
   cornerRadius: number
   shadows: 'none' | 'subtle' | 'raised'
   reduceMotion: boolean
@@ -237,7 +242,7 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       rwlsMaxIter: 1,
       unmixThreads: 1,
       seed: 1,
-      saveQcPlots: true,
+      saveQcPlots: false,
       saveReport: true,
       outputFormat: 'html',
       sccBackgroundMethod: 'scatter_knn',
@@ -271,7 +276,7 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       writeFcs: true,
       saveReport: true,
       outputFormat: 'html',
-      saveQcPlots: true,
+      saveQcPlots: false,
       plotNEvents: 10000,
       chunkSize: 50000,
       seed: 1,
@@ -291,7 +296,8 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       theme: 'light',
       density: 'comfortable',
       fontScale: 125,
-      sidebarWidth: 'standard',
+      fontFamily: 'avenir',
+      sidebarWidth: 220,
       cornerRadius: 8,
       shadows: 'subtle',
       reduceMotion: false,

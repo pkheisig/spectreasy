@@ -1,0 +1,76 @@
+import { lazy, Suspense, useEffect, useRef } from 'react'
+import type { ComponentType } from 'react'
+import { createPortal } from 'react-dom'
+import { X } from 'lucide-react'
+import type { CockpitAppletId } from '../types'
+
+const GatingGui = lazy(() => import('../../GatingGui.jsx')) as ComponentType<{
+  embedded?: boolean
+  onRequestExit?: () => void
+}>
+const PanelBuilder = lazy(() => import('../../PanelBuilder.tsx'))
+const MatrixAdjustment = lazy(() => import('../../MatrixAdjustment.tsx'))
+
+const appletLabels: Record<CockpitAppletId, string> = {
+  'control-gating': 'control gating',
+  'panel-builder': 'panel builder',
+  'matrix-adjustment': 'matrix adjustment',
+}
+
+type CockpitAppletProps = {
+  applet: CockpitAppletId
+  onExit: () => void
+}
+
+export function CockpitApplet({ applet, onExit }: CockpitAppletProps) {
+  const exitButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const root = document.getElementById('root')
+    const rootWasInert = root?.hasAttribute('inert') ?? false
+    const bodyOverflow = document.body.style.overflow
+    const bodyClass = document.body.className
+    const bodyStyle = document.body.getAttribute('style')
+    const htmlStyle = document.documentElement.getAttribute('style')
+    const htmlTheme = document.documentElement.dataset.theme
+
+    root?.setAttribute('inert', '')
+    document.body.style.overflow = 'hidden'
+    exitButtonRef.current?.focus()
+
+    return () => {
+      if (!rootWasInert) root?.removeAttribute('inert')
+      document.body.className = bodyClass
+      if (bodyStyle === null) document.body.removeAttribute('style')
+      else document.body.setAttribute('style', bodyStyle)
+      document.body.style.overflow = bodyOverflow
+      if (htmlStyle === null) document.documentElement.removeAttribute('style')
+      else document.documentElement.setAttribute('style', htmlStyle)
+      if (htmlTheme === undefined) delete document.documentElement.dataset.theme
+      else document.documentElement.dataset.theme = htmlTheme
+    }
+  }, [])
+
+  const label = appletLabels[applet]
+  return createPortal(
+    <div className="cockpit-applet" role="dialog" aria-modal="true" aria-label={`Embedded ${label}`}>
+      <button
+        ref={exitButtonRef}
+        type="button"
+        className="cockpit-applet-exit"
+        onClick={onExit}
+        aria-label={`Exit ${label} and return to cockpit`}
+      >
+        <X size={15} /> Exit to cockpit
+      </button>
+      <div className="cockpit-applet-content">
+        <Suspense fallback={<div className="cockpit-applet-loading">Loading {label}…</div>}>
+          {applet === 'control-gating' && <GatingGui embedded onRequestExit={onExit} />}
+          {applet === 'panel-builder' && <PanelBuilder />}
+          {applet === 'matrix-adjustment' && <MatrixAdjustment />}
+        </Suspense>
+      </div>
+    </div>,
+    document.body,
+  )
+}

@@ -1,14 +1,9 @@
 import axios from 'axios'
-import { demoProject } from './mockData'
+import { emptyProject } from './mockData'
+import { resolveApiBase } from '../apiBase'
 import type { Artifact, BackendStatus, PanelPayload, ProjectState, Report, WorkflowSettings } from './types'
 
-const API_BASE = (() => {
-  const envBase = (import.meta.env.VITE_API_BASE as string | undefined)?.trim()
-  if (envBase) return envBase.replace(/\/$/, '')
-  if (typeof window !== 'undefined' && window.location.port === '5174') return 'http://localhost:8000'
-  if (typeof window !== 'undefined') return window.location.origin.replace(/\/$/, '')
-  return 'http://localhost:8000'
-})()
+const API_BASE = resolveApiBase()
 
 const client = axios.create({ baseURL: API_BASE, timeout: 900 })
 
@@ -31,6 +26,7 @@ function unboxGuiState(value: unknown): unknown {
 
 function projectNameFromPath(path: string): string {
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
+  if (!normalized) return 'Choose a project folder'
   return normalized.split('/').pop()?.trim() || 'Spectreasy project'
 }
 
@@ -46,8 +42,7 @@ export function rowsFromBackend(value: unknown): Array<Record<string, unknown>> 
 function normalizeMappingRows(value: unknown): ProjectState['mapping'] {
   return rowsFromBackend(value).map((row, index) => {
     const controlType = String(row['control.type'] ?? row.controlType ?? 'cells').toLowerCase()
-    const normalizedType: ProjectState['mapping'][number]['controlType'] = controlType.includes('viab') ? 'viability' : controlType.includes('bead') ? 'bead' : controlType.includes('unstain') ? 'unstained' : 'cell'
-    const universal = String(row['universal.negative'] ?? row.universalNegative ?? '').toLowerCase()
+    const normalizedType: ProjectState['mapping'][number]['controlType'] = controlType.includes('bead') ? 'bead' : 'cell'
     return {
       id: String(row.id ?? row.filename ?? `mapping-${index + 1}`),
       file: String(row.filename ?? row.file ?? ''),
@@ -55,7 +50,8 @@ function normalizeMappingRows(value: unknown): ProjectState['mapping'] {
       marker: String(row.marker ?? ''),
       channel: String(row.channel ?? ''),
       controlType: normalizedType,
-      universalNegative: ['true', 't', '1', 'yes'].includes(universal),
+      universalNegative: String(row['universal.negative'] ?? row.universalNegative ?? ''),
+      isViability: ['true', 't', '1', 'yes'].includes(String(row['is.viability'] ?? row.isViability ?? '').toLowerCase()),
     }
   }).filter((row) => row.file.length > 0)
 }
@@ -99,19 +95,18 @@ export const initialBackendStatus: BackendStatus = {
 
 export async function loadProjectSnapshot(): Promise<{ project: ProjectState; backend: BackendStatus; savedSettings?: Partial<WorkflowSettings> }> {
     try {
-    const [statusResponse, matricesResponse, samplesResponse, gatesResponse, guiStateResponse] = await Promise.all([
+    const [statusResponse, matricesResponse, samplesResponse, mappingResponse, guiStateResponse] = await Promise.all([
       client.get('/status'),
       client.get('/matrices'),
       client.get('/samples'),
-      client.get('/gate_files'),
+      client.get('/control_mapping'),
       client.get('/gui_state', { params: { module: 'spectreasy_cockpit' } }).catch(() => null),
     ])
     const projectResponse = await client.get('/project/status').catch(() => null)
     const status = statusResponse.data as Record<string, unknown>
     const matrices = Array.isArray(matricesResponse.data) ? matricesResponse.data : []
     const samples = Array.isArray(samplesResponse.data) ? samplesResponse.data : []
-    const gateRows = rowsFromBackend(gatesResponse.data?.files)
-    const liveMapping = normalizeMappingRows(gatesResponse.data?.files)
+    const liveMapping = normalizeMappingRows(mappingResponse.data?.rows)
     const statusOk = scalarValue(status.status) === 'ok'
     const rawScan = (projectResponse?.data?.scan ?? {}) as Record<string, unknown>
     const backendScan = Object.fromEntries(Object.entries(rawScan).map(([key, value]) => [key, Number(scalarValue(value, '0'))])) as Partial<ProjectState['scan']>
@@ -123,23 +118,23 @@ export async function loadProjectSnapshot(): Promise<{ project: ProjectState; ba
       apiPort: API_BASE.split(':').pop() ?? '8000',
       packageReady: statusOk,
     }
-    const projectPath = scalarValue(projectResponse?.data?.project_path, scalarValue(status.matrix_dir, scalarValue(status.wd, demoProject.projectPath)))
+    const projectPath = scalarValue(projectResponse?.data?.project_path, '')
     const liveProjectArtifacts = liveArtifacts(projectPath, projectResponse?.data?.files)
     const project: ProjectState = {
-      ...demoProject,
+      ...emptyProject,
       projectName: scalarValue(status.project_name, projectNameFromPath(projectPath)),
       projectPath,
-      method: scalarValue(status.unmixing_method, demoProject.method),
-      cytometer: scalarValue(status.panel_cytometer, demoProject.cytometer),
-      artifacts: liveProjectArtifacts.length > 0 ? liveProjectArtifacts : demoProject.artifacts,
-      mapping: liveMapping.length > 0 ? liveMapping : demoProject.mapping,
-      scan: { ...demoProject.scan, ...backendScan, matrices: matrices.length, samples: samples.length, gates: gateRows.length },
+      method: scalarValue(status.unmixing_method, emptyProject.method),
+      cytometer: scalarValue(status.panel_cytometer, emptyProject.cytometer),
+      artifacts: liveProjectArtifacts,
+      mapping: liveMapping,
+      scan: { ...emptyProject.scan, ...backendScan, matrices: matrices.length, samples: samples.length },
     }
     const savedConfig = unboxGuiState(guiStateResponse?.data?.config) as Record<string, unknown> | undefined
     const savedSettings = (savedConfig?.settings ?? savedConfig ?? undefined) as Partial<WorkflowSettings> | undefined
     return { project, backend, savedSettings }
   } catch {
-    return { project: structuredClone(demoProject), backend: initialBackendStatus }
+    return { project: structuredClone(emptyProject), backend: initialBackendStatus }
   }
 }
 
@@ -329,6 +324,18 @@ export async function persistControlMapping(mapping: ProjectState['mapping']): P
   }
 }
 
+export async function createControlMapping(): Promise<{ success: boolean; message: string }> {
+  try {
+    const response = await client.post('/control_mapping/create', {})
+    const success = scalarValue(response.data?.success, 'false') === 'true'
+    return success
+      ? { success: true, message: 'Created fcs_mapping.csv from the SCC folder.' }
+      : { success: false, message: scalarValue(response.data?.error, 'The control mapping could not be created.') }
+  } catch {
+    return { success: false, message: 'The control mapping could not be created. Select a project with an SCC folder and retry.' }
+  }
+}
+
 export async function setProjectContext(projectPath: string): Promise<{ success: boolean; message: string }> {
   try {
     const response = await client.post('/project/context', { projectPath })
@@ -338,6 +345,20 @@ export async function setProjectContext(projectPath: string): Promise<{ success:
     return { success: true, message: 'Project folder opened. Artifacts refreshed from disk.' }
   } catch {
     return { success: false, message: 'The project folder could not be opened. Check the path and R connection.' }
+  }
+}
+
+export async function selectProjectFolder(): Promise<{ success: boolean; cancelled: boolean; message: string }> {
+  try {
+    const response = await client.post('/project/select', {})
+    const cancelled = scalarValue(response.data?.cancelled, 'false') === 'true'
+    if (cancelled) return { success: false, cancelled: true, message: 'Project selection cancelled.' }
+    if (response.data?.success === false || response.data?.error) {
+      return { success: false, cancelled: false, message: scalarValue(response.data?.error, 'The project folder could not be opened.') }
+    }
+    return { success: true, cancelled: false, message: 'Project folder opened. Artifacts refreshed from disk.' }
+  } catch {
+    return { success: false, cancelled: false, message: 'The local R backend is required to open the folder picker.' }
   }
 }
 

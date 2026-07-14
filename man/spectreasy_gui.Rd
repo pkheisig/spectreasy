@@ -11,10 +11,9 @@ Invisibly returns `NULL`. This function blocks while the local GUI
 application is running.
 }
 \description{
-Starts the complete local Spectreasy browser application. The current R
-working directory is used as the initial project folder; the project path,
-input folders, analysis method, numerical settings, gates, reports, and
-output locations can then be configured from inside the GUI.
+Starts the local Spectreasy R backend and opens the hosted cockpit. Choose
+the project folder from the Active project button in the header; the R
+working directory is not used as an implicit project.
 }
 \details{
 This is the recommended entry point for interactive use:
