@@ -163,7 +163,7 @@ body.dark .initial-loading-overlay,
 
 .initial-loading-card span {
   color: var(--muted);
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -273,7 +273,7 @@ body.dark .initial-loading-overlay,
 
 .brand p {
   color: var(--muted);
-  font-size: 16px;
+  font-size: 12px;
 }
 
 .file-list {
@@ -317,7 +317,7 @@ body.dark .initial-loading-overlay,
 }
 
 .file-row span {
-  font-size: 17px;
+  font-size: 13px;
   color: var(--blueprint);
   font-weight: 800;
 }
@@ -371,11 +371,11 @@ body.dark .initial-loading-overlay,
 }
 
 .gating-status-banner strong {
-  font-size: 17px;
+  font-size: 13px;
 }
 
 .gating-status-banner span {
-  font-size: 16px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -410,7 +410,7 @@ body.dark .gating-status-banner.is-error,
 
 .eyebrow {
   color: var(--muted);
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -514,7 +514,7 @@ body.dark .control-navigation .icon-button:disabled,
 .gating-settings-heading span {
   margin-top: 3px;
   color: var(--muted);
-  font-size: 15.5px;
+  font-size: 11px;
 }
 
 .gating-settings-appearance {
@@ -524,7 +524,7 @@ body.dark .control-navigation .icon-button:disabled,
   padding: 9px 0 12px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -533,7 +533,7 @@ body.dark .control-navigation .icon-button:disabled,
   min-height: 32px;
   height: 32px;
   padding: 0 10px;
-  font-size: 15.5px;
+  font-size: 11px;
 }
 
 .gating-settings-row {
@@ -543,7 +543,7 @@ body.dark .control-navigation .icon-button:disabled,
   gap: 10px;
   min-height: 40px;
   border-top: 1px solid var(--line);
-  font-size: 16px;
+  font-size: 12px;
 }
 
 .gating-settings-row > span {
@@ -559,7 +559,7 @@ body.dark .control-navigation .icon-button:disabled,
 
 .gating-settings-row strong {
   color: var(--ink);
-  font-size: 15.5px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
@@ -654,7 +654,7 @@ body.dark .gating-help-button:hover,
 .gating-help-popover dt,
 .gating-help-popover dd {
   margin: 0;
-  font-size: 16px;
+  font-size: 12px;
   line-height: 1.38;
 }
 
@@ -775,13 +775,13 @@ body.dark .auto-histogram-button:disabled,
   background: var(--panel);
   color: var(--ink);
   box-shadow: 0 18px 36px rgba(23, 32, 29, 0.2);
-  font-size: 16px;
+  font-size: 12px;
   text-align: left;
 }
 
 .confirm-tooltip strong {
   color: var(--accent-2);
-  font-size: 16px;
+  font-size: 12px;
 }
 
 .confirm-tooltip span {
@@ -823,7 +823,7 @@ body.dark .auto-histogram-button:disabled,
 .status {
   margin-left: auto;
   color: var(--muted);
-  font-size: 17px;
+  font-size: 13px;
   max-width: 520px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -842,7 +842,7 @@ body.dark .auto-histogram-button:disabled,
   background: var(--panel);
   border-radius: 7px;
   padding: 9px 11px;
-  font-size: 17px;
+  font-size: 13px;
   font-weight: 800;
   color: var(--ink);
 }
@@ -879,13 +879,13 @@ body.dark .auto-histogram-button:disabled,
 .plot-head p,
 .plot-head span {
   color: var(--muted);
-  font-size: 16px;
+  font-size: 12px;
 }
 
 .plot-warning {
   margin-top: 5px;
   color: var(--accent-2);
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 900;
   white-space: nowrap;
 }
@@ -928,7 +928,7 @@ body.dark .auto-histogram-button:disabled,
 
 .axis-tick-label {
   fill: var(--axis-color);
-  font-size: 14.5px;
+  font-size: 10px;
   font-weight: 800;
 }
 
@@ -984,7 +984,7 @@ body.dark .auto-histogram-button:disabled,
 .axis-menu button {
   justify-content: flex-start;
   min-height: 28px;
-  font-size: 16px;
+  font-size: 12px;
   border-radius: 5px;
 }
 
@@ -997,7 +997,7 @@ body.dark .auto-histogram-button:disabled,
   border-radius: 8px;
   padding: 0 12px;
   height: 36px;
-  font-size: 17px;
+  font-size: 13px;
   font-weight: 800;
   color: var(--ink);
 }
@@ -1051,7 +1051,7 @@ body.dark .auto-histogram-button:disabled,
   border-radius: 6px;
   color: var(--muted);
   background: color-mix(in srgb, var(--panel) 82%, var(--canvas));
-  font-size: 17px;
+  font-size: 13px;
   font-weight: 700;
   text-align: center;
 }
@@ -1210,7 +1210,7 @@ body.dark .plot-toolbar button.on,
 
 .plot-toolbar button {
   min-height: 28px;
-  font-size: 16px;
+  font-size: 12px;
   padding: 0 8px;
   border-radius: 5px;
 }
@@ -1225,7 +1225,7 @@ body.dark .plot-toolbar button.on,
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--panel);
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 800;
   color: var(--muted);
 }
@@ -1256,7 +1256,7 @@ body.dark .plot-toolbar button.on,
   border-radius: 8px;
   background: var(--panel);
   color: var(--muted);
-  font-size: 17px;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -1274,7 +1274,7 @@ body.dark .plot-toolbar button.on,
   border-color: var(--line);
   background: var(--panel);
   color: var(--ink);
-  font-size: 17px;
+  font-size: 13px;
   font-weight: 800;
   position: relative;
 }
@@ -1317,7 +1317,7 @@ body.dark .plot-toolbar button.on,
   border-radius: 7px;
   background: transparent;
   color: #f5f1ea;
-  font-size: 17px;
+  font-size: 13px;
   font-weight: 800;
 }
 

@@ -33,9 +33,11 @@ import {
 } from './gatingViewSettings.js'
 import SpectrumCanvas from './SpectrumCanvas.jsx'
 import { decodeSpectrumData } from './spectrumData.js'
-import { resolveApiBase } from './apiBase'
+import { resolveApiBase, resolveApiToken } from './apiBase'
+import { withGatingApiToken } from './gatingApi.js'
 
 const API_BASE = resolveApiBase()
+const API_TOKEN = resolveApiToken()
 const CONFIG_NAME = 'ssc_gate_config.csv'
 const GUI_MODULE = 'control_gating'
 
@@ -823,8 +825,8 @@ function hasViewSettings(value) {
   return ['cell', 'singlet', 'histogram'].some((plot) => Object.keys(value?.[plot] || {}).length > 0)
 }
 
-function useApi(path, options) {
-  return fetch(`${API_BASE}${path}`, options).then((res) => {
+function useApi(path, options = {}) {
+  return fetch(`${API_BASE}${path}`, withGatingApiToken(options, API_TOKEN)).then((res) => {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
     return res.json()
   })
