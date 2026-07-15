@@ -14,7 +14,8 @@ testthat::test_that("unmix_samples writes markers as primary and fluorophores as
         channel = c("B1-A", "YG1-A"),
         stringsAsFactors = FALSE
     )
-    utils::write.csv(control_df, "fcs_mapping.csv", row.names = FALSE, quote = TRUE)
+    control_file <- file.path(tmp, "project_specific_bead_controls.csv")
+    utils::write.csv(control_df, control_file, row.names = FALSE, quote = TRUE)
 
     sample_dir <- file.path(tmp, "samples")
     output_dir <- file.path(tmp, "out")
@@ -40,6 +41,7 @@ testthat::test_that("unmix_samples writes markers as primary and fluorophores as
     spectreasy::unmix_samples(
         sample_dir = sample_dir,
         M = M,
+        control_file = control_file,
         unmixing_method = "OLS",
         output_dir = output_dir,
         write_fcs = TRUE
@@ -81,20 +83,61 @@ testthat::test_that("duplicate marker names are disambiguated without losing flu
     testthat::expect_equal(unname(as.character(pd$desc)), c("APC", "BUV661", "Time"))
 })
 
-testthat::test_that("sample-project mapping takes precedence over a working-directory mapping", {
-    tmp <- tempfile("spectreasy_mapping_precedence_")
-    project_dir <- file.path(tmp, "project")
-    sample_dir <- file.path(project_dir, "samples")
-    dir.create(sample_dir, recursive = TRUE)
+testthat::test_that("output labels use only the control mapping passed by the workflow", {
+    tmp <- tempfile("spectreasy_exact_mapping_")
+    dir.create(tmp)
+    exact_mapping <- file.path(tmp, "arbitrary_control_filename.csv")
+    utils::write.csv(
+        data.frame(fluorophore = "FITC", marker = "CD8"),
+        exact_mapping,
+        row.names = FALSE
+    )
 
-    wrong_mapping <- data.frame(fluorophore = "FITC", marker = "Wrong marker")
-    project_mapping <- data.frame(fluorophore = "FITC", marker = "CD8")
-    utils::write.csv(wrong_mapping, file.path(tmp, "fcs_mapping.csv"), row.names = FALSE)
-    utils::write.csv(project_mapping, file.path(project_dir, "fcs_mapping.csv"), row.names = FALSE)
-
-    old_wd <- setwd(tmp)
-    on.exit(setwd(old_wd), add = TRUE)
-    labels <- spectreasy:::.resolve_output_marker_map("FITC", sample_dir = sample_dir)
+    labels <- spectreasy:::.resolve_output_marker_map(
+        "FITC",
+        control_file = exact_mapping
+    )
+    fallback <- spectreasy:::.resolve_output_marker_map("FITC")
 
     testthat::expect_identical(unname(labels[["FITC"]]), "CD8")
+    testthat::expect_identical(unname(fallback[["FITC"]]), "FITC")
+})
+
+testthat::test_that("an invalid supplied control mapping never silently becomes fluorophore labels", {
+    invalid_mapping <- data.frame(color = "FITC", target = "CD8")
+
+    testthat::expect_error(
+        spectreasy:::.resolve_output_marker_map("FITC", control_df = invalid_mapping),
+        "must contain fluorophore and marker columns",
+        fixed = TRUE
+    )
+})
+
+testthat::test_that("control mapping context survives in-memory and saved-matrix workflows", {
+    tmp <- tempfile("spectreasy_mapping_context_")
+    dir.create(tmp)
+    mapping <- data.frame(fluorophore = "FITC", marker = "CD8")
+    mapping_used_file <- file.path(tmp, "fcs_mapping_used.csv")
+    matrix_file <- file.path(tmp, "scc_reference_matrix.csv")
+    utils::write.csv(mapping, mapping_used_file, row.names = FALSE)
+    utils::write.csv(
+        data.frame(fluorophore = "FITC", `B1-A` = 1, check.names = FALSE),
+        matrix_file,
+        row.names = FALSE
+    )
+
+    M <- matrix(1, nrow = 1, dimnames = list("FITC", "B1-A"))
+    attr(M, "spectreasy_control_df") <- mapping
+    in_memory <- spectreasy:::.resolve_unmix_output_control_context(M)
+
+    plain_M <- matrix(1, nrow = 1, dimnames = list("FITC", "B1-A"))
+    from_disk <- spectreasy:::.resolve_unmix_output_control_context(
+        plain_M,
+        unmixing_matrix_file = matrix_file
+    )
+
+    testthat::expect_identical(in_memory$control_df, mapping)
+    testthat::expect_null(in_memory$control_file)
+    testthat::expect_identical(from_disk$control_file, mapping_used_file)
+    testthat::expect_null(from_disk$control_df)
 })

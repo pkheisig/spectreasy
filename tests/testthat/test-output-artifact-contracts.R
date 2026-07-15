@@ -23,4 +23,8 @@ test_that("automatic control report defaults inside the qc_controls directory", 
         paths$qc_report_html,
         file.path(output_dir, "qc_controls", "qc_controls_report.html")
     )
+    expect_identical(
+        paths$control_mapping_csv,
+        file.path(output_dir, "fcs_mapping_used.csv")
+    )
 })

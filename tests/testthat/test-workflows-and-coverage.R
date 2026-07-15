@@ -387,6 +387,15 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
 
     expect_true(file.exists(ctrl$reference_matrix_file))
     expect_true(file.exists(ctrl$unmixing_matrix_file))
+    expect_true(file.exists(ctrl$control_mapping_file))
+    expect_identical(
+        as.character(attr(ctrl$M, "spectreasy_control_file")),
+        normalizePath(control_csv)
+    )
+    expect_equal(
+        attr(ctrl$M, "spectreasy_control_df")$marker,
+        wf$control_df$marker
+    )
     expect_true(file.exists(ctrl$qc_report_file))
     expect_true(dir.exists(ctrl$qc_controls_dir))
     expect_true(file.exists(ctrl$spectra_file))

@@ -159,7 +159,7 @@ The same run creates the NxN scatter matrix for the single-color controls. Each 
 
 ## 5. Unmix the experimental sample
 
-After the control-stage workflow has completed, unmix the experimental files with `unmix_samples()`. The reference matrix written by `unmix_controls()` is loaded by default. If `scc_spectral_variants.rds` is present beside that matrix, `unmix_samples()` reuses it automatically.
+After the control-stage workflow has completed, unmix the experimental files with `unmix_samples()`. The reference matrix written by `unmix_controls()` is loaded by default. The exact mapping passed as `control_file` is preserved as `fcs_mapping_used.csv` beside that matrix and supplies marker/fluorophore FCS labels; custom mapping filenames do not need to follow a naming convention. If `scc_spectral_variants.rds` is present beside the matrix, `unmix_samples()` reuses it automatically.
 
 ```r
 unmixed <- unmix_samples(

@@ -11,6 +11,7 @@ unmix_samples(
   unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls",
     "scc_reference_matrix.csv"),
   detector_noise_file = NULL,
+  control_file = NULL,
   unmixing_method = "Spectreasy",
   rwls_max_iter = 1L,
   n_threads = 1L,
@@ -55,6 +56,12 @@ produced by [unmix_controls()] (`"scc_reference_matrix.csv"`).}
 floors, as written by [unmix_controls()] (`"scc_detector_noise.csv"`). If
 omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
 falls back to the built-in scalar noise floor.}
+
+\item{control_file}{Optional control mapping CSV used to assign marker names
+as primary FCS parameter names and fluorophores as secondary names. An
+explicit value takes precedence. When omitted, the exact mapping carried by
+an in-memory matrix returned from [unmix_controls()] or the
+`fcs_mapping_used.csv` saved beside `unmixing_matrix_file` is used.}
 
 \item{unmixing_method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`,
 `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses

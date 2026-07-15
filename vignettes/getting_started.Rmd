@@ -256,7 +256,9 @@ The `control.type` column in `fcs_mapping.csv` also matters here. It tells
 
 After the control-stage workflow has completed, unmix the experimental files
 with `unmix_samples()`. The reference matrix written by
-`unmix_controls()` is loaded by default.
+`unmix_controls()` is loaded by default. The exact mapping passed to
+`unmix_controls(control_file = ...)` is saved beside the matrix as
+`fcs_mapping_used.csv` and reused for marker/fluorophore FCS labels.
 
 ```{r, eval = FALSE}
 unmixed <- unmix_samples(

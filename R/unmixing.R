@@ -293,42 +293,40 @@
     M
 }
 
-.resolve_output_marker_map <- function(fluorophore_names, sample_dir) {
+.resolve_output_marker_map <- function(fluorophore_names, control_file = NULL, control_df = NULL) {
     fluorophore_names <- trimws(as.character(fluorophore_names))
     labels <- stats::setNames(fluorophore_names, fluorophore_names)
     if (length(fluorophore_names) == 0) return(labels)
+    mapping_supplied <- !is.null(control_file) || !is.null(control_df)
 
-    opt_control <- getOption("spectreasy.control_file", "")
-    sample_parent <- getwd()
-    if (is.character(sample_dir) && length(sample_dir) >= 1L && all(!is.na(sample_dir))) {
-        if (length(sample_dir) == 1L && dir.exists(sample_dir)) {
-            sample_parent <- dirname(normalizePath(sample_dir, mustWork = FALSE))
-        } else {
-            file_parents <- unique(dirname(normalizePath(sample_dir, mustWork = FALSE)))
-            if (length(file_parents) == 1L) {
-                sample_parent <- dirname(file_parents[[1]])
+    if (!is.null(control_file)) {
+        control_df <- tryCatch(
+            utils::read.csv(control_file, stringsAsFactors = FALSE, check.names = FALSE),
+            error = function(e) {
+                stop(
+                    "Could not read control_file for output FCS labels: ",
+                    conditionMessage(e),
+                    call. = FALSE
+                )
             }
-        }
+        )
     }
-    candidates <- unique(c(
-        as.character(opt_control),
-        file.path(sample_parent, "fcs_mapping.csv"),
-        .resolve_control_file_path("fcs_mapping.csv")
-    ))
-    candidates <- candidates[!is.na(candidates) & nzchar(trimws(candidates))]
-    existing <- candidates[file.exists(candidates)]
-    if (length(existing) == 0) return(labels)
-
-    control_df <- tryCatch(
-        utils::read.csv(existing[1], stringsAsFactors = FALSE, check.names = FALSE),
-        error = function(e) NULL
-    )
-    if (is.null(control_df) || nrow(control_df) == 0) return(labels)
+    if (is.null(control_df) || !is.data.frame(control_df) || nrow(control_df) == 0) {
+        if (mapping_supplied) {
+            stop("The control mapping used for output FCS labels is empty or invalid.", call. = FALSE)
+        }
+        return(labels)
+    }
 
     lower_names <- tolower(colnames(control_df))
     fluor_idx <- match("fluorophore", lower_names)
     marker_idx <- match("marker", lower_names)
-    if (is.na(fluor_idx) || is.na(marker_idx)) return(labels)
+    if (is.na(fluor_idx) || is.na(marker_idx)) {
+        stop(
+            "The control mapping used for output FCS labels must contain fluorophore and marker columns.",
+            call. = FALSE
+        )
+    }
 
     fluor_vals <- trimws(as.character(control_df[[fluor_idx]]))
     marker_vals <- trimws(as.character(control_df[[marker_idx]]))
@@ -347,6 +345,34 @@
         }
     }
     labels
+}
+
+.resolve_unmix_output_control_context <- function(M,
+                                                  control_file = NULL,
+                                                  unmixing_matrix_file = NULL) {
+    if (!is.null(control_file)) {
+        return(list(control_file = control_file, control_df = NULL))
+    }
+
+    control_df <- attr(M, "spectreasy_control_df", exact = TRUE)
+    if (is.data.frame(control_df) && nrow(control_df) > 0L) {
+        return(list(control_file = NULL, control_df = control_df))
+    }
+
+    matrix_control_file <- attr(M, "spectreasy_control_file", exact = TRUE)
+    if (is.character(matrix_control_file) && length(matrix_control_file) == 1L &&
+        !is.na(matrix_control_file) && file.exists(matrix_control_file)) {
+        return(list(control_file = matrix_control_file, control_df = NULL))
+    }
+
+    if (!is.null(unmixing_matrix_file) && file.exists(unmixing_matrix_file)) {
+        mapping_used_file <- file.path(dirname(unmixing_matrix_file), "fcs_mapping_used.csv")
+        if (file.exists(mapping_used_file)) {
+            return(list(control_file = mapping_used_file, control_df = NULL))
+        }
+    }
+
+    list(control_file = NULL, control_df = NULL)
 }
 
 .apply_output_fcs_feature_labels <- function(target_ff, source_ff, fluorophore_cols, marker_label_map) {
@@ -753,6 +779,11 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   floors, as written by [unmix_controls()] (`"scc_detector_noise.csv"`). If
 #'   omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
 #'   falls back to the built-in scalar noise floor.
+#' @param control_file Optional control mapping CSV used to assign marker names
+#'   as primary FCS parameter names and fluorophores as secondary names. An
+#'   explicit value takes precedence. When omitted, the exact mapping carried by
+#'   an in-memory matrix returned from [unmix_controls()] or the
+#'   `fcs_mapping_used.csv` saved beside `unmixing_matrix_file` is used.
 #' @param unmixing_method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`,
 #'   `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses
 #'   per-event AF assignment with marker + selected-AF OLS, plus SCC-derived
@@ -868,6 +899,7 @@ unmix_samples <- function(sample_dir = "samples",
                           M = NULL, 
                           unmixing_matrix_file = file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"),
                           detector_noise_file = NULL,
+                          control_file = NULL,
                           unmixing_method = "Spectreasy", 
                           rwls_max_iter = 1L,
                           n_threads = 1L,
@@ -911,6 +943,16 @@ unmix_samples <- function(sample_dir = "samples",
         sample_dir <- samples_dir
     }
     sample_entries <- .prepare_unmix_samples_input(sample_dir)
+    if (!is.null(control_file)) {
+        if (!is.character(control_file) || length(control_file) != 1L ||
+            is.na(control_file) || !nzchar(trimws(control_file))) {
+            stop("control_file must be NULL or a single non-empty CSV path.", call. = FALSE)
+        }
+        control_file <- .resolve_control_file_path(control_file)
+        if (!file.exists(control_file)) {
+            .spectreasy_stop_missing_file(control_file, label = "control_file")
+        }
+    }
     if (!is.null(unmixing_matrix_file) && !unmixing_matrix_file_missing && !file.exists(unmixing_matrix_file)) {
         .spectreasy_stop_missing_file(unmixing_matrix_file, label = "unmixing_matrix_file")
     }
@@ -942,6 +984,12 @@ unmix_samples <- function(sample_dir = "samples",
             call. = FALSE
         )
     }
+
+    output_control_context <- .resolve_unmix_output_control_context(
+        M = M,
+        control_file = control_file,
+        unmixing_matrix_file = unmixing_matrix_file
+    )
 
     method <- .normalize_unmix_method(unmixing_method)
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
@@ -1012,7 +1060,11 @@ unmix_samples <- function(sample_dir = "samples",
 
     results <- list()
     fluorophore_source_all <- rownames(M)
-    output_marker_map <- .resolve_output_marker_map(fluorophore_source_all, sample_dir = sample_dir)
+    output_marker_map <- .resolve_output_marker_map(
+        fluorophore_source_all,
+        control_file = output_control_context$control_file,
+        control_df = output_control_context$control_df
+    )
 
     if (isTRUE(write_fcs)) {
         if (!dir.exists(unmixed_output_dir)) {

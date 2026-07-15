@@ -102,6 +102,7 @@
             "scc_reference_matrix.csv"
         ),
         detector_noise_file = NULL,
+        control_file = NULL,
         unmixing_method = "Spectreasy",
         rwls_max_iter = 1L,
         n_threads = 1L,
@@ -146,6 +147,7 @@
     unmixed_spectreasy <- unmix_samples(
         sample_dir = "samples",
         M = ctrl_spectreasy$M,
+        control_file = ctrl_spectreasy$control_file,
         unmixing_method = "Spectreasy",
         spectral_variant_library = ctrl_spectreasy$spectral_variant_library,
         output_dir = "spectreasy_outputs_spectreasy",

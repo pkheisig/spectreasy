@@ -174,6 +174,7 @@
         reference_matrix_csv = file.path(output_dir, "scc_reference_matrix.csv"),
         detector_noise_csv = file.path(output_dir, "scc_detector_noise.csv"),
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
+        control_mapping_csv = file.path(output_dir, "fcs_mapping_used.csv"),
         spectral_variant_library_rds = file.path(output_dir, "scc_spectral_variants.rds"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
         qc_report_html = file.path(output_dir, "qc_controls", "qc_controls_report.html")
@@ -593,6 +594,18 @@ unmix_controls <- function(
     }
 
     output_paths <- .unmix_output_paths(output_dir)
+    tryCatch(
+        utils::write.csv(
+            control_df,
+            output_paths$control_mapping_csv,
+            row.names = FALSE,
+            quote = TRUE,
+            na = ""
+        ),
+        error = function(e) {
+            stop("Could not save the control mapping used for this run: ", conditionMessage(e), call. = FALSE)
+        }
+    )
     qc_controls_dir <- NULL
     output_file <- NULL
     if (isTRUE(save_report)) {
@@ -629,6 +642,8 @@ unmix_controls <- function(
     ), extra_args)
     M <- do.call(build_reference_matrix, build_args)
     if (is.null(M) || nrow(M) == 0) stop("No valid spectra found while building reference matrix.")
+    attr(M, "spectreasy_control_file") <- normalizePath(control_file, mustWork = TRUE)
+    attr(M, "spectreasy_control_df") <- control_df
 
     spectral_variant_library <- NULL
     spectral_variant_library_file <- NULL
@@ -690,6 +705,7 @@ unmix_controls <- function(
     unmix_sample_args <- list(
         sample_dir = meta_info$fcs_files,
         M = M,
+        control_file = control_file,
         unmixing_method = unmixing_method,
         rwls_max_iter = rwls_max_iter,
         n_threads = n_threads,
@@ -704,10 +720,7 @@ unmix_controls <- function(
     }
     .spectreasy_console_field("Unmixing", paste0(length(meta_info$fcs_files), " control file(s)"))
     unmix_sample_args$verbose <- FALSE
-    unmixed_list <- withr::with_options(
-        list(spectreasy.control_file = control_file),
-        do.call(unmix_samples, unmix_sample_args)
-    )
+    unmixed_list <- do.call(unmix_samples, unmix_sample_args)
 
     static_info <- .derive_unmix_static_matrix(M, fcs_files = meta_info$fcs_files, unmixing_method = unmixing_method)
     W <- static_info$W
@@ -806,6 +819,8 @@ unmix_controls <- function(
         spectral_variant_library_file = spectral_variant_library_file,
         spectral_variant_info = if (!is.null(spectral_variant_library)) spectral_variant_library$info else NULL,
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
+        control_file = control_file,
+        control_mapping_file = output_paths$control_mapping_csv,
         qc_report_file = if (isTRUE(save_report) && is.list(qc_report) && !is.null(qc_report$output_file) && file.exists(qc_report$output_file)) qc_report$output_file else NULL,
         qc_nxn_files = if (isTRUE(save_report) && is.list(qc_report)) qc_report$companion_files else NULL,
         qc_controls_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
