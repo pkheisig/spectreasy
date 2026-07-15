@@ -15,9 +15,12 @@ test_that("saved SCC detector noise contains only persisted columns", {
     expect_equal(saved$noise_floor, detector_noise$noise_floor)
 })
 
-test_that("automatic control report defaults directly under its output directory", {
+test_that("automatic control report defaults inside the qc_controls directory", {
     output_dir <- tempfile("spectreasy_control_outputs_")
     paths <- spectreasy:::.unmix_output_paths(output_dir)
 
-    expect_identical(paths$qc_report_html, file.path(output_dir, "qc_controls_report.html"))
+    expect_identical(
+        paths$qc_report_html,
+        file.path(output_dir, "qc_controls", "qc_controls_report.html")
+    )
 })

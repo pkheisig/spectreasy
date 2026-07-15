@@ -90,10 +90,10 @@ loops single-threaded.}
 \item{save_qc_png}{Logical; whether to write per-control FSC/SSC,
 intensity-gate, and spectrum PNGs under `output_dir/unmix_controls`.}
 
-\item{save_report}{Logical; if `TRUE`, write the SCC QC report
-and its HTML NxN companion under `output_dir/unmix_controls` after controls
-are unmixed. Supporting QC metrics remain under the `qc_controls`
-subdirectory. Defaults to `TRUE`.}
+\item{save_report}{Logical; if `TRUE`, write the SCC QC report, its HTML NxN
+companion, and supporting QC metrics under
+`output_dir/unmix_controls/qc_controls` after controls are unmixed.
+Defaults to `TRUE`.}
 
 \item{report_format}{Report format, either `"html"` (default) or `"pdf"`.
 Only the selected format is written. Matching is case-insensitive.}

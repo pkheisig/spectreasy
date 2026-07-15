@@ -133,8 +133,8 @@ Clicking Confirm saves the gate CSV, closes the GUI server, and lets the same `u
 - `spectreasy_outputs/unmix_controls/unmixed_fcs/*.fcs` -> your unmixed SCC and unstained control files
 - `fcs_mapping.csv` -> SCC and unstained control file mapping
 - `ssc_gate_config.csv` -> manual SCC gate definitions when the gating GUI is used
-- `spectreasy_outputs/unmix_controls/qc_controls_report.html` -> HTML report with SCC overview and QC plots (see details below)
-- `spectreasy_outputs/unmix_controls/qc_controls_report_nxn.png` -> high-resolution control NxN matrix linked from the HTML report
+- `spectreasy_outputs/unmix_controls/qc_controls/qc_controls_report.html` -> HTML report with SCC overview and QC plots (see details below)
+- `spectreasy_outputs/unmix_controls/qc_controls/qc_controls_report_nxn.png` -> high-resolution control NxN matrix linked from the HTML report
 
 2) These are already part of `qc_controls_report.html` and only saved separately when `save_qc_png = TRUE`, so you can use the plot somewhere as a standalone PNG file.
 - `spectreasy_outputs/unmix_controls/scc_unmixing_scatter_matrix.png`

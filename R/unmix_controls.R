@@ -176,7 +176,7 @@
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
         spectral_variant_library_rds = file.path(output_dir, "scc_spectral_variants.rds"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
-        qc_report_html = file.path(output_dir, "qc_controls_report.html")
+        qc_report_html = file.path(output_dir, "qc_controls", "qc_controls_report.html")
     )
 }
 
@@ -352,10 +352,10 @@
 #'   loops single-threaded.
 #' @param save_qc_png Logical; whether to write per-control FSC/SSC,
 #'   intensity-gate, and spectrum PNGs under `output_dir/unmix_controls`.
-#' @param save_report Logical; if `TRUE`, write the SCC QC report
-#'   and its HTML NxN companion under `output_dir/unmix_controls` after controls
-#'   are unmixed. Supporting QC metrics remain under the `qc_controls`
-#'   subdirectory. Defaults to `TRUE`.
+#' @param save_report Logical; if `TRUE`, write the SCC QC report, its HTML NxN
+#'   companion, and supporting QC metrics under
+#'   `output_dir/unmix_controls/qc_controls` after controls are unmixed.
+#'   Defaults to `TRUE`.
 #' @param report_format Report format, either `"html"` (default) or `"pdf"`.
 #'   Only the selected format is written. Matching is case-insensitive.
 #' @param gating_mode Control-gating mode. `"interactive"` (default) opens the
@@ -597,11 +597,7 @@ unmix_controls <- function(
     output_file <- NULL
     if (isTRUE(save_report)) {
         qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
-        output_file <- if (identical(report_format, "html")) {
-            output_paths$qc_report_html
-        } else {
-            file.path(dirname(output_paths$qc_report_html), paste0("qc_controls_report.", report_format))
-        }
+        output_file <- file.path(qc_controls_dir, paste0("qc_controls_report.", report_format))
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
     }
     build_qc_plots <- isTRUE(save_qc_png) || isTRUE(save_report)
