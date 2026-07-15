@@ -208,6 +208,23 @@ export type AppearanceSettings = {
   stickyHeader: boolean
 }
 
+export const INTERFACE_SCALE_MIN = 55
+export const INTERFACE_SCALE_MAX = 95
+export const INTERFACE_SCALE_STEP = 5
+export const INTERFACE_SCALE_DEFAULT = 75
+
+export function normalizeInterfaceScale(value: unknown): number {
+  const numeric = typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : INTERFACE_SCALE_DEFAULT
+  const rounded = Math.round(numeric / INTERFACE_SCALE_STEP) * INTERFACE_SCALE_STEP
+  return Math.min(INTERFACE_SCALE_MAX, Math.max(INTERFACE_SCALE_MIN, rounded))
+}
+
+export function interfaceScaleLevel(value: unknown): number {
+  return Math.round((normalizeInterfaceScale(value) - INTERFACE_SCALE_MIN) / INTERFACE_SCALE_STEP) + 1
+}
+
 export type WorkflowSettings = {
   projectPath: string
   control: ControlSettings
@@ -302,7 +319,7 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
     appearance: {
       theme: 'light',
       density: 'comfortable',
-      fontScale: 100,
+      fontScale: INTERFACE_SCALE_DEFAULT,
       fontFamily: 'avenir',
       sidebarWidth: 220,
       terminalWidthPct: 50,

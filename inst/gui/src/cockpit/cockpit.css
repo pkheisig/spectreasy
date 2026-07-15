@@ -518,6 +518,8 @@ html[data-theme="dark"] .appearance-field-grid label > strong { color: #f0f3f2; 
 .gui-select-menu button:hover { background: rgba(255, 255, 255, .1); }
 .gui-select-menu button.is-selected { color: #fff; background: #ef8a4b; }
 .context-select .gui-select { min-height: 24px; max-width: 154px; padding: 0 9px; color: #f6f2ed; border: 0; background: transparent; font-size: 15.5px; font-weight: 700; }
+.gui-select, .gui-select-menu button, .context-select .gui-select { font-weight: 400; }
+.cockpit-app select, .cockpit-app option { font-weight: 400; }
 .context-select .gui-select:hover, .context-select .gui-select.is-open { color: #fff; background: transparent; }
 .mapping-table .gui-select { min-height: 26px; height: 26px; padding: 0 6px; border-color: transparent; background: transparent; font-size: 13.5px; }
 .mapping-table .gui-select:hover, .mapping-table .gui-select.is-open { border-color: #d7b399; background: #fff; }

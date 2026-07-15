@@ -693,4 +693,6 @@ test_that("adjust_matrix starts packaged GUI on localhost", {
     expect_true(length(resp) > 0)
     expect_true(any(grepl("ok", resp, fixed = TRUE)))
     expect_true(any(grepl("AutoSpectral", resp, fixed = TRUE)))
+    expect_true(any(grepl(basename(tmp_matrix_dir), resp, fixed = TRUE)))
+    expect_true(any(grepl("project_selected", resp, fixed = TRUE)))
 })

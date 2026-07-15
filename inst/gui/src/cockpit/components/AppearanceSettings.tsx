@@ -5,6 +5,13 @@ import {
   Type,
 } from 'lucide-react'
 import { useState } from 'react'
+import {
+  INTERFACE_SCALE_MAX,
+  INTERFACE_SCALE_MIN,
+  INTERFACE_SCALE_STEP,
+  interfaceScaleLevel,
+  normalizeInterfaceScale,
+} from '../types'
 import type { AppearanceSettings as AppearanceSettingsValue } from '../types'
 import { GuiSelect } from './GuiSelect'
 
@@ -15,10 +22,10 @@ type Props = {
 
 export function AppearanceSettings({ value, onChange }: Props) {
   const [pendingScale, setPendingScale] = useState<number | null>(null)
-  const draftScale = pendingScale ?? value.fontScale
+  const draftScale = normalizeInterfaceScale(pendingScale ?? value.fontScale)
 
   const commitScale = () => {
-    if (pendingScale !== null && pendingScale !== value.fontScale) onChange({ fontScale: pendingScale })
+    if (pendingScale !== null && pendingScale !== value.fontScale) onChange({ fontScale: normalizeInterfaceScale(pendingScale) })
     setPendingScale(null)
   }
 
@@ -59,13 +66,13 @@ export function AppearanceSettings({ value, onChange }: Props) {
           </div>
           <div className="appearance-field-grid">
             <label>
-              Interface size
+              Interface size <strong>{interfaceScaleLevel(draftScale)} / 9</strong>
               <input
                 aria-label="Interface size"
                 type="range"
-                min="50"
-                max="150"
-                step="5"
+                min={INTERFACE_SCALE_MIN}
+                max={INTERFACE_SCALE_MAX}
+                step={INTERFACE_SCALE_STEP}
                 value={draftScale}
                 onChange={(event) => setPendingScale(Number(event.target.value))}
                 onPointerUp={commitScale}

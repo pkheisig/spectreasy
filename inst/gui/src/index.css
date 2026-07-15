@@ -12,6 +12,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, select { font: inherit; }
+select, option { font-weight: 400; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 

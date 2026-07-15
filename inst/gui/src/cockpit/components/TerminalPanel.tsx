@@ -45,6 +45,23 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
   const outputRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLElement>(null)
   const resizeCleanupRef = useRef<(() => void) | null>(null)
+  const wasConnectedRef = useRef(connected)
+
+  useEffect(() => {
+    setCwd(projectPath)
+  }, [projectPath])
+
+  useEffect(() => {
+    if (connected && !wasConnectedRef.current) {
+      setEntries((current) => {
+        const onlyOfflineNotice = current.length === 1 && current[0].output.startsWith('The GitHub Pages cockpit')
+        return onlyOfflineNotice
+          ? [{ output: 'Spectreasy R console connected.' }]
+          : [...current, { output: 'Spectreasy R console connected.' }]
+      })
+    }
+    wasConnectedRef.current = connected
+  }, [connected])
 
   useEffect(() => {
     if (!minimized) inputRef.current?.focus()

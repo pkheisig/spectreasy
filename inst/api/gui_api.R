@@ -1273,6 +1273,8 @@ function(req, res) {
 #* Health Check
 #* @get /status
 function() {
+    project_selected <- isTRUE(getOption("spectreasy.project_selected", TRUE))
+    project_path <- if (project_selected) get_matrix_dir() else ""
     return(list(
         status = "ok",
         time = Sys.time(),
@@ -1281,7 +1283,9 @@ function() {
         samples_dir = get_samples_dir(),
         unmixing_method = get_unmixing_method(),
         gui_mode = getOption("spectreasy.gui_mode", "tuner"),
-        panel_cytometer = getOption("spectreasy.panel_cytometer", "aurora")
+        panel_cytometer = getOption("spectreasy.panel_cytometer", "aurora"),
+        project_selected = project_selected,
+        project_name = if (nzchar(project_path)) basename(project_path) else ""
     ))
 }
 

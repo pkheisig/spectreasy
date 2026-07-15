@@ -28,7 +28,7 @@ import { GuiSelect } from "./components/GuiSelect";
 import { CockpitApplet } from "./components/CockpitApplet";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { WorkflowWorkspace } from "./workspaces/WorkflowWorkspace";
-import { defaultWorkflowSettings } from "./types";
+import { defaultWorkflowSettings, normalizeInterfaceScale } from "./types";
 import type {
   Artifact,
   BackendStatus,
@@ -43,6 +43,40 @@ import type {
 import "./cockpit.css";
 
 const emptyJob: Job = { label: "", state: "idle", progress: 0, subtask: "" };
+
+const cytometerOptions = [
+  ["auto", "Auto"],
+  ["aurora", "Cytek Aurora"],
+  ["northern_lights", "Cytek Northern Lights"],
+  ["id7000", "Sony ID7000"],
+  ["discover_s8", "BD FACSDiscover S8"],
+  ["discover_a8", "BD FACSDiscover A8"],
+  ["a5se", "BD FACSymphony A5 SE"],
+  ["opteon", "Agilent NovoCyte Opteon"],
+  ["mosaic", "Beckman Coulter CytoFLEX Mosaic"],
+  ["xenith", "Thermo Fisher Attune Xenith"],
+] as const;
+
+const cytometerLabels = Object.fromEntries(cytometerOptions) as Record<string, string>;
+
+function normalizeCockpitCytometer(value: unknown): string {
+  const token = String(value ?? "auto")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
+  const legacyAliases: Record<string, string> = {
+    aurora_5l: "aurora",
+    aurora_4l: "aurora",
+    cytek_aurora: "aurora",
+    discover: "auto",
+    cytek_aurora_discover: "auto",
+    bd_facsdiscover_xenith: "xenith",
+    thermo_fisher_attune_xenith: "xenith",
+  };
+  const normalized = legacyAliases[token] ?? token;
+  return normalized in cytometerLabels ? normalized : "auto";
+}
 
 type TopBarProps = {
   project: ProjectState;
@@ -102,13 +136,9 @@ function TopBar({
           value={cytometer}
           onChange={(event) => onCytometerChange(event.target.value)}
         >
-          <option value="auto">Auto</option>
-          <option value="aurora">Cytek Aurora</option>
-          <option value="aurora_5l">Cytek Aurora 5L</option>
-          <option value="aurora_4l">Cytek Aurora 4L</option>
-          <option value="discover">Cytek Aurora Discover</option>
-          <option value="id7000">Sony ID7000</option>
-          <option value="xenith">BD FACSDiscover Xenith</option>
+          {cytometerOptions.map(([value, label]) => (
+            <option value={value} key={value}>{label}</option>
+          ))}
         </GuiSelect>
       </label>
       <label className="context-select method-select">
@@ -198,6 +228,12 @@ export default function CockpitApp() {
     const snapshot = await loadProjectSnapshot();
     setProject(snapshot.project);
     setBackend(snapshot.backend);
+    if (!initial && snapshot.project.projectPath) {
+      setSettings((current) => ({
+        ...current,
+        projectPath: snapshot.project.projectPath,
+      }));
+    }
     if (initial) {
       const saved = snapshot.savedSettings ?? {};
       setSettings((current) => {
@@ -228,7 +264,9 @@ export default function CockpitApp() {
               savedControl.method ??
               snapshot.project.method ??
               current.control.method,
-            cytometer: explicitCytometer ?? "auto",
+            cytometer: normalizeCockpitCytometer(
+              explicitCytometer ?? savedControl.cytometer ?? snapshot.project.cytometer,
+            ),
           },
           sample: {
             ...current.sample,
@@ -248,7 +286,11 @@ export default function CockpitApp() {
             ...savedAf,
             fcsFile: afFiles.includes(requestedAfFile) ? requestedAfFile : (afFiles[0] ?? ""),
           },
-          appearance: { ...current.appearance, ...(saved.appearance ?? {}) },
+          appearance: {
+            ...current.appearance,
+            ...(saved.appearance ?? {}),
+            fontScale: normalizeInterfaceScale(saved.appearance?.fontScale ?? current.appearance.fontScale),
+          },
         };
       });
     }
@@ -272,6 +314,14 @@ export default function CockpitApp() {
       window.clearTimeout(timer);
     };
   }, [refreshProject]);
+
+  useEffect(() => {
+    if (backend.connected) return;
+    const timer = window.setInterval(() => {
+      void refreshProject(false, false);
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [backend.connected, refreshProject]);
 
   useEffect(() => {
     if (!settingsReady) return;
@@ -318,7 +368,7 @@ export default function CockpitApp() {
   useEffect(() => {
     const root = document.documentElement;
     const appearance = settings.appearance;
-    const scale = appearance.fontScale * 1.4 / 100;
+    const scale = normalizeInterfaceScale(appearance.fontScale) * 1.4 / 100;
     root.dataset.theme = appearance.theme;
     root.dataset.density = appearance.density;
     root.dataset.shadows = appearance.shadows;
@@ -389,23 +439,15 @@ export default function CockpitApp() {
   }
 
   function changeCytometer(cytometer: string) {
+    cytometer = normalizeCockpitCytometer(cytometer);
     window.localStorage.setItem("spectreasy-cytometer", cytometer);
     setSettings((current) => ({
       ...current,
       control: { ...current.control, cytometer },
     }));
-    const labels: Record<string, string> = {
-      auto: "Auto",
-      aurora: "Cytek Aurora",
-      aurora_5l: "Cytek Aurora 5L",
-      aurora_4l: "Cytek Aurora 4L",
-      discover: "Cytek Aurora Discover",
-      id7000: "Sony ID7000",
-      xenith: "BD FACSDiscover Xenith",
-    };
     setProject((current) => ({
       ...current,
-      cytometer: labels[cytometer] ?? cytometer,
+      cytometer: cytometerLabels[cytometer] ?? cytometer,
     }));
   }
 

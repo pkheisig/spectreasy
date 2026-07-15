@@ -358,8 +358,6 @@
         gate_file = if (identical(mode, "control-gating")) gate_paths$gate_file else NULL
     )
 
-    if (isTRUE(open_browser)) utils::browseURL(frontend_url)
-
     pr <- plumber::plumb(paths$api_path)
     pr <- plumber::pr_filter(pr, "nocache", function(req, res) {
         res$setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -369,6 +367,12 @@
     })
     if (!isTRUE(dev_mode)) {
         plumber::pr_static(pr, "/", paths$dist_path)
+    }
+    if (isTRUE(open_browser)) {
+        local({
+            browser_url <- frontend_url
+            later::later(function() utils::browseURL(browser_url), delay = 0.15)
+        })
     }
     if (identical(mode, "control-gating")) {
         .run_gui_until_shutdown(pr, port = port, host = "127.0.0.1", announce = FALSE)

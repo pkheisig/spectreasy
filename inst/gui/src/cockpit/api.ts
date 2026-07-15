@@ -100,19 +100,22 @@ export const initialBackendStatus: BackendStatus = {
 }
 
 export async function loadProjectSnapshot(): Promise<{ project: ProjectState; backend: BackendStatus; savedSettings?: Partial<WorkflowSettings> }> {
-    try {
-    const [statusResponse, matricesResponse, samplesResponse, mappingResponse, guiStateResponse] = await Promise.all([
-      client.get('/status'),
-      client.get('/matrices'),
-      client.get('/samples'),
-      client.get('/control_mapping'),
-      client.get('/gui_state', { params: { module: 'spectreasy_cockpit' } }).catch(() => null),
+  try {
+    // Establish connectivity from the lightweight health check first. Artifact
+    // endpoints are independent: one unavailable artifact must not make a
+    // running R session appear offline.
+    const statusResponse = await client.get('/status', { timeout: 5000 })
+    const [projectResponse, matricesResponse, samplesResponse, mappingResponse, guiStateResponse] = await Promise.all([
+      client.get('/project/status', { timeout: 10000 }).catch(() => null),
+      client.get('/matrices', { timeout: 10000 }).catch(() => null),
+      client.get('/samples', { timeout: 10000 }).catch(() => null),
+      client.get('/control_mapping', { timeout: 10000 }).catch(() => null),
+      client.get('/gui_state', { params: { module: 'spectreasy_cockpit' }, timeout: 5000 }).catch(() => null),
     ])
-    const projectResponse = await client.get('/project/status').catch(() => null)
     const status = statusResponse.data as Record<string, unknown>
-    const matrices = Array.isArray(matricesResponse.data) ? matricesResponse.data : []
-    const samples = Array.isArray(samplesResponse.data) ? samplesResponse.data : []
-    const liveMapping = normalizeMappingRows(mappingResponse.data?.rows)
+    const matrices = Array.isArray(matricesResponse?.data) ? matricesResponse.data : []
+    const samples = Array.isArray(samplesResponse?.data) ? samplesResponse.data : []
+    const liveMapping = normalizeMappingRows(mappingResponse?.data?.rows)
     const statusOk = scalarValue(status.status) === 'ok'
     const rawScan = (projectResponse?.data?.scan ?? {}) as Record<string, unknown>
     const backendScan = Object.fromEntries(Object.entries(rawScan).map(([key, value]) => [key, Number(scalarValue(value, '0'))])) as Partial<ProjectState['scan']>
@@ -124,11 +127,14 @@ export async function loadProjectSnapshot(): Promise<{ project: ProjectState; ba
       apiPort: API_BASE.split(':').pop() ?? '8000',
       packageReady: statusOk,
     }
-    const projectPath = scalarValue(projectResponse?.data?.project_path, '')
+    const projectPath = projectResponse
+      ? scalarValue(projectResponse.data?.project_path, '')
+      : scalarValue(status.matrix_dir, '')
+    const reportedProjectName = scalarValue(status.project_name, '').trim()
     const liveProjectArtifacts = liveArtifacts(projectPath, projectResponse?.data?.files)
     const project: ProjectState = {
       ...emptyProject,
-      projectName: scalarValue(status.project_name, projectNameFromPath(projectPath)),
+      projectName: reportedProjectName || projectNameFromPath(projectPath),
       projectPath,
       method: scalarValue(status.unmixing_method, emptyProject.method),
       cytometer: scalarValue(status.panel_cytometer, emptyProject.cytometer),
@@ -472,8 +478,19 @@ export async function selectProjectFolder(): Promise<{ success: boolean; cancell
       return { success: false, cancelled: false, message: scalarValue(response.data?.error, 'The project folder could not be opened.') }
     }
     return { success: true, cancelled: false, message: 'Project folder opened. Artifacts refreshed from disk.' }
-  } catch {
-    return { success: false, cancelled: false, message: 'The local R backend is required to open the folder picker.' }
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 403) {
+      return {
+        success: false,
+        cancelled: false,
+        message: 'This browser tab belongs to an earlier R session. Use the cockpit tab opened by the current spectreasy_gui() command.',
+      }
+    }
+    return {
+      success: false,
+      cancelled: false,
+      message: 'The local R backend did not answer. Keep spectreasy_gui() running and retry.',
+    }
   }
 }
 
