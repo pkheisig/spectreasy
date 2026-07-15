@@ -22,7 +22,7 @@ unmix_samples(
   spectral_variant_min_improvement = 0.01,
   spectreasy_weight_quantile = 0.9,
   estimate_af = FALSE,
-  output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
+  output_dir = "spectreasy_outputs",
   write_fcs = TRUE,
   save_report = TRUE,
   report_format = "html",
@@ -105,9 +105,12 @@ held-out WLS residual score, and append the selected AF rows to the
 reference matrix before unmixing. This is intended for workflows where no
 unstained cell control is available. Default is `FALSE`.}
 
-\item{output_dir}{Directory to save unmixed FCS files when `write_fcs = TRUE`.}
+\item{output_dir}{Root output directory. Sample-stage artifacts are written
+under `output_dir/unmix_samples`; unmixed FCS files are saved in its
+`unmixed_fcs` subdirectory.}
 
-\item{write_fcs}{Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
+\item{write_fcs}{Logical; if `TRUE`, write unmixed FCS files to
+`output_dir/unmix_samples/unmixed_fcs`.
 Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
 
 \item{save_report}{Logical; if `TRUE`, write a sample QC report and

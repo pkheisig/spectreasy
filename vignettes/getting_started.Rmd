@@ -116,7 +116,7 @@ ctrl <- unmix_controls(
   scc_dir = file.path(project_dir, "scc"),
   control_file = control_file,
   cytometer = "Aurora",
-  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls"),
+  output_dir = file.path(project_dir, "spectreasy_outputs"),
   unmixing_method = "Spectreasy",
   gating_mode = "automatic",
   unmix_scatter_panel_size_mm = 30,
@@ -132,9 +132,12 @@ unmixed <- unmix_samples(
     "unmix_controls",
     "scc_reference_matrix.csv"
   ),
-  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples")
+  output_dir = file.path(project_dir, "spectreasy_outputs")
 )
 ```
+
+Both functions receive the same output root. They create their own
+`unmix_controls/` and `unmix_samples/` stage directories below it.
 
 ## 2. Start the control-stage workflow
 
@@ -258,13 +261,13 @@ with `unmix_samples()`. The reference matrix written by
 ```{r, eval = FALSE}
 unmixed <- unmix_samples(
   sample_dir = "sample",
-  output_dir = "spectreasy_outputs/unmix_samples"
+  output_dir = "spectreasy_outputs"
 )
 ```
 
 For the example dataset, this writes:
 
-- `spectreasy_outputs/unmix_samples/sample_Spectreasy-100AF.fcs`
+- `spectreasy_outputs/unmix_samples/unmixed_fcs/sample_Spectreasy-100AF.fcs`
 
 and returns a named list with one element per sample.
 
@@ -344,7 +347,7 @@ ctrl_multi_af <- unmix_controls(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
-  output_dir = "spectreasy_outputs/unmix_controls_multi_af",
+  output_dir = "spectreasy_outputs_multi_af",
   unmixing_method = "Spectreasy",
   af_n_bands = 100,
   seed = 1
@@ -359,7 +362,7 @@ unmixed_multi_af <- unmix_samples(
   sample_dir = "sample",
   unmixing_matrix_file = ctrl_multi_af$reference_matrix_file,
   unmixing_method = "Spectreasy",
-  output_dir = "spectreasy_outputs/unmix_samples_multi_af"
+  output_dir = "spectreasy_outputs_multi_af"
 )
 ```
 
@@ -376,7 +379,7 @@ ctrl_noninteractive <- unmix_controls(
   scc_dir = file.path(project_dir, "scc"),
   control_file = control_file,
   cytometer = "Aurora",
-  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls_noninteractive"),
+  output_dir = file.path(project_dir, "spectreasy_outputs_noninteractive"),
   unmixing_method = "WLS",
   seed = 1
 )
@@ -404,7 +407,7 @@ unmixed_direct <- unmix_samples(
   sample_dir = file.path(project_dir, "sample"),
   M = reference_matrix,
   unmixing_method = "WLS",
-  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples_direct")
+  output_dir = file.path(project_dir, "spectreasy_outputs_direct")
 )
 
 names(unmixed_direct)

@@ -215,7 +215,7 @@ test_that("unmix_controls learns variants only for AutoSpectral-style methods", 
         subsample_n = 400
     )
     expect_null(regular$spectral_variant_library)
-    expect_false(file.exists(file.path(regular_dir, "scc_spectral_variants.rds")))
+    expect_false(file.exists(file.path(regular_dir, "unmix_controls", "scc_spectral_variants.rds")))
 
     autospectral_dir <- tempfile("spectreasy_as_enabled_")
     autospectral <- spectreasy::unmix_controls(

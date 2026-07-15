@@ -85,6 +85,10 @@ ctrl <- unmix_controls(
 )
 ```
 
+Set `output_dir` only to the shared output root (the default is
+`"spectreasy_outputs"`). `unmix_controls()` creates `unmix_controls/` below
+that root, while `unmix_samples()` creates `unmix_samples/`.
+
 After the control file is created, `unmix_controls()` prints a confirmation prompt and waits:
 
 ```text
@@ -160,13 +164,13 @@ After the control-stage workflow has completed, unmix the experimental files wit
 ```r
 unmixed <- unmix_samples(
   sample_dir = "sample",
-  output_dir = "spectreasy_outputs/unmix_samples"
+  output_dir = "spectreasy_outputs"
 )
 ```
 
 For the example dataset, this writes:
 
-- `spectreasy_outputs/unmix_samples/sample_unmixed.fcs`
+- `spectreasy_outputs/unmix_samples/unmixed_fcs/sample_unmixed.fcs`
 
 and returns a named list with one element per sample.
 
@@ -254,7 +258,7 @@ ctrl_multi_af <- unmix_controls(
   scc_dir = "scc",
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
-  output_dir = "spectreasy_outputs/unmix_controls_multi_af",
+  output_dir = "spectreasy_outputs_multi_af",
   af_n_bands = 100,
   seed = 1
 )
@@ -265,7 +269,7 @@ Then pass the saved control-stage matrix to `unmix_samples()`.
 unmixed_multi_af <- unmix_samples(
   sample_dir = "sample",
   unmixing_matrix_file = ctrl_multi_af$reference_matrix_file,
-  output_dir = "spectreasy_outputs/unmix_samples_multi_af"
+  output_dir = "spectreasy_outputs_multi_af"
 )
 ```
 
@@ -303,7 +307,7 @@ ctrl_noninteractive <- unmix_controls(
   gating_file = gating_file,
   gating_mode = "reuse",
   cytometer = "auto",
-  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_controls_noninteractive"),
+  output_dir = file.path(project_dir, "spectreasy_outputs_noninteractive"),
   seed = 1
 )
 
@@ -328,7 +332,7 @@ rownames(reference_matrix) <- unname(mapped_names)
 unmixed_direct <- unmix_samples(
   sample_dir = file.path(project_dir, "sample"),
   M = reference_matrix,
-  output_dir = file.path(project_dir, "spectreasy_outputs", "unmix_samples_direct")
+  output_dir = file.path(project_dir, "spectreasy_outputs_direct")
 )
 
 names(unmixed_direct)

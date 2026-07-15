@@ -97,7 +97,7 @@ test_that("chunked FCS assembly preserves all events without unsafe output paths
     )
 
     expect_equal(nrow(out[[1]]$data), 7L)
-    output_files <- list.files(output_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+    output_files <- list.files(file.path(output_dir, "unmix_samples", "unmixed_fcs"), pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     expect_length(output_files, 1L)
     expect_false(grepl("run/one", output_files, fixed = TRUE))
     written <- flowCore::read.FCS(output_files[[1]], transformation = FALSE, truncate_max_range = FALSE)

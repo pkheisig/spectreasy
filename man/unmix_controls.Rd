@@ -10,7 +10,7 @@ unmix_controls(
   auto_create_mapping = TRUE,
   cytometer = "auto",
   auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
-  output_dir = "spectreasy_outputs/unmix_controls",
+  output_dir = "spectreasy_outputs",
   unmixing_method = "Spectreasy",
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
@@ -52,7 +52,9 @@ unmix_controls(
 \item{auto_unknown_fluor_policy}{Auto-fill policy for unresolved fluorophores
 when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 
-\item{output_dir}{Output directory for SCC workflow artifacts.}
+\item{output_dir}{Root output directory. Control-stage artifacts are written
+under `output_dir/unmix_controls`, including the automatic QC report and
+its HTML NxN companion.}
 
 \item{unmixing_method}{SCC unmixing method (`"WLS"`, `"RWLS"`,
 `"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
@@ -86,10 +88,12 @@ uses vectorized matrix operations. The default, 1, keeps explicit event
 loops single-threaded.}
 
 \item{save_qc_png}{Logical; whether to write per-control FSC/SSC,
-intensity-gate, and spectrum PNGs under `output_dir`.}
+intensity-gate, and spectrum PNGs under `output_dir/unmix_controls`.}
 
 \item{save_report}{Logical; if `TRUE`, write the SCC QC report
-automatically after controls are unmixed. Defaults to `TRUE`.}
+and its HTML NxN companion under `output_dir/unmix_controls` after controls
+are unmixed. Supporting QC metrics remain under the `qc_controls`
+subdirectory. Defaults to `TRUE`.}
 
 \item{report_format}{Report format, either `"html"` (default) or `"pdf"`.
 Only the selected format is written. Matching is case-insensitive.}
@@ -171,7 +175,7 @@ if (interactive()) {
     control_file = "fcs_mapping.csv",
     auto_create_mapping = TRUE,
     cytometer = "auto",
-    output_dir = "spectreasy_outputs/unmix_controls"
+    output_dir = "spectreasy_outputs"
   )
   ctrl$unmixing_matrix_file
 }

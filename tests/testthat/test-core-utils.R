@@ -417,8 +417,7 @@ test_that("unmix_samples loads sibling SCC detector-noise file for WLS", {
 
     detector_noise <- data.frame(
         detector = colnames(M),
-        noise_floor = c(125, 400, 125),
-        signal_scale = c(1, 1, 1)
+        noise_floor = c(125, 400, 125)
     )
     write.csv(detector_noise, file.path(matrix_dir, "scc_detector_noise.csv"), row.names = FALSE)
 
@@ -451,6 +450,23 @@ test_that("unmix_samples loads sibling SCC detector-noise file for WLS", {
         as.matrix(expected[, rownames(M)]),
         tolerance = 1e-6
     )
+})
+
+test_that("saved SCC detector noise contains only canonical persisted columns", {
+    detector_noise <- data.frame(
+        detector = c("B1-A", "YG1-A"),
+        noise_floor = c(125, 400),
+        signal_scale = c(1, 1),
+        transient_internal_value = c(2, 3)
+    )
+    path <- tempfile(fileext = ".csv")
+
+    spectreasy:::.save_detector_noise_csv(detector_noise, path)
+
+    saved <- utils::read.csv(path, check.names = FALSE)
+    expect_identical(colnames(saved), c("detector", "noise_floor"))
+    expect_equal(saved$detector, detector_noise$detector)
+    expect_equal(saved$noise_floor, detector_noise$noise_floor)
 })
 
 test_that("unmix_samples can estimate missing AF from stained samples", {
@@ -712,7 +728,7 @@ test_that("unmix_samples writes unmixed FCS with passthrough acquisition paramet
     expect_setequal(colnames(unmixed$sample1$data), c("FITC", "PE", "Time", "FSC-A", "FSC-H", "SSC-A", "SSC-W", "File"))
 
     unmixed_ff <- flowCore::read.FCS(
-        file.path(output_dir, "sample1_OLS-0AF.fcs"),
+        file.path(output_dir, "unmix_samples", "unmixed_fcs", "sample1_OLS-0AF.fcs"),
         transformation = FALSE,
         truncate_max_range = FALSE
     )
@@ -742,7 +758,9 @@ test_that("unmix_samples uses safe output filenames and supports flowSet return"
     output_dir <- tempfile("spectreasy_test_safe_unmixed_")
     dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
-    flowCore::write.FCS(ff, file.path(output_dir, "sample1_OLS-0AF.fcs"))
+    unmixed_dir <- file.path(output_dir, "unmix_samples", "unmixed_fcs")
+    dir.create(unmixed_dir, showWarnings = FALSE, recursive = TRUE)
+    flowCore::write.FCS(ff, file.path(unmixed_dir, "sample1_OLS-0AF.fcs"))
 
     unmixed_fs <- spectreasy::unmix_samples(
         sample_dir = fs,
@@ -755,9 +773,9 @@ test_that("unmix_samples uses safe output filenames and supports flowSet return"
 
     expect_s4_class(unmixed_fs, "flowSet")
     expect_setequal(flowCore::sampleNames(unmixed_fs), c("sample1", "sample2"))
-    expect_true(file.exists(file.path(output_dir, "sample1_OLS-0AF.fcs")))
-    expect_true(file.exists(file.path(output_dir, "sample1_OLS-0AF_2.fcs")))
-    expect_true(file.exists(file.path(output_dir, "sample2_OLS-0AF.fcs")))
+    expect_true(file.exists(file.path(unmixed_dir, "sample1_OLS-0AF.fcs")))
+    expect_true(file.exists(file.path(unmixed_dir, "sample1_OLS-0AF_2.fcs")))
+    expect_true(file.exists(file.path(unmixed_dir, "sample2_OLS-0AF.fcs")))
 
     residuals_attr <- attr(unmixed_fs, "spectreasy_residuals")
     expect_true(is.list(residuals_attr))
@@ -1299,7 +1317,10 @@ test_that("viability controls auto-use dead cell AF negatives", {
     normalized <- spectreasy:::.normalize_build_reference_control_df(control_df)
 
     expect_equal(normalized$universal.negative[normalized$filename == "scc_cells_eFluor780_LiveDead.fcs"], "scc_cells_AF_UnstainedDead.fcs")
-    expect_equal(normalized$universal.negative[normalized$filename == "scc_cells_FITC_CD4.fcs"], "AF")
+    expect_equal(
+        normalized$universal.negative[normalized$filename == "scc_cells_FITC_CD4.fcs"],
+        "scc_cells_AF_Unstained.fcs"
+    )
 })
 
 test_that("automatic negatives follow cell, viability, and bead source types", {
@@ -1317,12 +1338,32 @@ test_that("automatic negatives follow cell, viability, and bead source types", {
     normalized <- spectreasy:::.normalize_build_reference_control_df(control_df)
     by_file <- split(normalized, normalized$filename)
 
-    expect_equal(by_file[["fitc.fcs"]]$universal.negative, "AF")
+    expect_equal(by_file[["fitc.fcs"]]$universal.negative, "af.fcs")
     expect_equal(by_file[["live.fcs"]]$universal.negative, "dead.fcs")
     expect_equal(by_file[["pe-beads.fcs"]]$universal.negative, "bead-neg.fcs")
     expect_equal(by_file[["af.fcs"]]$universal.negative, "")
     expect_equal(by_file[["dead.fcs"]]$universal.negative, "")
     expect_equal(by_file[["bead-neg.fcs"]]$universal.negative, "")
+})
+
+test_that("legacy AF negative labels are replaced by the exact AF filename", {
+    control_df <- data.frame(
+        filename = c("Unstained_A2_Without (Cells).fcs", "BUV661 (Cells).fcs"),
+        fluorophore = c("AF", "BUV661"),
+        marker = c("Autofluorescence", "TCR"),
+        channel = c("V7-A", "UV11-A"),
+        control.type = "cells",
+        universal.negative = c("", "AF"),
+        is.viability = "",
+        stringsAsFactors = FALSE
+    )
+
+    normalized <- spectreasy:::.normalize_build_reference_control_df(control_df)
+
+    expect_equal(
+        normalized$universal.negative[normalized$filename == "BUV661 (Cells).fcs"],
+        "Unstained_A2_Without (Cells).fcs"
+    )
 })
 
 test_that("SCC negative resolver selects AF_dead, AF_beads, and AF backgrounds", {

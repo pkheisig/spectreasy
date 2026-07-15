@@ -160,16 +160,12 @@
     )
 }
 
-.normalize_unmix_controls_output_dir <- function(output_dir) {
+.unmix_controls_stage_dir <- function(output_dir) {
     output_dir <- as.character(output_dir)[1]
-    if (identical(basename(normalizePath(output_dir, mustWork = FALSE)), "unmixed_fcs")) {
-        return(dirname(output_dir))
-    }
-    output_dir
+    file.path(output_dir, "unmix_controls")
 }
 
 .unmix_output_paths <- function(output_dir) {
-    output_dir <- .normalize_unmix_controls_output_dir(output_dir)
     list(
         unmixed_dir = file.path(output_dir, "unmixed_fcs"),
         qc_controls_dir = file.path(output_dir, "qc_controls"),
@@ -327,7 +323,9 @@
 #'   `"auto"`, infers the cytometer from FCS detector names when possible.
 #' @param auto_unknown_fluor_policy Auto-fill policy for unresolved fluorophores
 #'   when creating controls (`"by_channel"`, `"empty"`, `"filename"`).
-#' @param output_dir Output directory for SCC workflow artifacts.
+#' @param output_dir Root output directory. Control-stage artifacts are written
+#'   under `output_dir/unmix_controls`, including the automatic QC report and
+#'   its HTML NxN companion.
 #' @param unmixing_method SCC unmixing method (`"WLS"`, `"RWLS"`,
 #'   `"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
 #'   `AutoSpectral` keeps the k-means AF bank controlled by `af_n_bands`,
@@ -353,9 +351,11 @@
 #'   uses vectorized matrix operations. The default, 1, keeps explicit event
 #'   loops single-threaded.
 #' @param save_qc_png Logical; whether to write per-control FSC/SSC,
-#'   intensity-gate, and spectrum PNGs under `output_dir`.
+#'   intensity-gate, and spectrum PNGs under `output_dir/unmix_controls`.
 #' @param save_report Logical; if `TRUE`, write the SCC QC report
-#'   automatically after controls are unmixed. Defaults to `TRUE`.
+#'   and its HTML NxN companion under `output_dir/unmix_controls` after controls
+#'   are unmixed. Supporting QC metrics remain under the `qc_controls`
+#'   subdirectory. Defaults to `TRUE`.
 #' @param report_format Report format, either `"html"` (default) or `"pdf"`.
 #'   Only the selected format is written. Matching is case-insensitive.
 #' @param gating_mode Control-gating mode. `"interactive"` (default) opens the
@@ -407,7 +407,7 @@
 #'     control_file = "fcs_mapping.csv",
 #'     auto_create_mapping = TRUE,
 #'     cytometer = "auto",
-#'     output_dir = "spectreasy_outputs/unmix_controls"
+#'     output_dir = "spectreasy_outputs"
 #'   )
 #'   ctrl$unmixing_matrix_file
 #' }
@@ -417,7 +417,7 @@ unmix_controls <- function(
     auto_create_mapping = TRUE,
     cytometer = "auto",
     auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
-    output_dir = "spectreasy_outputs/unmix_controls",
+    output_dir = "spectreasy_outputs",
     unmixing_method = "Spectreasy",
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
@@ -496,7 +496,13 @@ unmix_controls <- function(
     }
 
     control_file <- .resolve_control_file_path(control_file)
-    output_dir <- .normalize_unmix_controls_output_dir(output_dir)
+    if (!is.character(output_dir) || length(output_dir) != 1L || is.na(output_dir) || !nzchar(trimws(output_dir))) {
+        stop("output_dir must be a non-empty root directory path.", call. = FALSE)
+    }
+    if (file.exists(output_dir) && !dir.exists(output_dir)) {
+        stop("output_dir points to a file, not a directory: ", output_dir, call. = FALSE)
+    }
+    output_dir <- .unmix_controls_stage_dir(output_dir)
     manual_gate_file_explicit <- !manual_gate_file_missing
 
     if (!dir.exists(output_dir)) {
@@ -693,7 +699,7 @@ unmix_controls <- function(
         n_threads = n_threads,
         spectral_variant_library = spectral_variant_library,
         spectral_variant_top_k = spectral_variant_top_k,
-        output_dir = output_paths$unmixed_dir,
+        output_dir = .as_resolved_unmixed_fcs_dir(output_paths$unmixed_dir),
         write_fcs = TRUE,
         save_report = FALSE
     )

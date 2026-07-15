@@ -393,14 +393,12 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
     expect_true(file.exists(ctrl$unmixing_scatter_file))
     expect_s3_class(ctrl$unmixing_scatter_plot, "ggplot")
     expect_equal(sort(names(ctrl$unmixed_list)), c("FITC (Beads)", "PE (Beads)"))
-    expect_false(file.exists(file.path(output_dir, "unmixed_fcs", "Unmapped extra control_OLS-0AF.fcs")))
+    expect_false(file.exists(file.path(output_dir, "unmix_controls", "unmixed_fcs", "Unmapped extra control_OLS-0AF.fcs")))
 })
 
-test_that("unmix_controls tolerates output_dir pointing at unmixed_fcs and samples infer paired matrix", {
+test_that("unmix workflows route a shared output root into stage-specific unmixed_fcs folders", {
     wf <- make_synthetic_workflow()
     project_dir <- tempfile("spectreasy_loop_style_")
-    control_output_dir <- file.path(project_dir, "unmix_controls", "unmixed_fcs")
-    sample_output_dir <- file.path(project_dir, "unmix_samples", "unmixed_fcs")
     sample_dir <- tempfile("spectreasy_loop_samples_")
     control_csv <- tempfile(fileext = ".csv")
     dir.create(sample_dir, recursive = TRUE, showWarnings = FALSE)
@@ -410,7 +408,7 @@ test_that("unmix_controls tolerates output_dir pointing at unmixed_fcs and sampl
     ctrl <- spectreasy::unmix_controls(
         scc_dir = wf$scc_dir,
         control_file = control_csv,
-        output_dir = control_output_dir,
+        output_dir = project_dir,
         unmixing_method = "OLS",
         save_report = FALSE,
         seed = 1,
@@ -424,13 +422,14 @@ test_that("unmix_controls tolerates output_dir pointing at unmixed_fcs and sampl
     unmixed <- spectreasy::unmix_samples(
         sample_dir = sample_dir,
         unmixing_method = "OLS",
-        output_dir = sample_output_dir,
-        write_fcs = FALSE,
+        output_dir = project_dir,
+        write_fcs = TRUE,
         save_report = FALSE
     )
 
     expect_s3_class(unmixed, "spectreasy_unmixed_results")
     expect_equal(names(unmixed), "sample")
+    expect_true(file.exists(file.path(project_dir, "unmix_samples", "unmixed_fcs", "sample_OLS-0AF.fcs")))
 })
 
 test_that("unmix_controls handles WLS output with AF controls", {
@@ -454,12 +453,19 @@ test_that("unmix_controls handles WLS output with AF controls", {
 
     expect_equal(ctrl$static_unmixing_matrix_method, "WLS")
     expect_true(file.exists(ctrl$detector_noise_file))
+    expect_identical(
+        colnames(utils::read.csv(ctrl$detector_noise_file, check.names = FALSE)),
+        c("detector", "noise_floor")
+    )
     expect_true(file.exists(ctrl$qc_report_file))
+    expect_equal(normalizePath(dirname(ctrl$qc_report_file)), normalizePath(file.path(output_dir, "unmix_controls")))
+    expect_true(all(file.exists(ctrl$qc_nxn_files)))
+    expect_true(all(normalizePath(dirname(ctrl$qc_nxn_files)) == normalizePath(file.path(output_dir, "unmix_controls"))))
     expect_true(dir.exists(ctrl$qc_controls_dir))
     expect_false(is.null(attr(ctrl$M, "detector_noise")))
     expect_true(any(grepl("^AF($|_)", rownames(ctrl$M), ignore.case = TRUE)))
     expect_true(any(grepl("Unstained", names(ctrl$unmixed_list), ignore.case = TRUE)))
-    expect_true(file.exists(file.path(output_dir, "unmixed_fcs", "Unstained (Cells)_WLS-1AF.fcs")))
+    expect_true(file.exists(file.path(output_dir, "unmix_controls", "unmixed_fcs", "Unstained (Cells)_WLS-1AF.fcs")))
     expect_false(any(grepl("scc_report_plots_", list.dirs(output_dir, recursive = TRUE, full.names = FALSE))))
     expect_equal(sum(grepl("^Detectors\\s*: 2 spectral channel", messages)), 1L)
     expect_equal(sum(grepl("^SCC\\s*:", messages)), 2L)
@@ -520,7 +526,7 @@ test_that("unmix_samples runs WLS from a saved reference matrix without variance
     )
 
     expect_s3_class(res, "spectreasy_unmixed_results")
-    expect_true(file.exists(file.path(output_dir, "sample_WLS-0AF.fcs")))
+    expect_true(file.exists(file.path(output_dir, "unmix_samples", "unmixed_fcs", "sample_WLS-0AF.fcs")))
 })
 
 test_that("unmix_samples writes FCS files by default and returns invisibly", {
@@ -551,8 +557,8 @@ test_that("unmix_samples writes FCS files by default and returns invisibly", {
 
     expect_false(call_result$visible)
     expect_setequal(names(call_result$value), c("sample_a", "sample_b"))
-    expect_true(file.exists(file.path(output_dir, "sample_a_OLS-0AF.fcs")))
-    expect_true(file.exists(file.path(output_dir, "sample_b_OLS-0AF.fcs")))
+    expect_true(file.exists(file.path(output_dir, "unmix_samples", "unmixed_fcs", "sample_a_OLS-0AF.fcs")))
+    expect_true(file.exists(file.path(output_dir, "unmix_samples", "unmixed_fcs", "sample_b_OLS-0AF.fcs")))
 })
 
 test_that("unmix_samples accepts samples_dir as an alias for sample_dir", {
@@ -580,7 +586,7 @@ test_that("unmix_samples accepts samples_dir as an alias for sample_dir", {
     )
 
     expect_s3_class(unmixed, "spectreasy_unmixed_results")
-    expect_true(file.exists(file.path(output_dir, "sample_alias_OLS-0AF.fcs")))
+    expect_true(file.exists(file.path(output_dir, "unmix_samples", "unmixed_fcs", "sample_alias_OLS-0AF.fcs")))
 })
 
 test_that("qc_controls writes a PDF from synthetic SCC files", {

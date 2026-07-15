@@ -31,7 +31,7 @@
         auto_create_mapping = TRUE,
         cytometer = "auto",
         auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
-        output_dir = "spectreasy_outputs/unmix_controls",
+        output_dir = "spectreasy_outputs",
         unmixing_method = "Spectreasy",
         unmix_scatter_panel_size_mm = 30,
         seed = NULL,
@@ -114,11 +114,7 @@
         # Spectreasy only:
         spectreasy_weight_quantile = 0.9,
         estimate_af = FALSE,
-        output_dir = file.path(
-            "spectreasy_outputs",
-            "unmix_samples",
-            "unmixed_fcs"
-        ),
+        output_dir = "spectreasy_outputs",
         write_fcs = TRUE,
         save_report = TRUE,
         report_format = "html",
@@ -139,7 +135,7 @@
     ctrl_spectreasy <- unmix_controls(
         scc_dir = "scc",
         control_file = "fcs_mapping.csv",
-        output_dir = "spectreasy_outputs/unmix_controls_spectreasy",
+        output_dir = "spectreasy_outputs_spectreasy",
         unmixing_method = "Spectreasy",
         af_n_bands = 100,
         gating_mode = "interactive",
@@ -152,11 +148,7 @@
         M = ctrl_spectreasy$M,
         unmixing_method = "Spectreasy",
         spectral_variant_library = ctrl_spectreasy$spectral_variant_library,
-        output_dir = file.path(
-            "spectreasy_outputs",
-            "unmix_samples_spectreasy",
-            "unmixed_fcs"
-        ),
+        output_dir = "spectreasy_outputs_spectreasy",
         spectreasy_weight_quantile = 0.9
     )
 

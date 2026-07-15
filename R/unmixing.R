@@ -158,10 +158,10 @@
     .prepare_unmix_samples_input_from_directory(sample_input)
 }
 
-.aggregate_af_columns_for_output <- function(data, marker_source) {
-    af_source <- marker_source[grepl("^AF($|_)", marker_source, ignore.case = TRUE)]
+.aggregate_af_columns_for_output <- function(data, fluorophore_source) {
+    af_source <- fluorophore_source[grepl("^AF($|_)", fluorophore_source, ignore.case = TRUE)]
     af_source <- intersect(af_source, colnames(data))
-    if ("AF" %in% marker_source && length(af_source) > 1L) {
+    if ("AF" %in% fluorophore_source && length(af_source) > 1L) {
         data[["AF"]] <- rowSums(as.matrix(data[, af_source, drop = FALSE]))
     }
     data
@@ -222,19 +222,15 @@
         sample_output_dir <- as.character(output_dir)[1]
         if (!is.na(sample_output_dir) && nzchar(trimws(sample_output_dir))) {
             sample_output_dir <- normalizePath(sample_output_dir, mustWork = FALSE)
-            unmix_samples_dir <- if (identical(basename(sample_output_dir), "unmixed_fcs")) {
-                dirname(sample_output_dir)
+            project_dir <- if (inherits(output_dir, "spectreasy_resolved_unmixed_fcs_dir")) {
+                dirname(dirname(sample_output_dir))
             } else {
                 sample_output_dir
             }
-            if (identical(basename(unmix_samples_dir), "unmix_samples")) {
-                project_dir <- dirname(unmix_samples_dir)
-                candidates <- c(
-                    candidates,
-                    file.path(project_dir, "unmix_controls", "scc_reference_matrix.csv"),
-                    file.path(project_dir, "unmix_controls", "unmixed_fcs", "scc_reference_matrix.csv")
-                )
-            }
+            candidates <- c(
+                candidates,
+                file.path(project_dir, "unmix_controls", "scc_reference_matrix.csv")
+            )
         }
     }
 
@@ -297,10 +293,10 @@
     M
 }
 
-.resolve_secondary_label_map <- function(primary_names, sample_dir) {
-    primary_names <- trimws(as.character(primary_names))
-    labels <- stats::setNames(primary_names, primary_names)
-    if (length(primary_names) == 0) return(labels)
+.resolve_output_marker_map <- function(fluorophore_names, sample_dir) {
+    fluorophore_names <- trimws(as.character(fluorophore_names))
+    labels <- stats::setNames(fluorophore_names, fluorophore_names)
+    if (length(fluorophore_names) == 0) return(labels)
 
     opt_control <- getOption("spectreasy.control_file", "")
     sample_parent <- getwd()
@@ -316,8 +312,8 @@
     }
     candidates <- unique(c(
         as.character(opt_control),
-        .resolve_control_file_path("fcs_mapping.csv"),
-        file.path(sample_parent, "fcs_mapping.csv")
+        file.path(sample_parent, "fcs_mapping.csv"),
+        .resolve_control_file_path("fcs_mapping.csv")
     ))
     candidates <- candidates[!is.na(candidates) & nzchar(trimws(candidates))]
     existing <- candidates[file.exists(candidates)]
@@ -353,13 +349,14 @@
     labels
 }
 
-.apply_feature_secondary_labels <- function(target_ff, source_ff, marker_cols, secondary_label_map) {
+.apply_output_fcs_feature_labels <- function(target_ff, source_ff, fluorophore_cols, marker_label_map) {
     pd_new <- flowCore::pData(flowCore::parameters(target_ff))
     if (!all(c("name", "desc") %in% colnames(pd_new))) {
         return(target_ff)
     }
 
     param_names <- as.character(pd_new$name)
+    primary_vals <- param_names
     desc_vals <- param_names
 
     pd_src <- tryCatch(flowCore::pData(flowCore::parameters(source_ff)), error = function(e) NULL)
@@ -376,18 +373,28 @@
         )
     }
 
-    marker_cols <- as.character(marker_cols)
-    for (mk in marker_cols) {
-        idx <- which(param_names == mk)
+    fluorophore_cols <- as.character(fluorophore_cols)
+    for (fluorophore in fluorophore_cols) {
+        idx <- which(param_names == fluorophore)
         if (length(idx) == 0) next
-        lbl <- if (mk %in% names(secondary_label_map)) secondary_label_map[[mk]] else mk
-        if (is.na(lbl) || !nzchar(trimws(lbl))) lbl <- mk
-        desc_vals[idx] <- as.character(lbl)
+        marker <- if (fluorophore %in% names(marker_label_map)) {
+            marker_label_map[[fluorophore]]
+        } else {
+            fluorophore
+        }
+        if (is.na(marker) || !nzchar(trimws(marker))) marker <- fluorophore
+        primary_vals[idx] <- as.character(marker)
+        desc_vals[idx] <- fluorophore
     }
 
-    pd_new$desc <- desc_vals
-    flowCore::parameters(target_ff) <- methods::new("AnnotatedDataFrame", data = pd_new)
-    target_ff
+    primary_vals <- make.unique(primary_vals, sep = "_")
+    output_exprs <- flowCore::exprs(target_ff)
+    colnames(output_exprs) <- primary_vals
+    output_ff <- flowCore::flowFrame(output_exprs)
+    output_pd <- flowCore::pData(flowCore::parameters(output_ff))
+    output_pd$desc <- desc_vals
+    flowCore::parameters(output_ff) <- methods::new("AnnotatedDataFrame", data = output_pd)
+    output_ff
 }
 
 .next_safe_output_path <- function(path) {
@@ -520,17 +527,31 @@
     }
 }
 
-.default_unmix_samples_report_dir <- function(output_dir) {
+.as_resolved_unmixed_fcs_dir <- function(path) {
+    structure(as.character(path)[1], class = c("spectreasy_resolved_unmixed_fcs_dir", "character"))
+}
+
+.unmix_samples_output_paths <- function(output_dir) {
+    is_resolved <- inherits(output_dir, "spectreasy_resolved_unmixed_fcs_dir")
     output_dir <- as.character(output_dir)[1]
-    if (is.na(output_dir) || !nzchar(output_dir)) {
-        output_dir <- file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs")
+    if (is_resolved) {
+        sample_dir <- dirname(output_dir)
+        return(list(
+            sample_dir = sample_dir,
+            unmixed_dir = unclass(output_dir),
+            qc_samples_dir = file.path(sample_dir, "qc_samples")
+        ))
     }
-    report_parent <- if (identical(basename(normalizePath(output_dir, mustWork = FALSE)), "unmixed_fcs")) {
-        dirname(output_dir)
-    } else {
-        output_dir
-    }
-    file.path(report_parent, "qc_samples")
+    sample_dir <- file.path(output_dir, "unmix_samples")
+    list(
+        sample_dir = sample_dir,
+        unmixed_dir = file.path(sample_dir, "unmixed_fcs"),
+        qc_samples_dir = file.path(sample_dir, "qc_samples")
+    )
+}
+
+.default_unmix_samples_report_dir <- function(output_dir) {
+    .unmix_samples_output_paths(output_dir)$qc_samples_dir
 }
 
 .as_unmixed_results_data_frame <- function(x, arg_name = "x") {
@@ -770,8 +791,11 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   held-out WLS residual score, and append the selected AF rows to the
 #'   reference matrix before unmixing. This is intended for workflows where no
 #'   unstained cell control is available. Default is `FALSE`.
-#' @param output_dir Directory to save unmixed FCS files when `write_fcs = TRUE`.
-#' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to `output_dir`.
+#' @param output_dir Root output directory. Sample-stage artifacts are written
+#'   under `output_dir/unmix_samples`; unmixed FCS files are saved in its
+#'   `unmixed_fcs` subdirectory.
+#' @param write_fcs Logical; if `TRUE`, write unmixed FCS files to
+#'   `output_dir/unmix_samples/unmixed_fcs`.
 #'   Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.
 #' @param save_report Logical; if `TRUE`, write a sample QC report and
 #'   sample QC metric CSVs from the in-memory unmixing results without rerunning
@@ -855,7 +879,7 @@ unmix_samples <- function(sample_dir = "samples",
                           spectral_variant_min_improvement = 0.01,
                           spectreasy_weight_quantile = 0.9,
                           estimate_af = FALSE,
-                          output_dir = file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"),
+                          output_dir = "spectreasy_outputs",
                           write_fcs = TRUE,
                           save_report = TRUE,
                           report_format = "html",
@@ -939,6 +963,8 @@ unmix_samples <- function(sample_dir = "samples",
             stop("output_dir points to a file, not a directory: ", output_dir, call. = FALSE)
         }
     }
+    output_paths <- .unmix_samples_output_paths(output_dir)
+    unmixed_output_dir <- output_paths$unmixed_dir
 
     if (isTRUE(verbose)) {
         .spectreasy_console_header("unmix_samples")
@@ -953,7 +979,7 @@ unmix_samples <- function(sample_dir = "samples",
             .spectreasy_console_field("Plot data", label)
         }
         if (isTRUE(write_fcs)) {
-            .spectreasy_console_field("Output", .spectreasy_console_path(output_dir))
+            .spectreasy_console_field("Output", .spectreasy_console_path(unmixed_output_dir))
         }
     }
 
@@ -985,19 +1011,19 @@ unmix_samples <- function(sample_dir = "samples",
     }
 
     results <- list()
-    marker_source_all <- rownames(M)
-    secondary_label_map <- .resolve_secondary_label_map(marker_source_all, sample_dir = sample_dir)
+    fluorophore_source_all <- rownames(M)
+    output_marker_map <- .resolve_output_marker_map(fluorophore_source_all, sample_dir = sample_dir)
 
     if (isTRUE(write_fcs)) {
-        if (!dir.exists(output_dir)) {
-            dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
-            if (!dir.exists(output_dir)) {
+        if (!dir.exists(unmixed_output_dir)) {
+            dir.create(unmixed_output_dir, showWarnings = FALSE, recursive = TRUE)
+            if (!dir.exists(unmixed_output_dir)) {
                 Sys.sleep(0.5)
-                dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+                dir.create(unmixed_output_dir, showWarnings = FALSE, recursive = TRUE)
             }
         }
-        if (!dir.exists(output_dir)) {
-            stop("Could not create output_dir: ", output_dir, call. = FALSE)
+        if (!dir.exists(unmixed_output_dir)) {
+            stop("Could not create unmixed FCS output directory: ", unmixed_output_dir, call. = FALSE)
         }
     }
 
@@ -1015,15 +1041,17 @@ unmix_samples <- function(sample_dir = "samples",
         }
         chunk_indices <- .unmix_chunk_indices(n_events, chunk_size = chunk_size)
         keep_global <- .unmix_sample_keep_indices(n_events, plot_n_events = plot_n_events)
-        marker_source_all <- rownames(M)
-        marker_source_for_output <- marker_source_all[!grepl("^AF_", marker_source_all, ignore.case = TRUE)]
+        fluorophore_source_all <- rownames(M)
+        fluorophore_source_for_output <- fluorophore_source_all[
+            !grepl("^AF_", fluorophore_source_all, ignore.case = TRUE)
+        ]
 
         write_data_all <- NULL
         data_chunks <- list()
         residual_chunks <- list()
         variant_infos <- list()
         spectreasy_decoder_weights <- NULL
-        markers_to_keep <- character()
+        fluorophores_to_keep <- character()
 
         for (chunk_i in seq_along(chunk_indices)) {
             event_idx <- chunk_indices[[chunk_i]]
@@ -1048,11 +1076,14 @@ unmix_samples <- function(sample_dir = "samples",
             res_chunk <- do.call(calc_residuals, calc_args)
 
             if (isTRUE(write_fcs)) {
-                write_data <- .aggregate_af_columns_for_output(res_chunk$data, marker_source = marker_source_all)
-                markers_to_keep <- intersect(colnames(write_data), marker_source_for_output)
+                write_data <- .aggregate_af_columns_for_output(
+                    res_chunk$data,
+                    fluorophore_source = fluorophore_source_all
+                )
+                fluorophores_to_keep <- intersect(colnames(write_data), fluorophore_source_for_output)
                 autospectral_cols <- if (.is_autospectral_style_method(method) && "AF Index" %in% colnames(write_data)) "AF Index" else character()
                 passthrough_cols <- .get_passthrough_parameter_names(colnames(write_data))
-                cols_to_write <- unique(c(markers_to_keep, autospectral_cols, passthrough_cols))
+                cols_to_write <- unique(c(fluorophores_to_keep, autospectral_cols, passthrough_cols))
                 write_chunk <- as.matrix(write_data[, cols_to_write, drop = FALSE])
                 if (is.null(write_data_all)) {
                     write_data_all <- matrix(
@@ -1089,14 +1120,14 @@ unmix_samples <- function(sample_dir = "samples",
             unmixed_exprs <- write_data_all
             storage.mode(unmixed_exprs) <- "numeric"
             new_ff <- flowCore::flowFrame(unmixed_exprs)
-            new_ff <- .apply_feature_secondary_labels(
+            new_ff <- .apply_output_fcs_feature_labels(
                 target_ff = new_ff,
                 source_ff = ff,
-                marker_cols = markers_to_keep,
-                secondary_label_map = secondary_label_map
+                fluorophore_cols = fluorophores_to_keep,
+                marker_label_map = output_marker_map
             )
 
-            target_output_path <- file.path(output_dir, .unmixed_fcs_filename(sn, method, M))
+            target_output_path <- file.path(unmixed_output_dir, .unmixed_fcs_filename(sn, method, M))
             output_path <- .next_safe_output_path(target_output_path)
             if (!identical(output_path, target_output_path)) {
                 .spectreasy_console_step("Safe output", basename(output_path))
@@ -1129,7 +1160,7 @@ unmix_samples <- function(sample_dir = "samples",
     attr(results, "qc_report_data") <- NULL
 
     if (isTRUE(save_report)) {
-        qc_samples_dir <- .next_safe_output_dir(.default_unmix_samples_report_dir(output_dir))
+        qc_samples_dir <- .next_safe_output_dir(output_paths$qc_samples_dir)
         output_file <- file.path(qc_samples_dir, paste0("qc_samples_report.", report_format))
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
         report_res <- qc_samples(
@@ -1146,7 +1177,7 @@ unmix_samples <- function(sample_dir = "samples",
                 matrix = if (!isTRUE(unmixing_matrix_file_missing)) unmixing_matrix_file else NULL,
                 detector_noise = detector_noise_file,
                 spectral_variant_library = spectral_variant_library_file,
-                output_dir = output_dir
+                output_dir = unmixed_output_dir
             ),
             report_run_settings = list(
                 rwls_max_iter = rwls_max_iter,

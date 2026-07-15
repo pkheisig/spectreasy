@@ -81,12 +81,18 @@
     dead_files <- control_df$filename[dead_rows & nzchar(control_df$filename)]
     bead_files <- control_df$filename[bead_af_rows & nzchar(control_df$filename)]
 
-    empty_negative <- !nzchar(trimws(as.character(control_df$universal.negative)))
+    universal_negative <- trimws(as.character(control_df$universal.negative))
+    universal_negative[is.na(universal_negative)] <- ""
+    empty_negative <- !nzchar(universal_negative)
+    legacy_af_negative <- toupper(universal_negative) == "AF"
     source_rows <- primary_af_rows | dead_rows | bead_af_rows
-    ordinary_cells <- control_type != "beads" & !viability_rows & !source_rows & empty_negative
+    ordinary_cells <- control_type != "beads" & !viability_rows & !source_rows &
+        (empty_negative | legacy_af_negative)
     viability_targets <- control_type != "beads" & viability_rows & !source_rows & empty_negative
     bead_targets <- control_type == "beads" & !source_rows & empty_negative
-    if (length(af_files) > 0L) control_df$universal.negative[ordinary_cells] <- "AF"
+    if (length(af_files) > 0L) {
+        control_df$universal.negative[ordinary_cells] <- af_files[1]
+    }
     if (length(dead_files) > 0L) control_df$universal.negative[viability_targets] <- dead_files[1]
     if (length(bead_files) > 0L) control_df$universal.negative[bead_targets] <- bead_files[1]
     control_df
