@@ -382,7 +382,6 @@
     }
 
     param_names <- as.character(pd_new$name)
-    primary_vals <- param_names
     desc_vals <- param_names
 
     pd_src <- tryCatch(flowCore::pData(flowCore::parameters(source_ff)), error = function(e) NULL)
@@ -409,25 +408,13 @@
             fluorophore
         }
         if (is.na(marker) || !nzchar(trimws(marker))) marker <- fluorophore
-        primary_vals[idx] <- as.character(marker)
-        desc_vals[idx] <- fluorophore
+        desc_vals[idx] <- as.character(marker)
     }
 
     output_ff <- target_ff
-    output_exprs <- flowCore::exprs(output_ff)
-    colnames(output_exprs) <- primary_vals
     output_pd <- pd_new
-    output_pd$name <- primary_vals
     output_pd$desc <- desc_vals
-    # flowFrame() rewrites duplicate channel names with numeric suffixes. Update
-    # the coupled expression/parameter slots together so repeated biological
-    # marker names are preserved verbatim in the written $PnN keywords.
-    methods::slot(output_ff, "exprs", check = FALSE) <- output_exprs
-    methods::slot(output_ff, "parameters", check = FALSE) <- methods::new(
-        "AnnotatedDataFrame",
-        data = output_pd
-    )
-    methods::validObject(output_ff)
+    flowCore::parameters(output_ff) <- methods::new("AnnotatedDataFrame", data = output_pd)
     output_ff
 }
 
@@ -787,11 +774,12 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   floors, as written by [unmix_controls()] (`"scc_detector_noise.csv"`). If
 #'   omitted, `unmix_samples()` first looks beside `unmixing_matrix_file`, then
 #'   falls back to the built-in scalar noise floor.
-#' @param control_file Optional control mapping CSV used to assign marker names
-#'   as primary FCS parameter names and fluorophores as secondary names. An
-#'   explicit value takes precedence. When omitted, the exact mapping carried by
-#'   an in-memory matrix returned from [unmix_controls()] or the
-#'   `fcs_mapping_used.csv` saved beside `unmixing_matrix_file` is used.
+#' @param control_file Optional control mapping CSV used to assign unique
+#'   fluorophore channel names (`$PnN`) and marker annotations (`$PnS`) in output
+#'   FCS files. Marker annotations may be duplicated. An explicit value takes
+#'   precedence. When omitted, the exact mapping carried by an in-memory matrix
+#'   returned from [unmix_controls()] or the `fcs_mapping_used.csv` saved beside
+#'   `unmixing_matrix_file` is used.
 #' @param unmixing_method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`,
 #'   `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses
 #'   per-event AF assignment with marker + selected-AF OLS, plus SCC-derived

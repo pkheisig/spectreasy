@@ -1,4 +1,4 @@
-testthat::test_that("unmix_samples writes markers as primary and fluorophores as secondary names", {
+testthat::test_that("unmix_samples writes fluorophore channels with mapped marker annotations", {
     testthat::skip_if_not_installed("spectreasy")
 
     tmp <- tempfile("spectreasy_secondary_labels_")
@@ -53,13 +53,13 @@ testthat::test_that("unmix_samples writes markers as primary and fluorophores as
         truncate_max_range = FALSE
     )
     pd <- flowCore::pData(flowCore::parameters(out_ff))
-    secondary_by_primary <- stats::setNames(as.character(pd$desc), as.character(pd$name))
+    marker_by_fluorophore <- stats::setNames(as.character(pd$desc), as.character(pd$name))
 
-    testthat::expect_equal(secondary_by_primary[["CD45RA"]], "FITC")
-    testthat::expect_equal(secondary_by_primary[["CD3"]], "PE")
-    testthat::expect_equal(secondary_by_primary[["FSC-A"]], "FSC-A")
-    testthat::expect_equal(secondary_by_primary[["Time"]], "Time")
-    testthat::expect_false(any(c("FITC", "PE") %in% pd$name))
+    testthat::expect_equal(marker_by_fluorophore[["FITC"]], "CD45RA")
+    testthat::expect_equal(marker_by_fluorophore[["PE"]], "CD3")
+    testthat::expect_equal(marker_by_fluorophore[["FSC-A"]], "FSC-A")
+    testthat::expect_equal(marker_by_fluorophore[["Time"]], "Time")
+    testthat::expect_true(all(c("FITC", "PE") %in% pd$name))
 })
 
 testthat::test_that("duplicate marker names are preserved exactly", {
@@ -79,8 +79,8 @@ testthat::test_that("duplicate marker names are preserved exactly", {
     )
     pd <- flowCore::pData(flowCore::parameters(output_ff))
 
-    testthat::expect_equal(unname(as.character(pd$name)), c("TCR", "TCR", "Time"))
-    testthat::expect_equal(unname(as.character(pd$desc)), c("APC", "BUV661", "Time"))
+    testthat::expect_equal(unname(as.character(pd$name)), c("APC", "BUV661", "Time"))
+    testthat::expect_equal(unname(as.character(pd$desc)), c("TCR", "TCR", "Time"))
 
     output_file <- tempfile(fileext = ".fcs")
     flowCore::write.FCS(output_ff, output_file)
@@ -92,10 +92,10 @@ testthat::test_that("duplicate marker names are preserved exactly", {
     ))
     written_keywords <- flowCore::keyword(written_ff)
 
-    testthat::expect_identical(written_keywords[["$P1N"]], "TCR")
-    testthat::expect_identical(written_keywords[["$P2N"]], "TCR")
-    testthat::expect_identical(written_keywords[["$P1S"]], "APC")
-    testthat::expect_identical(written_keywords[["$P2S"]], "BUV661")
+    testthat::expect_identical(written_keywords[["$P1N"]], "APC")
+    testthat::expect_identical(written_keywords[["$P2N"]], "BUV661")
+    testthat::expect_identical(written_keywords[["$P1S"]], "TCR")
+    testthat::expect_identical(written_keywords[["$P2S"]], "TCR")
 })
 
 testthat::test_that("output labels use only the control mapping passed by the workflow", {
