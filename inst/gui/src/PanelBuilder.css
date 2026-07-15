@@ -101,7 +101,7 @@
 .panel-topbar p {
   margin: 4px 0 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 500;
 }
 
@@ -126,7 +126,7 @@
   background: var(--button-bg);
   color: var(--button-text);
   padding: 0 16px;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -297,7 +297,7 @@
   color: var(--text-primary);
   border-radius: 8px;
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 600;
   outline: none;
   cursor: pointer;
@@ -414,7 +414,7 @@
   padding: 8px 14px;
   text-align: left;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 500;
   color: var(--text-secondary);
   transition: all 0.15s;
@@ -497,7 +497,7 @@
   border-bottom: 3px solid transparent;
   background: transparent;
   padding: 0 8px;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--text-muted);
@@ -526,7 +526,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-radius: 20px;
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -566,7 +566,7 @@
   height: 29px; /* Reduced by 40% from 48px */
   padding: 0 8px;
   text-align: center;
-  font-size: 12px;
+  font-size: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -581,7 +581,7 @@
 .laser-head {
   color: #fff !important;
   font-weight: 800;
-  font-size: 13px !important;
+  font-size: 17px !important;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   border-bottom: 2px solid rgba(0, 0, 0, 0.15) !important;
 }
@@ -604,7 +604,7 @@
   border-bottom: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
   outline: none;
   text-align: center;
-  font-size: 11px;
+  font-size: 15.5px;
   font-weight: 600;
   color: var(--text-primary);
   background: transparent;
@@ -620,7 +620,7 @@
   font-weight: 700;
   border-bottom: 2px solid currentColor;
   padding-bottom: 1px;
-  font-size: 11px;
+  font-size: 15.5px;
 }
 
 .empty-region {
@@ -646,7 +646,7 @@
   height: 32px;
   text-align: center;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 15.5px;
 }
 
 .similarity-table .row-label {
@@ -783,7 +783,7 @@
   border-radius: 7px;
   background: var(--button-bg);
   color: var(--button-text);
-  font: 700 13px/1 Avenir Next, "Segoe UI", sans-serif;
+  font: 700 17px/1 Avenir Next, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 

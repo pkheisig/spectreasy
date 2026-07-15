@@ -49,6 +49,35 @@ make_autospectral_test_workflow <- function(n = 600) {
     list(scc_dir = scc_dir, control_df = control_df)
 }
 
+test_that("saved AF profiles provide their bank and background without a mapped unstained file", {
+    set.seed(31)
+    workflow <- make_autospectral_test_workflow(n = 600)
+    unstained <- file.path(workflow$scc_dir, "Unstained (Cells).fcs")
+    profile <- spectreasy::extract_af_profile(
+        unstained,
+        af_n_bands = 1,
+        seed = 31,
+        show_plot = FALSE,
+        verbose = FALSE
+    )
+    expect_true(unlink(unstained) == 0L)
+    marker_controls <- workflow$control_df[workflow$control_df$fluorophore != "AF", , drop = FALSE]
+
+    matrix <- spectreasy::build_reference_matrix(
+        input_folder = workflow$scc_dir,
+        control_df = marker_controls,
+        af_profile = profile,
+        af_n_bands = 1,
+        unmixing_method = "AutoSpectral",
+        save_qc_plots = FALSE,
+        seed = 31
+    )
+
+    expect_true("AF" %in% rownames(matrix))
+    expect_identical(attr(matrix, "af_bank_info")$mode, "saved_profile")
+    expect_equal(attr(matrix, "af_bank_info")$source_count, 0L)
+})
+
 test_that("AutoSpectral calc_residuals uses OLS when no variants are supplied", {
     M <- matrix(c(
         1, 0.1,

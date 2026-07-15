@@ -1082,6 +1082,8 @@ test_that("single-band AF uses robust median normalized shape", {
 test_that("fixed AF bank size is the default for AF extraction APIs", {
     expect_equal(formals(spectreasy::build_reference_matrix)$af_n_bands, 100)
     expect_equal(formals(spectreasy::unmix_controls)$af_n_bands, 100)
+    expect_true("af_profile" %in% names(formals(spectreasy::unmix_controls)))
+    expect_null(formals(spectreasy::unmix_controls)$af_profile)
     expect_equal(formals(spectreasy::extract_af_profile)$af_n_bands, 100)
     expect_false("af_n_bands" %in% names(formals(spectreasy::unmix_samples)))
 })
@@ -1112,9 +1114,11 @@ test_that("fixed AF k-means requests precise band count when possible", {
     )
 
     expect_equal(nrow(old_like_profiles$signatures), 2)
-    expect_equal(nrow(proportion_profiles$signatures), 2)
+    expect_equal(nrow(proportion_profiles$signatures), 1)
     expect_equal(proportion_profiles$selection$method, "kmeans_fixed")
     expect_equal(proportion_profiles$selection$requested_bands, 2)
+    expect_equal(proportion_profiles$selection$final_bands, 1)
+    expect_equal(proportion_profiles$selection$cluster_sizes, 4978L)
 })
 
 test_that("AF profile extraction handles empty and all-zero AF events", {

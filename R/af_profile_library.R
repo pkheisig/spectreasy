@@ -58,6 +58,8 @@
                                    plot = NULL,
                                    source = NULL,
                                    extraction = NULL,
+                                   raw_median = NULL,
+                                   scc_background = NULL,
                                    created = Sys.time()) {
     profile <- .coerce_af_profile_matrix(profile, arg_name = "profile")
     if (is.null(plot)) {
@@ -69,7 +71,10 @@
         plot = plot,
         source = source,
         extraction = extraction,
+        raw_median = raw_median,
+        scc_background = scc_background,
         created = created,
+        profile_version = 2L,
         spectreasy_version = as.character(utils::packageVersion("spectreasy"))
     )
     class(out) <- c("spectreasy_af_profile", "list")
@@ -104,7 +109,8 @@ af_profile_dir <- function(create = TRUE) {
 #' @param show_plot Logical; print the AF spectra plot after extraction.
 #' @param verbose Logical; print progress updates while extracting.
 #'
-#' @return A `spectreasy_af_profile` object containing `$profile` and `$plot`.
+#' @return A `spectreasy_af_profile` object containing the normalized `$profile`,
+#'   `$plot`, raw unstained median, and scatter-matched SCC background data.
 #' @export
 extract_af_profile <- function(fcs_file,
                                af_n_bands = 100,
@@ -187,6 +193,15 @@ extract_af_profile <- function(fcs_file,
         .spectreasy_console_step("Spectra plot")
     }
     p <- .build_af_profile_plot(af_profiles$signatures, pd = metadata$pd_meta)
+    background_idx <- .reference_even_indices(nrow(gated$events), af_args$af_max_cells)
+    profile_background <- .scc_background_from_gated_af_list(
+        af_gated_list = list(list(
+            events = gated$events[background_idx, , drop = FALSE],
+            scatter = gated$scatter[background_idx, , drop = FALSE],
+            scatter_names = gated$scatter_names
+        )),
+        detector_names = metadata$detector_names
+    )
     out <- .new_af_profile_object(
         profile = af_profiles$signatures,
         plot = p,
@@ -198,7 +213,9 @@ extract_af_profile <- function(fcs_file,
             af_min_cluster_events = af_args$af_min_cluster_events,
             af_min_cluster_proportion = af_args$af_min_cluster_proportion,
             selection = af_profiles$selection
-        )
+        ),
+        raw_median = af_profiles$raw_median,
+        scc_background = profile_background
     )
     if (isTRUE(show_plot)) {
         print(out$plot)
@@ -241,13 +258,17 @@ save_af_profile <- function(name, x, overwrite = FALSE) {
     }
     source <- if (.is_af_profile_object(x) && "source" %in% names(x)) x$source else NULL
     extraction <- if (.is_af_profile_object(x) && "extraction" %in% names(x)) x$extraction else NULL
+    raw_median <- if (.is_af_profile_object(x) && "raw_median" %in% names(x)) x$raw_median else NULL
+    scc_background <- if (.is_af_profile_object(x) && "scc_background" %in% names(x)) x$scc_background else NULL
 
     out <- .new_af_profile_object(
         name = name,
         profile = profile,
         plot = plot_obj,
         source = source,
-        extraction = extraction
+        extraction = extraction,
+        raw_median = raw_median,
+        scc_background = scc_background
     )
     saveRDS(out, file = file_path, version = 3)
     .spectreasy_console_header("save AF profile")
@@ -278,6 +299,8 @@ load_af_profile <- function(name, show_plot = FALSE) {
         plot = if (inherits(out$plot, "ggplot")) out$plot else NULL,
         source = out$source,
         extraction = out$extraction,
+        raw_median = out$raw_median,
+        scc_background = out$scc_background,
         created = if (!is.null(out$created)) out$created else Sys.time()
     )
     if (isTRUE(show_plot)) {

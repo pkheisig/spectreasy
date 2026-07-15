@@ -618,6 +618,7 @@ gate_read_mapping <- function() {
         df <- rbind(df, do.call(rbind, new_rows))
     }
     df <- df[df$filename %in% fcs_files, , drop = FALSE]
+    df <- gui_filter_active_af_mapping(df)
     if (!("control.type" %in% colnames(df))) df$control.type <- "cells"
     df$control.type <- vapply(df$control.type, gate_normalize_control_type, character(1))
     if (!("universal.negative" %in% colnames(df))) df$universal.negative <- ""
@@ -1225,11 +1226,39 @@ function(req) {
     plumber::forward()
 }
 
+gui_request_origin_allowed <- function(req) {
+    origin <- req$HTTP_ORIGIN
+    if (is.null(origin) || !nzchar(trimws(origin))) return(TRUE)
+    allowed <- trimws(as.character(getOption("spectreasy.gui_allowed_origins", character())))
+    allowed <- allowed[nzchar(allowed)]
+    trimws(origin) %in% allowed
+}
+
+gui_api_token_allowed <- function(req) {
+    expected <- as.character(getOption("spectreasy.gui_api_token", ""))[1]
+    supplied <- req$HTTP_X_SPECTREASY_TOKEN
+    if (is.null(supplied)) supplied <- ""
+    nzchar(expected) && identical(as.character(supplied)[1], expected)
+}
+
 #* @filter cors
 function(req, res) {
-    res$setHeader("Access-Control-Allow-Origin", "*")
-    res$setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-    res$setHeader("Access-Control-Allow-Headers", "Content-Type")
+    origin <- if (is.null(req$HTTP_ORIGIN)) "" else trimws(req$HTTP_ORIGIN)
+    if (!gui_request_origin_allowed(req)) {
+        res$status <- 403
+        return(list(error = "This GUI origin is not authorized for the local Spectreasy session."))
+    }
+    mutating_method <- toupper(req$REQUEST_METHOD) %in% c("POST", "PUT", "PATCH", "DELETE")
+    if (mutating_method && !gui_api_token_allowed(req)) {
+        res$status <- 403
+        return(list(error = "This request is not authorized for the active local Spectreasy session."))
+    }
+    if (nzchar(origin)) {
+        res$setHeader("Access-Control-Allow-Origin", origin)
+        res$setHeader("Vary", "Origin")
+    }
+    res$setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+    res$setHeader("Access-Control-Allow-Headers", "Content-Type, X-Spectreasy-Token")
     res$setHeader("Access-Control-Allow-Private-Network", "true")
     res$setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
     res$setHeader("Pragma", "no-cache")
@@ -1298,6 +1327,7 @@ function() {
         error = function(e) NULL
     )
     if (is.null(rows)) return(list(rows = data.frame(), exists = TRUE, path = path, error = "The existing fcs_mapping.csv could not be read."))
+    rows <- gui_annotate_active_af_mapping(rows)
     list(rows = rows, exists = TRUE, path = path)
 }
 
@@ -1639,7 +1669,98 @@ function(req) {
 #* @get /af_profiles
 function() {
     profiles <- tryCatch(spectreasy::list_af_profiles(), error = function(e) data.frame())
+    if (nrow(profiles) > 0L) profiles$active <- profiles$name == gui_read_active_af_profile()
     list(profiles = profiles)
+}
+
+#* Return the detector-wise spectra for one saved AF profile
+#* @get /af_profiles/data
+#* @param name Profile name
+function(name = "") {
+    name <- trimws(as.character(name)[1])
+    if (!nzchar(name)) return(list(error = "A profile name is required."))
+    tryCatch({
+        profile <- spectreasy::load_af_profile(name, show_plot = FALSE)$profile
+        list(
+            name = name,
+            detectors = colnames(profile),
+            spectra = lapply(seq_len(nrow(profile)), function(index) list(
+                name = rownames(profile)[index],
+                values = as.numeric(profile[index, , drop = TRUE])
+            ))
+        )
+    }, error = function(e) list(error = conditionMessage(e)))
+}
+
+gui_pick_af_source_file <- function(initial_dir = file.path(get_matrix_dir(), "scc")) {
+    initial_dir <- normalizePath(initial_dir, mustWork = FALSE)
+    sysname <- Sys.info()[["sysname"]]
+    if (identical(sysname, "Darwin")) {
+        script <- paste0(
+            "POSIX path of (choose file with prompt \"Select unstained FCS file\" default location POSIX file ",
+            gate_applescript_quote(initial_dir), ")"
+        )
+        result <- suppressWarnings(system2("osascript", c("-e", shQuote(script)), stdout = TRUE, stderr = FALSE))
+        if (!is.null(attr(result, "status")) || length(result) == 0L) return(NULL)
+        return(normalizePath(trimws(result[[1]]), mustWork = TRUE))
+    }
+    if (.Platform$OS.type == "windows") {
+        selected <- tryCatch(file.choose(new = FALSE), error = function(e) "")
+        if (!nzchar(selected)) return(NULL)
+        return(normalizePath(selected, mustWork = TRUE))
+    }
+    picker <- Sys.which("zenity")
+    if (!nzchar(picker)) picker <- Sys.which("kdialog")
+    if (!nzchar(picker)) stop("No graphical file picker is available. Install zenity or kdialog.", call. = FALSE)
+    args <- if (grepl("zenity$", picker)) c("--file-selection", "--title=Select unstained FCS file", paste0("--filename=", initial_dir, "/"), "--file-filter=FCS files | *.fcs *.FCS") else c("--getopenfilename", initial_dir, "FCS files (*.fcs *.FCS)")
+    result <- suppressWarnings(system2(picker, args, stdout = TRUE, stderr = FALSE))
+    if (!is.null(attr(result, "status")) || length(result) == 0L) return(NULL)
+    normalizePath(trimws(result[[1]]), mustWork = TRUE)
+}
+
+#* Open the native FCS picker for standalone AF extraction
+#* @post /af_profiles/select-source
+function() {
+    tryCatch({
+        selected <- gui_pick_af_source_file()
+        if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
+        if (!grepl("\\.fcs$", selected, ignore.case = TRUE)) return(list(success = FALSE, cancelled = FALSE, error = "Select an FCS file."))
+        list(success = TRUE, cancelled = FALSE, path = selected)
+    }, error = function(e) list(success = FALSE, cancelled = FALSE, error = conditionMessage(e)))
+}
+
+#* Use a saved AF profile as the active dataset unstained control
+#* @post /af_profiles/activate
+function(req) {
+    body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
+    name <- if (!is.null(body$profile_name)) trimws(as.character(body$profile_name)[1]) else ""
+    if (!nzchar(name)) return(list(success = FALSE, error = "A profile name is required."))
+    tryCatch({
+        active <- gui_write_active_af_profile(name)
+        options(
+            spectreasy.gating_payload_cache = list(),
+            spectreasy.gating_spectrum_cache = list(),
+            spectreasy.gating_detector_cache = list()
+        )
+        list(success = TRUE, profile_name = active)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Stop using a saved AF profile for the active dataset
+#* @post /af_profiles/deactivate
+function(req) {
+    body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
+    name <- if (!is.null(body$profile_name)) trimws(as.character(body$profile_name)[1]) else ""
+    if (!nzchar(name)) return(list(success = FALSE, error = "A profile name is required."))
+    tryCatch({
+        removed <- gui_unlink_active_af_profile(name)
+        options(
+            spectreasy.gating_payload_cache = list(),
+            spectreasy.gating_spectrum_cache = list(),
+            spectreasy.gating_detector_cache = list()
+        )
+        list(success = TRUE, profile_name = removed)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
 
 #* Delete a saved AF profile
@@ -1651,6 +1772,9 @@ function(name = "") {
     }
     tryCatch({
         spectreasy::delete_af_profile(as.character(name)[1])
+        if (identical(gui_read_active_af_profile(), as.character(name)[1])) {
+            unlink(gui_active_af_config_path(), force = TRUE)
+        }
         list(success = TRUE, name = as.character(name)[1])
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
@@ -2106,6 +2230,126 @@ gui_workflow_file_or_null <- function(path, root = getwd()) {
     normalizePath(candidate, mustWork = TRUE)
 }
 
+gui_active_af_config_path <- function(root = get_matrix_dir()) {
+    file.path(normalizePath(root, mustWork = FALSE), ".spectreasy", "active_af_profile.json")
+}
+
+gui_read_active_af_profile <- function(root = get_matrix_dir()) {
+    path <- gui_active_af_config_path(root)
+    if (!file.exists(path)) return("")
+    value <- tryCatch(jsonlite::fromJSON(path, simplifyVector = TRUE), error = function(e) NULL)
+    name <- if (is.list(value)) value$profile_name else NULL
+    if (is.null(name) || length(name) == 0L || is.na(name[1])) return("")
+    name <- trimws(as.character(name[1]))
+    profile_exists <- nzchar(name) && tryCatch(
+        file.exists(spectreasy:::.af_profile_file(name, create_dir = FALSE)),
+        error = function(e) FALSE
+    )
+    if (!profile_exists) {
+        unlink(path, force = TRUE)
+        return("")
+    }
+    name
+}
+
+gui_write_active_af_profile <- function(name, root = get_matrix_dir()) {
+    name <- trimws(as.character(name)[1])
+    if (!nzchar(name)) stop("A saved AF profile name is required.", call. = FALSE)
+    profile <- spectreasy::load_af_profile(name, show_plot = FALSE)
+    scc_dir <- file.path(root, "scc")
+    fcs_files <- if (dir.exists(scc_dir)) list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE) else character()
+    fcs_files <- fcs_files[!startsWith(basename(fcs_files), "._")]
+    if (length(fcs_files) > 0L) {
+        detector_names <- spectreasy:::.prepare_reference_detector_info(fcs_files[1])$detector_names
+        profile_detectors <- colnames(profile$profile)
+        if (!setequal(detector_names, profile_detectors)) {
+            stop("Saved AF profile detectors do not match this dataset's SCC detector set.", call. = FALSE)
+        }
+    }
+    path <- gui_active_af_config_path(root)
+    dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+    tmp <- tempfile("active_af_profile_", tmpdir = dirname(path), fileext = ".json")
+    jsonlite::write_json(
+        list(profile_name = name, updated = as.character(Sys.time())),
+        tmp,
+        auto_unbox = TRUE,
+        pretty = TRUE
+    )
+    if (!file.rename(tmp, path)) {
+        if (!file.copy(tmp, path, overwrite = TRUE)) stop("Could not save the active AF profile selection.", call. = FALSE)
+        unlink(tmp)
+    }
+    name
+}
+
+gui_unlink_active_af_profile <- function(name, root = get_matrix_dir()) {
+    name <- trimws(as.character(name)[1])
+    if (!nzchar(name)) stop("A saved AF profile name is required.", call. = FALSE)
+    active <- gui_read_active_af_profile(root)
+    if (!nzchar(active)) return(name)
+    if (!identical(active, name)) {
+        stop(name, " is not linked to this dataset.", call. = FALSE)
+    }
+    path <- gui_active_af_config_path(root)
+    if (file.exists(path)) {
+        status <- unlink(path, force = TRUE)
+        if (!identical(status, 0L)) stop("Could not unlink the active AF profile.", call. = FALSE)
+    }
+    name
+}
+
+gui_primary_unstained_rows <- function(rows) {
+    if (is.null(rows) || !is.data.frame(rows) || nrow(rows) == 0L) return(logical(0))
+    fluorophore <- if ("fluorophore" %in% colnames(rows)) as.character(rows$fluorophore) else rep("", nrow(rows))
+    marker <- if ("marker" %in% colnames(rows)) as.character(rows$marker) else rep("", nrow(rows))
+    filename <- if ("filename" %in% colnames(rows)) as.character(rows$filename) else rep("", nrow(rows))
+    control_type <- if ("control.type" %in% colnames(rows)) tolower(trimws(as.character(rows$control.type))) else rep("cells", nrow(rows))
+    is_af <- grepl("^AF($|_|\\b)", trimws(fluorophore), ignore.case = TRUE) |
+        grepl("autofluorescence|unstained", trimws(marker), ignore.case = TRUE) |
+        grepl("unstained", basename(filename), ignore.case = TRUE)
+    is_dead <- grepl("dead", paste(fluorophore, marker, filename), ignore.case = TRUE)
+    is_bead <- grepl("bead", control_type, ignore.case = TRUE) | grepl("bead", basename(filename), ignore.case = TRUE)
+    is_af & !is_dead & !is_bead
+}
+
+gui_annotate_active_af_mapping <- function(rows, root = get_matrix_dir()) {
+    rows <- as.data.frame(rows, stringsAsFactors = FALSE, check.names = FALSE)
+    active <- gui_read_active_af_profile(root)
+    ignored <- rep(FALSE, nrow(rows))
+    if (nzchar(active)) ignored <- gui_primary_unstained_rows(rows)
+    rows$ignored <- ignored
+    rows$ignored_reason <- ifelse(
+        ignored,
+        paste0("Ignored because saved AF profile '", active, "' is used as the unstained cell control."),
+        ""
+    )
+    rows
+}
+
+gui_filter_active_af_mapping <- function(rows, root = get_matrix_dir()) {
+    if (!nzchar(gui_read_active_af_profile(root)) || is.null(rows) || nrow(rows) == 0L) return(rows)
+    ignored <- gui_primary_unstained_rows(rows)
+    ignored_files <- if ("filename" %in% colnames(rows)) as.character(rows$filename[ignored]) else character()
+    rows <- rows[!ignored, , drop = FALSE]
+    if ("universal.negative" %in% colnames(rows)) {
+        refs <- trimws(as.character(rows$universal.negative))
+        rows$universal.negative[refs %in% c("AF", ignored_files)] <- ""
+    }
+    rows
+}
+
+gui_filtered_control_file <- function(root = get_matrix_dir()) {
+    source <- file.path(root, "fcs_mapping.csv")
+    if (!file.exists(source)) return(source)
+    rows <- utils::read.csv(source, stringsAsFactors = FALSE, check.names = FALSE)
+    filtered <- gui_filter_active_af_mapping(rows, root = root)
+    if (nrow(filtered) == nrow(rows)) return(source)
+    dir.create(file.path(root, ".spectreasy"), recursive = TRUE, showWarnings = FALSE)
+    target <- tempfile("fcs_mapping_active_af_", tmpdir = file.path(root, ".spectreasy"), fileext = ".csv")
+    utils::write.csv(filtered, target, row.names = FALSE, quote = TRUE)
+    target
+}
+
 gui_project_scan <- function(root) {
     files <- if (dir.exists(root)) list.files(root, recursive = TRUE, full.names = TRUE, all.files = FALSE) else character()
     files <- normalizePath(files[file.exists(files)], mustWork = FALSE)
@@ -2234,6 +2478,74 @@ gui_project_report_files <- function(root, files = NULL) {
     ]
 }
 
+gui_resolve_project_report <- function(path, root = get_matrix_dir()) {
+    root <- normalizePath(root, mustWork = FALSE)
+    relative <- gsub("\\\\", "/", trimws(as.character(path)[1]))
+    parts <- strsplit(relative, "/", fixed = TRUE)[[1]]
+    if (!nzchar(relative) || any(parts %in% c("", ".", ".."))) {
+        stop("Invalid project report path.", call. = FALSE)
+    }
+    target <- normalizePath(file.path(root, do.call(file.path, as.list(parts))), mustWork = FALSE)
+    root_prefix <- paste0(root, .Platform$file.sep)
+    if (!identical(target, root) && !startsWith(target, root_prefix)) {
+        stop("Project report is outside the active project.", call. = FALSE)
+    }
+    if (!file.exists(target) || dir.exists(target)) {
+        stop("Project report not found.", call. = FALSE)
+    }
+    if (!tolower(tools::file_ext(target)) %in% c("html", "htm")) {
+        stop("Only an existing HTML report can be exported to PDF.", call. = FALSE)
+    }
+    target
+}
+
+gui_find_chromium <- function() {
+    candidates <- unique(c(
+        unname(Sys.which(c("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"))),
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        file.path(Sys.getenv("PROGRAMFILES"), "Google", "Chrome", "Application", "chrome.exe"),
+        file.path(Sys.getenv("PROGRAMFILES(X86)"), "Google", "Chrome", "Application", "chrome.exe")
+    ))
+    candidates <- candidates[nzchar(candidates) & file.exists(candidates)]
+    if (length(candidates)) candidates[[1]] else ""
+}
+
+gui_export_html_report_pdf <- function(html_file, output_file = tempfile(fileext = ".pdf")) {
+    browser <- gui_find_chromium()
+    if (!nzchar(browser)) {
+        stop("Chrome or Chromium is required to export the existing HTML report as PDF.", call. = FALSE)
+    }
+    if (!requireNamespace("chromote", quietly = TRUE)) {
+        stop("The optional 'chromote' package is required to export the existing HTML report as PDF.", call. = FALSE)
+    }
+    html_file <- normalizePath(html_file, mustWork = TRUE)
+    output_file <- normalizePath(output_file, mustWork = FALSE)
+    previous_browser <- Sys.getenv("CHROMOTE_CHROME", unset = NA_character_)
+    Sys.setenv(CHROMOTE_CHROME = browser)
+    on.exit({
+        if (is.na(previous_browser)) Sys.unsetenv("CHROMOTE_CHROME") else Sys.setenv(CHROMOTE_CHROME = previous_browser)
+    }, add = TRUE)
+    session <- chromote::ChromoteSession$new()
+    on.exit(try(session$close(), silent = TRUE), add = TRUE)
+    session$Page$navigate(utils::URLencode(paste0("file://", html_file), reserved = FALSE))
+    for (attempt in seq_len(40L)) {
+        state <- tryCatch(
+            session$Runtime$evaluate("document.readyState", returnByValue = TRUE)$result$value,
+            error = function(e) ""
+        )
+        if (identical(state, "complete")) break
+        Sys.sleep(0.1)
+    }
+    Sys.sleep(0.4)
+    pdf <- session$Page$printToPDF(printBackground = TRUE, preferCSSPageSize = TRUE)
+    base64enc::base64decode(pdf$data, output = output_file)
+    if (!file.exists(output_file) || file.info(output_file)$size < 5L) {
+        stop("Chrome could not export the HTML report as PDF.", call. = FALSE)
+    }
+    output_file
+}
+
 #* Discover report artifacts and compare them with upstream project files
 #* @get /project/reports
 function(project_path = "") {
@@ -2258,7 +2570,8 @@ function(project_path = "") {
             path = relative(report),
             report_type = if (is_panel) "Panel overview" else if (is_sample) "Sample QC" else "Control QC",
             format = if (grepl("\\.pdf$", report, ignore.case = TRUE)) "PDF" else "HTML",
-            created = format(file.info(report)$mtime, "%Y-%m-%d %H:%M:%S %Z"),
+            created = format(file.info(report)$mtime, "%Y-%m-%dT%H:%M:%S%z"),
+            created_epoch = as.numeric(file.info(report)$mtime),
             status = if (stale) "stale" else "current",
             stringsAsFactors = FALSE
         )
@@ -2302,6 +2615,23 @@ function(path = "", res) {
     res
 }
 
+#* Export an existing HTML QC report to PDF without rerunning QC
+#* @post /project/report/export-pdf
+function(req) {
+    body <- gui_workflow_body(req)
+    tryCatch({
+        report_file <- gui_resolve_project_report(gui_workflow_value(body, "path", ""))
+        pdf_file <- gui_export_html_report_pdf(report_file)
+        on.exit(unlink(pdf_file, force = TRUE), add = TRUE)
+        list(
+            success = TRUE,
+            filename = paste0(tools::file_path_sans_ext(basename(report_file)), ".pdf"),
+            content_type = "application/pdf",
+            content_base64 = base64enc::base64encode(pdf_file)
+        )
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
 #* Change the active project folder from the cockpit
 #* @post /project/context
 function(req) {
@@ -2324,6 +2654,103 @@ function(req) {
     }, error = function(e) list(success = FALSE, cancelled = FALSE, error = conditionMessage(e)))
 }
 
+gui_terminal_origin_allowed <- function(req) {
+    gui_request_origin_allowed(req)
+}
+
+.gui_terminal_env <- NULL
+
+gui_terminal_environment <- function() {
+    if (is.null(.gui_terminal_env) || !is.environment(.gui_terminal_env)) {
+        env <- new.env(parent = globalenv())
+        if (requireNamespace("spectreasy", quietly = TRUE)) {
+            for (name in getNamespaceExports("spectreasy")) {
+                assign(name, getExportedValue("spectreasy", name), envir = env)
+            }
+        }
+        assign(".project_path", get_matrix_dir(), envir = env)
+        .gui_terminal_env <<- env
+    }
+    .gui_terminal_env
+}
+
+gui_terminal_is_quit_command <- function(command) {
+    grepl("^[[:space:]]*(q|quit)[[:space:]]*\\([^)]*\\)[[:space:]]*;?[[:space:]]*$", command)
+}
+
+gui_terminal_evaluate <- function(command, cwd = get_matrix_dir()) {
+    if (!dir.exists(cwd)) cwd <- get_matrix_dir()
+    cwd <- normalizePath(cwd, mustWork = TRUE)
+    if (!nzchar(trimws(command))) {
+        return(list(success = TRUE, output = "", cwd = cwd, refresh = FALSE))
+    }
+    if (gui_terminal_is_quit_command(command)) {
+        return(list(
+            success = TRUE,
+            output = "q() requested. Terminating the R session.",
+            cwd = cwd,
+            refresh = FALSE,
+            shutdown_requested = TRUE
+        ))
+    }
+
+    env <- gui_terminal_environment()
+    previous_cwd <- getwd()
+    on.exit(setwd(previous_cwd), add = TRUE)
+    setwd(cwd)
+    messages <- character()
+    warnings <- character()
+    result <- tryCatch({
+        output <- capture.output(
+            withCallingHandlers({
+                value <- withVisible(eval(parse(text = command), envir = env))
+                if (isTRUE(value$visible)) print(value$value)
+            },
+            message = function(condition) {
+                messages <<- c(messages, conditionMessage(condition))
+                invokeRestart("muffleMessage")
+            },
+            warning = function(condition) {
+                warnings <<- c(warnings, paste0("Warning: ", conditionMessage(condition)))
+                invokeRestart("muffleWarning")
+            }),
+            type = "output"
+        )
+        list(success = TRUE, output = paste(c(output, messages, warnings), collapse = "\n"))
+    }, error = function(error) {
+        list(success = FALSE, output = conditionMessage(error))
+    })
+    result$cwd <- normalizePath(getwd(), mustWork = TRUE)
+    result$refresh <- isTRUE(result$success)
+    result
+}
+
+#* Evaluate R code in the persistent cockpit console
+#* @post /terminal/run
+function(req, res) {
+    if (!gui_terminal_origin_allowed(req) || !gui_api_token_allowed(req)) {
+        res$status <- 403
+        return(list(success = FALSE, output = "Terminal access is restricted to the active local cockpit session."))
+    }
+    body <- gui_workflow_body(req)
+    command <- trimws(gui_workflow_value(body, "command", ""))
+    cwd <- gui_workflow_value(body, "cwd", get_matrix_dir())
+    gui_terminal_evaluate(command, cwd)
+}
+
+#* Terminate the local R session after explicit cockpit confirmation
+#* @post /session/shutdown
+function(req, res) {
+    if (!gui_terminal_origin_allowed(req) || !gui_api_token_allowed(req)) {
+        res$status <- 403
+        return(list(success = FALSE, message = "R session control is restricted to the active local cockpit session."))
+    }
+    later::later(function() {
+        base::quit(save = "no", status = 0, runLast = FALSE)
+    }, delay = 0.35)
+    list(success = TRUE, message = "The R session is terminating.")
+}
+
 #* CORS preflight for workflow_control
 #* @options /workflow/control
 function(res) {
@@ -2334,8 +2761,16 @@ function(res) {
 #* @post /workflow/control
 function(req) {
     body <- gui_workflow_body(req)
+    root <- gui_workflow_root(body)
     scc_dir <- gui_workflow_value(body, "scc_dir", "scc")
     control_file <- gui_workflow_value(body, "control_file", "fcs_mapping.csv")
+    active_af_profile <- gui_read_active_af_profile(root)
+    if (nzchar(active_af_profile)) {
+        control_file <- gui_filtered_control_file(root)
+        if (!identical(normalizePath(control_file, mustWork = FALSE), normalizePath(file.path(root, "fcs_mapping.csv"), mustWork = FALSE))) {
+            on.exit(unlink(control_file, force = TRUE), add = TRUE)
+        }
+    }
     output_dir <- gui_workflow_value(body, "output_dir", file.path("spectreasy_outputs", "unmix_controls"))
     method <- gui_workflow_value(body, "method", get_unmixing_method())
     cytometer <- gui_workflow_value(body, "cytometer", "auto")
@@ -2397,6 +2832,7 @@ function(req) {
             autospectral_min_events = gui_workflow_number(body, "autospectral_min_events", 10, integer = TRUE, minimum = 1),
             autospectral_refine = gui_workflow_bool(body, "autospectral_refine", FALSE)
         ),
+        if (nzchar(active_af_profile)) list(af_profile = active_af_profile) else list(),
         gui_method_optional_args(method, body)
     )
     run <- gui_workflow_run(

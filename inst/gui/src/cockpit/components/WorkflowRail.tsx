@@ -45,8 +45,8 @@ const groups: NavigationGroup[] = [
     title: 'Other tools',
     icon: Wrench,
     items: [
-      { id: 'panel', title: 'Panel builder', detail: 'Explore fluorophores' },
       { id: 'af', title: 'AF profiles', detail: 'Extract and manage AF' },
+      { id: 'panel', title: 'Panel builder', detail: 'Explore fluorophores' },
       { id: 'matrix', title: 'Adjust matrix', detail: 'Inspect residual crosstalk' },
     ],
   },
@@ -94,14 +94,17 @@ export function WorkflowRail({ activeSection, project, showCounts, width, onWidt
       <div className="rail-list">
         {groups.map((group) => {
           const containsActive = group.id === activeGroup
-          const isOpen = Boolean(openGroups[group.id]) || containsActive
+          const isOpen = openGroups[group.id] ?? containsActive
           const GroupIcon = group.icon
           return (
             <div className={`rail-group ${containsActive ? 'contains-active' : ''}`} key={group.id}>
               <button
                 className="rail-group-toggle"
                 type="button"
-                onClick={() => setOpenGroups((current) => ({ ...current, [group.id]: !current[group.id] }))}
+                onClick={() => setOpenGroups((current) => ({
+                  ...current,
+                  [group.id]: !(current[group.id] ?? containsActive),
+                }))}
                 aria-expanded={isOpen}
                 aria-controls={`rail-group-${group.id}`}
               >
@@ -109,8 +112,7 @@ export function WorkflowRail({ activeSection, project, showCounts, width, onWidt
                 <span>{group.title}</span>
                 <ChevronRight className="rail-chevron" size={15} />
               </button>
-              {isOpen && (
-                <div className="rail-subsections" id={`rail-group-${group.id}`}>
+                <div className={`rail-subsections ${isOpen ? 'is-open' : ''}`} id={`rail-group-${group.id}`} aria-hidden={!isOpen}>
                   {group.items.map((item) => {
                     const count = sectionCount(item.id, project)
                     return (
@@ -118,6 +120,7 @@ export function WorkflowRail({ activeSection, project, showCounts, width, onWidt
                         key={item.id}
                         className={`rail-subitem ${activeSection === item.id ? 'is-active' : ''}`}
                         onClick={() => onChange(item.id)}
+                        tabIndex={isOpen ? 0 : -1}
                         aria-current={activeSection === item.id ? 'page' : undefined}
                       >
                         <span className="rail-subitem-copy">
@@ -129,7 +132,6 @@ export function WorkflowRail({ activeSection, project, showCounts, width, onWidt
                     )
                   })}
                 </div>
-              )}
             </div>
           )
         })}

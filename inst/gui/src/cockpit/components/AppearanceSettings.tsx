@@ -4,6 +4,7 @@ import {
   Sun,
   Type,
 } from 'lucide-react'
+import { useState } from 'react'
 import type { AppearanceSettings as AppearanceSettingsValue } from '../types'
 import { GuiSelect } from './GuiSelect'
 
@@ -13,11 +14,18 @@ type Props = {
 }
 
 export function AppearanceSettings({ value, onChange }: Props) {
+  const [pendingScale, setPendingScale] = useState<number | null>(null)
+  const draftScale = pendingScale ?? value.fontScale
+
+  const commitScale = () => {
+    if (pendingScale !== null && pendingScale !== value.fontScale) onChange({ fontScale: pendingScale })
+    setPendingScale(null)
+  }
+
   return (
     <details className="surface-card settings-section appearance-settings" open>
       <summary>
         <Type size={16} /> Appearance
-        <span>Shared cockpit display preferences</span>
       </summary>
       <div className="appearance-settings-body">
         <section className="appearance-group">
@@ -25,7 +33,6 @@ export function AppearanceSettings({ value, onChange }: Props) {
             {value.theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
             <div>
               <strong>Theme</strong>
-              <small>Uses the same light and dark modes as the analysis GUIs.</small>
             </div>
           </div>
           <div className="choice-row" role="group" aria-label="Color theme">
@@ -48,20 +55,22 @@ export function AppearanceSettings({ value, onChange }: Props) {
             <Type size={16} />
             <div>
               <strong>Aesthetics</strong>
-              <small>Choose the typography, scale, spacing, and surface treatment.</small>
             </div>
           </div>
           <div className="appearance-field-grid">
             <label>
-              Interface size <strong>{value.fontScale}%</strong>
+              Interface size
               <input
                 aria-label="Interface size"
                 type="range"
-                min="90"
-                max="140"
+                min="50"
+                max="150"
                 step="5"
-                value={value.fontScale}
-                onChange={(event) => onChange({ fontScale: Number(event.target.value) })}
+                value={draftScale}
+                onChange={(event) => setPendingScale(Number(event.target.value))}
+                onPointerUp={commitScale}
+                onKeyUp={commitScale}
+                onBlur={commitScale}
               />
             </label>
             <label>
@@ -72,21 +81,13 @@ export function AppearanceSettings({ value, onChange }: Props) {
                 onChange={(event) => onChange({ fontFamily: event.target.value as AppearanceSettingsValue['fontFamily'] })}
               >
                 <option value="avenir">Avenir Next</option>
+                <option value="futura">Futura</option>
                 <option value="atkinson">Atkinson Hyperlegible</option>
                 <option value="source-sans">Source Sans</option>
+                <option value="charter">Charter</option>
+                <option value="palatino">Palatino</option>
+                <option value="monaco">Monaco</option>
                 <option value="system">System</option>
-              </GuiSelect>
-            </label>
-            <label>
-              Density
-              <GuiSelect
-                aria-label="Interface density"
-                value={value.density}
-                onChange={(event) => onChange({ density: event.target.value as AppearanceSettingsValue['density'] })}
-              >
-                <option value="compact">Compact</option>
-                <option value="comfortable">Comfortable</option>
-                <option value="spacious">Spacious</option>
               </GuiSelect>
             </label>
             <label>
@@ -101,18 +102,6 @@ export function AppearanceSettings({ value, onChange }: Props) {
                 onChange={(event) => onChange({ cornerRadius: Number(event.target.value) })}
               />
             </label>
-            <label>
-              Card depth
-              <GuiSelect
-                aria-label="Card depth"
-                value={value.shadows}
-                onChange={(event) => onChange({ shadows: event.target.value as AppearanceSettingsValue['shadows'] })}
-              >
-                <option value="none">Flat</option>
-                <option value="subtle">Subtle</option>
-                <option value="raised">Raised</option>
-              </GuiSelect>
-            </label>
           </div>
         </section>
 
@@ -121,7 +110,6 @@ export function AppearanceSettings({ value, onChange }: Props) {
             <Contrast size={16} />
             <div>
               <strong>Navigation and behavior</strong>
-              <small>Control how much supporting information stays visible.</small>
             </div>
           </div>
           <div className="preference-toggles">

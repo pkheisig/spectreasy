@@ -228,6 +228,23 @@
     invisible(NULL)
 }
 
+.gui_session_token <- function(n = 32L) {
+    bytes <- if (requireNamespace("openssl", quietly = TRUE)) {
+        openssl::rand_bytes(n)
+    } else {
+        tryCatch(readBin("/dev/urandom", what = "raw", n = n), error = function(e) raw())
+    }
+    if (length(bytes) != n) {
+        bytes <- as.raw(sample.int(256L, n, replace = TRUE) - 1L)
+    }
+    paste(sprintf("%02x", as.integer(bytes)), collapse = "")
+}
+
+.gui_url_origin <- function(url) {
+    origin <- sub("^(https?://[^/]+).*$", "\\1", url, ignore.case = TRUE)
+    if (!grepl("^https?://", origin, ignore.case = TRUE)) "" else origin
+}
+
 .launch_spectreasy_gui <- function(matrix_dir = NULL,
                                    samples_dir = NULL,
                                    port = 8000,
@@ -319,18 +336,24 @@
             npm_bin = frontend$npm_bin
         )
     }
+    api_token <- .gui_session_token()
+    options(
+        spectreasy.gui_api_token = api_token,
+        spectreasy.gui_allowed_origins = .gui_url_origin(frontend$frontend_url)
+    )
     query_separator <- if (grepl("?", frontend$frontend_url, fixed = TRUE)) "&" else "?"
     frontend_url <- paste0(
         frontend$frontend_url,
         query_separator,
         "mode=", utils::URLencode(mode, reserved = TRUE),
-        "&api=", utils::URLencode(paste0("http://127.0.0.1:", port), reserved = TRUE)
+        "&api=", utils::URLencode(paste0("http://127.0.0.1:", port), reserved = TRUE),
+        "&token=", utils::URLencode(api_token, reserved = TRUE)
     )
 
     .message_spectreasy_gui_startup(
         mode = mode,
         port = port,
-        frontend_url = frontend_url,
+        frontend_url = sub("&token=[^&]*", "", frontend_url),
         asset_mode = if (identical(frontend$mode, "dev")) "Vite dev server" else if (identical(frontend$mode, "hosted")) "GitHub Pages cockpit" else "bundled package assets",
         gate_file = if (identical(mode, "control-gating")) gate_paths$gate_file else NULL
     )

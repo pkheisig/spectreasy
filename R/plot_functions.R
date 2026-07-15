@@ -297,6 +297,23 @@ plot_spectra <- function(ref_matrix,
     return(p)
 }
 
+.style_af_bank_plot <- function(plot,
+                                spectrum_names,
+                                color = "#1F7A6D",
+                                alpha = 0.2) {
+    spectrum_names <- as.character(spectrum_names)
+    styled <- plot +
+        ggplot2::scale_colour_manual(
+            values = stats::setNames(rep(color, length(spectrum_names)), spectrum_names),
+            guide = "none"
+        ) +
+        ggplot2::theme(legend.position = "none") +
+        ggplot2::guides(colour = "none")
+    line_layers <- which(vapply(styled$layers, function(layer) inherits(layer$geom, "GeomLine"), logical(1)))
+    for (index in line_layers) styled$layers[[index]]$aes_params$alpha <- alpha
+    styled
+}
+
 
 .extract_unmix_scatter_data_list <- function(unmixed_list) {
     if (!is.list(unmixed_list) || length(unmixed_list) == 0) {

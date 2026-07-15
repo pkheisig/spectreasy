@@ -6,23 +6,28 @@ import type { CockpitAppletId } from '../types'
 
 const GatingGui = lazy(() => import('../../GatingGui.jsx')) as ComponentType<{
   embedded?: boolean
+  cockpitTheme?: 'light' | 'dark'
   onRequestExit?: () => void
 }>
-const PanelBuilder = lazy(() => import('../../PanelBuilder.tsx'))
-const MatrixAdjustment = lazy(() => import('../../MatrixAdjustment.tsx'))
+const PanelBuilder = lazy(() => import('../../PanelBuilder.tsx')) as ComponentType<{ embedded?: boolean; cockpitTheme?: 'light' | 'dark' }>
+const MatrixAdjustment = lazy(() => import('../../MatrixAdjustment.tsx')) as ComponentType<{ embedded?: boolean; cockpitTheme?: 'light' | 'dark' }>
+const QcReportApplet = lazy(() => import('./QcReportApplet.tsx'))
 
 const appletLabels: Record<CockpitAppletId, string> = {
   'control-gating': 'control gating',
   'panel-builder': 'panel builder',
   'matrix-adjustment': 'matrix adjustment',
+  'control-qc-report': 'controls QC report',
+  'sample-qc-report': 'samples QC report',
 }
 
 type CockpitAppletProps = {
   applet: CockpitAppletId
+  theme: 'light' | 'dark'
   onExit: () => void
 }
 
-export function CockpitApplet({ applet, onExit }: CockpitAppletProps) {
+export function CockpitApplet({ applet, theme, onExit }: CockpitAppletProps) {
   const exitButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -53,7 +58,7 @@ export function CockpitApplet({ applet, onExit }: CockpitAppletProps) {
 
   const label = appletLabels[applet]
   return createPortal(
-    <div className="cockpit-applet" role="dialog" aria-modal="true" aria-label={`Embedded ${label}`}>
+    <div className={`cockpit-applet theme-${theme}`} role="dialog" aria-modal="true" aria-label={`Embedded ${label}`}>
       <button
         ref={exitButtonRef}
         type="button"
@@ -61,13 +66,15 @@ export function CockpitApplet({ applet, onExit }: CockpitAppletProps) {
         onClick={onExit}
         aria-label={`Exit ${label} and return to cockpit`}
       >
-        <X size={15} /> Exit to cockpit
+        <X size={15} /> Exit
       </button>
       <div className="cockpit-applet-content">
         <Suspense fallback={<div className="cockpit-applet-loading">Loading {label}…</div>}>
-          {applet === 'control-gating' && <GatingGui embedded onRequestExit={onExit} />}
-          {applet === 'panel-builder' && <PanelBuilder />}
-          {applet === 'matrix-adjustment' && <MatrixAdjustment />}
+          {applet === 'control-gating' && <GatingGui embedded cockpitTheme={theme} onRequestExit={onExit} />}
+          {applet === 'panel-builder' && <PanelBuilder embedded cockpitTheme={theme} />}
+          {applet === 'matrix-adjustment' && <MatrixAdjustment embedded cockpitTheme={theme} />}
+          {applet === 'control-qc-report' && <QcReportApplet kind="control" theme={theme} />}
+          {applet === 'sample-qc-report' && <QcReportApplet kind="sample" theme={theme} />}
         </Suspense>
       </div>
     </div>,

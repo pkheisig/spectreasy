@@ -8,6 +8,7 @@ type Option = { value: string; label: ReactNode; disabled: boolean }
 
 export function GuiSelect({ children, className = '', value, defaultValue, disabled, onChange, 'aria-label': ariaLabel }: Props) {
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [internalValue, setInternalValue] = useState(String(defaultValue ?? ''))
   const [position, setPosition] = useState({ left: 0, top: 0, width: 180 })
@@ -22,7 +23,8 @@ export function GuiSelect({ children, className = '', value, defaultValue, disab
   useEffect(() => {
     if (!open) return
     const close = (event: MouseEvent) => {
-      if (!buttonRef.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      if (!buttonRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
     }
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false)
@@ -45,7 +47,8 @@ export function GuiSelect({ children, className = '', value, defaultValue, disab
   function choose(option: Option) {
     if (option.disabled) return
     if (value == null) setInternalValue(option.value)
-    onChange?.({ target: { value: option.value } } as ChangeEvent<HTMLSelectElement>)
+    const target = { value: option.value } as HTMLSelectElement
+    onChange?.({ target, currentTarget: target } as ChangeEvent<HTMLSelectElement>)
     setOpen(false)
   }
 
@@ -65,7 +68,7 @@ export function GuiSelect({ children, className = '', value, defaultValue, disab
         <ChevronDown size={15} />
       </button>
       {open && createPortal(
-        <div className="gui-select-menu" role="listbox" style={position}>
+        <div ref={menuRef} className="gui-select-menu" role="listbox" style={position}>
           {options.map((option) => (
             <button
               type="button"

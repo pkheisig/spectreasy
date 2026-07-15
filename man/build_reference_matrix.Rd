@@ -9,6 +9,7 @@ build_reference_matrix(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
+  af_profile = NULL,
   af_n_bands = 100,
   af_max_cells = 50000,
   af_min_cluster_events = 20,
@@ -49,6 +50,10 @@ When `FALSE` (default), the function returns the matrix without writing QC files
 
 \item{control_df}{Optional control mapping as a data.frame or CSV path.
 Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.}
+
+\item{af_profile}{Optional saved AF profile name, `spectreasy_af_profile`, or
+AF-only matrix. When supplied, its spectra replace extraction from mapped
+unstained cell controls.}
 
 \item{af_n_bands}{Number of AF basis signatures to extract from pooled
 unstained/AF control events. The default, `100`, builds a broad fixed

@@ -12,6 +12,8 @@ export type CockpitAppletId =
   | 'control-gating'
   | 'panel-builder'
   | 'matrix-adjustment'
+  | 'control-qc-report'
+  | 'sample-qc-report'
 
 export type ArtifactStatus = 'current' | 'stale' | 'user' | 'synthetic' | 'missing' | 'unknown'
 export type JobState = 'idle' | 'running' | 'complete' | 'failed'
@@ -39,6 +41,8 @@ export type MappingRow = {
   universalNegative: string
   isViability?: boolean
   warning?: string
+  ignored?: boolean
+  ignoredReason?: string
 }
 
 export type ProjectState = {
@@ -98,6 +102,7 @@ export type Report = {
   format: 'HTML' | 'PDF'
   run: string
   created: string
+  createdEpoch?: number
   status: 'current' | 'stale'
   matrix: string
   path?: string
@@ -190,8 +195,10 @@ export type AppearanceSettings = {
   theme: 'light' | 'dark'
   density: 'compact' | 'comfortable' | 'spacious'
   fontScale: number
-  fontFamily: 'avenir' | 'atkinson' | 'source-sans' | 'system'
+  fontFamily: 'avenir' | 'futura' | 'atkinson' | 'source-sans' | 'charter' | 'palatino' | 'monaco' | 'system'
   sidebarWidth: number
+  terminalWidthPct: number
+  terminalHeightPct: number
   cornerRadius: number
   shadows: 'none' | 'subtle' | 'raised'
   reduceMotion: boolean
@@ -295,9 +302,11 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
     appearance: {
       theme: 'light',
       density: 'comfortable',
-      fontScale: 125,
+      fontScale: 100,
       fontFamily: 'avenir',
       sidebarWidth: 220,
+      terminalWidthPct: 50,
+      terminalHeightPct: 33,
       cornerRadius: 8,
       shadows: 'subtle',
       reduceMotion: false,

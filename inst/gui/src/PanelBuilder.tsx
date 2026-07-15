@@ -537,7 +537,7 @@ const mapDetectorToEmission = (detectorName: string): number => {
     return 0;
 };
 
-const PanelBuilder = () => {
+const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; cockpitTheme?: 'light' | 'dark' | null }) => {
     const [payload, setPayload] = useState<PanelPayload | null>(null);
     const [cytometer, setCytometer] = useState(() => getCytometerName(localStorage.getItem('spectreasy_cytometer') || 'aurora'));
     const [configuration, setConfiguration] = useState(() => getCytometerName(localStorage.getItem('spectreasy_configuration') || '5l_uv_v_b_yg_r'));
@@ -573,6 +573,7 @@ const PanelBuilder = () => {
     const [importing, setImporting] = useState(false);
     const [hoveredFluor, setHoveredFluor] = useState<string | null>(null);
     const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+        if (embedded && cockpitTheme) return cockpitTheme;
         const stored = localStorage.getItem('spectreasy-theme') || localStorage.getItem('spectreasy_theme');
         if (stored === 'light' || stored === 'dark') return stored;
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -591,10 +592,15 @@ const PanelBuilder = () => {
     }, [configuration]);
 
     useEffect(() => {
+        if (embedded) return;
         localStorage.setItem('spectreasy-theme', theme);
         localStorage.removeItem('spectreasy_theme');
         document.documentElement.dataset.theme = theme;
-    }, [theme]);
+    }, [embedded, theme]);
+
+    useEffect(() => {
+        if (embedded && cockpitTheme) setTheme(cockpitTheme);
+    }, [cockpitTheme, embedded]);
 
     useEffect(() => {
         localStorage.setItem('spectreasy_slots', JSON.stringify(slots));
@@ -612,7 +618,7 @@ const PanelBuilder = () => {
                 config_json: {
                     cytometer: getCytometerName(cytometer),
                     configuration: getCytometerName(configuration),
-                    theme,
+                    ...(!embedded ? { theme } : {}),
                     slots,
                     markers,
                     tab,
@@ -622,7 +628,7 @@ const PanelBuilder = () => {
             }).catch(() => null);
         }, 500);
         return () => window.clearTimeout(timer);
-    }, [cytometer, configuration, theme, slots, markers, tab, sidebarWidth, sidebarCollapsed, guiStateLoaded]);
+    }, [cytometer, configuration, theme, slots, markers, tab, sidebarWidth, sidebarCollapsed, guiStateLoaded, embedded]);
 
     const selected = useMemo(() => slots.filter(Boolean), [slots]);
 
@@ -736,7 +742,7 @@ const PanelBuilder = () => {
                 const savedConfiguration = typeof saved.configuration === 'string' ? getCytometerName(saved.configuration) : defaults.configuration;
                 const savedSlots = Array.isArray(saved.slots) ? saved.slots.map(String) : defaults.slots;
                 const savedMarkers = saved.markers && typeof saved.markers === 'object' ? normalizeMarkers(saved.markers) : defaults.markers;
-                if (saved.theme === 'light' || saved.theme === 'dark') setTheme(saved.theme);
+                if (!embedded && (saved.theme === 'light' || saved.theme === 'dark')) setTheme(saved.theme);
                 if (saved.tab === 'panel' || saved.tab === 'similarity' || saved.tab === 'signatures') setTab(saved.tab);
                 if (typeof saved.sidebarWidth === 'number' && Number.isFinite(saved.sidebarWidth)) {
                     setSidebarWidth(Math.min(440, Math.max(180, saved.sidebarWidth)));
@@ -763,7 +769,7 @@ const PanelBuilder = () => {
             }
         };
         void boot();
-    }, []);
+    }, [embedded]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -1038,7 +1044,7 @@ const PanelBuilder = () => {
                     <p>{selected.length} fluorophores selected{selectedConfigurationLabel ? ` / ${selectedConfigurationLabel}` : ''}</p>
                 </div>
                 <div className="panel-actions">
-                    <button 
+                    {!embedded && <button
                         type="button" 
                         className="export-button" 
                         onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
@@ -1046,7 +1052,7 @@ const PanelBuilder = () => {
                         style={{ padding: '0 10px', width: '40px' }}
                     >
                         {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-                    </button>
+                    </button>}
                     <button
                         type="button"
                         className="export-button icon-only"

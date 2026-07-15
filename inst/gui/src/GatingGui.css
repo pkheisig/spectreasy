@@ -21,7 +21,8 @@
   --bead-gate-fill: rgba(128, 82, 199, 0.16);
 }
 
-body.dark {
+body.dark,
+.app-shell.dark {
   color-scheme: dark;
   background: #121816;
   color: #f0f3f2;
@@ -137,7 +138,8 @@ button:disabled {
   backdrop-filter: blur(2px);
 }
 
-body.dark .initial-loading-overlay {
+body.dark .initial-loading-overlay,
+.app-shell.dark .initial-loading-overlay {
   background: rgba(18, 24, 22, 0.42);
 }
 
@@ -161,7 +163,7 @@ body.dark .initial-loading-overlay {
 
 .initial-loading-card span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 800;
 }
 
@@ -271,7 +273,7 @@ body.dark .initial-loading-overlay {
 
 .brand p {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 16px;
 }
 
 .file-list {
@@ -315,7 +317,7 @@ body.dark .initial-loading-overlay {
 }
 
 .file-row span {
-  font-size: 13px;
+  font-size: 17px;
   color: var(--blueprint);
   font-weight: 800;
 }
@@ -369,21 +371,23 @@ body.dark .initial-loading-overlay {
 }
 
 .gating-status-banner strong {
-  font-size: 13px;
+  font-size: 17px;
 }
 
 .gating-status-banner span {
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1.45;
 }
 
-body.dark .gating-status-banner {
+body.dark .gating-status-banner,
+.app-shell.dark .gating-status-banner {
   color: #f2d894;
   border-color: #6f5b29;
   background: #302918;
 }
 
-body.dark .gating-status-banner.is-error {
+body.dark .gating-status-banner.is-error,
+.app-shell.dark .gating-status-banner.is-error {
   color: #ffc2bc;
   border-color: #75413c;
   background: #33201f;
@@ -406,7 +410,7 @@ body.dark .gating-status-banner.is-error {
 
 .eyebrow {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 800;
 }
 
@@ -460,12 +464,14 @@ body.dark .gating-status-banner.is-error {
   opacity: 0.62;
 }
 
-body.dark .control-navigation .icon-button {
+body.dark .control-navigation .icon-button,
+.app-shell.dark .control-navigation .icon-button {
   border-color: #697771;
   color: #d2ddd8;
 }
 
-body.dark .control-navigation .icon-button:disabled {
+body.dark .control-navigation .icon-button:disabled,
+.app-shell.dark .control-navigation .icon-button:disabled {
   border-color: #46514d;
   color: #76827d;
 }
@@ -508,7 +514,7 @@ body.dark .control-navigation .icon-button:disabled {
 .gating-settings-heading span {
   margin-top: 3px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 15.5px;
 }
 
 .gating-settings-appearance {
@@ -518,7 +524,7 @@ body.dark .control-navigation .icon-button:disabled {
   padding: 9px 0 12px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
 }
 
@@ -527,7 +533,7 @@ body.dark .control-navigation .icon-button:disabled {
   min-height: 32px;
   height: 32px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: 15.5px;
 }
 
 .gating-settings-row {
@@ -537,7 +543,7 @@ body.dark .control-navigation .icon-button:disabled {
   gap: 10px;
   min-height: 40px;
   border-top: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 16px;
 }
 
 .gating-settings-row > span {
@@ -553,7 +559,7 @@ body.dark .control-navigation .icon-button:disabled {
 
 .gating-settings-row strong {
   color: var(--ink);
-  font-size: 11px;
+  font-size: 15.5px;
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
@@ -571,14 +577,16 @@ body.dark .control-navigation .icon-button:disabled {
 }
 
 .gating-help-button,
-body.dark .gating-help-button {
+body.dark .gating-help-button,
+.app-shell.dark .gating-help-button {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
 }
 
 .gating-help-button:hover,
-body.dark .gating-help-button:hover {
+body.dark .gating-help-button:hover,
+.app-shell.dark .gating-help-button:hover {
   border-color: transparent;
   background: var(--wash);
   color: var(--ink);
@@ -646,7 +654,7 @@ body.dark .gating-help-button:hover {
 .gating-help-popover dt,
 .gating-help-popover dd {
   margin: 0;
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1.38;
 }
 
@@ -729,7 +737,8 @@ body.dark .gating-help-button:hover {
   opacity: 0.72;
 }
 
-body.dark .auto-histogram-button:disabled {
+body.dark .auto-histogram-button:disabled,
+.app-shell.dark .auto-histogram-button:disabled {
   background: #343b38;
   color: #8e9894;
 }
@@ -766,13 +775,13 @@ body.dark .auto-histogram-button:disabled {
   background: var(--panel);
   color: var(--ink);
   box-shadow: 0 18px 36px rgba(23, 32, 29, 0.2);
-  font-size: 12px;
+  font-size: 16px;
   text-align: left;
 }
 
 .confirm-tooltip strong {
   color: var(--accent-2);
-  font-size: 12px;
+  font-size: 16px;
 }
 
 .confirm-tooltip span {
@@ -814,7 +823,7 @@ body.dark .auto-histogram-button:disabled {
 .status {
   margin-left: auto;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 17px;
   max-width: 520px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -833,7 +842,7 @@ body.dark .auto-histogram-button:disabled {
   background: var(--panel);
   border-radius: 7px;
   padding: 9px 11px;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 800;
   color: var(--ink);
 }
@@ -870,13 +879,13 @@ body.dark .auto-histogram-button:disabled {
 .plot-head p,
 .plot-head span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 16px;
 }
 
 .plot-warning {
   margin-top: 5px;
   color: var(--accent-2);
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 900;
   white-space: nowrap;
 }
@@ -919,7 +928,7 @@ body.dark .auto-histogram-button:disabled {
 
 .axis-tick-label {
   fill: var(--axis-color);
-  font-size: 10px;
+  font-size: 14.5px;
   font-weight: 800;
 }
 
@@ -975,7 +984,7 @@ body.dark .auto-histogram-button:disabled {
 .axis-menu button {
   justify-content: flex-start;
   min-height: 28px;
-  font-size: 12px;
+  font-size: 16px;
   border-radius: 5px;
 }
 
@@ -988,7 +997,7 @@ body.dark .auto-histogram-button:disabled {
   border-radius: 8px;
   padding: 0 12px;
   height: 36px;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 800;
   color: var(--ink);
 }
@@ -1042,7 +1051,7 @@ body.dark .auto-histogram-button:disabled {
   border-radius: 6px;
   color: var(--muted);
   background: color-mix(in srgb, var(--panel) 82%, var(--canvas));
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 700;
   text-align: center;
 }
@@ -1180,7 +1189,8 @@ button.on {
   border-color: var(--ink);
 }
 
-body.dark .plot-toolbar button.on {
+body.dark .plot-toolbar button.on,
+.app-shell.dark .plot-toolbar button.on {
   background: #42564f;
   color: #f7fbf9;
   border-color: #8ca199;
@@ -1200,7 +1210,7 @@ body.dark .plot-toolbar button.on {
 
 .plot-toolbar button {
   min-height: 28px;
-  font-size: 12px;
+  font-size: 16px;
   padding: 0 8px;
   border-radius: 5px;
 }
@@ -1215,7 +1225,7 @@ body.dark .plot-toolbar button.on {
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--panel);
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 800;
   color: var(--muted);
 }
@@ -1246,7 +1256,7 @@ body.dark .plot-toolbar button.on {
   border-radius: 8px;
   background: var(--panel);
   color: var(--muted);
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 800;
 }
 
@@ -1264,7 +1274,7 @@ body.dark .plot-toolbar button.on {
   border-color: var(--line);
   background: var(--panel);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 800;
   position: relative;
 }
@@ -1307,7 +1317,7 @@ body.dark .plot-toolbar button.on {
   border-radius: 7px;
   background: transparent;
   color: #f5f1ea;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 800;
 }
 

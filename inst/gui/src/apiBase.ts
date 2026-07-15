@@ -12,3 +12,8 @@ export function resolveApiBase(): string {
   if (typeof window !== 'undefined') return window.location.origin.replace(/\/$/, '')
   return 'http://127.0.0.1:8000'
 }
+
+export function resolveApiToken(): string {
+  if (typeof window === 'undefined') return ''
+  return new URLSearchParams(window.location.search).get('token')?.trim() ?? ''
+}

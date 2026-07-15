@@ -225,7 +225,7 @@ const alignDetectorLabels = (detNames: string[], payload: Record<string, unknown
     return detNames.map(det => labelByName.get(det) || det);
 };
 
-const App = () => {
+const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; cockpitTheme?: 'light' | 'dark' | null }) => {
     const [matrices, setMatrices] = useState<string[]>([]);
     const [currentFile, setCurrentFile] = useState('');
     const [sampleFiles, setSampleFiles] = useState<string[]>([]);
@@ -247,6 +247,7 @@ const App = () => {
     const [dragSensitivity, setDragSensitivity] = useState(0.1);
 
     const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+        if (embedded && cockpitTheme) return cockpitTheme;
         const stored = localStorage.getItem('spectreasy-theme');
         if (stored === 'dark' || stored === 'light') return stored;
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -452,7 +453,7 @@ const App = () => {
         if (typeof viewConfig.dragSensitivity === 'number') {
             setDragSensitivity(Math.max(0, Math.min(0.3, viewConfig.dragSensitivity)));
         }
-        if (viewConfig.theme === 'dark' || viewConfig.theme === 'light') setTheme(viewConfig.theme);
+        if (!embedded && (viewConfig.theme === 'dark' || viewConfig.theme === 'light')) setTheme(viewConfig.theme);
     };
 
     const buildConfig = () => ({
@@ -460,7 +461,7 @@ const App = () => {
         pointSize,
         pointOpacity,
         dragSensitivity,
-        theme
+        ...(!embedded ? { theme } : {})
     });
 
     useEffect(() => {
@@ -552,12 +553,17 @@ const App = () => {
     const g = glassyTheme;
 
     useEffect(() => {
+        if (embedded) return;
         document.documentElement.style.backgroundColor = g.bgGradient;
         document.body.style.backgroundColor = g.bgGradient;
         document.documentElement.style.setProperty('--bg-app', g.bgGradient);
         document.documentElement.dataset.theme = theme;
         localStorage.setItem('spectreasy-theme', theme);
-    }, [g.bgGradient, theme]);
+    }, [embedded, g.bgGradient, theme]);
+
+    useEffect(() => {
+        if (embedded && cockpitTheme) setTheme(cockpitTheme);
+    }, [cockpitTheme, embedded]);
 
     const glassCard = {
         background: g.glassBg,
@@ -706,12 +712,12 @@ const App = () => {
                                 <strong style={{ display: 'block', fontSize: 14 }}>Settings</strong>
                                 <span style={{ display: 'block', marginTop: 3, color: g.textMuted, fontSize: 11 }}>Changes are saved automatically</span>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0 12px', borderTop: `1px solid ${g.glassBorder}` }}>
+                            {!embedded && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0 12px', borderTop: `1px solid ${g.glassBorder}` }}>
                                 <span style={{ color: g.textDim, fontSize: 12, fontWeight: 700 }}>Appearance</span>
                                 <button aria-label={theme === 'dark' ? 'Use light mode' : 'Use dark mode'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} style={{ ...glassButton, minWidth: 92, height: 32, padding: '0 10px', color: g.text, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontSize: 11, fontWeight: 700 }}>
                                     {theme === 'dark' ? <><Moon size={14} /> Dark</> : <><Sun size={14} /> Light</>}
                                 </button>
-                            </div>
+                            </div>}
                             {[
                                 { label: 'Point size', value: pointSize, display: pointSize.toFixed(2), min: 0.5, max: 4, step: 0.25, set: setPointSize },
                                 { label: 'Point opacity', value: pointOpacity, display: `${Math.round(pointOpacity * 100)}%`, min: 0.1, max: 1, step: 0.05, set: setPointOpacity },

@@ -375,3 +375,19 @@ test_that("HTML overwrite policy versions, overwrites, errors, and detects stale
     writeLines("changed", source)
     expect_true(spectreasy:::.report_is_stale(report_file, source))
 })
+test_that("AF bank report plots use the cockpit light accent", {
+    af <- matrix(
+        c(1, 0.5, 0.1, 1, 0.4, 0.08),
+        nrow = 2,
+        byrow = TRUE,
+        dimnames = list(c("AF", "AF_2"), c("UV7-A", "UV8-A", "V1-A"))
+    )
+    plot <- spectreasy:::.style_af_bank_plot(
+        spectreasy::plot_spectra(af, output_file = NULL),
+        rownames(af)
+    )
+    layer <- ggplot2::ggplot_build(plot)$data[[1]]
+
+    expect_identical(unique(toupper(layer$colour)), "#1F7A6D")
+    expect_equal(unique(layer$alpha), 0.2)
+})

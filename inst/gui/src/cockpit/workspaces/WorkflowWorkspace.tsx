@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertCircle,
   ArrowRight,
@@ -41,8 +42,9 @@ import type {
   WorkflowSettings,
 } from "../types";
 import {
-  applyAfProfile,
+  activateAfProfile,
   attemptDiagnosticAction,
+  deactivateAfProfile,
   deleteAfProfile,
   downloadBase64File,
   exportPanelOverview,
@@ -51,12 +53,14 @@ import {
   listAfProfiles,
   listMatrixFiles,
   listSampleFiles,
+  loadAfProfileData,
   loadMatrixFile,
   loadPanelMetrics,
   loadProjectReports,
   projectFileUrl,
   rowsFromBackend,
   saveMatrixFile,
+  selectAfSourceFile,
 } from "../api";
 import { demoReports } from "../mockData";
 import { StatusPill } from "../components/StatusPill";
@@ -74,7 +78,7 @@ export type WorkflowWorkspaceProps = {
   onRun: (
     action: "control" | "sample" | "control-report" | "sample-report" | "af",
     label: string,
-  ) => void;
+  ) => Promise<boolean>;
   onRefresh: () => void;
   onDownload: (artifact: Artifact) => void;
   onSelectArtifact: (artifact: Artifact) => void;
@@ -98,14 +102,10 @@ export type WorkflowWorkspaceProps = {
 
 function WorkspaceHeader({
   kicker,
-  title,
-  description,
   action,
   onAction,
 }: {
   kicker: string;
-  title: string;
-  description: string;
   action?: string;
   onAction?: () => void;
 }) {
@@ -113,8 +113,6 @@ function WorkspaceHeader({
     <div className="workspace-header">
       <div>
         <span className="eyebrow">{kicker}</span>
-        <h1>{title}</h1>
-        <p>{description}</p>
       </div>
       {action && onAction && (
         <button className="button button-ghost" onClick={onAction}>
@@ -250,8 +248,6 @@ function MappingWorkspace({
     <>
       <WorkspaceHeader
         kicker="Controls / control stage"
-        title="Control processing"
-        description="Configure the control mapping, review gates, build the reference matrix, and inspect control QC."
       />
       <div className="subnav">
         <button
@@ -273,14 +269,14 @@ function MappingWorkspace({
           onClick={() => setMappingTab("build")}
           disabled={project.mapping.length === 0}
         >
-          03 Build reference <StatusPill state="complete" compact />
+          03 Unmixing <StatusPill state="complete" compact />
         </button>
         <button
           className={mappingTab === "qc" ? "is-active" : ""}
           onClick={() => setMappingTab("qc")}
           disabled={project.mapping.length === 0}
         >
-          04 Control QC <StatusPill state="complete" compact />
+          04 Quality Control <StatusPill state="complete" compact />
         </button>
       </div>
       {mappingTab === "mapping" && project.mapping.length === 0 && (
@@ -369,7 +365,7 @@ function MappingWorkspace({
               </thead>
               <tbody>
                 {project.mapping.map((row) => (
-                  <tr key={row.id} className={row.warning ? "has-warning" : ""}>
+                  <tr key={row.id} className={`${row.warning ? "has-warning" : ""} ${row.ignored ? "is-ignored" : ""}`} title={row.ignoredReason || undefined}>
                     <td>
                       <input
                         type="checkbox"
@@ -379,7 +375,7 @@ function MappingWorkspace({
                       />
                     </td>
                     <td>
-                      <span className="file-cell">
+                      <span className="file-cell" title={row.ignoredReason || undefined}>
                         <span className="file-mini-dot" />
                         {row.file}
                       </span>
@@ -772,7 +768,7 @@ function LegacyBuildReferencePanel({
       {advanced && (
         <div className="advanced-grid">
           <label>
-            Weight quantile
+            Spectreasy weight quantile
             <input type="number" defaultValue="0.9" step="0.05" />
           </label>
           <label>
@@ -826,49 +822,7 @@ function BuildReferencePanel({
   const useSpectralPipeline = method === "Spectreasy" || method === "AutoSpectral";
   const [advanced, setAdvanced] = useState(false);
   return (
-    <section className="surface-card run-card">
-      <div className="card-toolbar">
-        <div>
-          <span className="eyebrow">Reference build / control unmixing</span>
-          <h2>Build reference matrix</h2>
-          <p>
-            One background job creates the matrix, noise floors, variants,
-            unmixed controls, and QC report.
-          </p>
-        </div>
-        <StatusPill state="complete" label="Ready to run" />
-      </div>
-      <div className="run-summary-grid">
-        <div>
-          <span className="eyebrow">Method</span>
-          <strong>{settings.method}</strong>
-          <small>Selected in the control settings</small>
-        </div>
-        <div>
-          <span className="eyebrow">Input</span>
-          <strong>{settings.sccDir}</strong>
-          <small>
-            {settings.controlFile} · auto mapping{" "}
-            {settings.autoCreateMapping ? "on" : "off"}
-          </small>
-        </div>
-        <div>
-          <span className="eyebrow">AF bank</span>
-          <strong>{settings.afNBands} bands</strong>
-          <small>{settings.afMinClusterEvents} minimum events</small>
-        </div>
-        <div>
-          <span className="eyebrow">Report</span>
-          <strong>
-            {settings.saveReport
-              ? `${settings.outputFormat.toUpperCase()} enabled`
-              : "Report off"}
-          </strong>
-          <small>
-            {settings.saveQcPlots ? "QC plots included" : "QC plots off"}
-          </small>
-        </div>
-      </div>
+    <section className="surface-card run-card streamlined-run-card">
       <div className="run-controls">
         <label>
           <span>Unmixing method</span>
@@ -933,7 +887,7 @@ function BuildReferencePanel({
             }
           />
           <span className="toggle-ui" />
-          <span>Save QC plots</span>
+          <span>Save standalone QC plots</span>
         </label>
       </div>
       <button
@@ -1020,7 +974,7 @@ function BuildReferencePanel({
             />
           </label>}
           {method === "Spectreasy" && <label>
-            Weight quantile
+            Spectreasy weight quantile
             <input
               type="number"
               min="0"
@@ -1036,13 +990,7 @@ function BuildReferencePanel({
           </label>}
         </div>
       )}
-      <div className="run-footer">
-        <div className="run-output">
-          <span className="output-dot" />
-          <span>
-            Outputs will be written under <strong>{settings.outputDir}</strong>
-          </span>
-        </div>
+      <div className="run-footer run-footer-actions-only">
         <button
           className="button button-primary large-button"
           onClick={() => onRun("control", "Build reference & unmix controls")}
@@ -1188,17 +1136,12 @@ function SamplesWorkspace({
   );
   return (
     <>
-      <WorkspaceHeader
-        kicker="Samples / sample stage"
-        title="Unmix measured samples"
-        description="Choose a current matrix, verify detector compatibility, and run the sample batch with the same backend methods."
-      />
       <div className="sample-top-grid">
         <section className="surface-card sample-import-card">
           <div className="card-toolbar">
             <div>
               <span className="eyebrow">Sample import</span>
-              <h2>28 files detected</h2>
+              <h2>Sample files</h2>
             </div>
             <button className="button button-ghost">
               <FolderOpen size={14} /> Add FCS files
@@ -1339,7 +1282,7 @@ function SamplesWorkspace({
             className="button button-primary large-button"
             onClick={() => onRun("sample", "Unmix 28 samples")}
           >
-            <Play size={15} fill="currentColor" /> Run sample workflow{" "}
+            <Play size={15} fill="currentColor" /> Unmix samples{" "}
             <ArrowRight size={15} />
           </button>
         </div>
@@ -1349,13 +1292,11 @@ function SamplesWorkspace({
 }
 
 function LegacyConfigurableSamplesWorkspace({
-  project,
   settings,
   onSettingsChange,
   onRun,
   onSectionChange,
 }: {
-  project: ProjectState;
   settings: SampleSettings;
   onSettingsChange: (patch: Partial<SampleSettings>) => void;
   onRun: WorkflowWorkspaceProps["onRun"];
@@ -1375,17 +1316,12 @@ function LegacyConfigurableSamplesWorkspace({
   );
   return (
     <>
-      <WorkspaceHeader
-        kicker="Samples / sample stage"
-        title="Unmix measured samples"
-        description="Choose a current matrix, adjust the run settings, and send the batch to Spectreasy R."
-      />
       <div className="sample-top-grid">
         <section className="surface-card sample-import-card">
           <div className="card-toolbar">
             <div>
               <span className="eyebrow">Sample import</span>
-              <h2>{project.scan.samples || 0} files detected</h2>
+              <h2>Sample files</h2>
             </div>
             <button className="button button-ghost">
               <FolderOpen size={14} /> Add FCS files
@@ -1432,13 +1368,7 @@ function LegacyConfigurableSamplesWorkspace({
         <div className="card-toolbar">
           <div>
             <span className="eyebrow">Sample unmixing</span>
-            <h2>Ready for the next batch</h2>
-            <p>
-              Writes FCS outputs and the optional QC report to the configured
-              output folder.
-            </p>
           </div>
-          <StatusPill state="ready" label={`${settings.method} · configured`} />
         </div>
         <div className="sample-run-options">
           <div>
@@ -1536,7 +1466,7 @@ function LegacyConfigurableSamplesWorkspace({
               />
             </label>
             <label>
-              Weight quantile
+              Spectreasy weight quantile
               <input
                 type="number"
                 min="0"
@@ -1626,18 +1556,11 @@ function LegacyConfigurableSamplesWorkspace({
                 }
               />
               <span className="toggle-ui" />
-              <span>Save QC plots</span>
+              <span>Save standalone QC plots</span>
             </label>
           </div>
         </details>
         <div className="run-footer">
-          <div className="warning-inline">
-            <AlertCircle size={15} />
-            <span>
-              R will validate the matrix, detector noise, and sample folder
-              before writing.
-            </span>
-          </div>
           <button
             className="button button-ghost"
             onClick={() => onSectionChange("sample-reports")}
@@ -1648,7 +1571,7 @@ function LegacyConfigurableSamplesWorkspace({
             className="button button-primary large-button"
             onClick={() => onRun("sample", "Unmix sample workflow")}
           >
-            <Play size={15} fill="currentColor" /> Run sample workflow{" "}
+            <Play size={15} fill="currentColor" /> Unmix samples{" "}
             <ArrowRight size={15} />
           </button>
         </div>
@@ -1658,31 +1581,23 @@ function LegacyConfigurableSamplesWorkspace({
 }
 
 function ConfigurableSamplesWorkspace({
-  project,
   settings,
   onSettingsChange,
   onRun,
 }: {
-  project: ProjectState;
   settings: SampleSettings;
   onSettingsChange: (patch: Partial<SampleSettings>) => void;
   onRun: WorkflowWorkspaceProps["onRun"];
 }) {
   const [sampleFiles, setSampleFiles] = useState<string[]>([]);
   const [sampleFilter, setSampleFilter] = useState("");
-  const [importStatus, setImportStatus] = useState(
-    "Loading sample files from the R backend…",
-  );
+  const [importStatus, setImportStatus] = useState("");
   const uploadRef = useRef<HTMLInputElement>(null);
 
   const refreshSamples = async () => {
     const files = await listSampleFiles();
     setSampleFiles(files);
-    setImportStatus(
-      files.length
-        ? `${files.length} FCS file${files.length === 1 ? "" : "s"} available in R.`
-        : "No FCS files found in the sample folder.",
-    );
+    setImportStatus(files.length ? "" : "No sample files found.");
   };
 
   useEffect(() => {
@@ -1715,11 +1630,6 @@ function ConfigurableSamplesWorkspace({
   );
   return (
     <>
-      <WorkspaceHeader
-        kicker="Samples / sample stage"
-        title="Unmix measured samples"
-        description="Choose a current matrix, import FCS files into the active project, and send the batch to Spectreasy R."
-      />
       <input
         ref={uploadRef}
         type="file"
@@ -1727,14 +1637,12 @@ function ConfigurableSamplesWorkspace({
         hidden
         onChange={importFile}
       />
-      <div className="sample-top-grid">
+      <div className="sample-top-grid sample-file-panel">
         <section className="surface-card sample-import-card">
           <div className="card-toolbar">
             <div>
               <span className="eyebrow">Sample import</span>
-              <h2>
-                {sampleFiles.length || project.scan.samples || 0} files detected
-              </h2>
+              <h2>Sample files</h2>
             </div>
             <div className="toolbar-actions">
               <button
@@ -1760,9 +1668,9 @@ function ConfigurableSamplesWorkspace({
                 placeholder="Filter sample files"
               />
             </label>
-            <span className="match-note">
+            {importStatus && <span className="match-note">
               <Check size={13} /> {importStatus}
-            </span>
+            </span>}
           </div>
           <div className="sample-list">
             {filtered.map((sample, index) => (
@@ -1772,8 +1680,6 @@ function ConfigurableSamplesWorkspace({
                 </span>
                 <span className="file-mini-dot" />
                 <strong>{sample}</strong>
-                <span className="sample-events">FCS</span>
-                <StatusPill state="complete" label="Available" compact />
               </div>
             ))}
           </div>
@@ -1784,49 +1690,10 @@ function ConfigurableSamplesWorkspace({
           )}
         </section>
       </div>
-      <section className="surface-card sample-run-card">
-        <div className="card-toolbar">
-          <div>
-            <span className="eyebrow">Sample unmixing</span>
-            <h2>Ready for the next batch</h2>
-            <p>
-              Writes FCS outputs and the optional QC report to the configured
-              output folder.
-            </p>
-          </div>
-          <StatusPill state="ready" label={`${settings.method} · configured`} />
-        </div>
-        <div className="sample-run-options">
-          <div>
-            <span className="eyebrow">Method</span>
-            <strong>{settings.method}</strong>
-            <small>Selected in Settings & logs</small>
-          </div>
-          <div>
-            <span className="eyebrow">Plots</span>
-            <strong>{settings.plotNEvents.toLocaleString()} events</strong>
-            <small>
-              {settings.saveQcPlots ? "QC plots on" : "QC plots off"}
-            </small>
-          </div>
-          <div>
-            <span className="eyebrow">Chunk</span>
-            <strong>{settings.chunkSize.toLocaleString()}</strong>
-            <small>events per batch</small>
-          </div>
-          <div>
-            <span className="eyebrow">Outputs</span>
-            <strong>
-              {settings.writeFcs
-                ? `FCS + ${settings.outputFormat.toUpperCase()}`
-                : `${settings.outputFormat.toUpperCase()} report only`}
-            </strong>
-            <small>{settings.outputDir}</small>
-          </div>
-        </div>
-        <details className="settings-section">
+      <section className="surface-card sample-run-card streamlined-run-card">
+        <details className="settings-section" open>
           <summary>
-            <Settings2 size={14} /> Advanced sample parameters
+            <Settings2 size={14} /> Sample settings
           </summary>
           <div className="settings-form-grid">
             <label>
@@ -1892,7 +1759,7 @@ function ConfigurableSamplesWorkspace({
               />
             </label>
             <label>
-              Weight quantile
+              Spectreasy weight quantile
               <input
                 type="number"
                 min="0"
@@ -1982,23 +1849,16 @@ function ConfigurableSamplesWorkspace({
                 }
               />
               <span className="toggle-ui" />
-              <span>Save QC plots</span>
+              <span>Save standalone QC plots</span>
             </label>
           </div>
         </details>
-        <div className="run-footer">
-          <div className="warning-inline">
-            <AlertCircle size={15} />
-            <span>
-              R will validate the matrix, detector noise, and sample folder
-              before writing.
-            </span>
-          </div>
+        <div className="run-footer run-footer-actions-only">
           <button
             className="button button-primary large-button"
             onClick={() => onRun("sample", "Unmix sample workflow")}
           >
-            <Play size={15} fill="currentColor" /> Run sample workflow{" "}
+            <Play size={15} fill="currentColor" /> Unmix samples{" "}
             <ArrowRight size={15} />
           </button>
         </div>
@@ -2026,8 +1886,6 @@ function LegacyReportsWorkspace({
     <>
       <WorkspaceHeader
         kicker="Reports / shared QC data"
-        title="Reports"
-        description="HTML is the in-app view. PDF stays available for archival review, with both formats rendered from one cached report object."
       />
       <div className="reports-layout">
         <section className="surface-card report-library">
@@ -2214,8 +2072,6 @@ function LegacyMatrixWorkspace({
     <>
       <WorkspaceHeader
         kicker="Matrix review / adjustment"
-        title="Matrix adjustment"
-        description="Inspect detector signatures and save an adjusted matrix as a new artifact. The R backend remains the source of every value."
       />
       <div className="matrix-header-card surface-card">
         <div>
@@ -2382,8 +2238,6 @@ function ReportsWorkspace({
     <>
       <WorkspaceHeader
         kicker={`${kind === "control" ? "Controls" : "Samples"} / QC report`}
-        title={`${kind === "control" ? "Controls" : "Samples"} QC report`}
-        description={`Review ${kind} QC reports discovered in the active project or render a current report.`}
       />
       <div className="reports-layout">
         <section className="surface-card report-library">
@@ -2480,7 +2334,7 @@ function ReportsWorkspace({
               className="report-viewer-frame"
               src={projectFileUrl(selectedReport.path)}
               title={selectedReport.title}
-              sandbox="allow-scripts allow-same-origin"
+              sandbox="allow-scripts"
             />
           ) : (
           <div className="report-page">
@@ -2665,8 +2519,6 @@ function MatrixWorkspace() {
     <div className="matrix-workspace">
       <WorkspaceHeader
         kicker="Matrix review / adjustment"
-        title="Matrix adjustment"
-        description="Inspect detector signatures and save an adjusted matrix as a new artifact. Every value shown here comes from the active R project."
       />
       <input
         ref={uploadRef}
@@ -2883,8 +2735,6 @@ function LegacyPanelWorkspace({
     <>
       <WorkspaceHeader
         kicker="Panel builder / spectral design"
-        title="Spectral panel builder"
-        description="Explore packaged theoretical spectra for Aurora, Discover, ID7000, and Xenith. No controls or samples required."
         action="Refresh library"
         onAction={onLoadPanel}
       />
@@ -3076,8 +2926,6 @@ function PanelWorkspace({
     <>
       <WorkspaceHeader
         kicker="Panel builder / spectral design"
-        title="Spectral panel builder"
-        description="Explore packaged theoretical spectra for the active cytometer and update overlap metrics as you select fluorophores."
         action="Refresh library"
         onAction={() => {
           onLoadPanel();
@@ -3238,9 +3086,7 @@ function AfWorkspace({ onRun }: { onRun: WorkflowWorkspaceProps["onRun"] }) {
   return (
     <>
       <WorkspaceHeader
-        kicker="AF profile library / global background"
-        title="Autofluorescence profiles"
-        description="Extract once from an unstained file, inspect the bands, then apply a saved profile to the next reference matrix."
+        kicker="AF profile library"
       />
       <div className="af-layout">
         <section className="surface-card af-extract-card">
@@ -3264,7 +3110,7 @@ function AfWorkspace({ onRun }: { onRun: WorkflowWorkspaceProps["onRun"] }) {
               <input type="number" defaultValue="12" />
             </label>
             <label>
-              Maximum cells
+              Downsampled events
               <input type="number" defaultValue="50000" />
             </label>
             <label>
@@ -3304,7 +3150,7 @@ function AfWorkspace({ onRun }: { onRun: WorkflowWorkspaceProps["onRun"] }) {
         </section>
         <section className="surface-card af-library-card">
           <SectionTitle
-            eyebrow="Saved profiles"
+            eyebrow="Profile library"
             title="1 reusable profile"
             action={
               <button className="button button-ghost">
@@ -3359,9 +3205,7 @@ function LegacyConfigurableAfWorkspace({
   return (
     <>
       <WorkspaceHeader
-        kicker="AF profile library / global background"
-        title="Autofluorescence profiles"
-        description="Extract an AF profile from an unstained FCS file with parameters that stay visible and reproducible."
+        kicker="AF profile library"
       />
       <div className="af-layout">
         <section className="surface-card af-extract-card">
@@ -3404,7 +3248,7 @@ function LegacyConfigurableAfWorkspace({
               />
             </label>
             <label>
-              Maximum cells
+              Downsampled events
               <input
                 type="number"
                 min="1"
@@ -3501,14 +3345,14 @@ function LegacyConfigurableAfWorkspace({
         </section>
         <section className="surface-card af-library-card">
           <SectionTitle
-            eyebrow="Saved profiles"
-            title="Reusable background profiles"
+            eyebrow="Profile library"
+            title="Profile library"
             action={
               <button
                 className="button button-ghost"
                 onClick={() => onRun("af", "Refresh AF profile library")}
               >
-                <RefreshCcw size={14} /> Refresh profiles
+                <RefreshCcw size={14} /> Refresh
               </button>
             }
           />
@@ -3542,30 +3386,26 @@ function LegacyConfigurableAfWorkspace({
 
 function ConfigurableAfWorkspace({
   settings,
-  matrixFile,
-  sourceFiles,
   onSettingsChange,
   onRun,
+  onRefresh,
 }: {
   settings: AfSettings;
-  matrixFile: string;
-  sourceFiles: string[];
   onSettingsChange: (patch: Partial<AfSettings>) => void;
   onRun: WorkflowWorkspaceProps["onRun"];
+  onRefresh: () => void;
 }) {
   const [profiles, setProfiles] = useState<
-    Array<{ name: string; bands: number; detectors: number; created: string }>
+    Array<{ name: string; bands: number; detectors: number; created: string; active: boolean }>
   >([]);
-  const [profileStatus, setProfileStatus] = useState("Loading saved profiles…");
+  const [preview, setPreview] = useState<Awaited<ReturnType<typeof loadAfProfileData>>>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: "link" | "unlink" | "delete"; name: string } | null>(null);
 
   const refreshProfiles = async () => {
     const nextProfiles = await listAfProfiles();
     setProfiles(nextProfiles);
-    setProfileStatus(
-      nextProfiles.length
-        ? `${nextProfiles.length} saved profile${nextProfiles.length === 1 ? "" : "s"} found in R.`
-        : "No saved profiles yet.",
-    );
+    const previewName = nextProfiles.find((profile) => profile.active)?.name ?? nextProfiles[0]?.name;
+    setPreview(previewName ? await loadAfProfileData(previewName) : null);
   };
 
   useEffect(() => {
@@ -3577,28 +3417,54 @@ function ConfigurableAfWorkspace({
 
   const removeProfile = async (name: string) => {
     const removed = await deleteAfProfile(name);
-    setProfileStatus(
-      removed ? `${name} deleted.` : `Could not delete ${name}.`,
-    );
-    if (removed) void refreshProfiles();
+    if (removed) await refreshProfiles();
   };
 
-  const applyProfile = async (name: string) => {
-    const output = matrixFile.replace(/\.csv$/i, `_${name}.csv`);
-    const applied = await applyAfProfile(matrixFile, name, output);
-    setProfileStatus(
-      applied
-        ? `${name} applied to ${output}.`
-        : `Could not apply ${name} to the selected matrix.`,
-    );
+  const linkProfile = async (name: string) => {
+    const result = await activateAfProfile(name);
+    if (result.success) {
+      await refreshProfiles();
+      onRefresh();
+    }
   };
+
+  const unlinkProfile = async (name: string) => {
+    const removed = await deactivateAfProfile(name);
+    if (removed) {
+      await refreshProfiles();
+      onRefresh();
+    }
+  };
+
+  const chooseSource = async () => {
+    const result = await selectAfSourceFile();
+    if (result.success && result.path) onSettingsChange({ fcsFile: result.path });
+  };
+
+  const extractProfile = async () => {
+    const saved = await onRun("af", "Extract AF profile");
+    if (saved) await refreshProfiles();
+  };
+
+  const chartWidth = Math.max(760, (preview?.detectors.length ?? 0) * 22 + 92);
+  const chartHeight = 355;
+  const chartLeft = 58;
+  const chartRight = 18;
+  const chartTop = 22;
+  const chartBottom = 92;
+  const plotWidth = chartWidth - chartLeft - chartRight;
+  const plotHeight = chartHeight - chartTop - chartBottom;
+  const detectorX = (index: number, length: number) => chartLeft + (index / Math.max(1, length - 1)) * plotWidth;
+  const spectrumPath = (values: number[]) => values.map((value, index) => {
+    const x = detectorX(index, values.length);
+    const y = chartTop + (1 - Math.max(0, Math.min(1, value))) * plotHeight;
+    return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
 
   return (
     <>
       <WorkspaceHeader
-        kicker="AF profile library / global background"
-        title="Autofluorescence profiles"
-        description="Extract an AF profile from an unstained FCS file, save it in R, and apply it to a new matrix copy when needed."
+        kicker="AF profile library"
       />
       <div className="af-layout">
         <section className="surface-card af-extract-card">
@@ -3612,15 +3478,10 @@ function ConfigurableAfWorkspace({
           <div className="af-form">
             <label>
               Source FCS
-              <GuiSelect
-                value={settings.fcsFile}
-                onChange={(event) =>
-                  onSettingsChange({ fcsFile: event.target.value })
-                }
-              >
-                {sourceFiles.length === 0 && <option value="">No AF controls available</option>}
-                {sourceFiles.map((file) => <option value={`scc/${file}`} key={file}>{file}</option>)}
-              </GuiSelect>
+              <span className="file-picker-field">
+                <input value={settings.fcsFile} readOnly placeholder="Choose an unstained FCS file" />
+                <button type="button" className="button button-ghost" onClick={() => void chooseSource()}><FolderOpen size={14} /> Browse</button>
+              </span>
             </label>
             <label>
               Save as profile
@@ -3644,7 +3505,7 @@ function ConfigurableAfWorkspace({
               />
             </label>
             <label>
-              Maximum cells
+              Downsampled events
               <input
                 type="number"
                 min="1"
@@ -3705,71 +3566,26 @@ function ConfigurableAfWorkspace({
               <span>Overwrite saved profile</span>
             </label>
           </div>
-          <div className="af-preview">
-            <svg viewBox="0 0 500 120">
-              <path
-                d="M0 99 C18 96 33 82 47 90 S73 108 89 79 S111 61 128 89 S155 101 170 70 S190 37 210 78 S237 95 253 63 S276 56 291 81 S315 105 331 73 S351 52 368 66 S395 91 412 48 S449 73 500 35"
-                fill="none"
-                stroke="#7cbdb6"
-                strokeWidth="3"
-              />
-              {Array.from(
-                { length: Math.min(settings.afNBands, 16) },
-                (_, index) => (
-                  <line
-                    key={index}
-                    x1={30 + index * 29}
-                    y1="22"
-                    x2={30 + index * 29}
-                    y2="103"
-                    stroke="#d68a70"
-                    strokeOpacity=".25"
-                    strokeDasharray="3 4"
-                  />
-                ),
-              )}
-            </svg>
-            <span>Detector-wise AF spectrum · settings are sent to R</span>
-          </div>
           <button
             className="button button-primary large-button"
-            onClick={() => onRun("af", "Extract AF profile")}
+            onClick={() => void extractProfile()}
           >
             <WandSparkles size={15} /> Extract profile{" "}
             {settings.saveName ? `& save “${settings.saveName}”` : ""}
           </button>
         </section>
         <section className="surface-card af-library-card">
-          <SectionTitle
-            eyebrow="Saved profiles"
-            title="Reusable background profiles"
-            action={
-              <button
-                className="button button-ghost"
-                onClick={() => void refreshProfiles()}
-              >
-                <RefreshCcw size={14} /> Refresh profiles
-              </button>
-            }
-          />
-          <p className="profile-status">{profileStatus}</p>
           {profiles.length === 0 ? (
-            <div className="saved-profile">
-              <div className="profile-avatar">AF</div>
-              <div className="profile-copy">
-                <strong>Profiles are stored in R</strong>
-                <span>Extract a profile and give it a name to save it.</span>
-                <small>
-                  Saved profiles can be applied to a new matrix copy.
-                </small>
-              </div>
-            </div>
+            <div className="profile-list" aria-label="No saved AF profiles" />
           ) : (
             <div className="profile-list">
               {profiles.map((profile) => (
-                <div className="saved-profile" key={profile.name}>
-                  <div className="profile-avatar">AF</div>
-                  <div className="profile-copy">
+                <div className={`saved-profile ${preview?.name === profile.name ? "is-selected" : ""}`} key={profile.name}>
+                  <button
+                    className="profile-copy profile-preview-button"
+                    aria-pressed={preview?.name === profile.name}
+                    onClick={() => void loadAfProfileData(profile.name).then(setPreview)}
+                  >
                     <strong>{profile.name}</strong>
                     <span>
                       {profile.bands} bands · {profile.detectors} detectors
@@ -3778,17 +3594,17 @@ function ConfigurableAfWorkspace({
                       {profile.created ||
                         "Saved in the local R profile library"}
                     </small>
-                  </div>
-                  <div className="profile-actions">
+                  </button>
+                  <div className="profile-actions profile-actions-stacked">
                     <button
                       className="text-action"
-                      onClick={() => void applyProfile(profile.name)}
+                      onClick={() => setConfirmAction({ type: profile.active ? "unlink" : "link", name: profile.name })}
                     >
-                      <Layers3 size={14} /> Apply
+                      <Layers3 size={14} /> {profile.active ? "Unlink from dataset" : "Link to dataset"}
                     </button>
                     <button
                       className="text-action danger"
-                      onClick={() => void removeProfile(profile.name)}
+                      onClick={() => setConfirmAction({ type: "delete", name: profile.name })}
                     >
                       <X size={14} /> Delete
                     </button>
@@ -3797,16 +3613,71 @@ function ConfigurableAfWorkspace({
               ))}
             </div>
           )}
-          <div className="profile-warning">
-            <Info size={14} />
-            <span>
-              Applying a saved profile writes{" "}
-              {matrixFile.replace(/\.csv$/i, "_profile.csv")} and leaves the
-              source matrix unchanged.
-            </span>
-          </div>
         </section>
+        {preview && preview.spectra.length > 0 && <section className="surface-card af-spectrum-card">
+          <div className="card-toolbar">
+            <div>
+              <span className="eyebrow">Spectrum preview</span>
+              <h2>{preview.name}</h2>
+              <p>{preview.spectra.length} AF spectra across {preview.detectors.length} detectors</p>
+            </div>
+          </div>
+          <div className="af-spectrum-scroll">
+            <svg
+              className="af-spectrum-chart"
+              viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+              role="img"
+              aria-label={`${preview.name}: ${preview.spectra.length} AF spectra across ${preview.detectors.length} detectors`}
+            >
+              {[0, .2, .4, .6, .8, 1].map((tick) => {
+                const y = chartTop + (1 - tick) * plotHeight;
+                return <g key={tick}>
+                  <line x1={chartLeft} x2={chartWidth - chartRight} y1={y} y2={y} className="af-grid-line" />
+                  <text x={chartLeft - 9} y={y + 3} textAnchor="end" className="af-tick-label">{tick.toFixed(1)}</text>
+                </g>;
+              })}
+              {preview.detectors.map((detector, index) => {
+                const x = detectorX(index, preview.detectors.length);
+                return <g key={detector}>
+                  <line x1={x} x2={x} y1={chartTop} y2={chartTop + plotHeight} className="af-grid-line af-grid-line-vertical" />
+                  <text transform={`translate(${x + 3} ${chartTop + plotHeight + 12}) rotate(68)`} textAnchor="start" className="af-detector-label">{detector}</text>
+                </g>;
+              })}
+              {preview.spectra.map((spectrum) => <path
+                key={spectrum.name}
+                d={spectrumPath(spectrum.values)}
+                fill="none"
+                stroke="var(--cockpit-accent)"
+                strokeWidth="1.35"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity=".2"
+                vectorEffect="non-scaling-stroke"
+              />)}
+              <line x1={chartLeft} x2={chartWidth - chartRight} y1={chartTop + plotHeight} y2={chartTop + plotHeight} className="af-axis-line" />
+              <line x1={chartLeft} x2={chartLeft} y1={chartTop} y2={chartTop + plotHeight} className="af-axis-line" />
+              <text x={chartLeft + plotWidth / 2} y={chartHeight - 8} textAnchor="middle" className="af-axis-title">Detector</text>
+              <text transform={`translate(15 ${chartTop + plotHeight / 2}) rotate(-90)`} textAnchor="middle" className="af-axis-title">Normalized intensity</text>
+            </svg>
+          </div>
+        </section>}
       </div>
+      {confirmAction && createPortal(<div className="cockpit-confirm-overlay" role="presentation" onMouseDown={() => setConfirmAction(null)}>
+        <div className="cockpit-confirm" role="dialog" aria-modal="true" aria-labelledby="af-confirm-title" onMouseDown={(event) => event.stopPropagation()}>
+          <h2 id="af-confirm-title">{confirmAction.type === "link" ? "Link this AF profile?" : confirmAction.type === "unlink" ? "Unlink this AF profile?" : "Delete this AF profile?"}</h2>
+          <p>{confirmAction.type === "link" ? `Use ${confirmAction.name} as this dataset's unstained cell control? The mapped unstained cell file will be ignored.` : confirmAction.type === "unlink" ? `${confirmAction.name} will no longer replace this dataset's mapped unstained cell control.` : `${confirmAction.name} will be permanently removed from the local profile library.`}</p>
+          <div>
+            <button className="button button-ghost" onClick={() => setConfirmAction(null)}>Cancel</button>
+            <button className={`button ${confirmAction.type === "delete" ? "button-danger" : "button-primary"}`} onClick={() => {
+              const action = confirmAction;
+              setConfirmAction(null);
+              if (action.type === "link") void linkProfile(action.name);
+              else if (action.type === "unlink") void unlinkProfile(action.name);
+              else void removeProfile(action.name);
+            }}>{confirmAction.type === "link" ? "Link to dataset" : confirmAction.type === "unlink" ? "Unlink from dataset" : "Delete"}</button>
+          </div>
+        </div>
+      </div>, document.body)}
     </>
   );
 }
@@ -3828,16 +3699,6 @@ function LegacyExperimentalWorkspace({
           comparison
             ? "Method comparison / experimental"
             : "Synthetic SCC simulator / experimental"
-        }
-        title={
-          comparison
-            ? "Compare methods without losing the baseline"
-            : "Benchmark synthetic controls carefully"
-        }
-        description={
-          comparison
-            ? "A reserved diagnostic surface for per-marker spread, residuals, NPS, and gate stability."
-            : "Paint trusted spectra onto real unstained events in R, with truth metadata and an explicit synthetic label."
         }
       />
       <section className="surface-card experimental-card">
@@ -3942,16 +3803,6 @@ function ExperimentalWorkspace({
           comparison
             ? "Method comparison / diagnostic"
             : "Synthetic SCC / benchmark"
-        }
-        title={
-          comparison
-            ? "Method comparison"
-            : "Synthetic SCC generation"
-        }
-        description={
-          comparison
-            ? "Run selected unmixing methods against one active matrix and sample, then save a compact comparison table."
-            : "Generate a real FCS benchmark from one selected matrix signature, with detector noise and truth metadata saved beside it."
         }
       />
       <section className="surface-card diagnostic-card">
@@ -4122,54 +3973,14 @@ function ConfigurableSettingsWorkspace({
     <>
       <WorkspaceHeader
         kicker="Settings"
-        title="Settings"
-        description="Workflow parameter values and appearance preferences are saved automatically when edited."
       />
-      <div className="settings-grid">
-        <section className="surface-card settings-card">
-          <SectionTitle
-            eyebrow="Defaults"
-            title="Workflow defaults"
-            note="These preferences are saved automatically in the local Spectreasy config."
-          />
-          <div className="settings-list">
-            <div>
-              <span>Controls</span>
-              <strong>
-                {control.method} · {control.cytometer}
-              </strong>
-            </div>
-            <div>
-              <span>Samples</span>
-              <strong>
-                {sample.method} · {sample.nThreads} thread(s)
-              </strong>
-            </div>
-            <div>
-              <span>AF extraction</span>
-              <strong>
-                {af.afNBands} bands · {af.afMaxCells.toLocaleString()} cells
-              </strong>
-            </div>
-            <div>
-              <span>Reports</span>
-              <strong>
-                {control.saveReport && sample.saveReport
-                  ? "Control + sample QC on"
-                  : "Selective reports"}
-              </strong>
-            </div>
-          </div>
-        </section>
-      </div>
       <AppearanceSettings
         value={settings.appearance}
         onChange={(patch) => onSettingsChange("appearance", patch)}
       />
       <details className="surface-card settings-section" open>
         <summary>
-          <CircleCheckBig size={15} /> Control-stage parameters{" "}
-          <span>unmix_controls · build_reference_matrix</span>
+          <CircleCheckBig size={15} /> Control-stage parameters
         </summary>
         <div className="settings-form-grid">
           <label>
@@ -4410,7 +4221,7 @@ function ConfigurableSettingsWorkspace({
             />
           </label>
           <label>
-            Weight quantile
+            Spectreasy weight quantile
             <input
               type="number"
               min="0"
@@ -4488,7 +4299,7 @@ function ConfigurableSettingsWorkspace({
               }
             />
             <span className="toggle-ui" />
-            <span>Save QC plots</span>
+            <span>Save standalone QC plots</span>
           </label>
           <label className="toggle-label">
             <input
@@ -4532,8 +4343,7 @@ function ConfigurableSettingsWorkspace({
       </details>
       <details className="surface-card settings-section">
         <summary>
-          <Beaker size={15} /> Sample-stage parameters{" "}
-          <span>unmix_samples</span>
+          <Beaker size={15} /> Sample-stage parameters
         </summary>
         <div className="settings-form-grid">
           <label>
@@ -4634,7 +4444,7 @@ function ConfigurableSettingsWorkspace({
             />
           </label>
           <label>
-            Weight quantile
+            Spectreasy weight quantile
             <input
               type="number"
               min="0"
@@ -4743,7 +4553,7 @@ function ConfigurableSettingsWorkspace({
               }
             />
             <span className="toggle-ui" />
-            <span>Save QC plots</span>
+            <span>Save standalone QC plots</span>
           </label>
         </div>
       </details>
@@ -4765,7 +4575,7 @@ function ConfigurableSettingsWorkspace({
             />
           </label>
           <label>
-            Maximum cells
+            Downsampled events
             <input
               type="number"
               min="1"
@@ -4878,7 +4688,6 @@ function ControlReferenceTuning({
           <span className="eyebrow">Reference builder</span>
           <h2>Gating & clustering parameters</h2>
         </div>
-        <span>build_reference_matrix</span>
       </div>
       <div className="settings-form-grid">
         <label>
@@ -5091,7 +4900,6 @@ function SampleOutputTuning({
           <span className="eyebrow">Sample outputs</span>
           <h2>Library & return type</h2>
         </div>
-        <span>unmix_samples</span>
       </div>
       <div className="settings-form-grid">
         <label>
@@ -5139,8 +4947,6 @@ function SettingsWorkspace({
     <>
       <WorkspaceHeader
         kicker="Settings, logs & advanced tools"
-        title="Settings and logs"
-        description="Project preferences, backend health, and every long-running action live here."
       />
       <div className="settings-grid">
         <section className="surface-card settings-card">
@@ -5283,24 +5089,17 @@ export function WorkflowWorkspace(
     onSectionChange: (section: SectionId) => void;
   },
 ) {
-  const { activeSection, project, job } = props;
+  const { activeSection, job } = props;
   return (
     <div className="workspace-content">
       <JobStrip job={job} />
       {activeSection === "controls" && <ControlsWorkspace {...props} />}
       {activeSection === "samples" && (
         <ConfigurableSamplesWorkspace
-          project={project}
           settings={props.settings.sample}
           onSettingsChange={(patch) => props.onSettingsChange("sample", patch)}
           onRun={props.onRun}
         />
-      )}
-      {activeSection === "control-reports" && (
-        <ReportsWorkspace onRun={props.onRun} kind="control" />
-      )}
-      {activeSection === "sample-reports" && (
-        <ReportsWorkspace onRun={props.onRun} kind="sample" />
       )}
       {activeSection === "matrix" && <MatrixWorkspace />}
       {activeSection === "panel" && (
@@ -5312,10 +5111,9 @@ export function WorkflowWorkspace(
       {activeSection === "af" && (
         <ConfigurableAfWorkspace
           settings={props.settings.af}
-          matrixFile={props.settings.sample.matrixFile}
-          sourceFiles={project.mapping.filter((row) => row.marker.trim().toLowerCase() === "autofluorescence" || /^af(?:$|_|\b)/i.test(row.fluorophore.trim())).map((row) => row.file)}
           onSettingsChange={(patch) => props.onSettingsChange("af", patch)}
           onRun={props.onRun}
+          onRefresh={props.onRefresh}
         />
       )}
       {activeSection === "settings" && (
@@ -5349,6 +5147,7 @@ void LegacyPanelWorkspace;
 void LegacyConfigurableAfWorkspace;
 void LegacyConfigurableSamplesWorkspace;
 void LegacyReportsWorkspace;
+void ReportsWorkspace;
 void LegacyExperimentalWorkspace;
 void ExperimentalWorkspace;
 void GatingPanel;

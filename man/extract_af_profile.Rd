@@ -36,7 +36,8 @@ events required to keep a k-means AF cluster.}
 \item{verbose}{Logical; print progress updates while extracting.}
 }
 \value{
-A `spectreasy_af_profile` object containing `$profile` and `$plot`.
+A `spectreasy_af_profile` object containing the normalized `$profile`,
+  `$plot`, raw unstained median, and scatter-matched SCC background data.
 }
 \description{
 Extract an AF profile from one unstained FCS file

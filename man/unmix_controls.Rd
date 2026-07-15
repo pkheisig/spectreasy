@@ -14,6 +14,7 @@ unmix_controls(
   unmixing_method = "Spectreasy",
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
+  af_profile = NULL,
   af_n_bands = 100,
   af_min_cluster_events = 20,
   af_min_cluster_proportion = 0.005,
@@ -69,6 +70,9 @@ marker-only OLS anchor using decoder-projected AF impact weights.}
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
 
 \item{seed}{Optional integer seed for deterministic subsampling and plotting.}
+
+\item{af_profile}{Optional saved AF profile name, `spectreasy_af_profile`, or
+AF-only matrix forwarded explicitly to [build_reference_matrix()].}
 
 \item{af_n_bands}{Number of AF basis signatures to extract from pooled
 unstained/AF control events. The default, `100`, builds a broad fixed

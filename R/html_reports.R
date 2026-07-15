@@ -387,9 +387,11 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
     reference_matrix <- .scc_reference_overlay_matrix(M)
     spectra <- if (nrow(reference_matrix)) plot_spectra(reference_matrix,pd=pd,output_file=NULL) else NULL
     af_plot <- if (show_af_page) {
-        (plots$af %||% plot_spectra(M[af_rows,,drop=FALSE],pd=pd,output_file=NULL)) +
-            ggplot2::labs(title = "Autofluorescence Band Spectra Overlay") +
-            ggplot2::theme(legend.position = "none")
+        af_matrix <- M[af_rows,,drop=FALSE]
+        .style_af_bank_plot(
+            plots$af %||% plot_spectra(af_matrix,pd=pd,output_file=NULL),
+            rownames(af_matrix)
+        ) + ggplot2::labs(title = "Autofluorescence Band Spectra Overlay")
     } else NULL
     similarity_plot <- if (!is.null(similarity)) plot_similarity_matrix(similarity,output_file=NULL) else NULL
     reference_file <- .report_plot_file(spectra,file.path(plot_dir,"reference_spectra.png"))

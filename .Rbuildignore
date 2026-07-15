@@ -13,6 +13,7 @@
 ^\.DS_Store$
 ^\.git$
 ^\.codex_tmp$
+^\.spectreasy-sandbox$
 ^\.vscode$
 ^\.idea$
 ^.*\.Rproj$

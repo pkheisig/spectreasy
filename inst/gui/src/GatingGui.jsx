@@ -1893,7 +1893,7 @@ function GatePlot({
   )
 }
 
-function App({ embedded = false, onRequestExit = null }) {
+function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
   const [status, setStatus] = useState('Loading controls')
   const [files, setFiles] = useState([])
   const [metadata, setMetadata] = useState({})
@@ -1916,6 +1916,7 @@ function App({ embedded = false, onRequestExit = null }) {
   const [histogramBins, setHistogramBins] = useState(DEFAULT_HISTOGRAM_BINS)
   const [histogramTransform, setHistogramTransform] = useState(DEFAULT_HISTOGRAM_TRANSFORM)
   const [darkMode, setDarkMode] = useState(() => {
+    if (embedded && (cockpitTheme === 'dark' || cockpitTheme === 'light')) return cockpitTheme === 'dark'
     const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
     if (stored === 'dark' || stored === 'light') return stored === 'dark'
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches || false
@@ -1937,9 +1938,14 @@ function App({ embedded = false, onRequestExit = null }) {
 
   // Sync dark mode class to document body
   useEffect(() => {
+    if (embedded) return
     document.body.classList.toggle('dark', darkMode)
     window.localStorage.setItem(THEME_STORAGE_KEY, darkMode ? 'dark' : 'light')
-  }, [darkMode])
+  }, [darkMode, embedded])
+
+  useEffect(() => {
+    if (embedded && (cockpitTheme === 'dark' || cockpitTheme === 'light')) setDarkMode(cockpitTheme === 'dark')
+  }, [cockpitTheme, embedded])
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -2005,7 +2011,7 @@ function App({ embedded = false, onRequestExit = null }) {
         const persisted = unboxGuiState(guiState?.config || {})
         if (typeof persisted.pointSize === 'number') setPointSize(persisted.pointSize)
         if (typeof persisted.maxPoints === 'number' && persisted.eventCountVersion === EVENT_COUNT_VERSION) setMaxPoints(normalizeEventCount(persisted.maxPoints))
-        if (typeof persisted.darkMode === 'boolean') setDarkMode(persisted.darkMode)
+        if (!embedded && typeof persisted.darkMode === 'boolean') setDarkMode(persisted.darkMode)
         if (typeof persisted.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(persisted.histogramBins))
         if (typeof persisted.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(persisted.histogramTransform))
         if (typeof persisted.sidebarWidth === 'number' && Number.isFinite(persisted.sidebarWidth)) {
@@ -2030,12 +2036,12 @@ function App({ embedded = false, onRequestExit = null }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           module: GUI_MODULE,
-          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, darkMode, axisSettings, axisSettingsVersion: AXIS_SETTINGS_VERSION, sidebarWidth, sidebarCollapsed }
+          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, ...(!embedded ? { darkMode } : {}), axisSettings, axisSettingsVersion: AXIS_SETTINGS_VERSION, sidebarWidth, sidebarCollapsed }
         })
       }).catch(() => {})
     }, 350)
     return () => clearTimeout(timer)
-  }, [pointSize, maxPoints, histogramBins, histogramTransform, darkMode, axisSettings, sidebarWidth, sidebarCollapsed, guiStateLoaded])
+  }, [pointSize, maxPoints, histogramBins, histogramTransform, darkMode, axisSettings, sidebarWidth, sidebarCollapsed, guiStateLoaded, embedded])
 
   // Synchronize frontend gates and settings to backend in-memory cache
   useEffect(() => {
@@ -2688,7 +2694,7 @@ function App({ embedded = false, onRequestExit = null }) {
 
   return (
     <main
-      className={`app-shell ${initialLoading || histogramAutogating ? 'is-initial-loading' : ''}`}
+      className={`app-shell ${darkMode ? 'dark' : 'light'} ${initialLoading || histogramAutogating ? 'is-initial-loading' : ''}`}
     >
       <aside
         className={`sidebar gating-sidebar ${sidebarCollapsed ? 'is-collapsed' : ''}`}
@@ -2802,13 +2808,13 @@ function App({ embedded = false, onRequestExit = null }) {
                     <strong>Settings</strong>
                     <span>Changes are saved automatically</span>
                   </div>
-                  <div className="gating-settings-appearance">
+                  {!embedded && <div className="gating-settings-appearance">
                     <span>Appearance</span>
                     <button type="button" onClick={() => setDarkMode(!darkMode)}>
                       {darkMode ? <Moon size={14} /> : <Sun size={14} />}
                       {darkMode ? 'Dark' : 'Light'}
                     </button>
-                  </div>
+                  </div>}
                   <label className="gating-settings-row">
                     <span>Point size</span>
                     <input

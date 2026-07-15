@@ -7,6 +7,7 @@ import {
   Settings,
   Sparkles,
   Sun,
+  TerminalSquare,
   X,
 } from "lucide-react";
 import {
@@ -19,11 +20,13 @@ import {
   persistControlMapping,
   persistGuiState,
   selectProjectFolder,
+  terminateRSession,
 } from "./api";
 import { emptyProject } from "./mockData";
 import { WorkflowRail } from "./components/WorkflowRail";
 import { GuiSelect } from "./components/GuiSelect";
 import { CockpitApplet } from "./components/CockpitApplet";
+import { TerminalPanel } from "./components/TerminalPanel";
 import { WorkflowWorkspace } from "./workspaces/WorkflowWorkspace";
 import { defaultWorkflowSettings } from "./types";
 import type {
@@ -47,12 +50,15 @@ type TopBarProps = {
   method: string;
   darkMode: boolean;
   settingsActive: boolean;
+  terminalActive: boolean;
+  backendConnected: boolean;
   onCytometerChange: (value: string) => void;
   onMethodChange: (value: string) => void;
   onToggleTheme: () => void;
   onRefresh: () => void;
   onSelectProject: () => void;
   onSettings: () => void;
+  onTerminal: () => void;
 };
 
 function TopBar({
@@ -61,12 +67,15 @@ function TopBar({
   method,
   darkMode,
   settingsActive,
+  terminalActive,
+  backendConnected,
   onCytometerChange,
   onMethodChange,
   onToggleTheme,
   onRefresh,
   onSelectProject,
   onSettings,
+  onTerminal,
 }: TopBarProps) {
   return (
     <header className="topbar">
@@ -83,10 +92,7 @@ function TopBar({
       </div>
       <button className="project-switcher" type="button" onClick={onSelectProject}>
         <FolderOpen size={16} />
-        <div>
-          <span className="eyebrow">Active project</span>
-          <strong>{project.projectName}</strong>
-        </div>
+        <strong>{project.projectName}</strong>
       </button>
       <div className="topbar-spacer" />
       <label className="context-select">
@@ -137,6 +143,16 @@ function TopBar({
         {darkMode ? <Sun size={17} /> : <Moon size={17} />}
       </button>
       <button
+        className={`topbar-icon terminal-trigger ${terminalActive ? "is-active" : ""}`}
+        onClick={onTerminal}
+        aria-label={terminalActive ? "Close terminal" : "Open terminal"}
+        aria-pressed={terminalActive}
+        title={backendConnected ? "Open terminal" : "Terminal · R backend offline"}
+      >
+        <TerminalSquare size={18} />
+        <span className={`terminal-status-dot ${backendConnected ? "is-connected" : ""}`} />
+      </button>
+      <button
         className={`topbar-icon ${settingsActive ? "is-active" : ""}`}
         onClick={onSettings}
         aria-label={settingsActive ? "Return to workflow" : "Settings"}
@@ -164,6 +180,7 @@ export default function CockpitApp() {
   const [job, setJob] = useState<Job>(emptyJob);
   const [panelPayload, setPanelPayload] = useState<PanelPayload | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [settings, setSettings] = useState<WorkflowSettings>(() => {
     const initial = defaultWorkflowSettings('');
     const savedTheme = window.localStorage.getItem("spectreasy-theme");
@@ -177,7 +194,7 @@ export default function CockpitApp() {
     useState<SectionId>("controls");
   const darkMode = settings.appearance.theme === "dark";
 
-  const refreshProject = useCallback(async (initial = false) => {
+  const refreshProject = useCallback(async (initial = false, announce = true) => {
     const snapshot = await loadProjectSnapshot();
     setProject(snapshot.project);
     setBackend(snapshot.backend);
@@ -235,7 +252,7 @@ export default function CockpitApp() {
         };
       });
     }
-    if (!initial)
+    if (!initial && announce)
       setToast(
         snapshot.backend.connected
           ? "Project rescanned from the R backend."
@@ -301,7 +318,7 @@ export default function CockpitApp() {
   useEffect(() => {
     const root = document.documentElement;
     const appearance = settings.appearance;
-    const scale = appearance.fontScale / 100;
+    const scale = appearance.fontScale * 1.4 / 100;
     root.dataset.theme = appearance.theme;
     root.dataset.density = appearance.density;
     root.dataset.shadows = appearance.shadows;
@@ -314,8 +331,12 @@ export default function CockpitApp() {
     root.style.setProperty("--corner-radius", `${appearance.cornerRadius}px`);
     const fonts = {
       avenir: '"Avenir Next", Avenir, sans-serif',
+      futura: 'Futura, "Century Gothic", "Avenir Next", sans-serif',
       atkinson: '"Atkinson Hyperlegible", "Arial Nova", sans-serif',
       "source-sans": '"Source Sans 3", "Source Sans Pro", sans-serif',
+      charter: 'Charter, "Bitstream Charter", Georgia, serif',
+      palatino: 'Palatino, "Palatino Linotype", "Book Antiqua", serif',
+      monaco: 'Monaco, Menlo, Consolas, monospace',
       system: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     };
     root.style.setProperty("--ui-font", fonts[appearance.fontFamily]);
@@ -423,6 +444,14 @@ export default function CockpitApp() {
     }
     if (section === "matrix") {
       openApplet("matrix-adjustment", section);
+      return;
+    }
+    if (section === "control-reports") {
+      openApplet("control-qc-report", section);
+      return;
+    }
+    if (section === "sample-reports") {
+      openApplet("sample-qc-report", section);
       return;
     }
     setActiveSection(section);
@@ -555,13 +584,14 @@ export default function CockpitApp() {
     ) {
       setJob(emptyJob);
       setToast("Report generation cancelled. No file was changed.");
-      return;
+      return false;
     }
     const response = await attemptWorkflowAction(action, payload);
     setToast(response.message);
     if (response.connected) {
       window.setTimeout(() => void refreshProject(), 500);
     }
+    return response.connected;
   }
 
   async function loadPanel() {
@@ -595,6 +625,20 @@ export default function CockpitApp() {
     const response = await createControlMapping();
     setToast(response.message);
     if (response.success) await refreshProject();
+  }
+
+  async function terminateBackend() {
+    const terminated = await terminateRSession();
+    if (terminated) {
+      setBackend({
+        ...initialBackendStatus,
+        message: "The local R session was terminated from the cockpit.",
+      });
+      setToast("R session terminated.");
+    } else {
+      setToast("The R session could not be terminated.");
+    }
+    return terminated;
   }
 
   function downloadArtifact(artifact: Artifact) {
@@ -642,6 +686,8 @@ export default function CockpitApp() {
         method={settings.control.method}
         darkMode={darkMode}
         settingsActive={activeSection === "settings"}
+        terminalActive={terminalOpen}
+        backendConnected={backend.connected}
         onCytometerChange={changeCytometer}
         onMethodChange={changeMethod}
         onToggleTheme={() =>
@@ -650,6 +696,7 @@ export default function CockpitApp() {
         onRefresh={() => void refreshProject()}
         onSelectProject={() => void chooseProject()}
         onSettings={toggleSettings}
+        onTerminal={() => setTerminalOpen((value) => !value)}
       />
       <div className="app-body">
         <main className="main-area">
@@ -700,8 +747,18 @@ export default function CockpitApp() {
         </div>
       )}
       {activeApplet && (
-        <CockpitApplet applet={activeApplet} onExit={exitApplet} />
+        <CockpitApplet applet={activeApplet} theme={settings.appearance.theme} onExit={exitApplet} />
       )}
+      {terminalOpen && <TerminalPanel
+        connected={backend.connected}
+        projectPath={project.projectPath}
+        widthPct={settings.appearance.terminalWidthPct}
+        heightPct={settings.appearance.terminalHeightPct}
+        onClose={() => setTerminalOpen(false)}
+        onRefresh={() => refreshProject(false, false)}
+        onTerminate={terminateBackend}
+        onSizeChange={(size) => updateSettings("appearance", size)}
+      />}
     </div>
   );
 }

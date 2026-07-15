@@ -455,6 +455,15 @@
     centers <- centers[ord, , drop = FALSE]
     cluster_sizes <- cluster_sizes[ord]
 
+    # Small k-means components are usually rare event-level artefacts rather
+    # than reusable AF phenotypes. The minimum was previously reported in the
+    # selection metadata but never applied, allowing tiny, nonphysiological
+    # spectra to enter the AF bank.
+    keep <- cluster_sizes >= min_cluster_size
+    if (!any(keep)) keep[1L] <- TRUE
+    centers <- centers[keep, , drop = FALSE]
+    cluster_sizes <- cluster_sizes[keep]
+
     list(
         centers = centers,
         cluster_sizes = cluster_sizes,
@@ -3795,6 +3804,9 @@
 #'   When `FALSE` (default), the function returns the matrix without writing QC files.
 #' @param control_df Optional control mapping as a data.frame or CSV path.
 #'   Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is optional.
+#' @param af_profile Optional saved AF profile name, `spectreasy_af_profile`, or
+#'   AF-only matrix. When supplied, its spectra replace extraction from mapped
+#'   unstained cell controls.
 #' @param af_n_bands Number of AF basis signatures to extract from pooled
 #'   unstained/AF control events. The default, `100`, builds a broad fixed
 #'   AF bank for Spectreasy unmixing.
@@ -3874,6 +3886,7 @@ build_reference_matrix <- function(
   output_folder = "gating_and_spectrum_plots",
   save_qc_plots = FALSE,
   control_df = NULL,
+  af_profile = NULL,
   af_n_bands = 100,
   af_max_cells = 50000,
   af_min_cluster_events = 20,
@@ -3988,17 +4001,57 @@ build_reference_matrix <- function(
         detector_names = metadata$detector_names
     )
 
-    af_profiles <- .collect_reference_af_profiles(
-        control_df = control_df,
-        fcs_files = file_info$fcs_files,
-        fcs_files_all = file_info$fcs_files_all,
-        detector_names = metadata$detector_names,
-        af_n_bands = af_n_bands,
-        af_max_cells = af_max_cells,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
-        config = config
-    )
+    af_profiles <- if (!is.null(af_profile)) {
+        profile_name <- if (is.character(af_profile) && length(af_profile) == 1L) af_profile else "saved AF profile"
+        profile_object <- if (is.character(af_profile) && length(af_profile) == 1L) {
+            load_af_profile(af_profile, show_plot = FALSE)
+        } else {
+            af_profile
+        }
+        profile_matrix <- .coerce_af_profile_matrix(profile_object, arg_name = "af_profile")
+        if (!setequal(colnames(profile_matrix), metadata$detector_names)) {
+            missing_detectors <- setdiff(metadata$detector_names, colnames(profile_matrix))
+            extra_detectors <- setdiff(colnames(profile_matrix), metadata$detector_names)
+            stop(
+                "Saved AF profile detectors do not match the SCC detector set.",
+                if (length(missing_detectors) > 0L) paste0(" Missing: ", paste(missing_detectors, collapse = ", "), ".") else "",
+                if (length(extra_detectors) > 0L) paste0(" Extra: ", paste(extra_detectors, collapse = ", "), ".") else "",
+                call. = FALSE
+            )
+        }
+        profile_matrix <- profile_matrix[, metadata$detector_names, drop = FALSE]
+        profile_background <- if (.is_af_profile_object(profile_object)) profile_object$scc_background else NULL
+        profile_raw_median <- if (.is_af_profile_object(profile_object)) profile_object$raw_median else NULL
+        saved_profiles <- list(
+            af_data_raw = profile_raw_median,
+            af_signatures_norm = profile_matrix,
+            af_bank_info = list(
+                source_count = 0L,
+                sources = data.frame(),
+                pooled_events = 0L,
+                requested_bands = nrow(profile_matrix),
+                derived_bands = nrow(profile_matrix),
+                mode = "saved_profile",
+                profile_name = profile_name
+            ),
+            scc_background = profile_background,
+            af_events = if (!is.null(profile_background$spectra)) profile_background$spectra else NULL
+        )
+        .spectreasy_console_field("AF bank", paste0(nrow(profile_matrix), " saved signature(s) from ", profile_name))
+        saved_profiles
+    } else {
+        .collect_reference_af_profiles(
+            control_df = control_df,
+            fcs_files = file_info$fcs_files,
+            fcs_files_all = file_info$fcs_files_all,
+            detector_names = metadata$detector_names,
+            af_n_bands = af_n_bands,
+            af_max_cells = af_max_cells,
+            af_min_cluster_events = af_min_cluster_events,
+            af_min_cluster_proportion = af_min_cluster_proportion,
+            config = config
+        )
+    }
 
     universal_negatives <- .collect_reference_universal_negatives(
         control_df = control_df,

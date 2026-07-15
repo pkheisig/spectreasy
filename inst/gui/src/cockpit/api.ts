@@ -1,11 +1,15 @@
 import axios from 'axios'
 import { emptyProject } from './mockData'
-import { resolveApiBase } from '../apiBase'
+import { resolveApiBase, resolveApiToken } from '../apiBase'
 import type { Artifact, BackendStatus, PanelPayload, ProjectState, Report, WorkflowSettings } from './types'
 
 const API_BASE = resolveApiBase()
 
-const client = axios.create({ baseURL: API_BASE, timeout: 900 })
+const client = axios.create({
+  baseURL: API_BASE,
+  timeout: 900,
+  headers: { 'X-Spectreasy-Token': resolveApiToken() },
+})
 
 function scalarValue(value: unknown, fallback = ''): string {
   if (Array.isArray(value)) return scalarValue(value[0], fallback)
@@ -52,6 +56,8 @@ function normalizeMappingRows(value: unknown): ProjectState['mapping'] {
       controlType: normalizedType,
       universalNegative: String(row['universal.negative'] ?? row.universalNegative ?? ''),
       isViability: ['true', 't', '1', 'yes'].includes(String(row['is.viability'] ?? row.isViability ?? '').toLowerCase()),
+      ignored: ['true', 't', '1', 'yes'].includes(String(row.ignored ?? '').toLowerCase()),
+      ignoredReason: String(row.ignored_reason ?? row.ignoredReason ?? ''),
     }
   }).filter((row) => row.file.length > 0)
 }
@@ -233,7 +239,10 @@ export async function importMatrixContent(filename: string, content: string): Pr
   }
 }
 
-export async function listAfProfiles(): Promise<Array<{ name: string; bands: number; detectors: number; created: string; path: string }>> {
+export type AfProfileSummary = { name: string; bands: number; detectors: number; created: string; path: string; active: boolean }
+export type AfProfileData = { name: string; detectors: string[]; spectra: Array<{ name: string; values: number[] }> }
+
+export async function listAfProfiles(): Promise<AfProfileSummary[]> {
   try {
     const response = await client.get('/af_profiles')
     return rowsFromBackend(response.data?.profiles).map((row) => ({
@@ -242,9 +251,37 @@ export async function listAfProfiles(): Promise<Array<{ name: string; bands: num
       detectors: Number(row.detectors ?? 0),
       created: String(row.created ?? ''),
       path: String(row.path ?? ''),
+      active: ['true', 't', '1', 'yes'].includes(String(row.active ?? '').toLowerCase()),
     })).filter((profile) => profile.name.length > 0)
   } catch {
     return []
+  }
+}
+
+export async function loadAfProfileData(name: string): Promise<AfProfileData | null> {
+  try {
+    const response = await client.get('/af_profiles/data', { params: { name }, timeout: 5000 })
+    if (response.data?.error) return null
+    const detectors = Array.isArray(response.data?.detectors) ? response.data.detectors.map(String) : []
+    const spectra = rowsFromBackend(response.data?.spectra).map((row) => ({
+      name: String(row.name ?? ''),
+      values: Array.isArray(row.values) ? row.values.map(Number) : [],
+    })).filter((row) => row.name && row.values.length === detectors.length)
+    return { name: String(response.data?.name ?? name), detectors, spectra }
+  } catch {
+    return null
+  }
+}
+
+export async function selectAfSourceFile(): Promise<{ success: boolean; cancelled: boolean; path?: string; message: string }> {
+  try {
+    const response = await client.post('/af_profiles/select-source', {})
+    const cancelled = scalarValue(response.data?.cancelled, 'false') === 'true'
+    if (cancelled) return { success: false, cancelled: true, message: 'File selection cancelled.' }
+    if (response.data?.error) return { success: false, cancelled: false, message: scalarValue(response.data.error) }
+    return { success: true, cancelled: false, path: scalarValue(response.data?.path), message: 'Source FCS selected.' }
+  } catch {
+    return { success: false, cancelled: false, message: 'Connect the local R backend to choose an FCS file.' }
   }
 }
 
@@ -263,6 +300,7 @@ export async function loadProjectReports(): Promise<Report[]> {
         format,
         run: normalized.split('/').find((part: string) => /^run[-_]/i.test(part)) ?? 'project',
         created: String(row.created ?? 'Present in active project'),
+        createdEpoch: Number.isFinite(Number(row.created_epoch)) ? Number(row.created_epoch) : undefined,
         status: String(row.status ?? 'current') as Report['status'],
         matrix: '—',
         path: normalized,
@@ -277,6 +315,40 @@ export function projectFileUrl(path: string): string {
   return `${API_BASE}/project/file?path=${encodeURIComponent(path)}`
 }
 
+function downloadBlob(filename: string, blob: Blob) {
+  const href = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = href
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(href)
+}
+
+export async function downloadProjectReport(path: string): Promise<boolean> {
+  try {
+    const response = await client.get('/project/file', { params: { path }, responseType: 'blob', timeout: 120000 })
+    downloadBlob(path.split('/').pop() || 'spectreasy_qc_report.html', response.data as Blob)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function exportProjectReportPdf(path: string): Promise<boolean> {
+  try {
+    const response = await client.post('/project/report/export-pdf', { path }, { timeout: 120000 })
+    if (response.data?.error || !response.data?.content_base64) return false
+    downloadBase64File(
+      scalarValue(response.data.filename, 'spectreasy_qc_report.pdf'),
+      scalarValue(response.data.content_base64),
+      scalarValue(response.data.content_type, 'application/pdf'),
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function deleteAfProfile(name: string): Promise<boolean> {
   try {
     const response = await client.delete('/af_profiles', { params: { name } })
@@ -289,6 +361,49 @@ export async function deleteAfProfile(name: string): Promise<boolean> {
 export async function applyAfProfile(matrixFilename: string, profileName: string, outputFilename = ''): Promise<boolean> {
   try {
     const response = await client.post('/af_profiles/apply', { matrix_filename: matrixFilename, profile_name: profileName, output_filename: outputFilename || matrixFilename })
+    return scalarValue(response.data?.success, 'false') === 'true'
+  } catch {
+    return false
+  }
+}
+
+export async function activateAfProfile(profileName: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const response = await client.post('/af_profiles/activate', { profile_name: profileName, use_as_unstained: true })
+    const success = scalarValue(response.data?.success, 'false') === 'true'
+    return { success, message: success ? `${profileName} is linked to this dataset.` : scalarValue(response.data?.error, `Could not link ${profileName}.`) }
+  } catch {
+    return { success: false, message: `Could not link ${profileName}.` }
+  }
+}
+
+export async function deactivateAfProfile(profileName: string): Promise<boolean> {
+  try {
+    const response = await client.post('/af_profiles/deactivate', { profile_name: profileName })
+    return scalarValue(response.data?.success, 'false') === 'true'
+  } catch {
+    return false
+  }
+}
+
+export async function runTerminalCommand(command: string, cwd = ''): Promise<{ success: boolean; output: string; cwd: string; refresh: boolean; shutdownRequested: boolean }> {
+  try {
+    const response = await client.post('/terminal/run', { command, cwd }, { timeout: 0 })
+    return {
+      success: scalarValue(response.data?.success, 'false') === 'true',
+      output: scalarValue(response.data?.output, ''),
+      cwd: scalarValue(response.data?.cwd, cwd),
+      refresh: scalarValue(response.data?.refresh, 'false') === 'true',
+      shutdownRequested: scalarValue(response.data?.shutdown_requested, 'false') === 'true',
+    }
+  } catch {
+    return { success: false, output: 'Local R backend is offline. Start it from a system terminal, then retry.', cwd, refresh: false, shutdownRequested: false }
+  }
+}
+
+export async function terminateRSession(): Promise<boolean> {
+  try {
+    const response = await client.post('/session/shutdown', {})
     return scalarValue(response.data?.success, 'false') === 'true'
   } catch {
     return false

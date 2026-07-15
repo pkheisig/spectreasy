@@ -304,9 +304,11 @@
 
     af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
     if (any(af_rows)) {
-        af_plot <- plot_spectra(M[af_rows, , drop = FALSE], pd = pd, output_file = NULL) +
-            ggplot2::labs(title = "Autofluorescence Band Spectra Overlay") +
-            ggplot2::theme(legend.position = "none")
+        af_matrix <- M[af_rows, , drop = FALSE]
+        af_plot <- .style_af_bank_plot(
+            plot_spectra(af_matrix, pd = pd, output_file = NULL),
+            rownames(af_matrix)
+        ) + ggplot2::labs(title = "Autofluorescence Band Spectra Overlay")
         .draw_report_ggplot_page(af_plot, height_ratio = 0.72)
     }
 
