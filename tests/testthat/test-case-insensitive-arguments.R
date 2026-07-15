@@ -44,6 +44,7 @@ test_that("report_format replaces output_format and defaults to HTML", {
 test_that("gating_mode replaces manual_gating and defaults to interactive", {
     expect_identical(formals(unmix_controls)$gating_mode, "interactive")
     expect_false("manual_gating" %in% names(formals(unmix_controls)))
+    expect_false("gating_file" %in% names(formals(unmix_controls)))
     expect_identical(
         spectreasy:::.match_arg_ci("ReUsE", c("interactive", "reuse", "automatic"), "gating_mode"),
         "reuse"

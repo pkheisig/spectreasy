@@ -12,8 +12,6 @@ build_reference_matrix(
   af_profile = NULL,
   af_n_bands = 100,
   af_max_cells = 50000,
-  af_min_cluster_events = 20,
-  af_min_cluster_proportion = 0.005,
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
@@ -55,20 +53,13 @@ Expected columns: `filename`, `fluorophore`, `channel`; `universal.negative` is 
 AF-only matrix. When supplied, its spectra replace extraction from mapped
 unstained cell controls.}
 
-\item{af_n_bands}{Number of AF basis signatures to extract from pooled
-unstained/AF control events. The default, `100`, builds a broad fixed
-AF bank for Spectreasy unmixing.}
+\item{af_n_bands}{Exact number of AF basis signatures to extract from pooled
+unstained/AF control events. The default is `100`. If the events cannot
+support that many distinct, non-empty bands, extraction stops with an error
+instead of returning a smaller bank.}
 
 \item{af_max_cells}{Maximum number of scatter-gated AF events used when
 deriving AF basis signatures.}
-
-\item{af_min_cluster_events}{Minimum number of AF events required to keep a
-k-means AF cluster. Used together with `af_min_cluster_proportion`; the
-larger threshold is applied.}
-
-\item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
-events required to keep a k-means AF cluster. The default `0.005` means
-0.5\% of the AF events used for extraction.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
 

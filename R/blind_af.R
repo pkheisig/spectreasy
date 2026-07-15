@@ -131,8 +131,6 @@
 
 .cluster_blind_af_shapes <- function(shape_mat,
                                      n_bands = 10L,
-                                     min_cluster_events = 20L,
-                                     min_cluster_proportion = 0.005,
                                      seed = NULL) {
     shape_mat <- .normalize_blind_af_shapes(shape_mat)
     if (nrow(shape_mat) == 0) {
@@ -162,18 +160,7 @@
         }
     )
     cluster_sizes <- as.numeric(table(factor(km$cluster, levels = seq_len(n_eff))))
-    min_cluster_size <- .reference_min_af_cluster_size(
-        n_events = nrow(shape_mat),
-        min_cluster_events = min_cluster_events,
-        min_cluster_proportion = min_cluster_proportion
-    )
-    keep_idx <- which(cluster_sizes >= min_cluster_size)
-    if (length(keep_idx) == 0) {
-        keep_idx <- which.max(cluster_sizes)
-    }
-
-    centers <- km$centers[keep_idx, , drop = FALSE]
-    cluster_sizes <- cluster_sizes[keep_idx]
+    centers <- km$centers
     centers <- centers[order(cluster_sizes, decreasing = TRUE), , drop = FALSE]
     colnames(centers) <- colnames(shape_mat)
     .normalize_blind_af_shapes(centers)
@@ -282,8 +269,6 @@
     centers <- .cluster_blind_af_shapes(
         shape_mat,
         n_bands = n_bands,
-        min_cluster_events = 20L,
-        min_cluster_proportion = 0.005,
         seed = seed
     )
     centers <- .prune_blind_af_centers(centers, marker_M)

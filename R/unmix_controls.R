@@ -341,13 +341,10 @@
 #' @param seed Optional integer seed for deterministic subsampling and plotting.
 #' @param af_profile Optional saved AF profile name, `spectreasy_af_profile`, or
 #'   AF-only matrix forwarded explicitly to [build_reference_matrix()].
-#' @param af_n_bands Number of AF basis signatures to extract from pooled
-#'   unstained/AF control events. The default, `100`, builds a broad fixed
-#'   AF bank for Spectreasy unmixing.
-#' @param af_min_cluster_events Minimum number of AF events required to keep a
-#'   k-means AF cluster. Used together with `af_min_cluster_proportion`.
-#' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
-#'   events required to keep a k-means AF cluster. Default is 0.005.
+#' @param af_n_bands Exact number of AF basis signatures to extract from pooled
+#'   unstained/AF control events. The default is `100`. If the events cannot
+#'   support that many distinct, non-empty bands, extraction stops with an error
+#'   instead of returning a smaller bank.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
@@ -362,15 +359,12 @@
 #' @param report_format Report format, either `"html"` (default) or `"pdf"`.
 #'   Only the selected format is written. Matching is case-insensitive.
 #' @param gating_mode Control-gating mode. `"interactive"` (default) opens the
-#'   gating GUI and preloads `gating_file` when it exists; `"reuse"` skips the
-#'   GUI and requires an existing gate CSV; `"automatic"` ignores any gate CSV
-#'   and uses automatic GMM gating. Matching is case-insensitive.
+#'   gating GUI and preloads `manual_gate_file` when it exists; `"reuse"` skips
+#'   the GUI and requires an existing gate CSV; `"automatic"` ignores any gate
+#'   CSV and uses automatic GMM gating. Matching is case-insensitive.
 #' @param manual_gate_file Gate CSV written by [gate_controls()]. Relative paths
-#'   are resolved from the current working directory. Kept for backwards
-#'   compatibility; prefer `gating_file` in new code.
-#' @param gating_file Gate CSV to preload in `"interactive"` mode or require in
-#'   `"reuse"` mode, for example `file.path(getwd(), "ssc_gate_config.csv")`.
-#'   Defaults to `manual_gate_file`.
+#'   are resolved from the current working directory. In `"interactive"` mode
+#'   the file is preloaded when it exists; `"reuse"` requires it to exist.
 #' @param scc_background_method Background subtraction method for Spectreasy/
 #'   AutoSpectral SCC cleanup (`"scatter_knn"` or `"none"`). The default enables
 #'   scatter-matched subtraction from the resolved external or internal negative
@@ -403,7 +397,7 @@
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #'
 #' @return List with `M`, `W`, `unmixed_list`, the effective `gating_mode`, the
-#'   reused or created `gating_file` (when applicable), and key output paths,
+#'   reused or created `manual_gate_file` (when applicable), and key output paths,
 #'   including `detector_noise_file` for the SCC-derived WLS noise floors.
 #' @export
 #' @examples
@@ -429,8 +423,6 @@ unmix_controls <- function(
     seed = NULL,
     af_profile = NULL,
     af_n_bands = 100,
-    af_min_cluster_events = 20,
-    af_min_cluster_proportion = 0.005,
     rwls_max_iter = 1L,
     n_threads = 1L,
     save_qc_png = FALSE,
@@ -438,7 +430,6 @@ unmix_controls <- function(
     report_format = "html",
     gating_mode = "interactive",
     manual_gate_file = "ssc_gate_config.csv",
-    gating_file = manual_gate_file,
     scc_background_method = c("scatter_knn", "none"),
     scc_background_k = 2L,
     spectral_variant_som_nodes = 16L,
@@ -455,7 +446,6 @@ unmix_controls <- function(
 ) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     manual_gate_file_missing <- missing(manual_gate_file)
-    gating_file_missing <- missing(gating_file)
     report_format <- .match_arg_ci(report_format, c("html", "pdf"), "report_format")
     gating_mode <- .match_arg_ci(
         gating_mode,
@@ -507,10 +497,7 @@ unmix_controls <- function(
 
     control_file <- .resolve_control_file_path(control_file)
     output_dir <- .normalize_unmix_controls_output_dir(output_dir)
-    if (!gating_file_missing) {
-        manual_gate_file <- gating_file
-    }
-    manual_gate_file_explicit <- !gating_file_missing || !manual_gate_file_missing
+    manual_gate_file_explicit <- !manual_gate_file_missing
 
     if (!dir.exists(output_dir)) {
         dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
@@ -563,12 +550,12 @@ unmix_controls <- function(
     if (identical(gating_mode, "interactive")) {
         if (!interactive()) {
             if (gate_file_exists) {
-                warning("gating_mode = 'interactive' requires an interactive R session; reusing the existing gating_file instead.", call. = FALSE)
+                warning("gating_mode = 'interactive' requires an interactive R session; reusing the existing manual_gate_file instead.", call. = FALSE)
                 gating_mode_used <- "reuse"
                 .spectreasy_console_field("Gate CSV", .spectreasy_console_path(manual_gate_file))
             } else if (manual_gate_file_explicit) {
                 stop(
-                    "gating_mode = 'interactive' requires an interactive R session and the supplied gating_file does not exist: ",
+                    "gating_mode = 'interactive' requires an interactive R session and the supplied manual_gate_file does not exist: ",
                     manual_gate_file,
                     call. = FALSE
                 )
@@ -588,7 +575,7 @@ unmix_controls <- function(
     } else if (identical(gating_mode, "reuse")) {
         if (is.null(manual_gate_file) || !file.exists(manual_gate_file)) {
             stop(
-                "gating_mode = 'reuse' requires an existing gating_file: ",
+                "gating_mode = 'reuse' requires an existing manual_gate_file: ",
                 if (is.null(manual_gate_file)) "<not supplied>" else manual_gate_file,
                 call. = FALSE
             )
@@ -623,8 +610,6 @@ unmix_controls <- function(
         cytometer = cytometer,
         af_profile = af_profile,
         af_n_bands = af_n_bands,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
         manual_gate_file = manual_gate_file,
         unmixing_method = unmixing_method,
         scc_background_method = scc_background_args$method,
@@ -780,8 +765,6 @@ unmix_controls <- function(
                     unmix_scatter_panel_size_mm = unmix_scatter_panel_size_mm,
                     seed = seed,
                     af_n_bands = af_n_bands,
-                    af_min_cluster_events = af_min_cluster_events,
-                    af_min_cluster_proportion = af_min_cluster_proportion,
                     rwls_max_iter = rwls_max_iter,
                     n_threads = n_threads,
                     save_qc_png = save_qc_png,
@@ -826,7 +809,7 @@ unmix_controls <- function(
         unmixing_scatter_file = if (isTRUE(save_qc_png)) output_paths$unmixing_scatter_png else NULL,
         qc_plot_dir = if (isTRUE(save_qc_png)) output_dir else NULL,
         gating_mode = gating_mode_used,
-        gating_file = manual_gate_file,
+        manual_gate_file = manual_gate_file,
         static_unmixing_matrix_method = static_info$static_unmixing_matrix_method,
         spectra_plot = p_spectra,
         af_spectra_plot = p_af_spectra,

@@ -260,12 +260,12 @@ test_that("unmix_controls errors early for an explicit missing gating file", {
             output_dir = output_dir,
             unmixing_method = "OLS",
             gating_mode = "REUSE",
-            gating_file = missing_gate,
+            manual_gate_file = missing_gate,
             save_report = FALSE,
             seed = 1,
             subsample_n = 120
         ),
-        regexp = "requires an existing gating_file"
+        regexp = "requires an existing manual_gate_file"
     )
 })
 
@@ -283,7 +283,7 @@ test_that("automatic gating ignores an explicitly missing gate file", {
             output_dir = output_dir,
             unmixing_method = "OLS",
             gating_mode = "AUTOMATIC",
-            gating_file = missing_gate,
+            manual_gate_file = missing_gate,
             save_report = FALSE,
             seed = 1,
             subsample_n = 120
@@ -323,15 +323,15 @@ test_that("interactive gating reuses an existing gate file when no GUI session i
             output_dir = output_dir,
             unmixing_method = "OLS",
             gating_mode = "interactive",
-            gating_file = gate_csv,
+            manual_gate_file = gate_csv,
             save_report = FALSE,
             seed = 1,
             subsample_n = 120
         ),
-        "reusing the existing gating_file"
+        "reusing the existing manual_gate_file"
     )
     expect_identical(result$gating_mode, "reuse")
-    expect_identical(result$gating_file, normalizePath(gate_csv, mustWork = TRUE))
+    expect_identical(result$manual_gate_file, normalizePath(gate_csv, mustWork = TRUE))
 })
 
 test_that("common missing path errors are user friendly", {

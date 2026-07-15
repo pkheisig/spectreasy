@@ -600,8 +600,6 @@ export default function CockpitApp() {
             gating_mode: "reuse",
             af_n_bands: control.afNBands,
             af_max_cells: control.afMaxCells,
-            af_min_cluster_events: control.afMinClusterEvents,
-            af_min_cluster_proportion: control.afMinClusterProportion,
             default_sample_type: control.defaultSampleType,
             histogram_pct_beads: control.histogramPctBeads,
             histogram_direction_beads: control.histogramDirectionBeads,
@@ -673,8 +671,6 @@ export default function CockpitApp() {
                 save_overwrite: af.saveOverwrite,
                 af_n_bands: af.afNBands,
                 af_max_cells: af.afMaxCells,
-                af_min_cluster_events: af.afMinClusterEvents,
-                af_min_cluster_proportion: af.afMinClusterProportion,
                 seed: af.seed,
               }
             : {

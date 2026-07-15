@@ -98,13 +98,10 @@ af_profile_dir <- function(create = TRUE) {
 #' Extract an AF profile from one unstained FCS file
 #'
 #' @param fcs_file Path to an unstained/autofluorescence `.fcs` file.
-#' @param af_n_bands Number of AF bands to extract. The default, `100`, builds
-#'   a broad fixed AF bank for Spectreasy unmixing.
+#' @param af_n_bands Exact number of AF bands to extract. The default is `100`.
+#'   If the events cannot support that many distinct, non-empty bands,
+#'   extraction stops with an error instead of returning a smaller bank.
 #' @param af_max_cells Maximum number of scatter-gated AF events used.
-#' @param af_min_cluster_events Minimum number of AF events required to keep a
-#'   k-means AF cluster.
-#' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
-#'   events required to keep a k-means AF cluster.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param show_plot Logical; print the AF spectra plot after extraction.
 #' @param verbose Logical; print progress updates while extracting.
@@ -115,8 +112,6 @@ af_profile_dir <- function(create = TRUE) {
 extract_af_profile <- function(fcs_file,
                                af_n_bands = 100,
                                af_max_cells = 50000,
-                               af_min_cluster_events = 20,
-                               af_min_cluster_proportion = 0.005,
                                seed = NULL,
                                show_plot = TRUE,
                                verbose = TRUE) {
@@ -134,9 +129,7 @@ extract_af_profile <- function(fcs_file,
     }
     af_args <- .validate_build_reference_af_args(
         af_n_bands = af_n_bands,
-        af_max_cells = af_max_cells,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion
+        af_max_cells = af_max_cells
     )
     .with_optional_seed(seed)
 
@@ -175,9 +168,7 @@ extract_af_profile <- function(fcs_file,
             detector_names = metadata$detector_names,
             n_bands = af_args$af_n_bands,
             max_cells = af_args$af_max_cells,
-            af_events = gated$events,
-            min_cluster_events = af_args$af_min_cluster_events,
-            min_cluster_proportion = af_args$af_min_cluster_proportion
+            af_events = gated$events
         ),
         warning = function(w) {
             if (grepl("Quick-TRANSfer stage steps exceeded maximum", conditionMessage(w), fixed = TRUE)) {
@@ -210,8 +201,6 @@ extract_af_profile <- function(fcs_file,
             fcs_file = normalizePath(fcs_file, mustWork = FALSE),
             af_n_bands = af_args$af_n_bands,
             af_max_cells = af_args$af_max_cells,
-            af_min_cluster_events = af_args$af_min_cluster_events,
-            af_min_cluster_proportion = af_args$af_min_cluster_proportion,
             selection = af_profiles$selection
         ),
         raw_median = af_profiles$raw_median,

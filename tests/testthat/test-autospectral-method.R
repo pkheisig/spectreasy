@@ -276,8 +276,6 @@ test_that("AF refinement helper returns fixed-size refined k-means bank", {
         af_events = af_events,
         af_n_bands = 2,
         af_max_cells = 1000,
-        af_min_cluster_events = 20,
-        af_min_cluster_proportion = 0.005,
         n_threads = 2L,
         seed = 103,
         verbose = FALSE

@@ -36,11 +36,8 @@
         unmix_scatter_panel_size_mm = 30,
         seed = NULL,
         af_n_bands = 100,
-        af_min_cluster_events = 20,
-        af_min_cluster_proportion = 0.005,
         gating_mode = "interactive",
         manual_gate_file = "ssc_gate_config.csv",
-        gating_file = manual_gate_file,
         rwls_max_iter = 1L,
         n_threads = 1L,
         save_qc_png = FALSE,
@@ -145,7 +142,7 @@
         unmixing_method = "Spectreasy",
         af_n_bands = 100,
         gating_mode = "interactive",
-        gating_file = file.path(getwd(), "ssc_gate_config.csv"),
+        manual_gate_file = file.path(getwd(), "ssc_gate_config.csv"),
         spectreasy_weight_quantile = 0.9
     )
 
@@ -290,8 +287,6 @@
         fcs_file = "scc/Unstained.fcs",
         af_n_bands = 100,
         af_max_cells = 50000,
-        af_min_cluster_events = 20,
-        af_min_cluster_proportion = 0.005,
         seed = NULL,
         show_plot = TRUE,
         verbose = TRUE
@@ -340,8 +335,6 @@
         control_df = NULL,
         af_n_bands = 100,
         af_max_cells = 50000,
-        af_min_cluster_events = 20,
-        af_min_cluster_proportion = 0.005,
         seed = NULL,
         default_sample_type = "beads",
         cytometer = "auto",

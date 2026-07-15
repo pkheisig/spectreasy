@@ -16,8 +16,6 @@ unmix_controls(
   seed = NULL,
   af_profile = NULL,
   af_n_bands = 100,
-  af_min_cluster_events = 20,
-  af_min_cluster_proportion = 0.005,
   rwls_max_iter = 1L,
   n_threads = 1L,
   save_qc_png = FALSE,
@@ -74,15 +72,10 @@ marker-only OLS anchor using decoder-projected AF impact weights.}
 \item{af_profile}{Optional saved AF profile name, `spectreasy_af_profile`, or
 AF-only matrix forwarded explicitly to [build_reference_matrix()].}
 
-\item{af_n_bands}{Number of AF basis signatures to extract from pooled
-unstained/AF control events. The default, `100`, builds a broad fixed
-AF bank for Spectreasy unmixing.}
-
-\item{af_min_cluster_events}{Minimum number of AF events required to keep a
-k-means AF cluster. Used together with `af_min_cluster_proportion`.}
-
-\item{af_min_cluster_proportion}{Minimum fraction of modeled scatter-gated AF
-events required to keep a k-means AF cluster. Default is 0.005.}
+\item{af_n_bands}{Exact number of AF basis signatures to extract from pooled
+unstained/AF control events. The default is `100`. If the events cannot
+support that many distinct, non-empty bands, extraction stops with an error
+instead of returning a smaller bank.}
 
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
 iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the

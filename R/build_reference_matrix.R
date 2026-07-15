@@ -93,13 +93,11 @@
 }
 
 # Validates the Autofluorescence (AF) modeling parameters.
-# Ensures that the number of AF bands, maximum events per file, and bands per file parameters
-# are positive integers, throwing an error if they are invalid.
+# Ensures that the number of AF bands and maximum events per file are positive
+# integers, throwing an error if they are invalid.
 # Returns a validated list containing these parameters.
 .validate_build_reference_af_args <- function(af_n_bands,
-                                              af_max_cells,
-                                              af_min_cluster_events = 20,
-                                              af_min_cluster_proportion = 0.005) {
+                                              af_max_cells) {
     af_n_bands <- .normalize_positive_integer(af_n_bands, "af_n_bands")
 
     af_max_cells <- .normalize_positive_integer(af_max_cells, "af_max_cells")
@@ -107,17 +105,9 @@
         stop("af_max_cells must be an integer >= 100.")
     }
 
-    af_min_cluster_events <- .normalize_positive_integer(af_min_cluster_events, "af_min_cluster_events")
-
-    af_min_cluster_proportion <- .normalize_numeric_scalar(
-        af_min_cluster_proportion, "af_min_cluster_proportion", lower = 0, upper = 1
-    )
-
     list(
         af_n_bands = af_n_bands,
-        af_max_cells = af_max_cells,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion
+        af_max_cells = af_max_cells
     )
 }
 
@@ -126,15 +116,6 @@
         stop("refine must be TRUE or FALSE.", call. = FALSE)
     }
     isTRUE(refine)
-}
-
-.reference_min_af_cluster_size <- function(n_events,
-                                           min_cluster_events = 20,
-                                           min_cluster_proportion = 0.005) {
-    max(
-        as.integer(min_cluster_events),
-        as.integer(ceiling(as.numeric(min_cluster_proportion) * n_events))
-    )
 }
 
 .reference_normalize_af_centers <- function(centers) {
@@ -228,8 +209,6 @@
                                       af_events,
                                       af_n_bands,
                                       af_max_cells,
-                                      af_min_cluster_events,
-                                      af_min_cluster_proportion,
                                       n_threads = 1L,
                                       seed = NULL,
                                       problem_quantile = 0.99,
@@ -370,9 +349,7 @@
 
     km <- .reference_kmeans_af_centers(
         af_shape = candidates,
-        n_centers = af_n_bands,
-        min_cluster_events = 1L,
-        min_cluster_proportion = 0
+        n_centers = af_n_bands
     )
     refined <- .reference_normalize_af_centers(km$centers)
     rownames(refined) <- c("AF", if (nrow(refined) > 1L) paste0("AF_", seq.int(2L, nrow(refined))) else NULL)
@@ -387,7 +364,6 @@
             raw_center_count = nrow(km$centers),
             final_bands = nrow(refined),
             cluster_sizes = km$cluster_sizes,
-            min_cluster_size = km$min_cluster_size,
             base_bands = nrow(base_af),
             candidate_bands = nrow(candidates),
             modulated_candidates = length(modulated),
@@ -415,18 +391,24 @@
 
 .reference_kmeans_af_centers <- function(af_shape,
                                          n_centers,
-                                         min_cluster_events = 20,
-                                         min_cluster_proportion = 0.005,
                                          nstart = 10,
                                          iter.max = 100) {
     af_shape <- as.matrix(af_shape)
     if (nrow(af_shape) == 0) {
         return(list(centers = af_shape, cluster_sizes = integer(), requested_centers = as.integer(n_centers)))
     }
-    unique_count <- nrow(unique(as.data.frame(round(af_shape, digits = 8))))
-    n_eff <- min(as.integer(n_centers), nrow(af_shape), unique_count)
+    n_eff <- suppressWarnings(as.integer(n_centers[1]))
     if (!is.finite(n_eff) || is.na(n_eff) || n_eff < 1L) {
-        n_eff <- 1L
+        stop("n_centers must be an integer >= 1.", call. = FALSE)
+    }
+    unique_count <- nrow(unique(as.data.frame(round(af_shape, digits = 8))))
+    if (nrow(af_shape) < n_eff || unique_count < n_eff) {
+        stop(
+            "Cannot derive exactly ", n_eff, " AF bands from ", nrow(af_shape),
+            " event(s) containing ", unique_count, " distinct spectral shape(s). ",
+            "Reduce af_n_bands or provide more diverse AF events.",
+            call. = FALSE
+        )
     }
 
     if (n_eff == 1L) {
@@ -446,28 +428,21 @@
         cluster_sizes <- tabulate(km$cluster, nbins = nrow(centers))
     }
 
-    min_cluster_size <- .reference_min_af_cluster_size(
-        n_events = nrow(af_shape),
-        min_cluster_events = min_cluster_events,
-        min_cluster_proportion = min_cluster_proportion
-    )
+    if (nrow(centers) != n_eff || length(cluster_sizes) != n_eff || any(cluster_sizes < 1L)) {
+        stop(
+            "AF clustering failed to return exactly ", n_eff,
+            " non-empty bands. Try a different seed or provide more diverse AF events.",
+            call. = FALSE
+        )
+    }
+
     ord <- order(cluster_sizes, decreasing = TRUE)
     centers <- centers[ord, , drop = FALSE]
     cluster_sizes <- cluster_sizes[ord]
 
-    # Small k-means components are usually rare event-level artefacts rather
-    # than reusable AF phenotypes. The minimum was previously reported in the
-    # selection metadata but never applied, allowing tiny, nonphysiological
-    # spectra to enter the AF bank.
-    keep <- cluster_sizes >= min_cluster_size
-    if (!any(keep)) keep[1L] <- TRUE
-    centers <- centers[keep, , drop = FALSE]
-    cluster_sizes <- cluster_sizes[keep]
-
     list(
         centers = centers,
         cluster_sizes = cluster_sizes,
-        min_cluster_size = min_cluster_size,
         requested_centers = as.integer(n_centers),
         effective_centers = as.integer(n_eff),
         center_method = if (n_eff == 1L) "median" else "kmeans"
@@ -1143,9 +1118,7 @@
                                            detector_names,
                                            n_bands = 10,
                                            max_cells = 50000,
-                                           af_events = NULL,
-                                           min_cluster_events = 20,
-                                           min_cluster_proportion = 0.005) {
+                                           af_events = NULL) {
     if (is.null(af_events)) {
         if (is.null(ff_af)) {
             stop("Either ff_af or af_events must be provided.")
@@ -1165,10 +1138,22 @@
 
     raw_median <- apply(af_events, 2, stats::median, na.rm = TRUE)
 
+    n_bands <- suppressWarnings(as.integer(n_bands[1]))
+    if (!is.finite(n_bands) || is.na(n_bands) || n_bands < 1) {
+        stop("n_bands must be an integer >= 1.")
+    }
+
     af_pos <- pmax(af_events, 0)
     row_scale <- apply(af_pos, 1, max, na.rm = TRUE)
     keep <- is.finite(row_scale) & row_scale > 0
     if (!any(keep)) {
+        if (n_bands != 1L) {
+            stop(
+                "Cannot derive exactly ", n_bands,
+                " AF bands because the AF events contain no positive spectral shapes.",
+                call. = FALSE
+            )
+        }
         sig <- pmax(raw_median, 0)
         sig_max <- max(sig, na.rm = TRUE)
         if (is.finite(sig_max) && sig_max > 0) {
@@ -1184,15 +1169,9 @@
     }
 
     af_shape <- af_pos[keep, , drop = FALSE] / row_scale[keep]
-    n_bands <- suppressWarnings(as.integer(n_bands[1]))
-    if (!is.finite(n_bands) || is.na(n_bands) || n_bands < 1) {
-        stop("n_bands must be an integer >= 1.")
-    }
     km <- .reference_kmeans_af_centers(
         af_shape = af_shape,
-        n_centers = n_bands,
-        min_cluster_events = min_cluster_events,
-        min_cluster_proportion = min_cluster_proportion
+        n_centers = n_bands
     )
     centers <- .reference_normalize_af_centers(km$centers)
     if (ncol(centers) != length(detector_names) && nrow(centers) == length(detector_names)) {
@@ -1208,14 +1187,20 @@
             call. = FALSE
         )
     }
+    if (nrow(centers) != n_bands) {
+        stop(
+            "AF extraction requested ", n_bands, " bands but clustering returned ",
+            nrow(centers), ". No reduced AF bank was accepted.",
+            call. = FALSE
+        )
+    }
     selection <- list(
         method = if (identical(km$center_method, "median")) "median_fixed" else "kmeans_fixed",
         n_bands = nrow(centers),
         requested_bands = n_bands,
         raw_center_count = nrow(km$centers),
         final_bands = nrow(centers),
-        cluster_sizes = km$cluster_sizes,
-        min_cluster_size = km$min_cluster_size
+        cluster_sizes = km$cluster_sizes
     )
     rownames(centers) <- c("AF", if (nrow(centers) > 1) paste0("AF_", seq.int(2, nrow(centers))) else NULL)
     colnames(centers) <- detector_names
@@ -1405,8 +1390,6 @@
                                            detector_names,
                                            af_n_bands,
                                            af_max_cells,
-                                           af_min_cluster_events,
-                                           af_min_cluster_proportion,
                                            fcs_files_all = fcs_files,
                                            config = NULL) {
     af_data_raw <- NULL
@@ -1489,9 +1472,7 @@
             detector_names = detector_names,
             n_bands = requested_bands,
             max_cells = af_max_cells,
-            af_events = af_events,
-            min_cluster_events = af_min_cluster_events,
-            min_cluster_proportion = af_min_cluster_proportion
+            af_events = af_events
         )
         af_data_raw <- af_profiles$raw_median
         af_signatures_norm <- af_profiles$signatures
@@ -1504,8 +1485,6 @@
             pooled_events = nrow(af_events),
             requested_bands = requested_bands,
             derived_bands = if (!is.null(af_signatures_norm)) nrow(af_signatures_norm) else 0L,
-            af_min_cluster_events = af_min_cluster_events,
-            af_min_cluster_proportion = af_min_cluster_proportion,
             selection = af_profiles$selection,
             mode = if (n_af_sources > 1) "pooled_af_sources" else "single_af"
         )
@@ -3807,17 +3786,12 @@
 #' @param af_profile Optional saved AF profile name, `spectreasy_af_profile`, or
 #'   AF-only matrix. When supplied, its spectra replace extraction from mapped
 #'   unstained cell controls.
-#' @param af_n_bands Number of AF basis signatures to extract from pooled
-#'   unstained/AF control events. The default, `100`, builds a broad fixed
-#'   AF bank for Spectreasy unmixing.
+#' @param af_n_bands Exact number of AF basis signatures to extract from pooled
+#'   unstained/AF control events. The default is `100`. If the events cannot
+#'   support that many distinct, non-empty bands, extraction stops with an error
+#'   instead of returning a smaller bank.
 #' @param af_max_cells Maximum number of scatter-gated AF events used when
 #'   deriving AF basis signatures.
-#' @param af_min_cluster_events Minimum number of AF events required to keep a
-#'   k-means AF cluster. Used together with `af_min_cluster_proportion`; the
-#'   larger threshold is applied.
-#' @param af_min_cluster_proportion Minimum fraction of modeled scatter-gated AF
-#'   events required to keep a k-means AF cluster. The default `0.005` means
-#'   0.5\% of the AF events used for extraction.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param n_threads Positive integer; number of threads used for event-wise
 #'   AutoSpectral AF assignment during AF-bank refinement.
@@ -3889,8 +3863,6 @@ build_reference_matrix <- function(
   af_profile = NULL,
   af_n_bands = 100,
   af_max_cells = 50000,
-  af_min_cluster_events = 20,
-  af_min_cluster_proportion = 0.005,
   seed = NULL,
   default_sample_type = "beads",
   cytometer = "auto",
@@ -3933,14 +3905,10 @@ build_reference_matrix <- function(
     }
     af_args <- .validate_build_reference_af_args(
         af_n_bands = af_n_bands,
-        af_max_cells = af_max_cells,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion
+        af_max_cells = af_max_cells
     )
     af_n_bands <- af_args$af_n_bands
     af_max_cells <- af_args$af_max_cells
-    af_min_cluster_events <- af_args$af_min_cluster_events
-    af_min_cluster_proportion <- af_args$af_min_cluster_proportion
     scc_background_args <- .validate_scc_background_args(
         scc_background_method = scc_background_method,
         scc_background_k = scc_background_k,
@@ -3982,8 +3950,6 @@ build_reference_matrix <- function(
         save_qc_plots = save_qc_plots,
         out_path = out_path,
         cytometer = cytometer,
-        af_min_cluster_events = af_min_cluster_events,
-        af_min_cluster_proportion = af_min_cluster_proportion,
         spectral_scc_pipeline = use_autospectral,
         scc_background_enabled = scc_background_args$enabled,
         scc_background_method = scc_background_args$method,
@@ -4047,8 +4013,6 @@ build_reference_matrix <- function(
             detector_names = metadata$detector_names,
             af_n_bands = af_n_bands,
             af_max_cells = af_max_cells,
-            af_min_cluster_events = af_min_cluster_events,
-            af_min_cluster_proportion = af_min_cluster_proportion,
             config = config
         )
     }
@@ -4117,8 +4081,6 @@ build_reference_matrix <- function(
             af_events = af_profiles$af_events,
             af_n_bands = af_n_bands,
             af_max_cells = af_max_cells,
-            af_min_cluster_events = af_min_cluster_events,
-            af_min_cluster_proportion = af_min_cluster_proportion,
             n_threads = n_threads,
             seed = seed,
             verbose = TRUE

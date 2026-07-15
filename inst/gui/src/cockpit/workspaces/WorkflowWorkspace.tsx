@@ -919,19 +919,6 @@ function BuildReferencePanel({
               }
             />
           </label>
-          <label>
-            AF min events
-            <input
-              type="number"
-              min="1"
-              value={settings.afMinClusterEvents}
-              onChange={(event) =>
-                onSettingsChange({
-                  afMinClusterEvents: Number(event.target.value),
-                })
-              }
-            />
-          </label>
           {useSpectralPipeline && <label>
             Background
             <GuiSelect
@@ -3179,34 +3166,6 @@ function LegacyConfigurableAfWorkspace({
               />
             </label>
             <label>
-              Minimum cluster events
-              <input
-                type="number"
-                min="1"
-                value={settings.afMinClusterEvents}
-                onChange={(event) =>
-                  onSettingsChange({
-                    afMinClusterEvents: Number(event.target.value),
-                  })
-                }
-              />
-            </label>
-            <label>
-              Minimum cluster proportion
-              <input
-                type="number"
-                min="0"
-                max="1"
-                step="0.001"
-                value={settings.afMinClusterProportion}
-                onChange={(event) =>
-                  onSettingsChange({
-                    afMinClusterProportion: Number(event.target.value),
-                  })
-                }
-              />
-            </label>
-            <label>
               Seed
               <input
                 type="number"
@@ -3436,34 +3395,6 @@ function ConfigurableAfWorkspace({
                 value={settings.afMaxCells}
                 onChange={(event) =>
                   onSettingsChange({ afMaxCells: Number(event.target.value) })
-                }
-              />
-            </label>
-            <label>
-              Minimum cluster events
-              <input
-                type="number"
-                min="1"
-                value={settings.afMinClusterEvents}
-                onChange={(event) =>
-                  onSettingsChange({
-                    afMinClusterEvents: Number(event.target.value),
-                  })
-                }
-              />
-            </label>
-            <label>
-              Minimum cluster proportion
-              <input
-                type="number"
-                min="0"
-                max="1"
-                step="0.001"
-                value={settings.afMinClusterProportion}
-                onChange={(event) =>
-                  onSettingsChange({
-                    afMinClusterProportion: Number(event.target.value),
-                  })
                 }
               />
             </label>
@@ -3970,34 +3901,6 @@ function ConfigurableSettingsWorkspace({
               onChange={(event) =>
                 onSettingsChange("control", {
                   afNBands: Number(event.target.value),
-                })
-              }
-            />
-          </label>
-          <label>
-            AF max cluster events
-            <input
-              type="number"
-              min="1"
-              value={control.afMinClusterEvents}
-              onChange={(event) =>
-                onSettingsChange("control", {
-                  afMinClusterEvents: Number(event.target.value),
-                })
-              }
-            />
-          </label>
-          <label>
-            AF min proportion
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.001"
-              value={control.afMinClusterProportion}
-              onChange={(event) =>
-                onSettingsChange("control", {
-                  afMinClusterProportion: Number(event.target.value),
                 })
               }
             />
@@ -4512,34 +4415,6 @@ function ConfigurableSettingsWorkspace({
               onChange={(event) =>
                 onSettingsChange("af", {
                   afMaxCells: Number(event.target.value),
-                })
-              }
-            />
-          </label>
-          <label>
-            Minimum cluster events
-            <input
-              type="number"
-              min="1"
-              value={af.afMinClusterEvents}
-              onChange={(event) =>
-                onSettingsChange("af", {
-                  afMinClusterEvents: Number(event.target.value),
-                })
-              }
-            />
-          </label>
-          <label>
-            Minimum cluster proportion
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.001"
-              value={af.afMinClusterProportion}
-              onChange={(event) =>
-                onSettingsChange("af", {
-                  afMinClusterProportion: Number(event.target.value),
                 })
               }
             />

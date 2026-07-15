@@ -1086,9 +1086,16 @@ test_that("fixed AF bank size is the default for AF extraction APIs", {
     expect_null(formals(spectreasy::unmix_controls)$af_profile)
     expect_equal(formals(spectreasy::extract_af_profile)$af_n_bands, 100)
     expect_false("af_n_bands" %in% names(formals(spectreasy::unmix_samples)))
+    for (fun in list(
+        spectreasy::build_reference_matrix,
+        spectreasy::unmix_controls,
+        spectreasy::extract_af_profile
+    )) {
+        expect_false(any(c("af_min_cluster_events", "af_min_cluster_proportion") %in% names(formals(fun))))
+    }
 })
 
-test_that("fixed AF k-means requests precise band count when possible", {
+test_that("fixed AF k-means returns the exact requested band count", {
     detector_names <- c("B1-A", "YG1-A", "V1-A")
     af_events <- rbind(
         matrix(rep(c(100, 15, 5), 4978), ncol = 3, byrow = TRUE),
@@ -1096,29 +1103,49 @@ test_that("fixed AF k-means requests precise band count when possible", {
     )
     colnames(af_events) <- detector_names
 
-    old_like_profiles <- spectreasy:::.extract_reference_af_profiles(
+    profiles <- spectreasy:::.extract_reference_af_profiles(
         detector_names = detector_names,
         n_bands = 2,
         max_cells = 5000,
-        af_events = af_events,
-        min_cluster_events = 20,
-        min_cluster_proportion = 0
-    )
-    proportion_profiles <- spectreasy:::.extract_reference_af_profiles(
-        detector_names = detector_names,
-        n_bands = 2,
-        max_cells = 5000,
-        af_events = af_events,
-        min_cluster_events = 20,
-        min_cluster_proportion = 0.005
+        af_events = af_events
     )
 
-    expect_equal(nrow(old_like_profiles$signatures), 2)
-    expect_equal(nrow(proportion_profiles$signatures), 1)
-    expect_equal(proportion_profiles$selection$method, "kmeans_fixed")
-    expect_equal(proportion_profiles$selection$requested_bands, 2)
-    expect_equal(proportion_profiles$selection$final_bands, 1)
-    expect_equal(proportion_profiles$selection$cluster_sizes, 4978L)
+    expect_equal(nrow(profiles$signatures), 2)
+    expect_equal(profiles$selection$method, "kmeans_fixed")
+    expect_equal(profiles$selection$requested_bands, 2)
+    expect_equal(profiles$selection$final_bands, 2)
+    expect_equal(profiles$selection$cluster_sizes, c(4978L, 22L))
+})
+
+test_that("fixed AF k-means fails instead of returning fewer bands", {
+    shape <- matrix(rep(c(1, 0.2, 0.1), 100), ncol = 3, byrow = TRUE)
+    colnames(shape) <- c("B1-A", "YG1-A", "V1-A")
+
+    expect_error(
+        spectreasy:::.reference_kmeans_af_centers(shape, n_centers = 2),
+        "Cannot derive exactly 2 AF bands"
+    )
+})
+
+test_that("a request for 100 AF bands returns exactly 100 bands", {
+    x <- seq(0, 1, length.out = 500)
+    shapes <- cbind(
+        B1.A = 1,
+        YG1.A = 0.05 + 0.9 * x,
+        V1.A = 0.05 + 0.9 * x^2,
+        R1.A = 0.05 + 0.9 * sqrt(x)
+    )
+
+    result <- spectreasy:::.reference_kmeans_af_centers(
+        af_shape = shapes,
+        n_centers = 100,
+        nstart = 1
+    )
+
+    expect_equal(nrow(result$centers), 100)
+    expect_equal(length(result$cluster_sizes), 100)
+    expect_equal(sum(result$cluster_sizes), nrow(shapes))
+    expect_true(all(result$cluster_sizes > 0L))
 })
 
 test_that("AF profile extraction handles empty and all-zero AF events", {
@@ -1133,6 +1160,7 @@ test_that("AF profile extraction handles empty and all-zero AF events", {
 
     zero_profiles <- spectreasy:::.extract_reference_af_profiles(
         detector_names = detector_names,
+        n_bands = 1,
         af_events = matrix(0, nrow = 5, ncol = 2, dimnames = list(NULL, detector_names))
     )
     expect_equal(zero_profiles$raw_median, c("B1-A" = 0, "YG1-A" = 0))
@@ -1149,8 +1177,6 @@ test_that("AF argument validation requires fixed numeric bands", {
 
     expect_equal(args$af_n_bands, 2L)
     expect_equal(args$af_max_cells, 500L)
-    expect_equal(args$af_min_cluster_events, 20L)
-    expect_equal(args$af_min_cluster_proportion, 0.005)
     expect_error(
         spectreasy:::.validate_build_reference_af_args(0, 500),
         "af_n_bands"
@@ -1162,14 +1188,6 @@ test_that("AF argument validation requires fixed numeric bands", {
     expect_error(
         spectreasy:::.validate_build_reference_af_args(2, 99),
         "af_max_cells"
-    )
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_min_cluster_events = 0),
-        "af_min_cluster_events"
-    )
-    expect_error(
-        spectreasy:::.validate_build_reference_af_args(2, 500, af_min_cluster_proportion = 1.5),
-        "af_min_cluster_proportion"
     )
 })
 
@@ -1201,8 +1219,7 @@ test_that("mapped SCC AF files are pooled into one AF bank size request", {
                 )
             )
         },
-        .extract_reference_af_profiles = function(detector_names, n_bands, max_cells, af_events,
-                 min_cluster_events, min_cluster_proportion) {
+        .extract_reference_af_profiles = function(detector_names, n_bands, max_cells, af_events) {
             captured$n_bands <- n_bands
             captured$event_count <- nrow(af_events)
             n_bands <- max(1L, as.integer(n_bands))
@@ -1227,8 +1244,6 @@ test_that("mapped SCC AF files are pooled into one AF bank size request", {
         detector_names = detector_names,
         af_n_bands = 3L,
         af_max_cells = 500L,
-        af_min_cluster_events = 20L,
-        af_min_cluster_proportion = 0.005,
         fcs_files_all = fcs_files
     )
 

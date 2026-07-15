@@ -120,7 +120,7 @@ test_that("extract_af_profile can derive a standalone profile from an unstained 
     expect_equal(nrow(afp$scc_background$scatter), nrow(afp$scc_background$spectra))
 })
 
-test_that("AF profile extraction drops undersized spectral clusters", {
+test_that("AF profile extraction keeps every requested spectral cluster", {
     common <- matrix(rep(c(1, 0.45, 0.1), 980), ncol = 3, byrow = TRUE)
     rare <- matrix(rep(c(0.1, 0.45, 1), 20), ncol = 3, byrow = TRUE)
     shapes <- rbind(common, rare)
@@ -128,15 +128,13 @@ test_that("AF profile extraction drops undersized spectral clusters", {
 
     result <- spectreasy:::.reference_kmeans_af_centers(
         af_shape = shapes,
-        n_centers = 2,
-        min_cluster_events = 50,
-        min_cluster_proportion = 0.05
+        n_centers = 2
     )
 
-    expect_equal(nrow(result$centers), 1)
-    expect_equal(result$cluster_sizes, 980L)
-    expect_equal(result$min_cluster_size, 50L)
+    expect_equal(nrow(result$centers), 2)
+    expect_equal(result$cluster_sizes, c(980L, 20L))
     expect_equal(unname(which.max(result$centers[1, ])), 1L)
+    expect_equal(unname(which.max(result$centers[2, ])), 3L)
 })
 
 test_that("AF profile library rejects missing AF rows and detector mismatches", {

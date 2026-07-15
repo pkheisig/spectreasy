@@ -2930,8 +2930,6 @@ function(req) {
             seed = gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1),
             af_n_bands = gui_workflow_number(body, "af_n_bands", 100, integer = TRUE, minimum = 1),
             af_max_cells = gui_workflow_number(body, "af_max_cells", 50000, integer = TRUE, minimum = 1),
-            af_min_cluster_events = gui_workflow_number(body, "af_min_cluster_events", 20, integer = TRUE, minimum = 1),
-            af_min_cluster_proportion = gui_workflow_number(body, "af_min_cluster_proportion", 0.005, minimum = 0),
             default_sample_type = gui_workflow_value(body, "default_sample_type", "beads"),
             histogram_pct_beads = gui_workflow_number(body, "histogram_pct_beads", 0.98, minimum = 0),
             histogram_direction_beads = gui_workflow_value(body, "histogram_direction_beads", "right"),
@@ -3209,8 +3207,6 @@ function(req) {
             fcs_file = fcs_file,
             af_n_bands = bands,
             af_max_cells = gui_workflow_number(body, "af_max_cells", 50000, integer = TRUE, minimum = 1),
-            af_min_cluster_events = gui_workflow_number(body, "af_min_cluster_events", 20, integer = TRUE, minimum = 1),
-            af_min_cluster_proportion = gui_workflow_number(body, "af_min_cluster_proportion", 0.005, minimum = 0),
             seed = gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1),
             show_plot = FALSE,
             verbose = FALSE

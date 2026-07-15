@@ -22,8 +22,6 @@
             auto_unknown_fluor_policy = "by_channel",
             unmix_scatter_panel_size_mm = 30,
             seed = NULL,
-            af_min_cluster_events = 20,
-            af_min_cluster_proportion = 0.005,
             rwls_max_iter = 1L,
             n_threads = 1L,
             save_qc_png = FALSE,
@@ -47,7 +45,6 @@
         labels <- c(
             auto_create_mapping = "Auto-create mapping", auto_unknown_fluor_policy = "Unknown fluor policy",
             unmix_scatter_panel_size_mm = "Scatter panel size (mm)", seed = "Seed",
-            af_min_cluster_events = "Minimum AF cluster events", af_min_cluster_proportion = "Minimum AF cluster proportion",
             rwls_max_iter = "RWLS iterations", n_threads = "Threads", save_qc_png = "Save QC PNGs",
             gating_mode = "Gating mode", scc_background_method = "SCC background method",
             scc_background_k = "SCC background neighbours", spectral_variant_som_nodes = "Spectral variant SOM nodes",

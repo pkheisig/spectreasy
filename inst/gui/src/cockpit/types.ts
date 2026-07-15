@@ -119,8 +119,6 @@ export type ControlSettings = {
   gateFile: string
   afNBands: number
   afMaxCells: number
-  afMinClusterEvents: number
-  afMinClusterProportion: number
   defaultSampleType: 'beads' | 'cells'
   histogramPctBeads: number
   histogramDirectionBeads: 'right' | 'both' | 'left'
@@ -186,8 +184,6 @@ export type AfSettings = {
   saveOverwrite: boolean
   afNBands: number
   afMaxCells: number
-  afMinClusterEvents: number
-  afMinClusterProportion: number
   seed: number
 }
 
@@ -247,8 +243,6 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       gateFile: 'ssc_gate_config.csv',
       afNBands: 100,
       afMaxCells: 50000,
-      afMinClusterEvents: 20,
-      afMinClusterProportion: 0.005,
       defaultSampleType: 'beads',
       histogramPctBeads: 0.98,
       histogramDirectionBeads: 'right',
@@ -312,8 +306,6 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       saveOverwrite: false,
       afNBands: 100,
       afMaxCells: 50000,
-      afMinClusterEvents: 20,
-      afMinClusterProportion: 0.005,
       seed: 1,
     },
     appearance: {
