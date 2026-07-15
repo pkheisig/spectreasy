@@ -281,7 +281,7 @@ export async function loadAfProfileData(name: string): Promise<AfProfileData | n
 
 export async function selectAfSourceFile(): Promise<{ success: boolean; cancelled: boolean; path?: string; message: string }> {
   try {
-    const response = await client.post('/af_profiles/select-source', {})
+    const response = await client.post('/af_profiles/select-source', {}, { timeout: 0 })
     const cancelled = scalarValue(response.data?.cancelled, 'false') === 'true'
     if (cancelled) return { success: false, cancelled: true, message: 'File selection cancelled.' }
     if (response.data?.error) return { success: false, cancelled: false, message: scalarValue(response.data.error) }
@@ -471,7 +471,9 @@ export async function setProjectContext(projectPath: string): Promise<{ success:
 
 export async function selectProjectFolder(): Promise<{ success: boolean; cancelled: boolean; message: string }> {
   try {
-    const response = await client.post('/project/select', {})
+    // Native file dialogs intentionally wait for the user. They must not inherit
+    // the short timeout used by ordinary API calls.
+    const response = await client.post('/project/select', {}, { timeout: 0 })
     const cancelled = scalarValue(response.data?.cancelled, 'false') === 'true'
     if (cancelled) return { success: false, cancelled: true, message: 'Project selection cancelled.' }
     if (response.data?.success === false || response.data?.error) {
