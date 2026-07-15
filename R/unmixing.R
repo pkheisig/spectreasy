@@ -413,13 +413,21 @@
         desc_vals[idx] <- fluorophore
     }
 
-    primary_vals <- make.unique(primary_vals, sep = "_")
-    output_exprs <- flowCore::exprs(target_ff)
+    output_ff <- target_ff
+    output_exprs <- flowCore::exprs(output_ff)
     colnames(output_exprs) <- primary_vals
-    output_ff <- flowCore::flowFrame(output_exprs)
-    output_pd <- flowCore::pData(flowCore::parameters(output_ff))
+    output_pd <- pd_new
+    output_pd$name <- primary_vals
     output_pd$desc <- desc_vals
-    flowCore::parameters(output_ff) <- methods::new("AnnotatedDataFrame", data = output_pd)
+    # flowFrame() rewrites duplicate channel names with numeric suffixes. Update
+    # the coupled expression/parameter slots together so repeated biological
+    # marker names are preserved verbatim in the written $PnN keywords.
+    methods::slot(output_ff, "exprs", check = FALSE) <- output_exprs
+    methods::slot(output_ff, "parameters", check = FALSE) <- methods::new(
+        "AnnotatedDataFrame",
+        data = output_pd
+    )
+    methods::validObject(output_ff)
     output_ff
 }
 

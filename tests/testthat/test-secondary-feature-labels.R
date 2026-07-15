@@ -62,7 +62,7 @@ testthat::test_that("unmix_samples writes markers as primary and fluorophores as
     testthat::expect_false(any(c("FITC", "PE") %in% pd$name))
 })
 
-testthat::test_that("duplicate marker names are disambiguated without losing fluorophore labels", {
+testthat::test_that("duplicate marker names are preserved exactly", {
     exprs <- matrix(
         seq_len(9),
         nrow = 3,
@@ -79,8 +79,23 @@ testthat::test_that("duplicate marker names are disambiguated without losing flu
     )
     pd <- flowCore::pData(flowCore::parameters(output_ff))
 
-    testthat::expect_equal(unname(as.character(pd$name)), c("TCR", "TCR_1", "Time"))
+    testthat::expect_equal(unname(as.character(pd$name)), c("TCR", "TCR", "Time"))
     testthat::expect_equal(unname(as.character(pd$desc)), c("APC", "BUV661", "Time"))
+
+    output_file <- tempfile(fileext = ".fcs")
+    flowCore::write.FCS(output_ff, output_file)
+    written_ff <- suppressWarnings(flowCore::read.FCS(
+        output_file,
+        transformation = FALSE,
+        truncate_max_range = FALSE,
+        alter.names = FALSE
+    ))
+    written_keywords <- flowCore::keyword(written_ff)
+
+    testthat::expect_identical(written_keywords[["$P1N"]], "TCR")
+    testthat::expect_identical(written_keywords[["$P2N"]], "TCR")
+    testthat::expect_identical(written_keywords[["$P1S"]], "APC")
+    testthat::expect_identical(written_keywords[["$P2S"]], "BUV661")
 })
 
 testthat::test_that("output labels use only the control mapping passed by the workflow", {
