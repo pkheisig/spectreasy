@@ -2399,9 +2399,55 @@ gui_project_scan <- function(root) {
     )
 }
 
+gui_ensure_project_input_dirs <- function(project_path) {
+    project_path <- normalizePath(project_path, mustWork = TRUE)
+    paths <- file.path(project_path, c("scc", "samples"))
+    for (path in paths) {
+        if (!dir.exists(path) && !dir.create(path, recursive = TRUE, showWarnings = FALSE)) {
+            stop("Could not create project input folder: ", path, call. = FALSE)
+        }
+    }
+    invisible(paths)
+}
+
+gui_project_file_location <- function(kind, filename = NULL) {
+    kind <- tolower(trimws(as.character(kind)[1]))
+    folder <- switch(kind, controls = "scc", samples = "samples", NULL)
+    if (is.null(folder)) stop("File kind must be 'controls' or 'samples'.", call. = FALSE)
+    root <- normalizePath(get_matrix_dir(), mustWork = TRUE)
+    gui_ensure_project_input_dirs(root)
+    directory <- file.path(root, folder)
+    if (is.null(filename)) return(list(kind = kind, folder = folder, directory = directory))
+    candidate <- gsub("\\\\", "/", trimws(as.character(filename)[1]))
+    safe_name <- basename(candidate)
+    if (!nzchar(safe_name) || !identical(candidate, safe_name) || safe_name %in% c(".", "..")) {
+        stop("Invalid project filename.", call. = FALSE)
+    }
+    if (!grepl("\\.fcs$", safe_name, ignore.case = TRUE)) {
+        stop("Only FCS files can be managed here.", call. = FALSE)
+    }
+    list(kind = kind, folder = folder, directory = directory, filename = safe_name, path = file.path(directory, safe_name))
+}
+
+gui_project_file_rows <- function(kind) {
+    location <- gui_project_file_location(kind)
+    files <- list.files(location$directory, pattern = "\\.fcs$", ignore.case = TRUE, full.names = TRUE)
+    if (!length(files)) return(data.frame())
+    info <- file.info(files)
+    data.frame(
+        name = basename(files),
+        size = as.numeric(info$size),
+        modified = format(info$mtime, "%Y-%m-%dT%H:%M:%S%z"),
+        modified_epoch = as.numeric(info$mtime),
+        kind = location$kind,
+        stringsAsFactors = FALSE
+    )[order(tolower(basename(files))), , drop = FALSE]
+}
+
 gui_set_project_context <- function(project_path) {
     if (!dir.exists(project_path)) stop("Project folder not found: ", project_path, call. = FALSE)
     project_path <- normalizePath(project_path, mustWork = TRUE)
+    gui_ensure_project_input_dirs(project_path)
     options(
         spectreasy.project_dir = project_path,
         spectreasy.matrix_dir = project_path,
@@ -2458,6 +2504,7 @@ function(project_path = "") {
     }
     root <- if (is.null(project_path) || !nzchar(trimws(as.character(project_path)[1]))) get_matrix_dir() else as.character(project_path)[1]
     root <- normalizePath(root, mustWork = FALSE)
+    if (dir.exists(root)) gui_ensure_project_input_dirs(root)
     gui_project_scan(root)
 }
 
@@ -2656,6 +2703,61 @@ function(req) {
         selected <- gui_set_project_context(selected)
         list(success = TRUE, cancelled = FALSE, project = gui_project_scan(selected))
     }, error = function(e) list(success = FALSE, cancelled = FALSE, error = conditionMessage(e)))
+}
+
+#* List FCS files in the active project's controls or samples folder
+#* @get /project/files
+#* @param kind Either controls or samples
+function(kind = "controls") {
+    tryCatch(
+        list(success = TRUE, files = gui_project_file_rows(kind)),
+        error = function(e) list(success = FALSE, error = conditionMessage(e), files = data.frame())
+    )
+}
+
+#* Upload one FCS file to the active project's controls or samples folder
+#* @post /project/files
+function(req) {
+    body <- gui_workflow_body(req)
+    tryCatch({
+        location <- gui_project_file_location(
+            gui_workflow_value(body, "kind", ""),
+            gui_workflow_value(body, "filename", "")
+        )
+        content <- gui_workflow_value(body, "content_base64", "")
+        if (!nzchar(content)) stop("Uploaded file is empty.", call. = FALSE)
+        overwrite <- gui_workflow_bool(body, "overwrite", FALSE)
+        if (file.exists(location$path) && !overwrite) {
+            stop("A file named '", location$filename, "' already exists.", call. = FALSE)
+        }
+        payload <- tryCatch(jsonlite::base64_dec(content), error = function(e) NULL)
+        if (is.null(payload) || !length(payload)) stop("Uploaded file is empty or invalid.", call. = FALSE)
+        temporary <- tempfile("spectreasy-upload-", tmpdir = location$directory)
+        on.exit(unlink(temporary, force = TRUE), add = TRUE)
+        connection <- file(temporary, open = "wb")
+        on.exit(try(close(connection), silent = TRUE), add = TRUE)
+        writeBin(payload, connection)
+        close(connection)
+        if (file.exists(location$path)) unlink(location$path, force = TRUE)
+        if (!file.rename(temporary, location$path)) stop("Could not save uploaded file.", call. = FALSE)
+        row <- gui_project_file_rows(location$kind)
+        row <- row[row$name == location$filename, , drop = FALSE]
+        list(success = TRUE, file = row)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Delete one FCS file from the active project's controls or samples folder
+#* @delete /project/files
+#* @param kind Either controls or samples
+#* @param filename FCS filename inside that folder
+function(kind = "", filename = "") {
+    tryCatch({
+        location <- gui_project_file_location(kind, filename)
+        if (!file.exists(location$path) || dir.exists(location$path)) stop("Project file not found.", call. = FALSE)
+        removed <- unlink(location$path, force = TRUE)
+        if (!identical(removed, 0L)) stop("Could not delete project file.", call. = FALSE)
+        list(success = TRUE, filename = location$filename)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
 
 gui_terminal_origin_allowed <- function(req) {

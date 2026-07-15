@@ -321,7 +321,7 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       density: 'comfortable',
       fontScale: INTERFACE_SCALE_DEFAULT,
       fontFamily: 'avenir',
-      sidebarWidth: 220,
+      sidebarWidth: 242,
       terminalWidthPct: 50,
       terminalHeightPct: 33,
       cornerRadius: 8,

@@ -3,7 +3,7 @@ import {
   Menu,
   Moon,
   FolderOpen,
-  RefreshCcw,
+  Files as FilesIcon,
   Settings,
   Sparkles,
   Sun,
@@ -27,6 +27,7 @@ import { WorkflowRail } from "./components/WorkflowRail";
 import { GuiSelect } from "./components/GuiSelect";
 import { CockpitApplet } from "./components/CockpitApplet";
 import { TerminalPanel } from "./components/TerminalPanel";
+import { ProjectFilesDialog } from "./components/ProjectFilesDialog";
 import { WorkflowWorkspace } from "./workspaces/WorkflowWorkspace";
 import { defaultWorkflowSettings, normalizeInterfaceScale } from "./types";
 import type {
@@ -89,7 +90,7 @@ type TopBarProps = {
   onCytometerChange: (value: string) => void;
   onMethodChange: (value: string) => void;
   onToggleTheme: () => void;
-  onRefresh: () => void;
+  onFiles: () => void;
   onSelectProject: () => void;
   onSettings: () => void;
   onTerminal: () => void;
@@ -106,7 +107,7 @@ function TopBar({
   onCytometerChange,
   onMethodChange,
   onToggleTheme,
-  onRefresh,
+  onFiles,
   onSelectProject,
   onSettings,
   onTerminal,
@@ -124,15 +125,22 @@ function TopBar({
           <small>Spectral analysis</small>
         </div>
       </div>
-      <button className="project-switcher" type="button" onClick={onSelectProject}>
-        <FolderOpen size={16} />
-        <strong>{project.projectName}</strong>
-      </button>
+      <div className="project-actions">
+        <button className="project-switcher" type="button" onClick={onSelectProject}>
+          <FolderOpen size={16} />
+          <strong>{project.projectName}</strong>
+        </button>
+        <button className="project-files-button" type="button" onClick={onFiles} disabled={!project.projectPath}>
+          <FilesIcon size={15} />
+          <span>Files</span>
+        </button>
+      </div>
       <div className="topbar-spacer" />
-      <label className="context-select">
+      <label className="context-select cytometer-select">
         <span className="chip-label">Cytometer</span>
         <GuiSelect
           aria-label="Cytometer"
+          className="cytometer-picker"
           value={cytometer}
           onChange={(event) => onCytometerChange(event.target.value)}
         >
@@ -156,14 +164,6 @@ function TopBar({
           <option>NNLS</option>
         </GuiSelect>
       </label>
-      <button
-        className="topbar-icon"
-        onClick={onRefresh}
-        aria-label="Reload project"
-        title="Reload project"
-      >
-        <RefreshCcw size={17} />
-      </button>
       <button
         className="topbar-icon"
         onClick={onToggleTheme}
@@ -211,6 +211,7 @@ export default function CockpitApp() {
   const [panelPayload, setPanelPayload] = useState<PanelPayload | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const [settings, setSettings] = useState<WorkflowSettings>(() => {
     const initial = defaultWorkflowSettings('');
     const savedTheme = window.localStorage.getItem("spectreasy-theme");
@@ -290,6 +291,10 @@ export default function CockpitApp() {
             ...current.appearance,
             ...(saved.appearance ?? {}),
             fontScale: normalizeInterfaceScale(saved.appearance?.fontScale ?? current.appearance.fontScale),
+            sidebarWidth:
+              saved.appearance?.sidebarWidth === 220
+                ? 242
+                : (saved.appearance?.sidebarWidth ?? current.appearance.sidebarWidth),
           },
         };
       });
@@ -328,6 +333,24 @@ export default function CockpitApp() {
     const timer = window.setTimeout(() => void persistGuiState(project, settings), 450);
     return () => window.clearTimeout(timer);
   }, [project, settings, settingsReady]);
+
+  useEffect(() => {
+    const exitOverlay = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (document.querySelector(".gui-select-menu")) return;
+      if (filesOpen) {
+        event.preventDefault();
+        setFilesOpen(false);
+        return;
+      }
+      if (activeSection === "settings") {
+        event.preventDefault();
+        setActiveSection(sectionBeforeSettings);
+      }
+    };
+    document.addEventListener("keydown", exitOverlay);
+    return () => document.removeEventListener("keydown", exitOverlay);
+  }, [activeSection, filesOpen, sectionBeforeSettings]);
 
   useEffect(() => {
     if (job.state !== "running") return;
@@ -735,7 +758,7 @@ export default function CockpitApp() {
         onToggleTheme={() =>
           updateSettings("appearance", { theme: darkMode ? "light" : "dark" })
         }
-        onRefresh={() => void refreshProject()}
+        onFiles={() => setFilesOpen(true)}
         onSelectProject={() => void chooseProject()}
         onSettings={toggleSettings}
         onTerminal={() => setTerminalOpen((value) => !value)}
@@ -790,6 +813,13 @@ export default function CockpitApp() {
       )}
       {activeApplet && (
         <CockpitApplet applet={activeApplet} theme={settings.appearance.theme} onExit={exitApplet} />
+      )}
+      {filesOpen && (
+        <ProjectFilesDialog
+          projectName={project.projectName}
+          onClose={() => setFilesOpen(false)}
+          onChanged={() => refreshProject(false, false)}
+        />
       )}
       {terminalOpen && <TerminalPanel
         connected={backend.connected}

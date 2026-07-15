@@ -217,6 +217,84 @@ export async function importSampleContent(filename: string, contentBase64: strin
   }
 }
 
+export type ProjectFileKind = 'controls' | 'samples'
+
+export type ProjectFileEntry = {
+  name: string
+  size: number
+  modified: string
+  modifiedEpoch: number
+  kind: ProjectFileKind
+}
+
+function fileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error(`Could not read ${file.name}.`))
+    reader.onload = () => {
+      const result = String(reader.result ?? '')
+      const separator = result.indexOf(',')
+      if (separator < 0) reject(new Error(`Could not encode ${file.name}.`))
+      else resolve(result.slice(separator + 1))
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+export async function listProjectFiles(kind: ProjectFileKind): Promise<{ success: boolean; files: ProjectFileEntry[]; message?: string }> {
+  try {
+    const response = await client.get('/project/files', { params: { kind }, timeout: 10000 })
+    const success = scalarValue(response.data?.success, 'false') === 'true'
+    const files = rowsFromBackend(response.data?.files).map((row) => ({
+      name: scalarValue(row.name),
+      size: Number(scalarValue(row.size, '0')) || 0,
+      modified: scalarValue(row.modified),
+      modifiedEpoch: Number(scalarValue(row.modified_epoch, '0')) || 0,
+      kind: scalarValue(row.kind, kind) === 'samples' ? 'samples' : 'controls',
+    } satisfies ProjectFileEntry)).filter((file) => file.name.length > 0)
+    return { success, files, message: success ? undefined : scalarValue(response.data?.error, 'Project files could not be loaded.') }
+  } catch {
+    return { success: false, files: [], message: 'The local R backend did not answer.' }
+  }
+}
+
+export async function uploadProjectFile(kind: ProjectFileKind, file: File): Promise<{ success: boolean; message: string }> {
+  if (!/\.fcs$/i.test(file.name)) return { success: false, message: `${file.name} is not an FCS file.` }
+  try {
+    const contentBase64 = await fileAsBase64(file)
+    const response = await client.post('/project/files', {
+      kind,
+      filename: file.name,
+      content_base64: contentBase64,
+      overwrite: false,
+    }, { timeout: 0 })
+    const success = scalarValue(response.data?.success, 'false') === 'true'
+    return {
+      success,
+      message: success
+        ? `${file.name} added.`
+        : scalarValue(response.data?.error, `${file.name} could not be added.`),
+    }
+  } catch {
+    return { success: false, message: `${file.name} could not be added. The local R backend did not answer.` }
+  }
+}
+
+export async function deleteProjectFile(kind: ProjectFileKind, filename: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const response = await client.delete('/project/files', { params: { kind, filename }, timeout: 10000 })
+    const success = scalarValue(response.data?.success, 'false') === 'true'
+    return {
+      success,
+      message: success
+        ? `${filename} deleted.`
+        : scalarValue(response.data?.error, `${filename} could not be deleted.`),
+    }
+  } catch {
+    return { success: false, message: `${filename} could not be deleted. The local R backend did not answer.` }
+  }
+}
+
 export async function loadMatrixFile(filename: string): Promise<{ filename: string; rows: Array<Record<string, unknown>> } | null> {
   try {
     const response = await client.get('/load_matrix', { params: { filename } })

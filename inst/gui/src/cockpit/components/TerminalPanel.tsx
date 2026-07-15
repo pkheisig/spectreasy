@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent, PointerEvent as ReactPointerEvent } from 'react'
+import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { Check, Copy, Minus, Power, TerminalSquare, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { runTerminalCommand } from '../api'
@@ -29,6 +29,11 @@ function clampHeight(height: number) {
   return Math.max(Math.min(180, maximum), Math.min(maximum, height))
 }
 
+function folderName(path: string) {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
+  return normalized.split('/').pop()?.trim() || '~'
+}
+
 export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onClose, onRefresh, onTerminate, onSizeChange }: Props) {
   const [width, setWidth] = useState(() => clampWidth(Math.round(window.innerWidth * widthPct / 100)))
   const [height, setHeight] = useState(() => clampHeight(Math.round(window.innerHeight * heightPct / 100)))
@@ -41,7 +46,8 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
   const [entries, setEntries] = useState<Entry[]>(() => connected
     ? [{ output: 'Spectreasy R console connected.' }]
     : [{ output: 'The GitHub Pages cockpit cannot launch local processes. Run the command below in Terminal, then refresh the cockpit.' }])
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const formRef = useRef<HTMLFormElement>(null)
   const outputRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLElement>(null)
   const resizeCleanupRef = useRef<(() => void) | null>(null)
@@ -70,6 +76,13 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
   useEffect(() => {
     outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight })
   }, [entries])
+
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    input.style.height = 'auto'
+    input.style.height = `${Math.min(110, Math.max(23, input.scrollHeight))}px`
+  }, [command])
 
   useEffect(() => () => resizeCleanupRef.current?.(), [])
 
@@ -136,6 +149,27 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
     if (result.shutdownRequested) await terminateSession()
   }
 
+  function insertNewline(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    event.preventDefault()
+    const input = event.currentTarget
+    const start = input.selectionStart
+    const end = input.selectionEnd
+    setCommand((current) => `${current.slice(0, start)}\n${current.slice(end)}`)
+    window.requestAnimationFrame(() => {
+      inputRef.current?.setSelectionRange(start + 1, start + 1)
+    })
+  }
+
+  function handleCommandKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter') return
+    if (event.shiftKey || event.metaKey || event.ctrlKey) {
+      insertNewline(event)
+      return
+    }
+    event.preventDefault()
+    formRef.current?.requestSubmit()
+  }
+
   async function copyLaunchCommand() {
     await navigator.clipboard.writeText(launchCommand)
     setCopied(true)
@@ -173,7 +207,7 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
         <TerminalSquare size={15} />
         <strong>Terminal</strong>
         <span className={`terminal-connection ${connected ? 'is-connected' : ''}`}>{connected ? 'R console' : 'offline'}</span>
-        <span className="terminal-cwd" title={cwd}>{cwd || '~'}</span>
+        <span className="terminal-cwd" title={cwd}>{folderName(cwd)}</span>
         <button type="button" onClick={() => setMinimized((value) => !value)} aria-label={minimized ? 'Restore terminal' : 'Minimize terminal'}><Minus size={15} /></button>
         <button type="button" onClick={requestClose} aria-label="Close terminal"><X size={15} /></button>
       </header>
@@ -187,9 +221,9 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
             <code>{launchCommand}</code>{copied ? <Check size={14} /> : <Copy size={14} />}
           </button>}
         </div>
-        <form className="terminal-input" onSubmit={(event) => void submit(event)}>
+        <form ref={formRef} className="terminal-input" onSubmit={(event) => void submit(event)}>
           <span>&gt;</span>
-          <input ref={inputRef} value={command} onChange={(event) => setCommand(event.target.value)} disabled={busy || !connected} aria-label="R console command" autoComplete="off" spellCheck={false} placeholder={connected ? 'Enter R code' : 'Start the local R backend to enable commands'} />
+          <textarea ref={inputRef} rows={1} value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={handleCommandKeyDown} disabled={busy || !connected} aria-label="R console command" autoComplete="off" spellCheck={false} placeholder={connected ? 'Enter R code' : 'Start the local R backend to enable commands'} />
         </form>
       </>}
       {confirmClose && createPortal(
