@@ -1,7 +1,17 @@
 test_that("the user function reference matches every exported signature", {
-    reference_file <- testthat::test_path(
+    source_reference <- testthat::test_path(
         "../../inst/extdata/spectreasy_user_function_reference.R"
     )
+    installed_reference <- system.file(
+        "extdata/spectreasy_user_function_reference.R",
+        package = "spectreasy"
+    )
+    reference_file <- if (file.exists(source_reference)) {
+        source_reference
+    } else {
+        installed_reference
+    }
+    testthat::skip_if_not(file.exists(reference_file))
     expressions <- parse(reference_file)
     exports <- getNamespaceExports("spectreasy")
     calls <- list()

@@ -180,7 +180,7 @@
         unmixing_matrix_csv = file.path(output_dir, "scc_unmixing_matrix.csv"),
         spectral_variant_library_rds = file.path(output_dir, "scc_spectral_variants.rds"),
         unmixing_scatter_png = file.path(output_dir, "scc_unmixing_scatter_matrix.png"),
-        qc_report_html = file.path(output_dir, "qc_controls", "qc_controls_report.html")
+        qc_report_html = file.path(output_dir, "qc_controls_report.html")
     )
 }
 
@@ -591,7 +591,11 @@ unmix_controls <- function(
     output_file <- NULL
     if (isTRUE(save_report)) {
         qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
-        output_file <- file.path(qc_controls_dir, paste0("qc_controls_report.", report_format))
+        output_file <- if (identical(report_format, "html")) {
+            output_paths$qc_report_html
+        } else {
+            file.path(dirname(output_paths$qc_report_html), paste0("qc_controls_report.", report_format))
+        }
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
     }
     build_qc_plots <- isTRUE(save_qc_png) || isTRUE(save_report)
@@ -750,7 +754,7 @@ unmix_controls <- function(
                 seed = seed,
                 unmixing_matrix_file = output_paths$reference_matrix_csv,
                 report_format = report_format,
-                overwrite = "overwrite",
+                overwrite = "version",
                 report_plots = list(spectra = p_spectra, af = p_af_spectra, unmixing_scatter = p_scatter),
                 report_artifact_paths = list(
                     reference_matrix = output_paths$reference_matrix_csv,
@@ -784,7 +788,8 @@ unmix_controls <- function(
                 )
             )
         )
-        if (!file.exists(output_file)) {
+        rendered_report_file <- if (is.list(qc_report)) qc_report$output_file else NULL
+        if (is.null(rendered_report_file) || !file.exists(rendered_report_file)) {
             warning("Automatic SCC QC report was requested but was not created at: ", output_file, ". Continuing unmixing.", call. = FALSE)
         }
     }
@@ -799,7 +804,8 @@ unmix_controls <- function(
         spectral_variant_library_file = spectral_variant_library_file,
         spectral_variant_info = if (!is.null(spectral_variant_library)) spectral_variant_library$info else NULL,
         unmixing_matrix_file = output_paths$unmixing_matrix_csv,
-        qc_report_file = if (isTRUE(save_report) && !is.null(output_file) && file.exists(output_file)) output_file else NULL,
+        qc_report_file = if (isTRUE(save_report) && is.list(qc_report) && !is.null(qc_report$output_file) && file.exists(qc_report$output_file)) qc_report$output_file else NULL,
+        qc_nxn_files = if (isTRUE(save_report) && is.list(qc_report)) qc_report$companion_files else NULL,
         qc_controls_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
         qc_metrics_dir = if (isTRUE(save_report)) qc_controls_dir else NULL,
         qc_report = qc_report,

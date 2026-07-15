@@ -347,7 +347,19 @@
         return(invisible(NULL))
     }
     detector_noise <- as.data.frame(detector_noise, stringsAsFactors = FALSE, check.names = FALSE)
-    utils::write.csv(detector_noise, path, row.names = FALSE, quote = TRUE)
+    canonical_names <- tolower(trimws(colnames(detector_noise)))
+    detector_col <- match("detector", canonical_names)
+    noise_floor_col <- match("noise_floor", canonical_names)
+    if (is.na(detector_col) || is.na(noise_floor_col)) {
+        stop("detector_noise must contain detector and noise_floor columns.", call. = FALSE)
+    }
+    persisted_noise <- data.frame(
+        detector = detector_noise[[detector_col]],
+        noise_floor = detector_noise[[noise_floor_col]],
+        stringsAsFactors = FALSE,
+        check.names = FALSE
+    )
+    utils::write.csv(persisted_noise, path, row.names = FALSE, quote = TRUE)
     invisible(path)
 }
 
