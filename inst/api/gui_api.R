@@ -2463,11 +2463,12 @@ gui_set_project_context <- function(project_path) {
     project_path
 }
 
-gui_pick_project_directory <- function(initial_dir = path.expand("~")) {
+gui_pick_project_directory <- function(initial_dir = path.expand("~"), allow_create = FALSE) {
     initial_dir <- normalizePath(initial_dir, mustWork = FALSE)
+    prompt <- if (isTRUE(allow_create)) "Create a Spectreasy project folder" else "Open a Spectreasy project folder"
     if (identical(Sys.info()[["sysname"]], "Darwin")) {
         script <- paste0(
-            "POSIX path of (choose folder with prompt \"Select Spectreasy project folder\" default location POSIX file ",
+            "POSIX path of (choose folder with prompt ", gate_applescript_quote(prompt), " default location POSIX file ",
             gate_applescript_quote(initial_dir), ")"
         )
         result <- suppressWarnings(system2("osascript", c("-e", shQuote(script)), stdout = TRUE, stderr = FALSE))
@@ -2475,14 +2476,18 @@ gui_pick_project_directory <- function(initial_dir = path.expand("~")) {
         return(sub("/$", "", trimws(result[[1]])))
     }
     if (.Platform$OS.type == "windows") {
-        result <- utils::choose.dir(default = initial_dir, caption = "Select Spectreasy project folder")
+        result <- utils::choose.dir(default = initial_dir, caption = prompt)
         if (is.na(result)) return(NULL)
         return(result)
     }
     picker <- Sys.which("zenity")
     if (!nzchar(picker)) picker <- Sys.which("kdialog")
     if (!nzchar(picker)) stop("No graphical folder picker is available. Install zenity or kdialog.", call. = FALSE)
-    args <- if (grepl("zenity$", picker)) c("--file-selection", "--directory", paste0("--filename=", initial_dir, "/")) else c("--getexistingdirectory", initial_dir)
+    args <- if (grepl("zenity$", picker)) {
+        c("--file-selection", "--directory", paste0("--title=", prompt), paste0("--filename=", initial_dir, "/"))
+    } else {
+        c("--getexistingdirectory", initial_dir, "--title", prompt)
+    }
     result <- suppressWarnings(system2(picker, args, stdout = TRUE, stderr = FALSE))
     if (!is.null(attr(result, "status")) || length(result) == 0L) return(NULL)
     trimws(result[[1]])
@@ -2698,7 +2703,18 @@ function(req) {
 #* @post /project/select
 function(req) {
     tryCatch({
-        selected <- gui_pick_project_directory(get_matrix_dir())
+        selected <- gui_pick_project_directory(get_matrix_dir(), allow_create = FALSE)
+        if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
+        selected <- gui_set_project_context(selected)
+        list(success = TRUE, cancelled = FALSE, project = gui_project_scan(selected))
+    }, error = function(e) list(success = FALSE, cancelled = FALSE, error = conditionMessage(e)))
+}
+
+#* Create and activate a project folder with the native folder picker
+#* @post /project/create
+function(req) {
+    tryCatch({
+        selected <- gui_pick_project_directory(get_matrix_dir(), allow_create = TRUE)
         if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
         selected <- gui_set_project_context(selected)
         list(success = TRUE, cancelled = FALSE, project = gui_project_scan(selected))
@@ -2757,6 +2773,21 @@ function(kind = "", filename = "") {
         removed <- unlink(location$path, force = TRUE)
         if (!identical(removed, 0L)) stop("Could not delete project file.", call. = FALSE)
         list(success = TRUE, filename = location$filename)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Delete all FCS files from one active project input folder
+#* @delete /project/files/all
+#* @param kind Either controls or samples
+function(kind = "") {
+    tryCatch({
+        location <- gui_project_file_location(kind)
+        files <- list.files(location$directory, pattern = "\\.fcs$", ignore.case = TRUE, full.names = TRUE)
+        if (length(files)) {
+            removed <- unlink(files, force = TRUE)
+            if (!identical(removed, 0L)) stop("Could not delete all project files.", call. = FALSE)
+        }
+        list(success = TRUE, deleted = length(files))
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
 

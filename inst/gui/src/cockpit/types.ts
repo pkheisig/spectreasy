@@ -195,7 +195,7 @@ export type AppearanceSettings = {
   theme: 'light' | 'dark'
   density: 'compact' | 'comfortable' | 'spacious'
   fontScale: number
-  fontFamily: 'avenir' | 'futura' | 'atkinson' | 'source-sans' | 'charter' | 'palatino' | 'monaco' | 'system'
+  fontFamily: 'avenir' | 'futura' | 'atkinson' | 'charter' | 'palatino' | 'monaco' | 'system'
   sidebarWidth: number
   terminalWidthPct: number
   terminalHeightPct: number

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { File, FolderOpen, RefreshCcw, Trash2, Upload, X } from 'lucide-react'
+import { FolderOpen, Trash2, Upload, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { deleteProjectFile, listProjectFiles, uploadProjectFile } from '../api'
+import { deleteAllProjectFiles, deleteProjectFile, listProjectFiles, uploadProjectFile } from '../api'
+import { ProjectFileRows } from './ProjectFileList'
 import type { DragEvent } from 'react'
 import type { ProjectFileEntry, ProjectFileKind } from '../api'
 
@@ -11,19 +12,6 @@ type Props = {
   onChanged: () => void | Promise<void>
 }
 
-function formatSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 ** 2).toFixed(bytes < 10 * 1024 ** 2 ? 1 : 0)} MB`
-}
-
-function formatModified(value: string) {
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime())
-    ? ''
-    : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(parsed)
-}
-
 export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
   const [kind, setKind] = useState<ProjectFileKind>('controls')
   const [files, setFiles] = useState<ProjectFileEntry[]>([])
@@ -31,7 +19,7 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
   const [busy, setBusy] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [message, setMessage] = useState('')
-  const [deleteCandidate, setDeleteCandidate] = useState('')
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const refresh = useCallback(async (selectedKind = kind) => {
@@ -78,7 +66,19 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
     if (busy) return
     setBusy(true)
     const result = await deleteProjectFile(kind, filename)
-    setDeleteCandidate('')
+    if (result.success) {
+      await refresh(kind)
+      await onChanged()
+    }
+    setMessage(result.message)
+    setBusy(false)
+  }
+
+  async function removeAllFiles() {
+    if (busy) return
+    setBusy(true)
+    const result = await deleteAllProjectFiles(kind)
+    setConfirmDeleteAll(false)
     if (result.success) {
       await refresh(kind)
       await onChanged()
@@ -121,35 +121,18 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
         >
           <div className="project-files-toolbar">
             <span>{kind === 'controls' ? 'scc' : 'samples'}/</span>
-            <button className="button button-ghost" type="button" disabled={busy} onClick={() => void refresh(kind)}><RefreshCcw size={14} /> Refresh</button>
-            <button className="button" type="button" disabled={busy} onClick={() => inputRef.current?.click()}><Upload size={14} /> Add FCS files</button>
+            {confirmDeleteAll ? <div className="project-files-delete-all-confirm">
+              <span>Delete all {files.length} files?</span>
+              <button className="button button-danger" type="button" disabled={busy} onClick={() => void removeAllFiles()}>Delete all</button>
+              <button className="button button-ghost" type="button" disabled={busy} onClick={() => setConfirmDeleteAll(false)}>Cancel</button>
+            </div> : <>
+              {files.length > 0 && <button className="button button-ghost" type="button" disabled={busy} onClick={() => setConfirmDeleteAll(true)}><Trash2 size={14} /> Delete all</button>}
+              <button className="button" type="button" disabled={busy} onClick={() => inputRef.current?.click()}><Upload size={14} /> Add FCS files</button>
+            </>}
             <input ref={inputRef} type="file" accept=".fcs" multiple hidden onChange={(event) => void addFiles(event.target.files ?? [])} />
           </div>
 
-          <div className="project-files-list" aria-busy={loading || busy}>
-            {loading ? (
-              <div className="project-files-empty">Loading files…</div>
-            ) : files.length === 0 ? (
-              <div className="project-files-empty"><Upload size={22} /><strong>Drop FCS files here</strong><span>or use Add FCS files</span></div>
-            ) : files.map((entry) => (
-              <div className="project-file-row" key={entry.name}>
-                <File size={17} />
-                <div className="project-file-copy">
-                  <strong title={entry.name}>{entry.name}</strong>
-                  <span>{formatSize(entry.size)}{entry.modified ? ` · ${formatModified(entry.modified)}` : ''}</span>
-                </div>
-                {deleteCandidate === entry.name ? (
-                  <div className="project-file-delete-confirm">
-                    <span>Delete?</span>
-                    <button type="button" disabled={busy} onClick={() => void removeFile(entry.name)}>Yes</button>
-                    <button type="button" disabled={busy} onClick={() => setDeleteCandidate('')}>No</button>
-                  </div>
-                ) : (
-                  <button className="project-files-icon project-file-delete" type="button" disabled={busy} onClick={() => setDeleteCandidate(entry.name)} aria-label={`Delete ${entry.name}`}><Trash2 size={15} /></button>
-                )}
-              </div>
-            ))}
-          </div>
+          <ProjectFileRows files={files} loading={loading} busy={busy} emptyLabel="Drop FCS files here or use Add FCS files" onDelete={removeFile} />
         </div>
         <footer className="project-files-footer">
           <span className={message && /could not|not an|already exists|did not/i.test(message) ? 'is-error' : ''}>{message || `${files.length} FCS file${files.length === 1 ? '' : 's'}`}</span>

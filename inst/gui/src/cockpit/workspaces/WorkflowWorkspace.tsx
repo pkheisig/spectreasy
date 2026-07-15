@@ -49,10 +49,8 @@ import {
   downloadBase64File,
   exportPanelOverview,
   importMatrixContent,
-  importSampleContent,
   listAfProfiles,
   listMatrixFiles,
-  listSampleFiles,
   loadAfProfileData,
   loadMatrixFile,
   loadPanelMetrics,
@@ -66,6 +64,9 @@ import { demoReports } from "../mockData";
 import { StatusPill } from "../components/StatusPill";
 import { AppearanceSettings } from "../components/AppearanceSettings";
 import { GuiSelect } from "../components/GuiSelect";
+import { InlineProjectFiles } from "../components/ProjectFileList";
+import { ResetSettingsButton, SettingsCardSummary } from "../components/SettingsCardSummary";
+import { defaultWorkflowSettings } from "../types";
 
 export type WorkflowWorkspaceProps = {
   project: ProjectState;
@@ -215,6 +216,7 @@ function MappingWorkspace({
   setMappingTab,
   onSaveMapping,
   onCreateMapping,
+  onRefresh,
   settings,
   onSettingsChange,
   onViewReports,
@@ -246,9 +248,6 @@ function MappingWorkspace({
     );
   return (
     <>
-      <WorkspaceHeader
-        kicker="Controls / control stage"
-      />
       <div className="subnav">
         <button
           className={mappingTab === "mapping" ? "is-active" : ""}
@@ -282,7 +281,6 @@ function MappingWorkspace({
       {mappingTab === "mapping" && project.mapping.length === 0 && (
         <section className="surface-card mapping-empty-state">
           <div>
-            <span className="eyebrow">Control mapping</span>
             <h2>No control mapping created</h2>
             <p>Create <code>fcs_mapping.csv</code> from the FCS files in the project's <code>scc</code> folder.</p>
           </div>
@@ -295,7 +293,6 @@ function MappingWorkspace({
         <section className="surface-card">
           <div className="card-toolbar">
             <div>
-              <span className="eyebrow">Control mapping</span>
               <h2>
                 fcs_mapping.csv{" "}
                 <span className="dirty-marker">
@@ -466,6 +463,13 @@ function MappingWorkspace({
             </span>
           </div>
         </section>
+      )}
+      {mappingTab === "mapping" && (
+        <InlineProjectFiles
+          kind="controls"
+          refreshKey={`${project.projectPath}:${project.scan.controls}`}
+          onChanged={onRefresh}
+        />
       )}
       {mappingTab === "build" && (
         <BuildReferencePanel
@@ -821,8 +825,13 @@ function BuildReferencePanel({
   const method = settings.method;
   const useSpectralPipeline = method === "Spectreasy" || method === "AutoSpectral";
   const [advanced, setAdvanced] = useState(false);
+  const defaults = defaultWorkflowSettings("").control;
   return (
     <section className="surface-card run-card streamlined-run-card">
+      <div className="settings-card-plain-header">
+        <strong>Settings</strong>
+        <ResetSettingsButton label="control settings" onReset={() => onSettingsChange(defaults)} />
+      </div>
       <div className="run-controls">
         <label>
           <span>Unmixing method</span>
@@ -1581,119 +1590,25 @@ function LegacyConfigurableSamplesWorkspace({
 }
 
 function ConfigurableSamplesWorkspace({
+  project,
   settings,
   onSettingsChange,
   onRun,
+  onRefresh,
 }: {
+  project: ProjectState;
   settings: SampleSettings;
   onSettingsChange: (patch: Partial<SampleSettings>) => void;
   onRun: WorkflowWorkspaceProps["onRun"];
+  onRefresh: WorkflowWorkspaceProps["onRefresh"];
 }) {
-  const [sampleFiles, setSampleFiles] = useState<string[]>([]);
-  const [sampleFilter, setSampleFilter] = useState("");
-  const [importStatus, setImportStatus] = useState("");
-  const uploadRef = useRef<HTMLInputElement>(null);
-
-  const refreshSamples = async () => {
-    const files = await listSampleFiles();
-    setSampleFiles(files);
-    setImportStatus(files.length ? "" : "No sample files found.");
-  };
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void refreshSamples();
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  const importFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let binary = "";
-    bytes.forEach((byte) => {
-      binary += String.fromCharCode(byte);
-    });
-    const imported = await importSampleContent(file.name, window.btoa(binary));
-    setImportStatus(
-      imported
-        ? `${file.name} imported into the active sample folder.`
-        : `Could not import ${file.name}.`,
-    );
-    if (imported) void refreshSamples();
-  };
-
-  const filtered = sampleFiles.filter((sample) =>
-    sample.toLowerCase().includes(sampleFilter.toLowerCase()),
-  );
+  const defaults = defaultWorkflowSettings("").sample;
   return (
     <>
-      <input
-        ref={uploadRef}
-        type="file"
-        accept=".fcs,application/octet-stream"
-        hidden
-        onChange={importFile}
-      />
-      <div className="sample-top-grid sample-file-panel">
-        <section className="surface-card sample-import-card">
-          <div className="card-toolbar">
-            <div>
-              <span className="eyebrow">Sample import</span>
-              <h2>Sample files</h2>
-            </div>
-            <div className="toolbar-actions">
-              <button
-                className="button button-ghost"
-                onClick={() => uploadRef.current?.click()}
-              >
-                <FolderOpen size={14} /> Add FCS files
-              </button>
-              <button
-                className="button button-ghost"
-                onClick={() => void refreshSamples()}
-              >
-                <RefreshCcw size={14} /> Refresh
-              </button>
-            </div>
-          </div>
-          <div className="sample-filter-row">
-            <label className="search-field compact-search">
-              <Search size={14} />
-              <input
-                value={sampleFilter}
-                onChange={(event) => setSampleFilter(event.target.value)}
-                placeholder="Filter sample files"
-              />
-            </label>
-            {importStatus && <span className="match-note">
-              <Check size={13} /> {importStatus}
-            </span>}
-          </div>
-          <div className="sample-list">
-            {filtered.map((sample, index) => (
-              <div className="sample-row" key={sample}>
-                <span className="sample-index">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <span className="file-mini-dot" />
-                <strong>{sample}</strong>
-              </div>
-            ))}
-          </div>
-          {sampleFiles.length > filtered.length && (
-            <span className="table-note">
-              Showing {filtered.length} of {sampleFiles.length} files.
-            </span>
-          )}
-        </section>
-      </div>
       <section className="surface-card sample-run-card streamlined-run-card">
         <details className="settings-section" open>
           <summary>
-            <Settings2 size={14} /> Sample settings
+            <SettingsCardSummary icon={<Settings2 size={14} />} title="Settings" onReset={() => onSettingsChange(defaults)} />
           </summary>
           <div className="settings-form-grid">
             <label>
@@ -1863,6 +1778,11 @@ function ConfigurableSamplesWorkspace({
           </button>
         </div>
       </section>
+      <InlineProjectFiles
+        kind="samples"
+        refreshKey={`${project.projectPath}:${project.scan.samples}`}
+        onChanged={onRefresh}
+      />
     </>
   );
 }
@@ -3395,6 +3315,7 @@ function ConfigurableAfWorkspace({
   onRun: WorkflowWorkspaceProps["onRun"];
   onRefresh: () => void;
 }) {
+  const defaults = defaultWorkflowSettings("").af;
   const [profiles, setProfiles] = useState<
     Array<{ name: string; bands: number; detectors: number; created: string; active: boolean }>
   >([]);
@@ -3473,7 +3394,10 @@ function ConfigurableAfWorkspace({
               <span className="eyebrow">Extract profile</span>
               <h2>{settings.fcsFile}</h2>
             </div>
-            <StatusPill state="ready" label={`${settings.afNBands} bands`} />
+            <div className="toolbar-actions">
+              <ResetSettingsButton label="AF settings" onReset={() => onSettingsChange(defaults)} />
+              <StatusPill state="ready" label={`${settings.afNBands} bands`} />
+            </div>
           </div>
           <div className="af-form">
             <label>
@@ -3965,6 +3889,7 @@ function ConfigurableSettingsWorkspace({
   settings: WorkflowSettings;
   onSettingsChange: WorkflowWorkspaceProps["onSettingsChange"];
 }) {
+  const defaults = defaultWorkflowSettings(settings.projectPath);
   const control = settings.control;
   const sample = settings.sample;
   const af = settings.af;
@@ -3977,10 +3902,11 @@ function ConfigurableSettingsWorkspace({
       <AppearanceSettings
         value={settings.appearance}
         onChange={(patch) => onSettingsChange("appearance", patch)}
+        onReset={() => onSettingsChange("appearance", defaults.appearance)}
       />
       <details className="surface-card settings-section" open>
         <summary>
-          <CircleCheckBig size={15} /> Control-stage parameters
+          <SettingsCardSummary icon={<CircleCheckBig size={15} />} title="Control-stage parameters" onReset={() => onSettingsChange("control", defaults.control)} />
         </summary>
         <div className="settings-form-grid">
           <label>
@@ -3993,10 +3919,14 @@ function ConfigurableSettingsWorkspace({
             >
               <option value="auto">Auto-detect</option>
               <option value="aurora">Cytek Aurora</option>
-              <option value="aurora_5l">Cytek Aurora 5L</option>
-              <option value="aurora_4l">Cytek Aurora 4L</option>
-              <option value="discover">Cytek Aurora Discover</option>
+              <option value="northern_lights">Cytek Northern Lights</option>
               <option value="id7000">Sony ID7000</option>
+              <option value="discover_s8">BD FACSDiscover S8</option>
+              <option value="discover_a8">BD FACSDiscover A8</option>
+              <option value="a5se">BD FACSymphony A5 SE</option>
+              <option value="opteon">Agilent NovoCyte Opteon</option>
+              <option value="mosaic">Beckman Coulter CytoFLEX Mosaic</option>
+              <option value="xenith">Thermo Fisher Attune Xenith</option>
             </GuiSelect>
           </label>
           <label>
@@ -4343,7 +4273,7 @@ function ConfigurableSettingsWorkspace({
       </details>
       <details className="surface-card settings-section">
         <summary>
-          <Beaker size={15} /> Sample-stage parameters
+          <SettingsCardSummary icon={<Beaker size={15} />} title="Sample-stage parameters" onReset={() => onSettingsChange("sample", defaults.sample)} />
         </summary>
         <div className="settings-form-grid">
           <label>
@@ -4559,8 +4489,7 @@ function ConfigurableSettingsWorkspace({
       </details>
       <details className="surface-card settings-section">
         <summary>
-          <FlaskConical size={15} /> AF profile parameters{" "}
-          <span>extract_af_profile</span>
+          <SettingsCardSummary icon={<FlaskConical size={15} />} title="AF profile parameters" detail="extract_af_profile" onReset={() => onSettingsChange("af", defaults.af)} />
         </summary>
         <div className="settings-form-grid">
           <label>
@@ -4677,9 +4606,11 @@ function ConfigurableSettingsWorkspace({
 function ControlReferenceTuning({
   settings,
   onSettingsChange,
+  onReset,
 }: {
   settings: ControlSettings;
   onSettingsChange: (patch: Partial<ControlSettings>) => void;
+  onReset: () => void;
 }) {
   return (
     <section className="surface-card settings-section">
@@ -4688,6 +4619,7 @@ function ControlReferenceTuning({
           <span className="eyebrow">Reference builder</span>
           <h2>Gating & clustering parameters</h2>
         </div>
+        <ResetSettingsButton label="gating and clustering parameters" onReset={onReset} />
       </div>
       <div className="settings-form-grid">
         <label>
@@ -4889,9 +4821,11 @@ function ControlReferenceTuning({
 function SampleOutputTuning({
   settings,
   onSettingsChange,
+  onReset,
 }: {
   settings: SampleSettings;
   onSettingsChange: (patch: Partial<SampleSettings>) => void;
+  onReset: () => void;
 }) {
   return (
     <section className="surface-card settings-section">
@@ -4900,6 +4834,7 @@ function SampleOutputTuning({
           <span className="eyebrow">Sample outputs</span>
           <h2>Library & return type</h2>
         </div>
+        <ResetSettingsButton label="sample output parameters" onReset={onReset} />
       </div>
       <div className="settings-form-grid">
         <label>
@@ -5096,9 +5031,11 @@ export function WorkflowWorkspace(
       {activeSection === "controls" && <ControlsWorkspace {...props} />}
       {activeSection === "samples" && (
         <ConfigurableSamplesWorkspace
+          project={props.project}
           settings={props.settings.sample}
           onSettingsChange={(patch) => props.onSettingsChange("sample", patch)}
           onRun={props.onRun}
+          onRefresh={props.onRefresh}
         />
       )}
       {activeSection === "matrix" && <MatrixWorkspace />}
@@ -5128,12 +5065,14 @@ export function WorkflowWorkspace(
             onSettingsChange={(patch) =>
               props.onSettingsChange("control", patch)
             }
+            onReset={() => props.onSettingsChange("control", defaultWorkflowSettings(props.settings.projectPath).control)}
           />
           <SampleOutputTuning
             settings={props.settings.sample}
             onSettingsChange={(patch) =>
               props.onSettingsChange("sample", patch)
             }
+            onReset={() => props.onSettingsChange("sample", defaultWorkflowSettings(props.settings.projectPath).sample)}
           />
         </>
       )}

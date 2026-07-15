@@ -18,6 +18,8 @@ type Props = {
 type Entry = { command?: string; output: string; ok?: boolean }
 
 const launchCommand = `R -q -e 'spectreasy::spectreasy_gui()'`
+const terminalInputLineHeight = 23
+const terminalInputMaxHeight = terminalInputLineHeight * 20
 
 function clampWidth(width: number) {
   const maximum = Math.max(320, window.innerWidth - 40)
@@ -29,16 +31,13 @@ function clampHeight(height: number) {
   return Math.max(Math.min(180, maximum), Math.min(maximum, height))
 }
 
-function folderName(path: string) {
-  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
-  return normalized.split('/').pop()?.trim() || '~'
-}
-
 export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onClose, onRefresh, onTerminate, onSizeChange }: Props) {
   const [width, setWidth] = useState(() => clampWidth(Math.round(window.innerWidth * widthPct / 100)))
   const [height, setHeight] = useState(() => clampHeight(Math.round(window.innerHeight * heightPct / 100)))
   const [minimized, setMinimized] = useState(false)
   const [command, setCommand] = useState('')
+  const [history, setHistory] = useState<string[]>([])
+  const [historyIndex, setHistoryIndex] = useState(0)
   const [cwd, setCwd] = useState(projectPath)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -52,6 +51,7 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
   const panelRef = useRef<HTMLElement>(null)
   const resizeCleanupRef = useRef<(() => void) | null>(null)
   const wasConnectedRef = useRef(connected)
+  const historyDraftRef = useRef('')
 
   useEffect(() => {
     setCwd(projectPath)
@@ -81,8 +81,11 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
     const input = inputRef.current
     if (!input) return
     input.style.height = 'auto'
-    input.style.height = `${Math.min(110, Math.max(23, input.scrollHeight))}px`
-  }, [command])
+    const inputHeight = Math.min(terminalInputMaxHeight, Math.max(terminalInputLineHeight, input.scrollHeight))
+    input.style.height = `${inputHeight}px`
+    const requiredPanelHeight = inputHeight + 145
+    if (requiredPanelHeight > height) setHeight(clampHeight(requiredPanelHeight))
+  }, [command, height])
 
   useEffect(() => () => resizeCleanupRef.current?.(), [])
 
@@ -138,6 +141,10 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
     event.preventDefault()
     const next = command.trim()
     if (!next || busy) return
+    const nextHistory = history.at(-1) === next ? history : [...history, next]
+    setHistory(nextHistory)
+    setHistoryIndex(nextHistory.length)
+    historyDraftRef.current = ''
     setCommand('')
     setBusy(true)
     setEntries((current) => [...current, { command: next, output: '' }])
@@ -161,6 +168,25 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
   }
 
   function handleCommandKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (!history.length) return
+      event.preventDefault()
+      let nextIndex = historyIndex
+      if (event.key === 'ArrowUp') {
+        if (historyIndex >= history.length) historyDraftRef.current = command
+        nextIndex = Math.max(0, Math.min(history.length - 1, historyIndex - 1))
+        setCommand(history[nextIndex])
+      } else {
+        nextIndex = Math.min(history.length, historyIndex + 1)
+        setCommand(nextIndex === history.length ? historyDraftRef.current : history[nextIndex])
+      }
+      setHistoryIndex(nextIndex)
+      window.requestAnimationFrame(() => {
+        const input = inputRef.current
+        input?.setSelectionRange(input.value.length, input.value.length)
+      })
+      return
+    }
     if (event.key !== 'Enter') return
     if (event.shiftKey || event.metaKey || event.ctrlKey) {
       insertNewline(event)
@@ -206,8 +232,7 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
       <header className="terminal-header">
         <TerminalSquare size={15} />
         <strong>Terminal</strong>
-        <span className={`terminal-connection ${connected ? 'is-connected' : ''}`}>{connected ? 'R console' : 'offline'}</span>
-        <span className="terminal-cwd" title={cwd}>{folderName(cwd)}</span>
+        <span className="terminal-header-spacer" />
         <button type="button" onClick={() => setMinimized((value) => !value)} aria-label={minimized ? 'Restore terminal' : 'Minimize terminal'}><Minus size={15} /></button>
         <button type="button" onClick={requestClose} aria-label="Close terminal"><X size={15} /></button>
       </header>
@@ -223,7 +248,7 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
         </div>
         <form ref={formRef} className="terminal-input" onSubmit={(event) => void submit(event)}>
           <span>&gt;</span>
-          <textarea ref={inputRef} rows={1} value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={handleCommandKeyDown} disabled={busy || !connected} aria-label="R console command" autoComplete="off" spellCheck={false} placeholder={connected ? 'Enter R code' : 'Start the local R backend to enable commands'} />
+          <textarea ref={inputRef} rows={1} value={command} onChange={(event) => { setCommand(event.target.value); if (historyIndex >= history.length) historyDraftRef.current = event.target.value }} onKeyDown={handleCommandKeyDown} disabled={busy || !connected} aria-label="R console command" autoComplete="off" spellCheck={false} placeholder={connected ? 'Enter R code' : 'Start the local R backend to enable commands'} />
         </form>
       </>}
       {confirmClose && createPortal(

@@ -14,13 +14,15 @@ import {
 } from '../types'
 import type { AppearanceSettings as AppearanceSettingsValue } from '../types'
 import { GuiSelect } from './GuiSelect'
+import { SettingsCardSummary } from './SettingsCardSummary'
 
 type Props = {
   value: AppearanceSettingsValue
   onChange: (patch: Partial<AppearanceSettingsValue>) => void
+  onReset: () => void
 }
 
-export function AppearanceSettings({ value, onChange }: Props) {
+export function AppearanceSettings({ value, onChange, onReset }: Props) {
   const [pendingScale, setPendingScale] = useState<number | null>(null)
   const draftScale = normalizeInterfaceScale(pendingScale ?? value.fontScale)
 
@@ -32,7 +34,7 @@ export function AppearanceSettings({ value, onChange }: Props) {
   return (
     <details className="surface-card settings-section appearance-settings" open>
       <summary>
-        <Type size={16} /> Appearance
+        <SettingsCardSummary icon={<Type size={16} />} title="Appearance" onReset={onReset} />
       </summary>
       <div className="appearance-settings-body">
         <section className="appearance-group">
@@ -90,7 +92,6 @@ export function AppearanceSettings({ value, onChange }: Props) {
                 <option value="avenir">Avenir Next</option>
                 <option value="futura">Futura</option>
                 <option value="atkinson">Atkinson Hyperlegible</option>
-                <option value="source-sans">Source Sans</option>
                 <option value="charter">Charter</option>
                 <option value="palatino">Palatino</option>
                 <option value="monaco">Monaco</option>

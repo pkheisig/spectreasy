@@ -295,6 +295,23 @@ export async function deleteProjectFile(kind: ProjectFileKind, filename: string)
   }
 }
 
+export async function deleteAllProjectFiles(kind: ProjectFileKind): Promise<{ success: boolean; deleted: number; message: string }> {
+  try {
+    const response = await client.delete('/project/files/all', { params: { kind }, timeout: 30000 })
+    const success = scalarValue(response.data?.success, 'false') === 'true'
+    const deleted = Number(scalarValue(response.data?.deleted, '0')) || 0
+    return {
+      success,
+      deleted,
+      message: success
+        ? `${deleted} file${deleted === 1 ? '' : 's'} deleted.`
+        : scalarValue(response.data?.error, 'The files could not be deleted.'),
+    }
+  } catch {
+    return { success: false, deleted: 0, message: 'The files could not be deleted. The local R backend did not answer.' }
+  }
+}
+
 export async function loadMatrixFile(filename: string): Promise<{ filename: string; rows: Array<Record<string, unknown>> } | null> {
   try {
     const response = await client.get('/load_matrix', { params: { filename } })
@@ -541,23 +558,23 @@ export async function setProjectContext(projectPath: string): Promise<{ success:
     if (response.data?.success === false || response.data?.error) {
       return { success: false, message: response.data?.error ?? 'The R backend rejected this project folder.' }
     }
-    return { success: true, message: 'Project folder opened. Artifacts refreshed from disk.' }
+    return { success: true, message: '' }
   } catch {
     return { success: false, message: 'The project folder could not be opened. Check the path and R connection.' }
   }
 }
 
-export async function selectProjectFolder(): Promise<{ success: boolean; cancelled: boolean; message: string }> {
+async function pickProjectFolder(endpoint: '/project/select' | '/project/create'): Promise<{ success: boolean; cancelled: boolean; message: string }> {
   try {
     // Native file dialogs intentionally wait for the user. They must not inherit
     // the short timeout used by ordinary API calls.
-    const response = await client.post('/project/select', {}, { timeout: 0 })
+    const response = await client.post(endpoint, {}, { timeout: 0 })
     const cancelled = scalarValue(response.data?.cancelled, 'false') === 'true'
     if (cancelled) return { success: false, cancelled: true, message: 'Project selection cancelled.' }
     if (response.data?.success === false || response.data?.error) {
       return { success: false, cancelled: false, message: scalarValue(response.data?.error, 'The project folder could not be opened.') }
     }
-    return { success: true, cancelled: false, message: 'Project folder opened. Artifacts refreshed from disk.' }
+    return { success: true, cancelled: false, message: '' }
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 403) {
       return {
@@ -572,6 +589,14 @@ export async function selectProjectFolder(): Promise<{ success: boolean; cancell
       message: 'The local R backend did not answer. Keep spectreasy_gui() running and retry.',
     }
   }
+}
+
+export function selectProjectFolder() {
+  return pickProjectFolder('/project/select')
+}
+
+export function createProjectFolder() {
+  return pickProjectFolder('/project/create')
 }
 
 export async function attemptWorkflowAction(action: string, payload: Record<string, unknown>): Promise<{ connected: boolean; message: string }> {

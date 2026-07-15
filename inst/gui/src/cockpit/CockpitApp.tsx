@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Menu,
   Moon,
@@ -13,6 +13,7 @@ import {
 import {
   attemptWorkflowAction,
   createControlMapping,
+  createProjectFolder,
   downloadTextFile,
   initialBackendStatus,
   loadPanelPayload,
@@ -91,7 +92,8 @@ type TopBarProps = {
   onMethodChange: (value: string) => void;
   onToggleTheme: () => void;
   onFiles: () => void;
-  onSelectProject: () => void;
+  onCreateProject: () => void;
+  onOpenProject: () => void;
   onSettings: () => void;
   onTerminal: () => void;
 };
@@ -108,10 +110,34 @@ function TopBar({
   onMethodChange,
   onToggleTheme,
   onFiles,
-  onSelectProject,
+  onCreateProject,
+  onOpenProject,
   onSettings,
   onTerminal,
 }: TopBarProps) {
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const projectMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!projectMenuOpen) return;
+    const closeMenu = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof MouseEvent && projectMenuRef.current?.contains(event.target as Node)) return;
+      setProjectMenuOpen(false);
+    };
+    document.addEventListener("mousedown", closeMenu);
+    document.addEventListener("keydown", closeMenu);
+    return () => {
+      document.removeEventListener("mousedown", closeMenu);
+      document.removeEventListener("keydown", closeMenu);
+    };
+  }, [projectMenuOpen]);
+
+  const chooseProjectAction = (action: () => void) => {
+    setProjectMenuOpen(false);
+    action();
+  };
+
   return (
     <header className="topbar">
       <div className="brand-lockup">
@@ -122,14 +148,33 @@ function TopBar({
         </div>
         <div>
           <strong>spectreasy</strong>
-          <small>Spectral analysis</small>
         </div>
       </div>
       <div className="project-actions">
-        <button className="project-switcher" type="button" onClick={onSelectProject}>
-          <FolderOpen size={16} />
-          <strong>{project.projectName}</strong>
-        </button>
+        <div className="project-menu-shell" ref={projectMenuRef}>
+          <button
+            className="project-switcher"
+            type="button"
+            aria-expanded={projectMenuOpen}
+            aria-haspopup="menu"
+            onClick={() => setProjectMenuOpen((open) => !open)}
+          >
+            <FolderOpen size={16} />
+            <strong>Project</strong>
+          </button>
+          <div
+            className={`project-action-flyout ${projectMenuOpen ? "is-open" : ""}`}
+            role="menu"
+            aria-hidden={!projectMenuOpen}
+          >
+            <button type="button" role="menuitem" tabIndex={projectMenuOpen ? 0 : -1} onClick={() => chooseProjectAction(onCreateProject)}>
+              Create new project
+            </button>
+            <button type="button" role="menuitem" tabIndex={projectMenuOpen ? 0 : -1} onClick={() => chooseProjectAction(onOpenProject)}>
+              Open project
+            </button>
+          </div>
+        </div>
         <button className="project-files-button" type="button" onClick={onFiles} disabled={!project.projectPath}>
           <FilesIcon size={15} />
           <span>Files</span>
@@ -225,7 +270,7 @@ export default function CockpitApp() {
     useState<SectionId>("controls");
   const darkMode = settings.appearance.theme === "dark";
 
-  const refreshProject = useCallback(async (initial = false, announce = true) => {
+  const refreshProject = useCallback(async (initial = false) => {
     const snapshot = await loadProjectSnapshot();
     setProject(snapshot.project);
     setBackend(snapshot.backend);
@@ -290,6 +335,10 @@ export default function CockpitApp() {
           appearance: {
             ...current.appearance,
             ...(saved.appearance ?? {}),
+            fontFamily:
+              String(saved.appearance?.fontFamily ?? "") === "source-sans"
+                ? "atkinson"
+                : (saved.appearance?.fontFamily ?? current.appearance.fontFamily),
             fontScale: normalizeInterfaceScale(saved.appearance?.fontScale ?? current.appearance.fontScale),
             sidebarWidth:
               saved.appearance?.sidebarWidth === 220
@@ -299,12 +348,6 @@ export default function CockpitApp() {
         };
       });
     }
-    if (!initial && announce)
-      setToast(
-        snapshot.backend.connected
-          ? "Project rescanned from the R backend."
-          : "Preview state restored. Start the R backend for live artifacts.",
-      );
   }, []);
 
   useEffect(() => {
@@ -323,7 +366,7 @@ export default function CockpitApp() {
   useEffect(() => {
     if (backend.connected) return;
     const timer = window.setInterval(() => {
-      void refreshProject(false, false);
+      void refreshProject(false);
     }, 1500);
     return () => window.clearInterval(timer);
   }, [backend.connected, refreshProject]);
@@ -338,6 +381,7 @@ export default function CockpitApp() {
     const exitOverlay = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (document.querySelector(".gui-select-menu")) return;
+      if (document.querySelector(".project-action-flyout.is-open")) return;
       if (filesOpen) {
         event.preventDefault();
         setFilesOpen(false);
@@ -406,7 +450,6 @@ export default function CockpitApp() {
       avenir: '"Avenir Next", Avenir, sans-serif',
       futura: 'Futura, "Century Gothic", "Avenir Next", sans-serif',
       atkinson: '"Atkinson Hyperlegible", "Arial Nova", sans-serif',
-      "source-sans": '"Source Sans 3", "Source Sans Pro", sans-serif',
       charter: 'Charter, "Bitstream Charter", Georgia, serif',
       palatino: 'Palatino, "Palatino Linotype", "Book Antiqua", serif',
       monaco: 'Monaco, Menlo, Consolas, monospace',
@@ -678,9 +721,11 @@ export default function CockpitApp() {
     setToast(mapping.message);
   }
 
-  async function chooseProject() {
-    const response = await selectProjectFolder();
-    if (!response.cancelled) setToast(response.message);
+  async function chooseProject(mode: "create" | "open") {
+    const response = mode === "create"
+      ? await createProjectFolder()
+      : await selectProjectFolder();
+    if (!response.cancelled && !response.success) setToast(response.message);
     if (response.success) {
       await refreshProject(true);
     }
@@ -759,7 +804,8 @@ export default function CockpitApp() {
           updateSettings("appearance", { theme: darkMode ? "light" : "dark" })
         }
         onFiles={() => setFilesOpen(true)}
-        onSelectProject={() => void chooseProject()}
+        onCreateProject={() => void chooseProject("create")}
+        onOpenProject={() => void chooseProject("open")}
         onSettings={toggleSettings}
         onTerminal={() => setTerminalOpen((value) => !value)}
       />
@@ -818,7 +864,7 @@ export default function CockpitApp() {
         <ProjectFilesDialog
           projectName={project.projectName}
           onClose={() => setFilesOpen(false)}
-          onChanged={() => refreshProject(false, false)}
+          onChanged={() => refreshProject(false)}
         />
       )}
       {terminalOpen && <TerminalPanel
@@ -827,7 +873,7 @@ export default function CockpitApp() {
         widthPct={settings.appearance.terminalWidthPct}
         heightPct={settings.appearance.terminalHeightPct}
         onClose={() => setTerminalOpen(false)}
-        onRefresh={() => refreshProject(false, false)}
+        onRefresh={() => refreshProject(false)}
         onTerminate={terminateBackend}
         onSizeChange={(size) => updateSettings("appearance", size)}
       />}

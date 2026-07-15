@@ -18,9 +18,11 @@ test_that("cockpit project file routes create and manage input folders", {
     router <- plumber::plumb(api_path)
     context_route <- router$routes$project$context$getFunc()
     file_routes <- router$routes$project$files
-    list_route <- file_routes[[which(vapply(file_routes, function(route) identical(route$verbs, "GET"), logical(1)))]]$getFunc()
-    upload_route <- file_routes[[which(vapply(file_routes, function(route) identical(route$verbs, "POST"), logical(1)))]]$getFunc()
-    delete_route <- file_routes[[which(vapply(file_routes, function(route) identical(route$verbs, "DELETE"), logical(1)))]]$getFunc()
+    direct_file_routes <- file_routes[names(file_routes) == ""]
+    list_route <- direct_file_routes[[which(vapply(direct_file_routes, function(route) identical(route$verbs, "GET"), logical(1)))]]$getFunc()
+    upload_route <- direct_file_routes[[which(vapply(direct_file_routes, function(route) identical(route$verbs, "POST"), logical(1)))]]$getFunc()
+    delete_route <- direct_file_routes[[which(vapply(direct_file_routes, function(route) identical(route$verbs, "DELETE"), logical(1)))]]$getFunc()
+    delete_all_route <- file_routes$all$getFunc()
 
     request <- new.env(parent = emptyenv())
     request$postBody <- jsonlite::toJSON(list(projectPath = project), auto_unbox = TRUE)
@@ -52,6 +54,26 @@ test_that("cockpit project file routes create and manage input folders", {
     removed <- delete_route("controls", "Control 01.fcs")
     expect_true(removed$success)
     expect_false(file.exists(file.path(project, "scc", "Control 01.fcs")))
+
+    file.create(file.path(project, "samples", c("Sample 01.fcs", "Sample 02.FCS")))
+    deleted_all <- delete_all_route("samples")
+    expect_true(deleted_all$success)
+    expect_identical(deleted_all$deleted, 2L)
+    expect_length(list.files(file.path(project, "samples"), pattern = "\\.fcs$", ignore.case = TRUE), 0L)
+})
+
+test_that("project picker routes distinguish opening from creating", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    skip_if_not(file.exists(api_path))
+
+    router <- plumber::plumb(api_path)
+    select_route <- router$routes$project$select$getFunc()
+    create_route <- router$routes$project$create$getFunc()
+    select_body <- paste(deparse(body(select_route)), collapse = "\n")
+    create_body <- paste(deparse(body(create_route)), collapse = "\n")
+    expect_match(select_body, "allow_create = FALSE", fixed = TRUE)
+    expect_match(create_body, "allow_create = TRUE", fixed = TRUE)
 })
 
 test_that("cockpit project files reject traversal and non-FCS input", {
