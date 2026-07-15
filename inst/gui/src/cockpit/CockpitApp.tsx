@@ -283,8 +283,12 @@ export default function CockpitApp() {
     if (initial) {
       const saved = snapshot.savedSettings ?? {};
       setSettings((current) => {
-        const savedControl: Partial<WorkflowSettings["control"]> =
-          saved.control ?? {};
+        const {
+          gateFile: legacyGateFile,
+          ...savedControl
+        } = (saved.control ?? {}) as Partial<WorkflowSettings["control"]> & {
+          gateFile?: string;
+        };
         const savedSample: Partial<WorkflowSettings["sample"]> =
           saved.sample ?? {};
         const explicitCytometer = window.localStorage.getItem(
@@ -305,7 +309,10 @@ export default function CockpitApp() {
             sccDir: "scc",
             controlFile: "fcs_mapping.csv",
             outputDir: "spectreasy_outputs/unmix_controls",
-            gateFile: "ssc_gate_config.csv",
+            manualGateFile:
+              savedControl.manualGateFile ??
+              legacyGateFile ??
+              "ssc_gate_config.csv",
             method:
               savedControl.method ??
               snapshot.project.method ??
@@ -596,8 +603,8 @@ export default function CockpitApp() {
             cytometer: control.cytometer,
             auto_create_mapping: control.autoCreateMapping,
             auto_unknown_fluor_policy: control.autoUnknownFluorPolicy,
-            gate_file: "ssc_gate_config.csv",
-            gating_mode: "reuse",
+            manual_gate_file: control.manualGateFile,
+            gating_mode: control.manualGateFile ? "reuse" : "automatic",
             af_n_bands: control.afNBands,
             af_max_cells: control.afMaxCells,
             default_sample_type: control.defaultSampleType,

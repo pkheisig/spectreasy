@@ -2912,7 +2912,7 @@ function(req) {
     method <- gui_workflow_value(body, "method", get_unmixing_method())
     cytometer <- gui_workflow_value(body, "cytometer", "auto")
     gate_file <- gui_workflow_file_or_null(
-        gui_workflow_value(body, "gate_file", "ssc_gate_config.csv"),
+        gui_workflow_value(body, "manual_gate_file", "ssc_gate_config.csv"),
         root = gui_workflow_root(body)
     )
     gate_file_available <- length(gate_file) > 0L &&
@@ -2954,7 +2954,6 @@ function(req) {
                 if (gate_file_available) "reuse" else "automatic"
             ),
             manual_gate_file = gate_file,
-            gating_file = gate_file,
             scc_background_method = gui_workflow_value(body, "scc_background_method", "scatter_knn"),
             scc_background_k = gui_workflow_number(body, "scc_background_k", 2, integer = TRUE, minimum = 1),
             spectral_variant_som_nodes = gui_workflow_number(body, "spectral_variant_som_nodes", 16, integer = TRUE, minimum = 1),

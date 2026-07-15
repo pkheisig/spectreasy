@@ -116,7 +116,7 @@ export type ControlSettings = {
   cytometer: string
   autoCreateMapping: boolean
   autoUnknownFluorPolicy: 'by_channel' | 'empty' | 'filename'
-  gateFile: string
+  manualGateFile: string
   afNBands: number
   afMaxCells: number
   defaultSampleType: 'beads' | 'cells'
@@ -240,7 +240,7 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       cytometer: 'auto',
       autoCreateMapping: true,
       autoUnknownFluorPolicy: 'by_channel',
-      gateFile: 'ssc_gate_config.csv',
+      manualGateFile: 'ssc_gate_config.csv',
       afNBands: 100,
       afMaxCells: 50000,
       defaultSampleType: 'beads',

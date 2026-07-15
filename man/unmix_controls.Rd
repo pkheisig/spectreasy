@@ -23,7 +23,6 @@ unmix_controls(
   report_format = "html",
   gating_mode = "interactive",
   manual_gate_file = "ssc_gate_config.csv",
-  gating_file = manual_gate_file,
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 2L,
   spectral_variant_som_nodes = 16L,
@@ -96,17 +95,13 @@ automatically after controls are unmixed. Defaults to `TRUE`.}
 Only the selected format is written. Matching is case-insensitive.}
 
 \item{gating_mode}{Control-gating mode. `"interactive"` (default) opens the
-gating GUI and preloads `gating_file` when it exists; `"reuse"` skips the
-GUI and requires an existing gate CSV; `"automatic"` ignores any gate CSV
-and uses automatic GMM gating. Matching is case-insensitive.}
+gating GUI and preloads `manual_gate_file` when it exists; `"reuse"` skips
+the GUI and requires an existing gate CSV; `"automatic"` ignores any gate
+CSV and uses automatic GMM gating. Matching is case-insensitive.}
 
 \item{manual_gate_file}{Gate CSV written by [gate_controls()]. Relative paths
-are resolved from the current working directory. Kept for backwards
-compatibility; prefer `gating_file` in new code.}
-
-\item{gating_file}{Gate CSV to preload in `"interactive"` mode or require in
-`"reuse"` mode, for example `file.path(getwd(), "ssc_gate_config.csv")`.
-Defaults to `manual_gate_file`.}
+are resolved from the current working directory. In `"interactive"` mode
+the file is preloaded when it exists; `"reuse"` requires it to exist.}
 
 \item{scc_background_method}{Background subtraction method for Spectreasy/
 AutoSpectral SCC cleanup (`"scatter_knn"` or `"none"`). The default enables
@@ -153,7 +148,7 @@ modulation. `TRUE` is rejected for all other unmixing methods.}
 }
 \value{
 List with `M`, `W`, `unmixed_list`, the effective `gating_mode`, the
-  reused or created `gating_file` (when applicable), and key output paths,
+  reused or created `manual_gate_file` (when applicable), and key output paths,
   including `detector_noise_file` for the SCC-derived WLS noise floors.
 }
 \description{

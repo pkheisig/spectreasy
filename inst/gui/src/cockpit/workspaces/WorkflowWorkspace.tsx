@@ -852,10 +852,10 @@ function BuildReferencePanel({
         <label className="toggle-label">
           <input
             type="checkbox"
-            checked={settings.gateFile.length > 0}
+            checked={settings.manualGateFile.length > 0}
             onChange={(event) =>
               onSettingsChange({
-                gateFile: event.target.checked ? "ssc_gate_config.csv" : "",
+                manualGateFile: event.target.checked ? "ssc_gate_config.csv" : "",
               })
             }
           />
