@@ -111,7 +111,7 @@ const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)'
     const displayValue = value || emptyLabel;
     return (
         <div ref={rootRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-            <span style={{ color: theme.textMuted, fontSize: 9, fontWeight: 750, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{label}</span>
+            <span style={{ color: theme.textMuted, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{label}</span>
             <button
                 type="button"
                 aria-haspopup="listbox"
