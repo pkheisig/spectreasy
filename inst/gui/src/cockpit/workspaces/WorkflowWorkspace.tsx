@@ -75,7 +75,7 @@ export type WorkflowWorkspaceProps = {
       | Partial<WorkflowSettings["appearance"]>
       | { projectPath: string },
   ) => void;
-  onOpenApplet: (applet: CockpitAppletId) => void;
+  onOpenApplet: (applet: CockpitAppletId, reportPath?: string) => void;
   onSaveMapping?: () => void;
 };
 
@@ -128,7 +128,7 @@ function MappingWorkspace({
   | "settings"
   | "onSettingsChange"
   | "onOpenApplet"
-> & { onViewReports: () => void }) {
+> & { onViewReports: (reportPath: string) => void }) {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [bulkFillColumn, setBulkFillColumn] = useState<"controlType" | "universalNegative" | null>(null);
   const negativeCandidates = useMemo(
@@ -573,7 +573,7 @@ function ControlsWorkspace(
   return (
     <MappingWorkspace
       {...props}
-      onViewReports={() => props.onSectionChange("control-reports")}
+      onViewReports={(reportPath) => props.onOpenApplet("control-qc-report", reportPath)}
       onSaveMapping={props.onSaveMapping ?? props.onSave}
     />
   );

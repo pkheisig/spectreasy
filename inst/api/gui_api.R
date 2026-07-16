@@ -2596,20 +2596,21 @@ gui_project_report_files <- function(root, files = NULL, output_root = "", repor
         if (!identical(output_base, root) && !startsWith(output_base, root_prefix)) {
             stop("Report output folder is outside the active project.", call. = FALSE)
         }
-        report_dir <- file.path(
-            output_base,
-            if (identical(report_type, "sample")) "unmix_samples" else "unmix_controls",
-            if (identical(report_type, "sample")) "qc_samples" else "qc_controls"
-        )
+        stage_dir <- file.path(output_base, if (identical(report_type, "sample")) "unmix_samples" else "unmix_controls")
+        report_dir_name <- if (identical(report_type, "sample")) "qc_samples" else "qc_controls"
+        report_dirs <- if (dir.exists(stage_dir)) {
+            candidates <- list.dirs(stage_dir, recursive = FALSE, full.names = TRUE)
+            candidates[grepl(paste0("^", report_dir_name, "(?:_(?:[2-9]|[1-9][0-9]+))?$"), basename(candidates), perl = TRUE)]
+        } else character()
         report_name <- if (identical(report_type, "sample")) "qc_samples_report" else "qc_controls_report"
-        return(if (dir.exists(report_dir)) {
+        return(unique(unlist(lapply(report_dirs, function(report_dir) {
             list.files(
                 report_dir,
                 pattern = paste0("^", report_name, "\\.(html?|pdf)$"),
                 full.names = TRUE,
                 ignore.case = TRUE
             )
-        } else character())
+        }), use.names = FALSE)))
     }
     if (is.null(files)) {
         top_level <- if (dir.exists(root)) list.dirs(root, recursive = FALSE, full.names = TRUE) else character()

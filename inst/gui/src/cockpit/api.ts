@@ -84,6 +84,7 @@ function liveArtifacts(projectPath: string, value: unknown, reportValue: unknown
     status,
     detail,
     path: absolute(file),
+    relativePath: file,
     updated: 'Present in active project',
   })
   const out: Artifact[] = []

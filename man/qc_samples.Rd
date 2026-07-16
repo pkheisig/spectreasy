@@ -26,7 +26,7 @@ qc_samples(
   save_qc_pngs = FALSE,
   qc_metrics_dir = NULL,
   report_format = "html",
-  overwrite = c("overwrite", "version", "error"),
+  overwrite = c("version", "overwrite", "error"),
   report_run_settings = list(),
   report_artifact_paths = list()
 )
@@ -98,8 +98,8 @@ CSVs are written alongside the report.}
 \item{report_format}{Report format, `"html"` (default) or `"pdf"`.
 Matching is case-insensitive.}
 
-\item{overwrite}{HTML collision policy: overwrite the existing report
-(default), create a versioned filename, or error. Existing PDF behavior is unchanged.}
+\item{overwrite}{HTML collision policy: create a versioned filename
+(default), overwrite, or error. Existing PDF behavior is unchanged.}
 
 \item{report_run_settings}{Additional workflow settings recorded in HTML.}
 

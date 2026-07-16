@@ -26,7 +26,7 @@ qc_controls(
   unmix_scatter_axis_limit = NULL,
   seed = NULL,
   report_format = "html",
-  overwrite = c("overwrite", "version", "error"),
+  overwrite = c("version", "overwrite", "error"),
   report_plots = list(),
   report_run_settings = list(),
   report_artifact_paths = list(),
@@ -95,8 +95,8 @@ ranges. Use `1e5` for `c(-1e5, 1e5)` on every panel.}
 \item{report_format}{Report format, `"html"` (default) or `"pdf"`.
 Matching is case-insensitive.}
 
-\item{overwrite}{HTML collision policy: overwrite the existing report
-(default), create a versioned filename, or error. Existing PDF behavior is unchanged.}
+\item{overwrite}{HTML collision policy: create a versioned filename
+(default), overwrite, or error. Existing PDF behavior is unchanged.}
 
 \item{report_plots}{Optional named list of precomputed spectra, AF, and SCC
 scatter plots to reuse in HTML output.}

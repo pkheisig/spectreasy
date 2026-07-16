@@ -301,6 +301,7 @@ export default function CockpitApp() {
   const [backend, setBackend] = useState<BackendStatus>(initialBackendStatus);
   const [activeSection, setActiveSection] = useState<SectionId>("controls");
   const [activeApplet, setActiveApplet] = useState<CockpitAppletId | null>(null);
+  const [selectedReportPath, setSelectedReportPath] = useState("");
   const [gatingInitialized, setGatingInitialized] = useState(false);
   const [sectionBeforeApplet, setSectionBeforeApplet] =
     useState<SectionId>("controls");
@@ -596,9 +597,10 @@ export default function CockpitApp() {
     setActiveSection("settings");
   }
 
-  function openApplet(applet: CockpitAppletId, section = activeSection) {
+  function openApplet(applet: CockpitAppletId, section = activeSection, reportPath = "") {
     setSectionBeforeApplet(activeSection);
     setActiveSection(section);
+    setSelectedReportPath(reportPath);
     if (applet === "control-gating") setGatingInitialized(true);
     setActiveApplet(applet);
   }
@@ -626,6 +628,7 @@ export default function CockpitApp() {
   async function exitApplet(reason: "exit" | "confirmed" = "exit") {
     const closingApplet = activeApplet;
     setActiveApplet(null);
+    setSelectedReportPath("");
     setActiveSection(sectionBeforeApplet);
     const snapshot = await refreshProject();
     if (closingApplet === "control-gating") {
@@ -947,7 +950,7 @@ export default function CockpitApp() {
               onSectionChange={navigateToSection}
               settings={settings}
               onSettingsChange={updateSettings}
-              onOpenApplet={(applet) => openApplet(applet)}
+              onOpenApplet={(applet, reportPath) => openApplet(applet, activeSection, reportPath)}
             />
           </div>
         </main>
@@ -967,6 +970,7 @@ export default function CockpitApp() {
           theme={settings.appearance.theme}
           projectPath={settings.projectPath}
           outputRoot={normalizeCockpitOutputRoot(settings.control.outputDir)}
+          reportPath={selectedReportPath}
           active={activeApplet === "control-gating"}
           onExit={exitApplet}
         />
@@ -977,6 +981,7 @@ export default function CockpitApp() {
           theme={settings.appearance.theme}
           projectPath={settings.projectPath}
           outputRoot={normalizeCockpitOutputRoot(activeApplet === "sample-qc-report" ? settings.sample.outputDir : settings.control.outputDir)}
+          reportPath={selectedReportPath}
           onExit={exitApplet}
         />
       )}

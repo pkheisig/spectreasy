@@ -27,6 +27,7 @@ export type Artifact = {
   status: ArtifactStatus
   detail: string
   path: string
+  relativePath?: string
   updated: string
   updatedEpoch?: number
   run?: string

@@ -612,11 +612,7 @@ unmix_controls <- function(
     qc_controls_dir <- NULL
     output_file <- NULL
     if (isTRUE(save_report)) {
-        qc_controls_dir <- output_paths$qc_controls_dir
-        unlink(
-            file.path(qc_controls_dir, paste0("qc_controls_report.", setdiff(c("html", "pdf"), report_format))),
-            force = TRUE
-        )
+        qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
         output_file <- file.path(qc_controls_dir, paste0("qc_controls_report.", report_format))
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
     }
@@ -709,6 +705,7 @@ unmix_controls <- function(
         NULL
     }
 
+    unmixed_controls_dir <- .next_safe_output_dir(output_paths$unmixed_dir)
     unmix_sample_args <- list(
         sample_dir = meta_info$fcs_files,
         M = M,
@@ -718,7 +715,7 @@ unmix_controls <- function(
         n_threads = n_threads,
         spectral_variant_library = spectral_variant_library,
         spectral_variant_top_k = spectral_variant_top_k,
-        output_dir = .as_resolved_unmixed_fcs_dir(output_paths$unmixed_dir),
+        output_dir = .as_resolved_unmixed_fcs_dir(unmixed_controls_dir),
         write_fcs = TRUE,
         save_report = FALSE
     )
@@ -838,6 +835,7 @@ unmix_controls <- function(
         af_spectra_file = if (isTRUE(save_qc_png) && nrow(M_af) > 0) output_paths$af_spectra_file else NULL,
         unmixing_scatter_file = if (isTRUE(save_qc_png)) output_paths$unmixing_scatter_png else NULL,
         qc_plot_dir = if (isTRUE(save_qc_png)) output_dir else NULL,
+        unmixed_fcs_dir = unmixed_controls_dir,
         gating_mode = gating_mode_used,
         manual_gate_file = manual_gate_file,
         static_unmixing_matrix_method = static_info$static_unmixing_matrix_method,

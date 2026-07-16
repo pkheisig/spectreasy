@@ -738,7 +738,7 @@ test_that("unmix_samples writes unmixed FCS with passthrough acquisition paramet
     expect_false(any(c("B1-A", "YG1-A") %in% out_cols))
 })
 
-test_that("unmix_samples uses safe output filenames and supports flowSet return", {
+test_that("unmix_samples versions the output directory and supports flowSet return", {
     M <- matrix(c(
         1, 0.2,
         0.1, 1
@@ -774,8 +774,8 @@ test_that("unmix_samples uses safe output filenames and supports flowSet return"
     expect_s4_class(unmixed_fs, "flowSet")
     expect_setequal(flowCore::sampleNames(unmixed_fs), c("sample1", "sample2"))
     expect_true(file.exists(file.path(unmixed_dir, "sample1_OLS-0AF.fcs")))
-    expect_true(file.exists(file.path(unmixed_dir, "sample1_OLS-0AF_2.fcs")))
-    expect_true(file.exists(file.path(unmixed_dir, "sample2_OLS-0AF.fcs")))
+    expect_true(file.exists(file.path(paste0(unmixed_dir, "_2"), "sample1_OLS-0AF.fcs")))
+    expect_true(file.exists(file.path(paste0(unmixed_dir, "_2"), "sample2_OLS-0AF.fcs")))
 
     residuals_attr <- attr(unmixed_fs, "spectreasy_residuals")
     expect_true(is.list(residuals_attr))

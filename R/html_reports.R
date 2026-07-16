@@ -160,7 +160,7 @@
     stop("Could not find a free versioned report filename for: ", path, call. = FALSE)
 }
 
-.report_resolve_overwrite <- function(path, overwrite = c("overwrite", "version", "error")) {
+.report_resolve_overwrite <- function(path, overwrite = c("version", "overwrite", "error")) {
     overwrite <- .match_arg_ci(overwrite, c("version", "overwrite", "error"), "overwrite")
     if (!file.exists(path) || identical(overwrite, "overwrite")) return(path)
     if (identical(overwrite, "version")) return(.report_versioned_path(path))
@@ -891,7 +891,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
 #' @return Structured report metadata including the final output path, source
 #'   fingerprint, self-contained status, and cached report data.
 #' @export
-render_qc_html_report <- function(report_data, output_file, overwrite=c("overwrite","version","error")) {
+render_qc_html_report <- function(report_data, output_file, overwrite=c("version","overwrite","error")) {
     if(!inherits(report_data,"spectreasy_report_data")) stop("report_data must be created by a Spectreasy report data collector.",call.=FALSE)
     spec <- .report_output_spec(output_file,"html")
     include_nxn <- nrow(.report_nxn_entries(report_data)) > 0L

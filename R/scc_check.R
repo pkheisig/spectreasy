@@ -370,8 +370,8 @@
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param report_format Report format, `"html"` (default) or `"pdf"`.
 #'   Matching is case-insensitive.
-#' @param overwrite HTML collision policy: overwrite the existing report
-#'   (default), create a versioned filename, or error. Existing PDF behavior is unchanged.
+#' @param overwrite HTML collision policy: create a versioned filename
+#'   (default), overwrite, or error. Existing PDF behavior is unchanged.
 #' @param report_plots Optional named list of precomputed spectra, AF, and SCC
 #'   scatter plots to reuse in HTML output.
 #' @param report_run_settings Additional workflow settings recorded in HTML.
@@ -409,7 +409,7 @@ qc_controls <- function(
     unmix_scatter_axis_limit = NULL,
     seed = NULL,
     report_format = "html",
-    overwrite = c("overwrite", "version", "error"),
+    overwrite = c("version", "overwrite", "error"),
     report_plots = list(),
     report_run_settings = list(),
     report_artifact_paths = list(),
@@ -615,6 +615,7 @@ qc_controls <- function(
         .draw_report_ggplot_page(plot_spectra(M_reference_overlay, pd = pd, output_file = NULL), height_ratio = 0.6)
     }
 
+    nxn_file <- character()
     if (nrow(M_no_af) > 1) {
         sim_mat <- calculate_similarity_matrix(M_no_af)
         .write_qc_report_matrix_metric(
@@ -698,6 +699,33 @@ qc_controls <- function(
             axis_limit = unmix_scatter_axis_limit,
             seed = seed
         )
+        full_scatter <- report_plots$unmixing_scatter
+        if (is.null(full_scatter)) {
+            full_pages <- .build_qc_report_control_scatter_pages(
+                unmixed_list = unmixed_list,
+                sample_to_marker = sample_to_marker,
+                markers = scatter_markers,
+                marker_display = NULL,
+                rows_per_page = max(2L, length(scatter_markers)),
+                max_points_per_sample = unmix_scatter_max_points,
+                axis_limit = unmix_scatter_axis_limit,
+                seed = seed
+            )
+            if (length(full_pages)) full_scatter <- full_pages[[1]]
+        }
+        if (!is.null(full_scatter)) {
+            nxn_width <- max(12, min(30, length(scatter_markers) * 0.9))
+            nxn_file <- .report_plot_file(
+                full_scatter,
+                file.path(
+                    dirname(output_file),
+                    paste0(tools::file_path_sans_ext(basename(output_file)), "_nxn.png")
+                ),
+                width = nxn_width,
+                height = nxn_width,
+                dpi = 300
+            )
+        }
         for (p_scatter in scatter_pages) {
             .draw_report_ggplot_page(p_scatter, square = TRUE)
         }
@@ -712,6 +740,9 @@ qc_controls <- function(
     .spectreasy_console_field("Saved", .spectreasy_console_path(output_file))
     .spectreasy_console_footer(blank = FALSE)
     invisible(list(
+        output_file = normalizePath(output_file, mustWork = FALSE),
+        companion_files = if (length(nxn_file)) normalizePath(nxn_file, mustWork = FALSE) else character(),
+        format = "pdf",
         M = M_built,
         qc_summary = qc_summary,
         qc_plot_dir = retained_qc_plot_dir,

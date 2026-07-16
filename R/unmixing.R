@@ -418,20 +418,15 @@
     output_ff
 }
 
-.next_safe_output_path <- function(path) {
-    if (!file.exists(path)) {
+.next_safe_output_dir <- function(path) {
+    if (!dir.exists(path)) {
         return(path)
     }
 
-    dir_path <- dirname(path)
-    ext <- tools::file_ext(path)
-    ext_suffix <- if (nzchar(ext)) paste0(".", ext) else ""
-    stem <- tools::file_path_sans_ext(basename(path))
-
     i <- 2L
     repeat {
-        candidate <- file.path(dir_path, paste0(stem, "_", i, ext_suffix))
-        if (!file.exists(candidate)) {
+        candidate <- paste0(path, "_", i)
+        if (!dir.exists(candidate)) {
             return(candidate)
         }
         i <- i + 1L
@@ -993,7 +988,11 @@ unmix_samples <- function(sample_dir = "samples",
         }
     }
     output_paths <- .unmix_samples_output_paths(output_dir)
-    unmixed_output_dir <- output_paths$unmixed_dir
+    unmixed_output_dir <- if (isTRUE(write_fcs)) {
+        .next_safe_output_dir(output_paths$unmixed_dir)
+    } else {
+        output_paths$unmixed_dir
+    }
 
     if (isTRUE(verbose)) {
         .spectreasy_console_header("unmix_samples")
@@ -1161,11 +1160,7 @@ unmix_samples <- function(sample_dir = "samples",
             )
 
             target_output_path <- file.path(unmixed_output_dir, .unmixed_fcs_filename(sn, method, M))
-            output_path <- .next_safe_output_path(target_output_path)
-            if (!identical(output_path, target_output_path)) {
-                .spectreasy_console_step("Safe output", basename(output_path))
-            }
-            flowCore::write.FCS(new_ff, output_path)
+            flowCore::write.FCS(new_ff, target_output_path)
             rm(write_data_all, unmixed_exprs, new_ff)
         }
 
@@ -1191,13 +1186,10 @@ unmix_samples <- function(sample_dir = "samples",
     attr(results, "qc_metrics_dir") <- NULL
     attr(results, "qc_plot_dir") <- NULL
     attr(results, "qc_report_data") <- NULL
+    attr(results, "unmixed_fcs_dir") <- if (isTRUE(write_fcs)) unmixed_output_dir else NULL
 
     if (isTRUE(save_report)) {
-        qc_samples_dir <- output_paths$qc_samples_dir
-        unlink(
-            file.path(qc_samples_dir, paste0("qc_samples_report.", setdiff(c("html", "pdf"), report_format))),
-            force = TRUE
-        )
+        qc_samples_dir <- .next_safe_output_dir(output_paths$qc_samples_dir)
         output_file <- file.path(qc_samples_dir, paste0("qc_samples_report.", report_format))
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
         report_res <- qc_samples(

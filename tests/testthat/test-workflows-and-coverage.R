@@ -623,6 +623,9 @@ test_that("qc_controls writes a PDF from synthetic SCC files", {
     )
 
     expect_true(file.exists(output_pdf))
+    expect_identical(normalizePath(out$output_file), normalizePath(output_pdf))
+    expect_identical(basename(out$companion_files), paste0(tools::file_path_sans_ext(basename(output_pdf)), "_nxn.png"))
+    expect_true(all(file.exists(out$companion_files)))
     expect_true(dir.exists(out$qc_plot_dir))
     expect_true(is.matrix(out$M))
     expect_true(is.data.frame(out$qc_summary))

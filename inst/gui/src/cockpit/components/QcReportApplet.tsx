@@ -13,6 +13,7 @@ type QcReportAppletProps = {
   theme: 'light' | 'dark'
   projectPath: string
   outputRoot: string
+  initialReportPath: string
 }
 
 function reportTime(report: Report): number {
@@ -28,7 +29,7 @@ function newestReport(reports: Report[], kind: 'control' | 'sample') {
     .reduce<Report | null>((newest, report) => !newest || reportTime(report) > reportTime(newest) ? report : newest, null)
 }
 
-export default function QcReportApplet({ kind, theme, projectPath, outputRoot }: QcReportAppletProps) {
+export default function QcReportApplet({ kind, theme, projectPath, outputRoot, initialReportPath }: QcReportAppletProps) {
   const requestKey = `${projectPath}\n${outputRoot}\n${kind}`
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
@@ -36,13 +37,28 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot }:
   const [loadedRequestKey, setLoadedRequestKey] = useState('')
   const [exporting, setExporting] = useState(false)
   const [message, setMessage] = useState('')
-  const report = useMemo(() => newestReport(reports, kind), [reports, kind])
+  const [selectedReportPath, setSelectedReportPath] = useState(initialReportPath)
+  const reportsForKind = useMemo(() => {
+    const type = kind === 'control' ? 'Control QC' : 'Sample QC'
+    return reports
+      .filter((candidate): candidate is Report & { path: string } => candidate.type === type && Boolean(candidate.path))
+      .sort((left, right) => reportTime(right) - reportTime(left))
+  }, [reports, kind])
+  const report = useMemo(
+    () => reportsForKind.find((candidate) => candidate.path === selectedReportPath) ?? reportsForKind[0] ?? null,
+    [reportsForKind, selectedReportPath],
+  )
 
   useEffect(() => {
     let active = true
     void loadProjectReports(projectPath, outputRoot, kind).then((nextReports) => {
       if (!active) return
       setReports(nextReports)
+      setSelectedReportPath((current) => {
+        if (initialReportPath && nextReports.some((candidate) => candidate.path === initialReportPath)) return initialReportPath
+        if (current && nextReports.some((candidate) => candidate.path === current)) return current
+        return newestReport(nextReports, kind)?.path ?? ''
+      })
       setLoadFailed(false)
       setLoading(false)
       setLoadedRequestKey(requestKey)
@@ -55,7 +71,9 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot }:
     return () => {
       active = false
     }
-  }, [kind, outputRoot, projectPath, requestKey])
+  }, [initialReportPath, kind, outputRoot, projectPath, requestKey])
+
+  const reportLabel = (path: string) => path.replace(/\\/g, '/').split('/').slice(-2).join('/')
 
   const download = async () => {
     if (!report?.path) return
@@ -80,7 +98,7 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot }:
   return (
     <section className={`qc-report-applet theme-${theme}`} aria-label={`${kind} QC report viewer`}>
       <header className="qc-report-toolbar">
-        <strong>{kind === 'control' ? 'Controls' : 'Samples'} QC report</strong>
+        <strong>{report ? reportLabel(report.path) : `${kind === 'control' ? 'Controls' : 'Samples'} QC reports`}</strong>
         {report && <div className="qc-report-actions">
           <button type="button" onClick={openInNewTab}>
             <ExternalLink size={15} /> Open in new tab
@@ -102,13 +120,29 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot }:
           <strong>Could not load the QC report</strong>
           <span>The local R backend did not return the report list.</span>
         </div>
-      ) : report?.path ? (
-        <iframe
-          className="qc-report-frame"
-          src={projectFileUrl(report.path, projectPath)}
-          title={`${kind} QC report`}
-          {...(report.format === 'HTML' ? { sandbox: 'allow-scripts' } : {})}
-        />
+      ) : reportsForKind.length && report?.path ? (
+        <div className="qc-report-layout">
+          <aside className="qc-report-library" aria-label={`${kind} QC report history`}>
+            {reportsForKind.map((candidate) => (
+              <button
+                type="button"
+                className={candidate.path === report.path ? 'is-selected' : ''}
+                key={candidate.id}
+                onClick={() => setSelectedReportPath(candidate.path)}
+              >
+                <span>{candidate.format}</span>
+                <strong>{reportLabel(candidate.path)}</strong>
+                <small>{candidate.created}</small>
+              </button>
+            ))}
+          </aside>
+          <iframe
+            className="qc-report-frame"
+            src={projectFileUrl(report.path, projectPath)}
+            title={`${kind} QC report`}
+            {...(report.format === 'HTML' ? { sandbox: 'allow-scripts' } : {})}
+          />
+        </div>
       ) : (
         <div className="qc-report-empty">
           <strong>No QC report yet</strong>
