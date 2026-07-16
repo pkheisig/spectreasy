@@ -24,7 +24,7 @@ function reportTime(report: Report): number {
 function newestReport(reports: Report[], kind: 'control' | 'sample') {
   const type = kind === 'control' ? 'Control QC' : 'Sample QC'
   return reports
-    .filter((report) => report.type === type && report.path && report.status === 'current')
+    .filter((report) => report.type === type && report.path)
     .reduce<Report | null>((newest, report) => !newest || reportTime(report) > reportTime(newest) ? report : newest, null)
 }
 

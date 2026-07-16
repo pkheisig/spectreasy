@@ -8,7 +8,7 @@ type Props = {
 
 export function ControlReportPanel({ project, onView }: Props) {
   const reports = project.artifacts.filter((artifact) =>
-    artifact.group === 'Reports' && artifact.status === 'current' && /control|qc/i.test(artifact.type),
+    artifact.group === 'Reports' && /control|qc/i.test(artifact.type),
   )
   const latest = reports.reduce<(typeof reports)[number] | undefined>((newest, report) =>
     !newest || (report.updatedEpoch ?? 0) > (newest.updatedEpoch ?? 0) ? report : newest,
@@ -19,7 +19,7 @@ export function ControlReportPanel({ project, onView }: Props) {
       <div className="card-toolbar">
         <div>
           <h2>{latest ? 'Control QC report available' : 'No control QC report yet'}</h2>
-          <p>{latest ? latest.name : 'Generate a report after the control workflow completes.'}</p>
+          <p>{latest ? latest.name : 'Run control unmixing with report generation enabled.'}</p>
         </div>
         <div className="toolbar-actions">
           {latest && (
