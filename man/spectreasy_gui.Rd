@@ -4,14 +4,21 @@
 \alias{spectreasy_gui}
 \title{Launch the Spectreasy Cockpit}
 \usage{
-spectreasy_gui()
+spectreasy_gui(port = 8000)
+}
+\arguments{
+\item{port}{Local API and cockpit port. Defaults to \code{8000}. Use another
+available port, for example \code{8001}, to run a separate test instance.}
 }
 \value{
 Invisibly returns `NULL`. This function blocks while the local GUI
 application is running.
 }
 \description{
-Starts the local Spectreasy R backend and opens the hosted cockpit. The
+Starts the local Spectreasy R backend and serves the bundled cockpit from
+that same localhost process. The public GitHub Pages site remains the
+installation and onboarding entry point; using localhost here avoids browser
+local-network permission and cross-origin restrictions. The
 current R working directory is opened as the initial project. Use the
 project button in the header to create or open a different project.
 }
@@ -22,5 +29,6 @@ This is the recommended entry point for interactive use:
 \examples{
 if (interactive()) {
   spectreasy_gui()
+  spectreasy_gui(port = 8001)
 }
 }

@@ -254,10 +254,12 @@ test_that("spectreasy_gui opens the R working directory as the initial project",
         .package = "spectreasy"
     )
 
-    expect_null(spectreasy::spectreasy_gui())
+    expect_null(spectreasy::spectreasy_gui(port = 8123))
     expect_identical(launch_args$matrix_dir, normalizePath(project_dir))
     expect_identical(launch_args$samples_dir, file.path(normalizePath(project_dir), "samples"))
+    expect_identical(launch_args$port, 8123)
     expect_identical(launch_args$mode, "cockpit")
+    expect_null(launch_args$hosted_frontend_url)
     expect_true(launch_args$initial_project_selected)
 })
 

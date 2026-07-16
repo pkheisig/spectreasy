@@ -105,7 +105,7 @@ export function SetupExperience({
       <header className="setup-header">
         <div className="setup-brand">
           <span className="setup-brand-mark" aria-hidden="true"><i /><i /><i /><i /></span>
-          <span><strong>spectreasy</strong><small>Local spectral analysis</small></span>
+          <span><strong>spectreasy</strong></span>
         </div>
         <span className="setup-header-note">Hosted interface · local computation</span>
       </header>

@@ -180,7 +180,7 @@
 }
 
 .spectreasy_gui_mode_label <- function(mode) {
-    if (identical(mode, "cockpit")) return("Spectreasy Cockpit")
+    if (identical(mode, "cockpit")) return("Cockpit")
     if (identical(mode, "control-gating")) return("Control gating GUI")
     if (identical(mode, "panel-builder")) return("Spectral panel builder GUI")
     "Matrix adjustment GUI"
@@ -432,31 +432,35 @@ adjust_matrix <- function(matrix_dir = NULL,
 
 #' Launch the Spectreasy Cockpit
 #'
-#' Starts the local Spectreasy R backend and opens the hosted cockpit. The
+#' Starts the local Spectreasy R backend and serves the bundled cockpit from
+#' that same localhost process. The public GitHub Pages site remains the
+#' installation and onboarding entry point; using localhost here avoids browser
+#' local-network permission and cross-origin restrictions. The
 #' current R working directory is opened as the initial project. Use the
 #' project button in the header to create or open a different project.
 #'
 #' This is the recommended entry point for interactive use:
 #' `library(spectreasy); spectreasy_gui()`.
 #'
+#' @param port Local API and cockpit port. Defaults to `8000`. Use another
+#'   available port, for example `8001`, to run a separate test instance.
 #' @return Invisibly returns `NULL`. This function blocks while the local GUI
 #' application is running.
 #' @export
 #' @examples
 #' if (interactive()) {
 #'   spectreasy_gui()
+#'   spectreasy_gui(port = 8001)
 #' }
-spectreasy_gui <- function() {
+spectreasy_gui <- function(port = 8000) {
     project_dir <- normalizePath(getwd(), mustWork = TRUE)
     samples_dir <- file.path(project_dir, "samples")
     .launch_spectreasy_gui(
         matrix_dir = project_dir,
         samples_dir = samples_dir,
+        port = port,
         mode = "cockpit",
-        hosted_frontend_url = getOption(
-            "spectreasy.cockpit_url",
-            "https://pkheisig.github.io/spectreasy/"
-        ),
+        hosted_frontend_url = NULL,
         initial_project_selected = TRUE
     )
     invisible(NULL)
