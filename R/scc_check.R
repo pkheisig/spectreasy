@@ -370,8 +370,8 @@
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
 #' @param report_format Report format, `"html"` (default) or `"pdf"`.
 #'   Matching is case-insensitive.
-#' @param overwrite HTML collision policy: create a versioned filename
-#'   (recommended), overwrite, or error. Existing PDF behavior is unchanged.
+#' @param overwrite HTML collision policy: overwrite the existing report
+#'   (default), create a versioned filename, or error. Existing PDF behavior is unchanged.
 #' @param report_plots Optional named list of precomputed spectra, AF, and SCC
 #'   scatter plots to reuse in HTML output.
 #' @param report_run_settings Additional workflow settings recorded in HTML.
@@ -409,7 +409,7 @@ qc_controls <- function(
     unmix_scatter_axis_limit = NULL,
     seed = NULL,
     report_format = "html",
-    overwrite = c("version", "overwrite", "error"),
+    overwrite = c("overwrite", "version", "error"),
     report_plots = list(),
     report_run_settings = list(),
     report_artifact_paths = list(),

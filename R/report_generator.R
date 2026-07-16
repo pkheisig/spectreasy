@@ -1039,8 +1039,8 @@
 #'   CSVs are written alongside the report.
 #' @param report_format Report format, `"html"` (default) or `"pdf"`.
 #'   Matching is case-insensitive.
-#' @param overwrite HTML collision policy: create a versioned filename
-#'   (recommended), overwrite, or error. Existing PDF behavior is unchanged.
+#' @param overwrite HTML collision policy: overwrite the existing report
+#'   (default), create a versioned filename, or error. Existing PDF behavior is unchanged.
 #' @param report_run_settings Additional workflow settings recorded in HTML.
 #' @param report_artifact_paths Additional input/output paths recorded in HTML.
 #'
@@ -1091,7 +1091,7 @@ qc_samples <- function(results,
                        save_qc_pngs = FALSE,
                        qc_metrics_dir = NULL,
                        report_format = "html",
-                       overwrite = c("version", "overwrite", "error"),
+                       overwrite = c("overwrite", "version", "error"),
                        report_run_settings = list(),
                        report_artifact_paths = list()) {
     output_file_missing <- missing(output_file)

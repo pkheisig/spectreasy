@@ -85,7 +85,7 @@
         unmix_scatter_axis_limit = NULL,
         seed = NULL,
         report_format = "html",
-        overwrite = "version",
+        overwrite = "overwrite",
         report_plots = list(),
         report_run_settings = list(),
         report_artifact_paths = list()
@@ -179,7 +179,7 @@
         save_qc_pngs = FALSE,
         qc_metrics_dir = NULL,
         report_format = "html",
-        overwrite = "version",
+        overwrite = "overwrite",
         report_run_settings = list(),
         report_artifact_paths = list()
     )
@@ -241,7 +241,7 @@
     html_report <- render_qc_html_report(
         report_data = sample_report_data,
         output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.html",
-        overwrite = "version"
+        overwrite = "overwrite"
     )
 
     # -------------------------------------------------------------------------

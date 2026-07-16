@@ -34,6 +34,11 @@ function projectNameFromPath(path: string): string {
   return normalized.split('/').pop()?.trim() || 'Spectreasy project'
 }
 
+function normalizeOutputRoot(value: unknown): string {
+  const output = String(value ?? 'spectreasy_outputs').trim().replace(/[\\/]+$/, '')
+  return output.replace(/[\\/](?:unmix_controls|unmix_samples)$/i, '') || 'spectreasy_outputs'
+}
+
 export function rowsFromBackend(value: unknown): Array<Record<string, unknown>> {
   if (Array.isArray(value)) return value.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
   if (!value || typeof value !== 'object') return []
@@ -68,7 +73,7 @@ function normalizeMappingRows(value: unknown): ProjectState['mapping'] {
   }).filter((row) => row.file.length > 0)
 }
 
-function liveArtifacts(projectPath: string, value: unknown): Artifact[] {
+function liveArtifacts(projectPath: string, value: unknown, reportValue: unknown): Artifact[] {
   const files = Array.isArray(value) ? value.map((file) => String(file).replace(/\\/g, '/')).filter(Boolean) : []
   const absolute = (relative: string) => `${projectPath.replace(/\\/g, '/').replace(/\/$/, '')}/${relative}`
   const artifact = (file: string, group: string, type: string, detail: string, status: Artifact['status'] = 'current'): Artifact => ({
@@ -90,8 +95,28 @@ function liveArtifacts(projectPath: string, value: unknown): Artifact[] {
   if (samples.length) out.push(artifact('samples/', 'Samples', 'Folder', `${samples.length} FCS file${samples.length === 1 ? '' : 's'}`))
   const matrices = files.filter((file) => /(matrix|unmixing|detector_noise|variant).*\.(csv|rds)$/i.test(file)).slice(0, 12)
   matrices.forEach((file) => out.push(artifact(file, 'Matrices', /variant/i.test(file) ? 'Spectral library' : 'Matrix', 'Project matrix artifact')))
-  const reports = files.filter((file) => /(^|\/)(reports|spectreasy_outputs)\//i.test(file) && /\.(html?|pdf)$/i.test(file)).slice(-8)
-  reports.forEach((file) => out.push(artifact(file, 'Reports', /sample|qc_samples/i.test(file) ? 'Sample QC report' : 'QC report', 'Project report')))
+  rowsFromBackend(reportValue)
+    .map((row) => ({
+        path: String(row.path ?? '').replace(/\\/g, '/'),
+        type: String(row.report_type ?? ''),
+        status: String(row.status ?? 'current'),
+        created: String(row.created ?? 'Present in active project'),
+        createdEpoch: Number(row.created_epoch),
+    }))
+    .filter((report) => report.path.length > 0)
+    .sort((left, right) => (Number.isFinite(left.createdEpoch) ? left.createdEpoch : 0) - (Number.isFinite(right.createdEpoch) ? right.createdEpoch : 0))
+    .forEach((report) => {
+        const reportArtifact = artifact(
+          report.path,
+          'Reports',
+          report.type === 'Sample QC' ? 'Sample QC report' : 'Control QC report',
+          'Project report',
+          report.status === 'stale' ? 'stale' : 'current',
+        )
+        reportArtifact.updated = report.created
+        reportArtifact.updatedEpoch = Number.isFinite(report.createdEpoch) ? report.createdEpoch : undefined
+      out.push(reportArtifact)
+    })
   files.filter((file) => /metric.*\.csv$/i.test(file)).slice(0, 6).forEach((file) => out.push(artifact(file, 'QC Metrics', 'Metrics', 'QC metric table')))
   return out
 }
@@ -147,7 +172,29 @@ export async function loadProjectSnapshot(): Promise<{ project: ProjectState; ba
       ? scalarValue(projectResponse.data?.project_path, '')
       : scalarValue(status.matrix_dir, '')
     const reportedProjectName = scalarValue(status.project_name, '').trim()
-    const liveProjectArtifacts = liveArtifacts(projectPath, projectResponse?.data?.files)
+    const savedConfig = unboxGuiState(guiStateResponse?.data?.config) as Record<string, unknown> | undefined
+    const savedSettings = (savedConfig?.settings ?? savedConfig ?? undefined) as Partial<WorkflowSettings> | undefined
+    const [controlReportsResponse, sampleReportsResponse] = projectPath
+      ? await Promise.all([
+          client.get('/project/reports', {
+            params: { project_path: projectPath, output_root: normalizeOutputRoot(savedSettings?.control?.outputDir), report_type: 'control' },
+            timeout: 10000,
+          }).catch(() => null),
+          client.get('/project/reports', {
+            params: { project_path: projectPath, output_root: normalizeOutputRoot(savedSettings?.sample?.outputDir), report_type: 'sample' },
+            timeout: 10000,
+          }).catch(() => null),
+        ])
+      : [null, null]
+    const exactReports = [
+      ...rowsFromBackend(controlReportsResponse?.data?.reports),
+      ...rowsFromBackend(sampleReportsResponse?.data?.reports),
+    ]
+    const liveProjectArtifacts = liveArtifacts(
+      projectPath,
+      projectResponse?.data?.files,
+      exactReports,
+    )
     const project: ProjectState = {
       ...emptyProject,
       projectName: reportedProjectName || projectNameFromPath(projectPath),
@@ -159,8 +206,6 @@ export async function loadProjectSnapshot(): Promise<{ project: ProjectState; ba
       missingInputDirs: stringsFromBackend(projectResponse?.data?.missing_input_dirs),
       scan: { ...emptyProject.scan, ...backendScan, matrices: matrices.length, samples: samples.length },
     }
-    const savedConfig = unboxGuiState(guiStateResponse?.data?.config) as Record<string, unknown> | undefined
-    const savedSettings = (savedConfig?.settings ?? savedConfig ?? undefined) as Partial<WorkflowSettings> | undefined
     return { project, backend, savedSettings }
   } catch {
     return { project: structuredClone(emptyProject), backend: initialBackendStatus }
@@ -412,30 +457,28 @@ export async function selectAfSourceFile(): Promise<{ success: boolean; cancelle
   }
 }
 
-export async function loadProjectReports(projectPath = ''): Promise<Report[]> {
-  try {
-    const response = await client.get('/project/reports', { params: { project_path: projectPath } })
-    return rowsFromBackend(response.data?.reports).map((row) => {
-      const normalized = String(row.path ?? '').replace(/\\/g, '/')
-      const format = String(row.format ?? (normalized.toLowerCase().endsWith('.pdf') ? 'PDF' : 'HTML')) as 'HTML' | 'PDF'
-      const basename = normalized.split('/').pop() ?? normalized
-      const title = basename.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')
-      return {
-        id: `live-${normalized}`,
-        title,
-        type: String(row.report_type ?? (/sample|qc_samples/i.test(normalized) ? 'Sample QC' : 'Control QC')) as Report['type'],
-        format,
-        run: normalized.split('/').find((part: string) => /^run[-_]/i.test(part)) ?? 'project',
-        created: String(row.created ?? 'Present in active project'),
-        createdEpoch: Number.isFinite(Number(row.created_epoch)) ? Number(row.created_epoch) : undefined,
-        status: String(row.status ?? 'current') as Report['status'],
-        matrix: '—',
-        path: normalized,
-      } satisfies Report
-    }).filter((report) => report.path.length > 0)
-  } catch {
-    return []
-  }
+export async function loadProjectReports(projectPath = '', outputRoot = 'spectreasy_outputs', kind?: 'control' | 'sample'): Promise<Report[]> {
+  const response = await client.get('/project/reports', {
+    params: { project_path: projectPath, output_root: outputRoot, report_type: kind ?? '' },
+  })
+  return rowsFromBackend(response.data?.reports).map((row) => {
+    const normalized = String(row.path ?? '').replace(/\\/g, '/')
+    const format = String(row.format ?? (normalized.toLowerCase().endsWith('.pdf') ? 'PDF' : 'HTML')) as 'HTML' | 'PDF'
+    const basename = normalized.split('/').pop() ?? normalized
+    const title = basename.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')
+    return {
+      id: `live-${normalized}`,
+      title,
+      type: String(row.report_type ?? (/sample|qc_samples/i.test(normalized) ? 'Sample QC' : 'Control QC')) as Report['type'],
+      format,
+      run: normalized.split('/').find((part: string) => /^run[-_]/i.test(part)) ?? 'project',
+      created: String(row.created ?? 'Present in active project'),
+      createdEpoch: Number.isFinite(Number(row.created_epoch)) ? Number(row.created_epoch) : undefined,
+      status: String(row.status ?? 'current') as Report['status'],
+      matrix: '—',
+      path: normalized,
+    } satisfies Report
+  }).filter((report) => report.path.length > 0)
 }
 
 export function projectFileUrl(path: string, projectPath = ''): string {

@@ -355,6 +355,12 @@ test_that("HTML report wrappers fail clearly for missing scientific inputs", {
 })
 
 test_that("HTML overwrite policy versions, overwrites, errors, and detects staleness", {
+    expect_identical(eval(formals(qc_controls)$overwrite), c("overwrite", "version", "error"))
+    expect_identical(eval(formals(qc_samples)$overwrite), c("overwrite", "version", "error"))
+    existing <- tempfile(fileext = ".html")
+    writeLines("existing", existing)
+    expect_identical(spectreasy:::.report_resolve_overwrite(existing), existing)
+
     M <- rbind(FITC = c(1, 0.1), PE = c(0.1, 1))
     colnames(M) <- c("B1-A", "YG1-A")
     results <- data.frame(File = rep("sample", 8), FITC = stats::rnorm(8), PE = stats::rnorm(8))

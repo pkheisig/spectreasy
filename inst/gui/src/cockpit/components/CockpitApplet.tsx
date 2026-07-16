@@ -25,11 +25,12 @@ type CockpitAppletProps = {
   applet: CockpitAppletId
   theme: 'light' | 'dark'
   projectPath?: string
+  outputRoot?: string
   onExit: (reason?: 'exit' | 'confirmed') => void
   active?: boolean
 }
 
-export function CockpitApplet({ applet, theme, projectPath = '', onExit, active = true }: CockpitAppletProps) {
+export function CockpitApplet({ applet, theme, projectPath = '', outputRoot = 'spectreasy_outputs', onExit, active = true }: CockpitAppletProps) {
   const exitButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -76,8 +77,8 @@ export function CockpitApplet({ applet, theme, projectPath = '', onExit, active 
           {applet === 'control-gating' && <GatingGui embedded cockpitTheme={theme} onRequestExit={() => onExit('confirmed')} />}
           {applet === 'panel-builder' && <PanelBuilder embedded cockpitTheme={theme} />}
           {applet === 'matrix-adjustment' && <MatrixAdjustment embedded cockpitTheme={theme} />}
-          {applet === 'control-qc-report' && <QcReportApplet kind="control" theme={theme} projectPath={projectPath} />}
-          {applet === 'sample-qc-report' && <QcReportApplet kind="sample" theme={theme} projectPath={projectPath} />}
+          {applet === 'control-qc-report' && <QcReportApplet kind="control" theme={theme} projectPath={projectPath} outputRoot={outputRoot} />}
+          {applet === 'sample-qc-report' && <QcReportApplet kind="sample" theme={theme} projectPath={projectPath} outputRoot={outputRoot} />}
         </Suspense>
       </div>
     </div>,

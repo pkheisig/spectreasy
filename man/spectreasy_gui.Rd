@@ -7,8 +7,8 @@
 spectreasy_gui(port = 8000)
 }
 \arguments{
-\item{port}{Local API and cockpit port. Defaults to \code{8000}. Use another
-available port, for example \code{8001}, to run a separate test instance.}
+\item{port}{Local API and cockpit port. Defaults to `8000`. Use another
+available port, for example `8001`, to run a separate test instance.}
 }
 \value{
 Invisibly returns `NULL`. This function blocks while the local GUI

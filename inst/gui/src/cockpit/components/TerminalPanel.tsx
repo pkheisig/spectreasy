@@ -1,4 +1,4 @@
-import { Activity, CircleAlert, CircleCheck, Clock3, ScrollText, WifiOff } from 'lucide-react'
+import { Activity, CircleAlert, CircleCheck, ScrollText, WifiOff } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { ExecutionLogEntry } from '../types'
 
@@ -11,7 +11,7 @@ function EntryIcon({ kind }: { kind: ExecutionLogEntry['kind'] }) {
   if (kind === 'success') return <CircleCheck size={14} />
   if (kind === 'warning' || kind === 'error') return <CircleAlert size={14} />
   if (kind === 'command') return <Activity size={14} />
-  return <Clock3 size={14} />
+  return <Activity size={14} />
 }
 
 export function TerminalPanel({ connected, entries }: Props) {
@@ -44,7 +44,6 @@ export function TerminalPanel({ connected, entries }: Props) {
           <article className={`log-entry log-${entry.kind}`} key={entry.id}>
             <span className="log-entry-icon"><EntryIcon kind={entry.kind} /></span>
             <div>
-              <time>{entry.time}</time>
               {entry.kind === 'command' ? <pre>{entry.text}</pre> : <p>{entry.text}</p>}
             </div>
           </article>

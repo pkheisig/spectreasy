@@ -199,6 +199,20 @@ test_that("cockpit discovers and classifies control and sample reports from rela
     ))
     expect_identical(unname(types[grepl("unmix_controls", relative)]), c("Control QC"))
     expect_identical(unname(types[grepl("unmix_samples", relative)]), c("Sample QC", "Sample QC"))
+
+    exact_control <- api_env$gui_project_report_files(
+        root,
+        output_root = "spectreasy_outputs",
+        report_type = "control"
+    )
+    exact_sample <- api_env$gui_project_report_files(
+        root,
+        output_root = "spectreasy_outputs",
+        report_type = "sample"
+    )
+    expect_identical(normalizePath(exact_control), normalizePath(control))
+    expect_identical(normalizePath(exact_sample), normalizePath(sample))
+    expect_false(normalizePath(custom) %in% normalizePath(exact_sample))
 })
 
 test_that("cockpit exports existing HTML through Chromium without rerunning QC", {

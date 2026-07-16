@@ -28,6 +28,7 @@ export type Artifact = {
   detail: string
   path: string
   updated: string
+  updatedEpoch?: number
   run?: string
 }
 
@@ -89,7 +90,6 @@ export type Job = {
 
 export type ExecutionLogEntry = {
   id: string
-  time: string
   kind: 'command' | 'info' | 'success' | 'warning' | 'error'
   text: string
 }

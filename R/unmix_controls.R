@@ -612,7 +612,11 @@ unmix_controls <- function(
     qc_controls_dir <- NULL
     output_file <- NULL
     if (isTRUE(save_report)) {
-        qc_controls_dir <- .next_safe_output_dir(output_paths$qc_controls_dir)
+        qc_controls_dir <- output_paths$qc_controls_dir
+        unlink(
+            file.path(qc_controls_dir, paste0("qc_controls_report.", setdiff(c("html", "pdf"), report_format))),
+            force = TRUE
+        )
         output_file <- file.path(qc_controls_dir, paste0("qc_controls_report.", report_format))
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
     }
@@ -772,7 +776,7 @@ unmix_controls <- function(
                 seed = seed,
                 unmixing_matrix_file = output_paths$reference_matrix_csv,
                 report_format = report_format,
-                overwrite = "version",
+                overwrite = "overwrite",
                 report_plots = list(spectra = p_spectra, af = p_af_spectra, unmixing_scatter = p_scatter),
                 report_artifact_paths = list(
                     reference_matrix = output_paths$reference_matrix_csv,

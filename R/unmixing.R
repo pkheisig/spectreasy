@@ -533,21 +533,6 @@
     out
 }
 
-.next_safe_output_dir <- function(path) {
-    if (!dir.exists(path)) {
-        return(path)
-    }
-
-    i <- 2L
-    repeat {
-        candidate <- paste0(path, "_", i)
-        if (!dir.exists(candidate)) {
-            return(candidate)
-        }
-        i <- i + 1L
-    }
-}
-
 .as_resolved_unmixed_fcs_dir <- function(path) {
     structure(as.character(path)[1], class = c("spectreasy_resolved_unmixed_fcs_dir", "character"))
 }
@@ -1208,7 +1193,11 @@ unmix_samples <- function(sample_dir = "samples",
     attr(results, "qc_report_data") <- NULL
 
     if (isTRUE(save_report)) {
-        qc_samples_dir <- .next_safe_output_dir(output_paths$qc_samples_dir)
+        qc_samples_dir <- output_paths$qc_samples_dir
+        unlink(
+            file.path(qc_samples_dir, paste0("qc_samples_report.", setdiff(c("html", "pdf"), report_format))),
+            force = TRUE
+        )
         output_file <- file.path(qc_samples_dir, paste0("qc_samples_report.", report_format))
         .spectreasy_console_field("Report", .spectreasy_console_path(output_file))
         report_res <- qc_samples(

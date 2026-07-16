@@ -70,7 +70,7 @@ function rValue(value: unknown): string {
   return JSON.stringify(String(value));
 }
 
-function cockpitExecutionCode(action: "control" | "sample" | "control-report" | "sample-report" | "af", payload: Record<string, unknown>): string {
+function cockpitExecutionCode(action: "control" | "sample" | "af", payload: Record<string, unknown>): string {
   const projectPath = rValue(payload.projectPath);
   const argumentAliases: Record<string, string> = {
     method: "unmixing_method",
@@ -80,19 +80,13 @@ function cockpitExecutionCode(action: "control" | "sample" | "control-report" | 
     ? "unmix_controls"
     : action === "sample"
       ? "unmix_samples"
-      : action === "af"
-        ? "extract_af_profile"
-        : "qc_controls";
-  const excluded = new Set(["projectPath", "report_type", "overwrite", "save_name", "save_overwrite"]);
+      : "extract_af_profile";
+  const excluded = new Set(["projectPath", "save_name", "save_overwrite"]);
   const args = Object.entries(payload)
     .filter(([key]) => !excluded.has(key))
     .map(([key, value]) => `  ${argumentAliases[key] ?? key} = ${rValue(value)}`)
     .join(",\n");
   return `# Cockpit-generated R operation\nsetwd(${projectPath})\n${functionName}(\n${args}\n)`;
-}
-
-function logTime(): string {
-  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
 }
 
 function normalizeCockpitCytometer(value: unknown): string {
@@ -336,15 +330,21 @@ export default function CockpitApp() {
   const darkMode = settings.appearance.theme === "dark";
 
   function appendExecutionLogs(entries: Array<Pick<ExecutionLogEntry, "kind" | "text">>) {
-    const time = logTime();
-    setExecutionLogs((current) => [
-      ...current,
-      ...entries.map((entry, index) => ({
-        ...entry,
-        id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
-        time,
-      })),
-    ].slice(-250));
+    setExecutionLogs((current) => {
+      const next = [...current];
+      entries.forEach((entry, index) => {
+        const previous = next.at(-1);
+        if (entry.kind === "info" && previous?.kind === "info") {
+          next[next.length - 1] = { ...previous, text: `${previous.text}\n${entry.text}` };
+        } else {
+          next.push({
+            ...entry,
+            id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+          });
+        }
+      });
+      return next.slice(-250);
+    });
   }
 
   const refreshProject = useCallback(async (initial = false) => {
@@ -643,7 +643,7 @@ export default function CockpitApp() {
   }
 
   async function runAction(
-    action: "control" | "sample" | "control-report" | "sample-report" | "af",
+    action: "control" | "sample" | "af",
     label: string,
   ) {
     if (action === "control" && !settings.control.manualGateFile) {
@@ -739,33 +739,15 @@ export default function CockpitApp() {
               seed: sample.seed,
               return_type: sample.returnType,
             }
-          : action === "af"
-            ? {
-                projectPath: settings.projectPath,
-                fcs_file: af.fcsFile,
-                save_name: af.saveName,
-                save_overwrite: af.saveOverwrite,
-                af_n_bands: af.afNBands,
-                af_max_cells: af.afMaxCells,
-                seed: af.seed,
-              }
-            : {
-                projectPath: settings.projectPath,
-                report_type: action === "sample-report" ? "sample" : "control",
-                report_format: action === "sample-report" ? sample.outputFormat : control.outputFormat,
-                overwrite: window.prompt(
-                  "Existing report behavior: version (recommended), overwrite, or cancel",
-                  "version",
-                ) ?? "cancel",
-              };
-    if (
-      (action === "control-report" || action === "sample-report") &&
-      (payload as Record<string, unknown>).overwrite === "cancel"
-    ) {
-      setJob(emptyJob);
-      setToast("Report generation cancelled. No file was changed.");
-      return false;
-    }
+          : {
+              projectPath: settings.projectPath,
+              fcs_file: af.fcsFile,
+              save_name: af.saveName,
+              save_overwrite: af.saveOverwrite,
+              af_n_bands: af.afNBands,
+              af_max_cells: af.afMaxCells,
+              seed: af.seed,
+            };
     appendExecutionLogs([
       { kind: "command", text: cockpitExecutionCode(action, payload as Record<string, unknown>) },
       { kind: "info", text: `${label} started.` },
@@ -984,12 +966,19 @@ export default function CockpitApp() {
           applet="control-gating"
           theme={settings.appearance.theme}
           projectPath={settings.projectPath}
+          outputRoot={normalizeCockpitOutputRoot(settings.control.outputDir)}
           active={activeApplet === "control-gating"}
           onExit={exitApplet}
         />
       )}
       {activeApplet && activeApplet !== "control-gating" && (
-        <CockpitApplet applet={activeApplet} theme={settings.appearance.theme} projectPath={settings.projectPath} onExit={exitApplet} />
+        <CockpitApplet
+          applet={activeApplet}
+          theme={settings.appearance.theme}
+          projectPath={settings.projectPath}
+          outputRoot={normalizeCockpitOutputRoot(activeApplet === "sample-qc-report" ? settings.sample.outputDir : settings.control.outputDir)}
+          onExit={exitApplet}
+        />
       )}
       {filesOpen && (
         <ProjectFilesDialog

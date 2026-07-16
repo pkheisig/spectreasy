@@ -687,7 +687,6 @@ details.settings-section[open]::details-content { block-size: auto; opacity: 1; 
 .log-entry { display: grid; grid-template-columns: 25px minmax(0, 1fr); gap: 8px; padding: 9px 14px; border-bottom: 1px solid rgba(255,255,255,.055); }
 .log-entry:last-child { border-bottom: 0; }
 .log-entry-icon { width: 23px; height: 23px; display: grid; place-items: center; color: #7a8981; border-radius: 5px; background: #202622; }
-.log-entry time { display: block; margin-bottom: 3px; color: #66716b; font: 10.5px/1.2 var(--ui-font, sans-serif); font-variant-numeric: tabular-nums; }
 .log-entry p, .log-entry pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .log-entry p { color: #abb7b0; font: 12.5px/1.45 var(--ui-font, sans-serif); }
 .log-entry pre { color: #e8efeb; font: 12.5px/1.5 Monaco, Menlo, Consolas, monospace; }

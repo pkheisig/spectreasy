@@ -7,7 +7,7 @@
 render_qc_html_report(
   report_data,
   output_file,
-  overwrite = c("version", "overwrite", "error")
+  overwrite = c("overwrite", "version", "error")
 )
 }
 \arguments{

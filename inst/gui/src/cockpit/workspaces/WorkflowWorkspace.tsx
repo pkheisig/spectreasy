@@ -55,7 +55,7 @@ export type WorkflowWorkspaceProps = {
   setMappingTab: (tab: "mapping" | "gating" | "build" | "qc") => void;
   onUpdateMapping: (id: string, patch: Partial<MappingRow>) => void;
   onRun: (
-    action: "control" | "sample" | "control-report" | "sample-report" | "af",
+    action: "control" | "sample" | "af",
     label: string,
   ) => Promise<boolean>;
   onRefresh: () => void;
@@ -385,7 +385,6 @@ function MappingWorkspace({
       {mappingTab === "qc" && (
         <ControlReportPanel
           project={project}
-          onRun={onRun}
           onView={onViewReports}
         />
       )}

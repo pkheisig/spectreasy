@@ -2585,20 +2585,75 @@ gui_project_relative_path <- function(path, root) {
     gsub("\\\\", "/", sub(paste0("^", root_pattern, "[/\\\\]?"), "", path))
 }
 
-gui_project_report_files <- function(root, files = NULL) {
+gui_project_report_files <- function(root, files = NULL, output_root = "", report_type = "") {
     root <- normalizePath(root, mustWork = FALSE)
-    if (is.null(files)) {
-        files <- if (dir.exists(root)) {
-            list.files(root, recursive = TRUE, full.names = TRUE, all.files = FALSE)
-        } else {
-            character()
+    output_root <- trimws(as.character(output_root)[1])
+    report_type <- tolower(trimws(as.character(report_type)[1]))
+    if (nzchar(output_root) && report_type %in% c("control", "sample")) {
+        output_base <- if (grepl("^(/|[A-Za-z]:[/\\\\])", output_root)) output_root else file.path(root, output_root)
+        output_base <- normalizePath(output_base, mustWork = FALSE)
+        root_prefix <- paste0(root, .Platform$file.sep)
+        if (!identical(output_base, root) && !startsWith(output_base, root_prefix)) {
+            stop("Report output folder is outside the active project.", call. = FALSE)
         }
+        report_dir <- file.path(
+            output_base,
+            if (identical(report_type, "sample")) "unmix_samples" else "unmix_controls",
+            if (identical(report_type, "sample")) "qc_samples" else "qc_controls"
+        )
+        report_name <- if (identical(report_type, "sample")) "qc_samples_report" else "qc_controls_report"
+        return(if (dir.exists(report_dir)) {
+            list.files(
+                report_dir,
+                pattern = paste0("^", report_name, "\\.(html?|pdf)$"),
+                full.names = TRUE,
+                ignore.case = TRUE
+            )
+        } else character())
+    }
+    if (is.null(files)) {
+        top_level <- if (dir.exists(root)) list.dirs(root, recursive = FALSE, full.names = TRUE) else character()
+        report_roots <- top_level[
+            grepl("^(reports|spectreasy_outputs(?:_[^/]+)?)$", basename(top_level), ignore.case = TRUE, perl = TRUE)
+        ]
+        files <- unique(unlist(lapply(report_roots, function(directory) {
+            list.files(directory, recursive = TRUE, full.names = TRUE, all.files = FALSE)
+        }), use.names = FALSE))
     }
     relative_files <- gui_project_relative_path(files, root)
     files[
         grepl("\\.(html?|pdf)$", relative_files, ignore.case = TRUE) &
             grepl("(^|/)(reports|spectreasy_outputs(?:_[^/]+)?)/", relative_files, ignore.case = TRUE, perl = TRUE)
     ]
+}
+
+gui_project_report_source_files <- function(root, sample = FALSE, output_root = "") {
+    input_dir <- file.path(root, if (isTRUE(sample)) "samples" else "scc")
+    input_files <- if (dir.exists(input_dir)) {
+        list.files(input_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+    } else {
+        character()
+    }
+    shared <- file.path(root, c("fcs_mapping.csv", "ssc_gate_config.csv"))
+    shared <- shared[file.exists(shared)]
+    output_root <- trimws(as.character(output_root)[1])
+    output_roots <- if (nzchar(output_root)) {
+        candidate <- if (grepl("^(/|[A-Za-z]:[/\\\\])", output_root)) output_root else file.path(root, output_root)
+        candidate <- normalizePath(candidate, mustWork = FALSE)
+        if (dir.exists(candidate)) candidate else character()
+    } else {
+        candidates <- list.dirs(root, recursive = FALSE, full.names = TRUE)
+        candidates[grepl("^spectreasy_outputs(?:_[^/]+)?$", basename(candidates), ignore.case = TRUE, perl = TRUE)]
+    }
+    artifact_pattern <- if (isTRUE(sample)) {
+        "(reference_matrix|detector_noise|spectral_variant).*\\.(csv|rds)$"
+    } else {
+        "(reference_matrix|detector_noise).*\\.csv$"
+    }
+    artifacts <- unique(unlist(lapply(output_roots, function(directory) {
+        list.files(directory, pattern = artifact_pattern, recursive = TRUE, full.names = TRUE, ignore.case = TRUE)
+    }), use.names = FALSE))
+    unique(c(input_files, shared, artifacts))
 }
 
 gui_project_report_type <- function(relative_path) {
@@ -2680,13 +2735,14 @@ gui_export_html_report_pdf <- function(html_file, output_file = tempfile(fileext
 
 #* Discover report artifacts and compare them with upstream project files
 #* @get /project/reports
-function(project_path = "") {
+function(project_path = "", output_root = "", report_type = "") {
     root <- if (is.null(project_path) || !nzchar(trimws(as.character(project_path)[1]))) get_matrix_dir() else as.character(project_path)[1]
     root <- normalizePath(root, mustWork = FALSE)
-    files <- if (dir.exists(root)) list.files(root, recursive = TRUE, full.names = TRUE, all.files = FALSE) else character()
-    reports <- gui_project_report_files(root, files = files)
+    reports <- gui_project_report_files(root, output_root = output_root, report_type = report_type)
     if (length(reports) == 0L) return(list(reports = data.frame()))
     relative <- function(path) gui_project_relative_path(path, root)
+    control_sources <- gui_project_report_source_files(root, sample = FALSE, output_root = output_root)
+    sample_sources <- gui_project_report_source_files(root, sample = TRUE, output_root = output_root)
     rows <- lapply(reports, function(report) {
         relative_report <- relative(report)
         report_type <- gui_project_report_type(relative_report)
@@ -2696,7 +2752,8 @@ function(project_path = "") {
         } else {
             "(^|/)(scc/.*\\.fcs$|fcs_mapping\\.csv$|.*gate.*\\.csv$|.*reference_matrix.*\\.csv$|.*detector_noise.*\\.csv$)"
         }
-        source_files <- files[grepl(source_pattern, relative(files), ignore.case = TRUE, perl = TRUE)]
+        source_files <- if (is_sample) sample_sources else control_sources
+        source_files <- source_files[grepl(source_pattern, relative(source_files), ignore.case = TRUE, perl = TRUE)]
         source_files <- setdiff(source_files, report)
         stale <- length(source_files) > 0L && any(file.info(source_files)$mtime > file.info(report)$mtime)
         data.frame(
@@ -3180,7 +3237,7 @@ function(req) {
     if (!report_format %in% c("html", "pdf")) {
         return(list(success = FALSE, error = "Report format must be 'html' or 'pdf'."))
     }
-    overwrite <- tolower(gui_workflow_value(body, "overwrite", "version"))
+    overwrite <- tolower(gui_workflow_value(body, "overwrite", "overwrite"))
     if (!overwrite %in% c("version", "overwrite", "error")) {
         return(list(success = FALSE, error = "Overwrite behavior must be 'version', 'overwrite', or 'error'."))
     }
