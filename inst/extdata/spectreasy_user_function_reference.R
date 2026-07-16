@@ -52,7 +52,7 @@
         spectral_variant_max_variants = 8L,
         spectral_variant_min_events = 50L,
         # Spectreasy only:
-        spectreasy_weight_quantile = 0.9,
+        spectreasy_weight_quantile = 0.65,
         autospectral_n_candidates = 1000L,
         autospectral_n_spectral = 200L,
         autospectral_min_events = 10L,
@@ -113,7 +113,7 @@
         spectral_variant_positive_fraction = 0.02,
         spectral_variant_min_improvement = 0.01,
         # Spectreasy only:
-        spectreasy_weight_quantile = 0.9,
+        spectreasy_weight_quantile = 0.65,
         estimate_af = FALSE,
         output_dir = "spectreasy_outputs",
         write_fcs = TRUE,
@@ -141,7 +141,7 @@
         af_n_bands = 100,
         gating_mode = "interactive",
         manual_gate_file = file.path(getwd(), "ssc_gate_config.csv"),
-        spectreasy_weight_quantile = 0.9
+        spectreasy_weight_quantile = 0.65
     )
 
     unmixed_spectreasy <- unmix_samples(
@@ -151,7 +151,7 @@
         unmixing_method = "Spectreasy",
         spectral_variant_library = ctrl_spectreasy$spectral_variant_library,
         output_dir = "spectreasy_outputs_spectreasy",
-        spectreasy_weight_quantile = 0.9
+        spectreasy_weight_quantile = 0.65
     )
 
     qc_samples_report <- qc_samples(
@@ -374,7 +374,7 @@
         spectral_variant_positive_fraction = 0.02,
         spectral_variant_min_improvement = 0.01,
         # Spectreasy only:
-        spectreasy_weight_quantile = 0.9
+        spectreasy_weight_quantile = 0.65
     )
 
     W <- derive_unmixing_matrix(

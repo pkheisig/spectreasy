@@ -238,7 +238,7 @@ For both `Spectreasy` and `AutoSpectral`, SCC processing starts with the positiv
 
 The extra Spectreasy step is marker reweighting. For markers that are strongly affected by AF shape, the method leans more on the AutoSpectral-style AF-aware fit. For markers that are relatively clean, it leans more on a marker-only OLS anchor. In practice, this is meant to keep the AF correction helpful without letting it overcorrect clean marker channels.
 
-The Spectreasy blend weight for each marker is calculated from how strongly the AF bank projects through the marker decoder, using a soft-saturation scale controlled by `spectreasy_weight_quantile` (default `0.9`). 
+The Spectreasy blend weight for each marker is calculated from how strongly the AF bank projects through the marker decoder, using a soft-saturation scale controlled by `spectreasy_weight_quantile` (default `0.65`).
 
 
 ## Other unmixing methods

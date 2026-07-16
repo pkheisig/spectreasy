@@ -773,7 +773,7 @@ function LegacyBuildReferencePanel({
         <div className="advanced-grid">
           <label>
             Spectreasy weight quantile
-            <input type="number" defaultValue="0.9" step="0.05" />
+            <input type="number" defaultValue="0.65" step="0.05" />
           </label>
           <label>
             SCC cleanup

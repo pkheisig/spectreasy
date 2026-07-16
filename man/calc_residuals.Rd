@@ -20,7 +20,7 @@ calc_residuals(
   spectral_variant_min_abundance = 1,
   spectral_variant_positive_fraction = 0.02,
   spectral_variant_min_improvement = 0.01,
-  spectreasy_weight_quantile = 0.9
+  spectreasy_weight_quantile = 0.65
 )
 }
 \arguments{
@@ -79,7 +79,7 @@ improvement required before accepting a cell-specific variant refit.}
 \item{spectreasy_weight_quantile}{Numeric in `[0, 1]`; only accepted when
 `method = "Spectreasy"`. Controls the quantile of decoder-projected AF
 impacts used as the soft-saturation scale for marker-specific AutoSpectral
-mixing. The default, `0.9`, uses the 90th percentile of marker AF impacts.}
+mixing. The default, `0.65`, uses the 65th percentile of marker AF impacts.}
 }
 \value{
 Data frame with unmixed abundances and retained acquisition parameters

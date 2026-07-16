@@ -30,6 +30,7 @@
 
 ## Changes
 
+- Changed the default `spectreasy_weight_quantile` from `0.9` to `0.65`.
 - WLS now uses event-wise detector-error weights with detector-specific noise floors estimated from SCC low-signal tails by default.
 - Increased the default WLS maximum detector weight ratio from 100 to 1600 based on cross-dataset benchmark results.
 - `unmix_controls()` writes `scc_detector_noise.csv`; `unmix_samples(method = "WLS")` loads it beside `scc_reference_matrix.csv`, estimates from `scc_dir` when available, or falls back to a scalar noise floor of 125.

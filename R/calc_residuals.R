@@ -79,7 +79,7 @@
 }
 
 .decoder_projected_af_marker_weights <- function(M,
-                                                 spectreasy_weight_quantile = 0.9,
+                                                 spectreasy_weight_quantile = 0.65,
                                                  ridge = 1e-8,
                                                  tol = 1e-12) {
     M <- .as_reference_matrix(M, "M")
@@ -138,7 +138,7 @@
     baseline
 }
 
-.apply_spectreasy_decoder_blend <- function(Y, M, autospectral_A, spectreasy_weight_quantile = 0.9, n_threads = 1L) {
+.apply_spectreasy_decoder_blend <- function(Y, M, autospectral_A, spectreasy_weight_quantile = 0.65, n_threads = 1L) {
     baseline_A <- .spectreasy_marker_only_baseline_fit(Y = Y, M = M, n_threads = n_threads)
     out_A <- autospectral_A
     marker_weights <- .decoder_projected_af_marker_weights(
@@ -307,7 +307,7 @@
 #' @param spectreasy_weight_quantile Numeric in `[0, 1]`; only accepted when
 #'   `method = "Spectreasy"`. Controls the quantile of decoder-projected AF
 #'   impacts used as the soft-saturation scale for marker-specific AutoSpectral
-#'   mixing. The default, `0.9`, uses the 90th percentile of marker AF impacts.
+#'   mixing. The default, `0.65`, uses the 65th percentile of marker AF impacts.
 #' @return Data frame with unmixed abundances and retained acquisition parameters
 #'   (`Time` plus all `FSC*`/`SSC*` columns, when available).
 #'         If return_residuals=TRUE, returns a list with [[data]] and [[residuals]].
@@ -353,7 +353,7 @@ calc_residuals <- function(flow_frame,
                            spectral_variant_min_abundance = 1,
                            spectral_variant_positive_fraction = 0.02,
                            spectral_variant_min_improvement = 0.01,
-                           spectreasy_weight_quantile = 0.9) {
+                           spectreasy_weight_quantile = 0.65) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     if (!inherits(flow_frame, "flowFrame")) {
         stop("flow_frame must be a flowCore::flowFrame.", call. = FALSE)

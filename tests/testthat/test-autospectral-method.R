@@ -145,7 +145,7 @@ test_that("Spectreasy calc_residuals applies AS-only soft decoder weights", {
 
     autospectral <- spectreasy::calc_residuals(ff, M, method = "AutoSpectral", return_residuals = TRUE)
     spectreasy <- spectreasy::calc_residuals(ff, M, method = "Spectreasy", return_residuals = TRUE)
-    weights <- spectreasy:::.decoder_projected_af_marker_weights(M, spectreasy_weight_quantile = 0.9)
+    weights <- spectreasy:::.decoder_projected_af_marker_weights(M, spectreasy_weight_quantile = 0.65)
     baseline <- spectreasy:::.spectreasy_marker_only_baseline_fit(exprs, M)
 
     expect_equal(spectreasy$spectreasy_decoder_weights, weights, tolerance = 1e-12)
@@ -155,7 +155,7 @@ test_that("Spectreasy calc_residuals applies AS-only soft decoder weights", {
     }
     expect_true("AF Index" %in% colnames(spectreasy$data))
     expect_true(all(spectreasy$spectreasy_decoder_weights >= 0 & spectreasy$spectreasy_decoder_weights <= 1))
-    expect_equal(attr(spectreasy$spectreasy_decoder_weights, "quantile"), 0.9)
+    expect_equal(attr(spectreasy$spectreasy_decoder_weights, "quantile"), 0.65)
     expect_error(
         spectreasy::calc_residuals(ff, M, method = "Spectreasy", spectreasy_weight_quantile = 1.2),
         "spectreasy_weight_quantile"
@@ -164,6 +164,12 @@ test_that("Spectreasy calc_residuals applies AS-only soft decoder weights", {
         spectreasy::calc_residuals(ff, M, method = "WLS", spectreasy_weight_quantile = 0.9),
         "method = \"Spectreasy\""
     )
+})
+
+test_that("Spectreasy weight quantile defaults to 0.65 across public APIs", {
+    expect_identical(formals(spectreasy::calc_residuals)$spectreasy_weight_quantile, 0.65)
+    expect_identical(formals(spectreasy::unmix_samples)$spectreasy_weight_quantile, 0.65)
+    expect_identical(formals(spectreasy::unmix_controls)$spectreasy_weight_quantile, 0.65)
 })
 
 test_that("SCC processing follows the selected unmixing method", {

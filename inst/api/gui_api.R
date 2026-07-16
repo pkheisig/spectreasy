@@ -1234,11 +1234,14 @@ gui_request_origin_allowed <- function(req) {
     trimws(origin) %in% allowed
 }
 
-gui_api_token_allowed <- function(req) {
+gui_api_token_value_allowed <- function(token) {
     expected <- as.character(getOption("spectreasy.gui_api_token", ""))[1]
-    supplied <- req$HTTP_X_SPECTREASY_TOKEN
-    if (is.null(supplied)) supplied <- ""
-    nzchar(expected) && identical(as.character(supplied)[1], expected)
+    if (is.null(token)) token <- ""
+    nzchar(expected) && identical(as.character(token)[1], expected)
+}
+
+gui_api_token_allowed <- function(req) {
+    gui_api_token_value_allowed(req$HTTP_X_SPECTREASY_TOKEN)
 }
 
 #* @filter cors
@@ -1249,7 +1252,10 @@ function(req, res) {
         return(list(error = "This GUI origin is not authorized for the local Spectreasy session."))
     }
     mutating_method <- toupper(req$REQUEST_METHOD) %in% c("POST", "PUT", "PATCH", "DELETE")
-    if (mutating_method && !gui_api_token_allowed(req)) {
+    supplied_token <- req$HTTP_X_SPECTREASY_TOKEN
+    validates_session <- identical(req$PATH_INFO, "/status") &&
+        !is.null(supplied_token) && nzchar(trimws(as.character(supplied_token)[1]))
+    if ((mutating_method || validates_session) && !gui_api_token_allowed(req)) {
         res$status <- 403
         return(list(error = "This request is not authorized for the active local Spectreasy session."))
     }
@@ -1943,13 +1949,20 @@ function(req) {
     matrix_data <- body$matrix_json
     df <- as.data.frame(matrix_data, check.names = FALSE)
     path <- matrix_path(filename)
+    source_path <- if (!is.null(source_filename) && nzchar(trimws(as.character(source_filename)[1]))) {
+        matrix_path(source_filename)
+    } else {
+        ""
+    }
+    if (nzchar(source_path) && identical(
+        normalizePath(path, mustWork = FALSE),
+        normalizePath(source_path, mustWork = FALSE)
+    )) {
+        stop("Adjusted matrix filename must differ from the source matrix filename.", call. = FALSE)
+    }
     source_paths <- c(
         path,
-        if (!is.null(source_filename) && nzchar(trimws(as.character(source_filename)[1]))) {
-            matrix_path(source_filename)
-        } else {
-            character()
-        }
+        if (nzchar(source_path)) source_path else character()
     )
     df <- merge_hidden_af_rows(df, source_paths = source_paths)
 
@@ -2144,7 +2157,7 @@ function(matrix_json, raw_data_json, type = "reference", matrix_filename = "", m
 gui_workflow_body <- function(req) {
     tryCatch(
         jsonlite::fromJSON(req$postBody, simplifyVector = FALSE),
-        error = function(e) list()
+        error = function(e) stop("Invalid JSON request body: ", conditionMessage(e), call. = FALSE)
     )
 }
 
@@ -2166,12 +2179,24 @@ gui_workflow_bool <- function(body, key, fallback = FALSE) {
     isTRUE(fallback)
 }
 
-gui_workflow_number <- function(body, key, fallback = 0, integer = FALSE, minimum = NULL) {
+gui_workflow_number <- function(body, key, fallback = 0, integer = FALSE, minimum = NULL, maximum = NULL) {
+    supplied <- !is.null(body[[key]]) && length(body[[key]]) > 0L
     value <- suppressWarnings(as.numeric(gui_workflow_value(body, key, fallback)))
-    if (length(value) == 0 || !is.finite(value[1])) value <- fallback
+    if (length(value) == 0 || !is.finite(value[1])) {
+        if (supplied) stop("Invalid numeric value for '", key, "'.", call. = FALSE)
+        value <- fallback
+    }
     value <- as.numeric(value[1])
-    if (!is.null(minimum)) value <- max(value, minimum)
-    if (isTRUE(integer)) value <- as.integer(round(value))
+    if (!is.null(minimum) && value < minimum) {
+        stop("'", key, "' must be at least ", minimum, ".", call. = FALSE)
+    }
+    if (!is.null(maximum) && value > maximum) {
+        stop("'", key, "' must be at most ", maximum, ".", call. = FALSE)
+    }
+    if (isTRUE(integer)) {
+        if (!isTRUE(all.equal(value, round(value)))) stop("'", key, "' must be an integer.", call. = FALSE)
+        value <- as.integer(value)
+    }
     value
 }
 
@@ -2186,14 +2211,14 @@ gui_workflow_path <- function(body, key, fallback = "", allow_empty = TRUE) {
 gui_method_optional_args <- function(method, body) {
     resolved <- tryCatch(spectreasy:::.normalize_unmix_method(method), error = function(e) "")
     if (identical(resolved, "Spectreasy")) {
-        return(list(spectreasy_weight_quantile = gui_workflow_number(body, "spectreasy_weight_quantile", 0.9, minimum = 0)))
+        return(list(spectreasy_weight_quantile = gui_workflow_number(body, "spectreasy_weight_quantile", 0.65, minimum = 0, maximum = 1)))
     }
     list()
 }
 
 gui_workflow_root <- function(body) {
     root <- gui_workflow_value(body, "projectPath", get_matrix_dir())
-    if (!dir.exists(root)) return(get_matrix_dir())
+    if (!dir.exists(root)) stop("Project folder not found: ", root, call. = FALSE)
     normalizePath(root, mustWork = TRUE)
 }
 
@@ -2384,6 +2409,7 @@ gui_project_scan <- function(root) {
     }
     list(
         project_path = root,
+        missing_input_dirs = basename(gui_missing_project_input_dirs(root)),
         files = relative,
         scan = list(
             controls = controls,
@@ -2397,6 +2423,12 @@ gui_project_scan <- function(root) {
         summary = summary,
         recommended_next_action = if (matrices == 0) "Review controls and build a reference matrix" else if (samples > 0) "Run sample unmixing" else "Import samples"
     )
+}
+
+gui_missing_project_input_dirs <- function(project_path) {
+    project_path <- normalizePath(project_path, mustWork = TRUE)
+    paths <- file.path(project_path, c("scc", "samples"))
+    paths[!dir.exists(paths)]
 }
 
 gui_ensure_project_input_dirs <- function(project_path) {
@@ -2415,7 +2447,6 @@ gui_project_file_location <- function(kind, filename = NULL) {
     folder <- switch(kind, controls = "scc", samples = "samples", NULL)
     if (is.null(folder)) stop("File kind must be 'controls' or 'samples'.", call. = FALSE)
     root <- normalizePath(get_matrix_dir(), mustWork = TRUE)
-    gui_ensure_project_input_dirs(root)
     directory <- file.path(root, folder)
     if (is.null(filename)) return(list(kind = kind, folder = folder, directory = directory))
     candidate <- gsub("\\\\", "/", trimws(as.character(filename)[1]))
@@ -2431,23 +2462,33 @@ gui_project_file_location <- function(kind, filename = NULL) {
 
 gui_project_file_rows <- function(kind) {
     location <- gui_project_file_location(kind)
+    if (!dir.exists(location$directory)) return(data.frame())
     files <- list.files(location$directory, pattern = "\\.fcs$", ignore.case = TRUE, full.names = TRUE)
     if (!length(files)) return(data.frame())
     info <- file.info(files)
-    data.frame(
+    rows <- data.frame(
         name = basename(files),
         size = as.numeric(info$size),
         modified = format(info$mtime, "%Y-%m-%dT%H:%M:%S%z"),
         modified_epoch = as.numeric(info$mtime),
         kind = location$kind,
         stringsAsFactors = FALSE
-    )[order(tolower(basename(files))), , drop = FALSE]
+    )
+    rows[order(gui_natural_sort_key(rows$name), tolower(rows$name)), , drop = FALSE]
+}
+
+gui_natural_sort_key <- function(x) {
+    vapply(as.character(x), function(value) {
+        parts <- regmatches(value, gregexpr("[0-9]+|[^0-9]+", value, perl = TRUE))[[1]]
+        paste(vapply(parts, function(part) {
+            if (grepl("^[0-9]+$", part)) sprintf("%020.0f", as.numeric(part)) else tolower(part)
+        }, character(1)), collapse = "")
+    }, character(1))
 }
 
 gui_set_project_context <- function(project_path) {
     if (!dir.exists(project_path)) stop("Project folder not found: ", project_path, call. = FALSE)
     project_path <- normalizePath(project_path, mustWork = TRUE)
-    gui_ensure_project_input_dirs(project_path)
     options(
         spectreasy.project_dir = project_path,
         spectreasy.matrix_dir = project_path,
@@ -2509,7 +2550,6 @@ function(project_path = "") {
     }
     root <- if (is.null(project_path) || !nzchar(trimws(as.character(project_path)[1]))) get_matrix_dir() else as.character(project_path)[1]
     root <- normalizePath(root, mustWork = FALSE)
-    if (dir.exists(root)) gui_ensure_project_input_dirs(root)
     gui_project_scan(root)
 }
 
@@ -2638,7 +2678,12 @@ function(project_path = "") {
 #* Stream a project artifact through the local R backend
 #* @get /project/file
 #* @param path Relative path inside the active project
-function(path = "", res) {
+#* @param token Active cockpit session token
+function(path = "", token = "", req, res) {
+    if (!gui_api_token_value_allowed(token) && !gui_api_token_allowed(req)) {
+        res$status <- 403
+        return(list(error = "This project artifact belongs to a different or inactive Spectreasy session."))
+    }
     root <- normalizePath(get_matrix_dir(), mustWork = FALSE)
     relative <- gsub("\\\\", "/", trimws(as.character(path)[1]))
     parts <- strsplit(relative, "/", fixed = TRUE)[[1]]
@@ -2696,6 +2741,18 @@ function(req) {
     tryCatch({
         project_path <- gui_set_project_context(project_path)
         list(success = TRUE, project = gui_project_scan(project_path))
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Create the standard input folders after explicit cockpit confirmation
+#* @post /project/initialize
+function(req) {
+    body <- gui_workflow_body(req)
+    tryCatch({
+        root <- gui_workflow_root(body)
+        created <- basename(gui_missing_project_input_dirs(root))
+        gui_ensure_project_input_dirs(root)
+        list(success = TRUE, created = created, project = gui_project_scan(root))
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
 
@@ -2908,7 +2965,7 @@ function(req) {
             on.exit(unlink(control_file, force = TRUE), add = TRUE)
         }
     }
-    output_dir <- gui_workflow_value(body, "output_dir", file.path("spectreasy_outputs", "unmix_controls"))
+    output_dir <- gui_workflow_value(body, "output_dir", "spectreasy_outputs")
     method <- gui_workflow_value(body, "method", get_unmixing_method())
     cytometer <- gui_workflow_value(body, "cytometer", "auto")
     gate_file <- gui_workflow_file_or_null(
@@ -2931,17 +2988,17 @@ function(req) {
             af_n_bands = gui_workflow_number(body, "af_n_bands", 100, integer = TRUE, minimum = 1),
             af_max_cells = gui_workflow_number(body, "af_max_cells", 50000, integer = TRUE, minimum = 1),
             default_sample_type = gui_workflow_value(body, "default_sample_type", "beads"),
-            histogram_pct_beads = gui_workflow_number(body, "histogram_pct_beads", 0.98, minimum = 0),
+            histogram_pct_beads = gui_workflow_number(body, "histogram_pct_beads", 0.98, minimum = 0, maximum = 1),
             histogram_direction_beads = gui_workflow_value(body, "histogram_direction_beads", "right"),
-            histogram_pct_cells = gui_workflow_number(body, "histogram_pct_cells", 0.35, minimum = 0),
+            histogram_pct_cells = gui_workflow_number(body, "histogram_pct_cells", 0.35, minimum = 0, maximum = 1),
             histogram_direction_cells = gui_workflow_value(body, "histogram_direction_cells", "right"),
-            outlier_percentile = gui_workflow_number(body, "outlier_percentile", 0.02, minimum = 0),
-            debris_percentile = gui_workflow_number(body, "debris_percentile", 0.08, minimum = 0),
+            outlier_percentile = gui_workflow_number(body, "outlier_percentile", 0.02, minimum = 0, maximum = 1),
+            debris_percentile = gui_workflow_number(body, "debris_percentile", 0.08, minimum = 0, maximum = 1),
             bead_gate_scale = gui_workflow_number(body, "bead_gate_scale", 1.3, minimum = 0),
             max_clusters = gui_workflow_number(body, "max_clusters", 10, integer = TRUE, minimum = 1),
-            min_cluster_proportion = gui_workflow_number(body, "min_cluster_proportion", 0.03, minimum = 0),
-            gate_contour_beads = gui_workflow_number(body, "gate_contour_beads", 0.95, minimum = 0),
-            gate_contour_cells = gui_workflow_number(body, "gate_contour_cells", 0.9, minimum = 0),
+            min_cluster_proportion = gui_workflow_number(body, "min_cluster_proportion", 0.03, minimum = 0, maximum = 1),
+            gate_contour_beads = gui_workflow_number(body, "gate_contour_beads", 0.95, minimum = 0, maximum = 1),
+            gate_contour_cells = gui_workflow_number(body, "gate_contour_cells", 0.9, minimum = 0, maximum = 1),
             subsample_n = gui_workflow_number(body, "subsample_n", 5000, integer = TRUE, minimum = 1),
             rwls_max_iter = gui_workflow_number(body, "rwls_max_iter", 1, integer = TRUE, minimum = 1),
             n_threads = gui_workflow_number(body, "n_threads", 1, integer = TRUE, minimum = 1),
@@ -2951,14 +3008,14 @@ function(req) {
             gating_mode = gui_workflow_value(
                 body,
                 "gating_mode",
-                if (gate_file_available) "reuse" else "automatic"
+                if (gate_file_available) "reuse" else "interactive"
             ),
             manual_gate_file = gate_file,
             scc_background_method = gui_workflow_value(body, "scc_background_method", "scatter_knn"),
             scc_background_k = gui_workflow_number(body, "scc_background_k", 2, integer = TRUE, minimum = 1),
             spectral_variant_som_nodes = gui_workflow_number(body, "spectral_variant_som_nodes", 16, integer = TRUE, minimum = 1),
             spectral_variant_top_k = gui_workflow_number(body, "spectral_variant_top_k", 3, integer = TRUE, minimum = 1),
-            spectral_variant_cosine_threshold = gui_workflow_number(body, "spectral_variant_cosine_threshold", 0.98, minimum = 0),
+            spectral_variant_cosine_threshold = gui_workflow_number(body, "spectral_variant_cosine_threshold", 0.98, minimum = 0, maximum = 1),
             spectral_variant_max_variants = gui_workflow_number(body, "spectral_variant_max_variants", 8, integer = TRUE, minimum = 1),
             spectral_variant_min_events = gui_workflow_number(body, "spectral_variant_min_events", 50, integer = TRUE, minimum = 1),
             autospectral_n_candidates = gui_workflow_number(body, "autospectral_n_candidates", 1000, integer = TRUE, minimum = 1),
@@ -3001,7 +3058,7 @@ function(req) {
     sample_dir <- gui_workflow_value(body, "sample_dir", "samples")
     matrix_file <- gui_workflow_value(body, "matrix_file", file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"))
     noise_file <- gui_workflow_file_or_null(gui_workflow_value(body, "detector_noise_file", ""), root = gui_workflow_root(body))
-    output_dir <- gui_workflow_value(body, "output_dir", file.path("spectreasy_outputs", "unmix_samples", "unmixed_fcs"))
+    output_dir <- gui_workflow_value(body, "output_dir", "spectreasy_outputs")
     method <- gui_workflow_value(body, "method", get_unmixing_method())
     sample_args <- c(
         list(
@@ -3013,7 +3070,7 @@ function(req) {
             n_threads = gui_workflow_number(body, "n_threads", 1, integer = TRUE, minimum = 1),
             spectral_variant_top_k = gui_workflow_number(body, "spectral_variant_top_k", 3, integer = TRUE, minimum = 1),
             spectral_variant_min_abundance = gui_workflow_number(body, "spectral_variant_min_abundance", 1, minimum = 0),
-            spectral_variant_positive_fraction = gui_workflow_number(body, "spectral_variant_positive_fraction", 0.02, minimum = 0),
+            spectral_variant_positive_fraction = gui_workflow_number(body, "spectral_variant_positive_fraction", 0.02, minimum = 0, maximum = 1),
             spectral_variant_min_improvement = gui_workflow_number(body, "spectral_variant_min_improvement", 0.01, minimum = 0),
             spectral_variant_library_file = gui_workflow_file_or_null(gui_workflow_value(body, "spectral_variant_library_file", ""), root = gui_workflow_root(body)),
             estimate_af = gui_workflow_bool(body, "estimate_af", FALSE),

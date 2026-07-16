@@ -385,7 +385,7 @@
 #' @param spectreasy_weight_quantile Numeric in `[0, 1]`; only accepted when
 #'   `unmixing_method = "Spectreasy"`. Controls the quantile of
 #'   decoder-projected AF impacts used as the soft-saturation scale for
-#'   marker-specific AutoSpectral mixing. The default is `0.9`.
+#'   marker-specific AutoSpectral mixing. The default is `0.65`.
 #' @param autospectral_n_candidates Number of peak-bright SCC candidate events
 #'   considered by the AutoSpectral-style selector.
 #' @param autospectral_n_spectral Number of least-background-like SCC events
@@ -438,7 +438,7 @@ unmix_controls <- function(
     spectral_variant_cosine_threshold = 0.98,
     spectral_variant_max_variants = 8L,
     spectral_variant_min_events = 50L,
-    spectreasy_weight_quantile = 0.9,
+    spectreasy_weight_quantile = 0.65,
     autospectral_n_candidates = 1000L,
     autospectral_n_spectral = 200L,
     autospectral_min_events = 10L,

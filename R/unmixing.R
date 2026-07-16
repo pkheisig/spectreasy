@@ -812,7 +812,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #' @param spectreasy_weight_quantile Numeric in `[0, 1]`; only accepted when
 #'   `unmixing_method = "Spectreasy"`. Controls the quantile of
 #'   decoder-projected AF impacts used as the soft-saturation scale for
-#'   marker-specific AutoSpectral mixing. The default is `0.9`.
+#'   marker-specific AutoSpectral mixing. The default is `0.65`.
 #' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
 #'   stained sample event-wise WLS residuals, select the best candidate model by
 #'   held-out WLS residual score, and append the selected AF rows to the
@@ -905,7 +905,7 @@ unmix_samples <- function(sample_dir = "samples",
                           spectral_variant_min_abundance = 1,
                           spectral_variant_positive_fraction = 0.02,
                           spectral_variant_min_improvement = 0.01,
-                          spectreasy_weight_quantile = 0.9,
+                          spectreasy_weight_quantile = 0.65,
                           estimate_af = FALSE,
                           output_dir = "spectreasy_outputs",
                           write_fcs = TRUE,
