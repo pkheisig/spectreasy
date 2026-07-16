@@ -19,13 +19,13 @@ export function JobStrip({ job }: { job: Job }) {
       </div>
       <div className="job-copy">
         <strong>{job.label}</strong>
-        <span>{job.subtask}</span>
+        {job.subtask && <span>{job.subtask}</span>}
       </div>
       <div className="job-progress">
         <div className={`progress-track ${job.state === 'running' ? 'is-indeterminate' : ''}`}>
           <span style={job.state === 'running' ? undefined : { width: `${job.progress}%` }} />
         </div>
-        <span>{job.state === 'running' ? 'In progress' : `${job.progress}%`}</span>
+        {job.state !== 'running' && <span>{job.progress}%</span>}
       </div>
       <StatusPill
         state={state}

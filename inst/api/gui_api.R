@@ -2171,19 +2171,48 @@ gui_workflow_root <- function(body) {
     normalizePath(root, mustWork = TRUE)
 }
 
+gui_restore_working_directory <- function(path) {
+    if (is.null(path) || length(path) != 1L || is.na(path) || !nzchar(path) || !dir.exists(path)) {
+        return(invisible(FALSE))
+    }
+    tryCatch(
+        {
+            setwd(path)
+            invisible(TRUE)
+        },
+        error = function(e) invisible(FALSE)
+    )
+}
+
 gui_workflow_run <- function(body, action, expr) {
     root <- gui_workflow_root(body)
     old_wd <- getwd()
-    on.exit(setwd(old_wd), add = TRUE)
+    on.exit(gui_restore_working_directory(old_wd), add = TRUE)
     setwd(root)
+    messages <- character()
+    warnings <- character()
     tryCatch(
         {
-            result <- force(expr)
+            result <- NULL
+            output <- capture.output(
+                result <- withCallingHandlers(
+                    force(expr),
+                    message = function(condition) {
+                        messages <<- c(messages, conditionMessage(condition))
+                    },
+                    warning = function(condition) {
+                        warnings <<- c(warnings, paste0("Warning: ", conditionMessage(condition)))
+                    }
+                ),
+                type = "output"
+            )
+            if (length(output)) cat(paste0(output, collapse = "\n"), "\n")
             list(
                 success = TRUE,
                 action = action,
                 project_path = root,
                 finished_at = as.character(Sys.time()),
+                logs = c(output, messages, warnings),
                 result = result
             )
         },
@@ -2192,6 +2221,7 @@ gui_workflow_run <- function(body, action, expr) {
                 success = FALSE,
                 action = action,
                 project_path = root,
+                logs = c(messages, warnings),
                 error = conditionMessage(e),
                 suggested_next_step = "Review the project inputs and the full action log, then retry from the relevant workflow card."
             )
@@ -2907,103 +2937,6 @@ function(kind = "") {
         }
         list(success = TRUE, deleted = length(files))
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
-}
-
-gui_terminal_origin_allowed <- function(req) {
-    gui_request_origin_allowed(req)
-}
-
-.gui_terminal_env <- NULL
-
-gui_terminal_environment <- function() {
-    if (is.null(.gui_terminal_env) || !is.environment(.gui_terminal_env)) {
-        env <- new.env(parent = globalenv())
-        if (requireNamespace("spectreasy", quietly = TRUE)) {
-            for (name in getNamespaceExports("spectreasy")) {
-                assign(name, getExportedValue("spectreasy", name), envir = env)
-            }
-        }
-        assign(".project_path", get_matrix_dir(), envir = env)
-        .gui_terminal_env <<- env
-    }
-    .gui_terminal_env
-}
-
-gui_terminal_is_quit_command <- function(command) {
-    grepl("^[[:space:]]*(q|quit)[[:space:]]*\\([^)]*\\)[[:space:]]*;?[[:space:]]*$", command)
-}
-
-gui_terminal_evaluate <- function(command, cwd = get_matrix_dir()) {
-    if (!dir.exists(cwd)) cwd <- get_matrix_dir()
-    cwd <- normalizePath(cwd, mustWork = TRUE)
-    if (!nzchar(trimws(command))) {
-        return(list(success = TRUE, output = "", cwd = cwd, refresh = FALSE))
-    }
-    if (gui_terminal_is_quit_command(command)) {
-        return(list(
-            success = TRUE,
-            output = "q() requested. Terminating the R session.",
-            cwd = cwd,
-            refresh = FALSE,
-            shutdown_requested = TRUE
-        ))
-    }
-
-    env <- gui_terminal_environment()
-    previous_cwd <- getwd()
-    on.exit(setwd(previous_cwd), add = TRUE)
-    setwd(cwd)
-    messages <- character()
-    warnings <- character()
-    result <- tryCatch({
-        output <- capture.output(
-            withCallingHandlers({
-                value <- withVisible(eval(parse(text = command), envir = env))
-                if (isTRUE(value$visible)) print(value$value)
-            },
-            message = function(condition) {
-                messages <<- c(messages, conditionMessage(condition))
-                invokeRestart("muffleMessage")
-            },
-            warning = function(condition) {
-                warnings <<- c(warnings, paste0("Warning: ", conditionMessage(condition)))
-                invokeRestart("muffleWarning")
-            }),
-            type = "output"
-        )
-        list(success = TRUE, output = paste(c(output, messages, warnings), collapse = "\n"))
-    }, error = function(error) {
-        list(success = FALSE, output = conditionMessage(error))
-    })
-    result$cwd <- normalizePath(getwd(), mustWork = TRUE)
-    result$refresh <- isTRUE(result$success)
-    result
-}
-
-#* Evaluate R code in the persistent cockpit console
-#* @post /terminal/run
-function(req, res) {
-    if (!gui_terminal_origin_allowed(req) || !gui_api_token_allowed(req)) {
-        res$status <- 403
-        return(list(success = FALSE, output = "Terminal access is restricted to the active local cockpit session."))
-    }
-    body <- gui_workflow_body(req)
-    command <- trimws(gui_workflow_value(body, "command", ""))
-    cwd <- gui_workflow_value(body, "cwd", get_matrix_dir())
-    gui_terminal_evaluate(command, cwd)
-}
-
-#* Terminate the local R session after explicit cockpit confirmation
-#* @post /session/shutdown
-function(req, res) {
-    if (!gui_terminal_origin_allowed(req) || !gui_api_token_allowed(req)) {
-        res$status <- 403
-        return(list(success = FALSE, message = "R session control is restricted to the active local cockpit session."))
-    }
-    later::later(function() {
-        base::quit(save = "no", status = 0, runLast = FALSE)
-    }, delay = 0.35)
-    list(success = TRUE, message = "The R session is terminating.")
 }
 
 #* CORS preflight for workflow_control

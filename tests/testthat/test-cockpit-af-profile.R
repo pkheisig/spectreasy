@@ -122,59 +122,32 @@ test_that("cockpit removes a stale project link when its global AF profile is go
     expect_false(file.exists(config))
 })
 
-test_that("cockpit terminal accepts only the configured cockpit origin and session token", {
+test_that("cockpit workflow cleanup tolerates an unavailable previous directory and returns logs", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
     skip_if_not(file.exists(api_path))
 
     api_env <- new.env(parent = globalenv())
     source(api_path, local = api_env)
-    old_origins <- getOption("spectreasy.gui_allowed_origins")
-    old_token <- getOption("spectreasy.gui_api_token")
-    options(
-        spectreasy.gui_allowed_origins = "http://127.0.0.1:5173",
-        spectreasy.gui_api_token = "test-session-token"
-    )
-    on.exit(options(
-        spectreasy.gui_allowed_origins = old_origins,
-        spectreasy.gui_api_token = old_token
-    ), add = TRUE)
-    request <- new.env(parent = emptyenv())
-    request$HTTP_ORIGIN <- "http://127.0.0.1:5173"
-    request$HTTP_X_SPECTREASY_TOKEN <- "test-session-token"
-    expect_true(api_env$gui_terminal_origin_allowed(request))
-    expect_true(api_env$gui_api_token_allowed(request))
-    request$HTTP_ORIGIN <- "https://pkheisig.github.io"
-    expect_false(api_env$gui_terminal_origin_allowed(request))
-    request$HTTP_ORIGIN <- "https://example.com"
-    expect_false(api_env$gui_terminal_origin_allowed(request))
-    request$HTTP_ORIGIN <- "http://127.0.0.1:5173"
-    request$HTTP_X_SPECTREASY_TOKEN <- "wrong-token"
-    expect_false(api_env$gui_api_token_allowed(request))
-})
-
-test_that("cockpit terminal evaluates persistent R code and intercepts quit", {
-    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
-    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
-    skip_if_not(file.exists(api_path))
-
-    api_env <- new.env(parent = globalenv())
-    source(api_path, local = api_env)
-    root <- tempfile("cockpit_terminal_project_")
+    root <- tempfile("cockpit_workflow_project_")
     dir.create(root)
-    starting_cwd <- getwd()
 
-    assigned <- api_env$gui_terminal_evaluate("terminal_value <- 41", root)
-    evaluated <- api_env$gui_terminal_evaluate("terminal_value + 1", root)
-    stopped <- api_env$gui_terminal_evaluate("q()", root)
+    expect_false(api_env$gui_restore_working_directory(NULL))
+    expect_false(api_env$gui_restore_working_directory(file.path(root, "missing")))
+    run <- suppressWarnings(api_env$gui_workflow_run(
+        list(projectPath = root),
+        "test",
+        {
+            cat("workflow output\n")
+            warning("workflow warning")
+            42
+        }
+    ))
 
-    expect_true(assigned$success)
-    expect_true(evaluated$success)
-    expect_match(evaluated$output, "42", fixed = TRUE)
-    expect_true(evaluated$refresh)
-    expect_true(stopped$shutdown_requested)
-    expect_false(stopped$refresh)
-    expect_identical(getwd(), starting_cwd)
+    expect_true(run$success)
+    expect_identical(run$result, 42)
+    expect_true(any(grepl("workflow output", run$logs, fixed = TRUE)))
+    expect_true(any(grepl("Warning: workflow warning", run$logs, fixed = TRUE)))
 })
 
 test_that("cockpit resolves only in-project HTML reports", {

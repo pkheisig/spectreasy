@@ -87,6 +87,13 @@ export type Job = {
   output?: string
 }
 
+export type ExecutionLogEntry = {
+  id: string
+  time: string
+  kind: 'command' | 'info' | 'success' | 'warning' | 'error'
+  text: string
+}
+
 export type PanelPayload = {
   cytometer: string
   configuration: string
@@ -194,8 +201,6 @@ export type AppearanceSettings = {
   fontScale: number
   fontFamily: 'avenir' | 'futura' | 'atkinson' | 'charter' | 'palatino' | 'monaco' | 'system'
   sidebarWidth: number
-  terminalWidthPct: number
-  terminalHeightPct: number
   cornerRadius: number
   shadows: 'none' | 'subtle' | 'raised'
   reduceMotion: boolean
@@ -315,8 +320,6 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       fontScale: INTERFACE_SCALE_DEFAULT,
       fontFamily: 'avenir',
       sidebarWidth: 242,
-      terminalWidthPct: 50,
-      terminalHeightPct: 33,
       cornerRadius: 8,
       shadows: 'subtle',
       reduceMotion: false,

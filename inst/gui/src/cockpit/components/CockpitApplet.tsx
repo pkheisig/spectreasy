@@ -25,12 +25,14 @@ type CockpitAppletProps = {
   applet: CockpitAppletId
   theme: 'light' | 'dark'
   onExit: () => void
+  active?: boolean
 }
 
-export function CockpitApplet({ applet, theme, onExit }: CockpitAppletProps) {
+export function CockpitApplet({ applet, theme, onExit, active = true }: CockpitAppletProps) {
   const exitButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
+    if (!active) return
     const root = document.getElementById('root')
     const rootWasInert = root?.hasAttribute('inert') ?? false
     const bodyOverflow = document.body.style.overflow
@@ -54,11 +56,11 @@ export function CockpitApplet({ applet, theme, onExit }: CockpitAppletProps) {
       if (htmlTheme === undefined) delete document.documentElement.dataset.theme
       else document.documentElement.dataset.theme = htmlTheme
     }
-  }, [])
+  }, [active])
 
   const label = appletLabels[applet]
   return createPortal(
-    <div className={`cockpit-applet theme-${theme}`} role="dialog" aria-modal="true" aria-label={`Embedded ${label}`}>
+    <div className={`cockpit-applet theme-${theme} ${active ? '' : 'is-hidden'}`} role={active ? 'dialog' : undefined} aria-modal={active ? 'true' : undefined} aria-hidden={!active} aria-label={active ? `Embedded ${label}` : undefined}>
       <button
         ref={exitButtonRef}
         type="button"

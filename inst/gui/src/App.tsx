@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { probeLocalBackend, resolveApiToken } from './apiBase'
 import { SetupExperience } from './setup/SetupExperience'
 
@@ -9,7 +9,6 @@ type CockpitConnection = 'checking' | 'connected' | 'offline'
 
 function ConnectedCockpit() {
   const [connection, setConnection] = useState<CockpitConnection>('checking')
-  const markOffline = useCallback(() => setConnection('offline'), [])
 
   useEffect(() => {
     let cancelled = false
@@ -33,6 +32,21 @@ function ConnectedCockpit() {
     }
   }, [])
 
+  useEffect(() => {
+    if (connection !== 'offline') return
+    let cancelled = false
+    const retry = async () => {
+      if (await probeLocalBackend()) {
+        if (!cancelled) setConnection('connected')
+      }
+    }
+    const interval = window.setInterval(() => void retry(), 1500)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [connection])
+
   if (connection === 'checking') {
     return <div className="app-loading">Connecting to the local R session…</div>
   }
@@ -43,7 +57,7 @@ function ConnectedCockpit() {
 
   return (
     <Suspense fallback={<div className="app-loading">Loading Spectreasy cockpit…</div>}>
-      <CockpitApp onBackendOffline={markOffline} />
+      <CockpitApp />
     </Suspense>
   )
 }

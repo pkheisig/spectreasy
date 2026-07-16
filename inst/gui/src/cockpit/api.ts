@@ -531,30 +531,6 @@ export async function deactivateAfProfile(profileName: string): Promise<boolean>
   }
 }
 
-export async function runTerminalCommand(command: string, cwd = ''): Promise<{ success: boolean; output: string; cwd: string; refresh: boolean; shutdownRequested: boolean }> {
-  try {
-    const response = await client.post('/terminal/run', { command, cwd }, { timeout: 0 })
-    return {
-      success: scalarValue(response.data?.success, 'false') === 'true',
-      output: scalarValue(response.data?.output, ''),
-      cwd: scalarValue(response.data?.cwd, cwd),
-      refresh: scalarValue(response.data?.refresh, 'false') === 'true',
-      shutdownRequested: scalarValue(response.data?.shutdown_requested, 'false') === 'true',
-    }
-  } catch {
-    return { success: false, output: 'Local R backend is offline. Start it from a system terminal, then retry.', cwd, refresh: false, shutdownRequested: false }
-  }
-}
-
-export async function terminateRSession(): Promise<boolean> {
-  try {
-    const response = await client.post('/session/shutdown', {})
-    return scalarValue(response.data?.success, 'false') === 'true'
-  } catch {
-    return false
-  }
-}
-
 export async function persistGuiState(project: ProjectState, settings?: WorkflowSettings): Promise<boolean> {
   try {
     await client.post('/gui_state', {
@@ -648,22 +624,27 @@ export type WorkflowActionResult = {
   backendReachable: boolean
   message: string
   outputCount: number
+  logs: string[]
 }
 
 export async function attemptWorkflowAction(action: string, payload: Record<string, unknown>): Promise<WorkflowActionResult> {
   const endpoint = action === 'control' ? '/workflow/control' : action === 'sample' ? '/workflow/sample' : action === 'af' ? '/workflow/af' : '/workflow/report'
   try {
-    const response = await client.post(endpoint, payload, { timeout: 900000 })
+    // Scientific workflows can legitimately take longer than 15 minutes. A
+    // client-side timeout abandons only the HTTP request; R keeps computing and
+    // can finish successfully, leaving the cockpit with a false failure.
+    const response = await client.post(endpoint, payload, { timeout: 0 })
     const success = scalarValue(response.data?.success, 'false')
     const error = scalarValue(response.data?.error, '')
+    const logs = stringsFromBackend(response.data?.logs)
     if (success === 'false' || error) {
-      return { success: false, backendReachable: true, message: error || 'The R backend rejected this workflow action.', outputCount: 0 }
+      return { success: false, backendReachable: true, message: error || 'The R backend rejected this workflow action.', outputCount: 0, logs }
     }
     const result = response.data?.result
     const outputCount = result && typeof result === 'object'
       ? Object.values(result as Record<string, unknown>).filter((value) => value != null && scalarValue(value).length > 0).length
       : 0
-    return { success: true, backendReachable: true, message: 'Workflow completed in the local R session.', outputCount }
+    return { success: true, backendReachable: true, message: 'Workflow completed in the local R session.', outputCount, logs }
   } catch (error) {
     const status = axios.isAxiosError(error) ? error.response?.status : undefined
     return {
@@ -673,6 +654,7 @@ export async function attemptWorkflowAction(action: string, payload: Record<stri
         ? 'This cockpit tab belongs to a different R session. Reopen the URL printed by the active spectreasy_gui() process.'
         : 'The local R backend did not answer. Keep spectreasy_gui() running and retry.',
       outputCount: 0,
+      logs: [],
     }
   }
 }

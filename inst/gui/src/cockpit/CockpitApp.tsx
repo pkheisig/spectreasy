@@ -22,7 +22,6 @@ import {
   persistControlMapping,
   persistGuiState,
   selectProjectFolder,
-  terminateRSession,
 } from "./api";
 import { emptyProject } from "./projectState";
 import { WorkflowRail } from "./components/WorkflowRail";
@@ -37,6 +36,7 @@ import type {
   Artifact,
   BackendStatus,
   CockpitAppletId,
+  ExecutionLogEntry,
   Job,
   MappingRow,
   PanelPayload,
@@ -63,6 +63,38 @@ const cytometerOptions = [
 
 const cytometerLabels = Object.fromEntries(cytometerOptions) as Record<string, string>;
 
+function rValue(value: unknown): string {
+  if (value == null) return "NULL";
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  if (typeof value === "number") return String(value);
+  return JSON.stringify(String(value));
+}
+
+function cockpitExecutionCode(action: "control" | "sample" | "control-report" | "sample-report" | "af", payload: Record<string, unknown>): string {
+  const projectPath = rValue(payload.projectPath);
+  const argumentAliases: Record<string, string> = {
+    method: "unmixing_method",
+    matrix_file: "unmixing_matrix_file",
+  };
+  const functionName = action === "control"
+    ? "unmix_controls"
+    : action === "sample"
+      ? "unmix_samples"
+      : action === "af"
+        ? "extract_af_profile"
+        : "qc_controls";
+  const excluded = new Set(["projectPath", "report_type", "overwrite", "save_name", "save_overwrite"]);
+  const args = Object.entries(payload)
+    .filter(([key]) => !excluded.has(key))
+    .map(([key, value]) => `  ${argumentAliases[key] ?? key} = ${rValue(value)}`)
+    .join(",\n");
+  return `# Cockpit-generated R operation\nsetwd(${projectPath})\n${functionName}(\n${args}\n)`;
+}
+
+function logTime(): string {
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+}
+
 function normalizeCockpitCytometer(value: unknown): string {
   const token = String(value ?? "auto")
     .trim()
@@ -82,6 +114,11 @@ function normalizeCockpitCytometer(value: unknown): string {
   return normalized in cytometerLabels ? normalized : "auto";
 }
 
+function normalizeCockpitOutputRoot(value: unknown): string {
+  const output = String(value ?? "spectreasy_outputs").trim().replace(/[\\/]+$/, "");
+  return output.replace(/[\\/](?:unmix_controls|unmix_samples)$/i, "") || "spectreasy_outputs";
+}
+
 type TopBarProps = {
   project: ProjectState;
   cytometer: string;
@@ -98,6 +135,7 @@ type TopBarProps = {
   onOpenProject: () => void;
   onSettings: () => void;
   onTerminal: () => void;
+  executionLogs: ExecutionLogEntry[];
 };
 
 function TopBar({
@@ -116,9 +154,11 @@ function TopBar({
   onOpenProject,
   onSettings,
   onTerminal,
+  executionLogs,
 }: TopBarProps) {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement>(null);
+  const logsMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!projectMenuOpen) return;
@@ -134,6 +174,21 @@ function TopBar({
       document.removeEventListener("keydown", closeMenu);
     };
   }, [projectMenuOpen]);
+
+  useEffect(() => {
+    if (!terminalActive) return;
+    const closeLogs = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof MouseEvent && logsMenuRef.current?.contains(event.target as Node)) return;
+      onTerminal();
+    };
+    document.addEventListener("mousedown", closeLogs);
+    document.addEventListener("keydown", closeLogs);
+    return () => {
+      document.removeEventListener("mousedown", closeLogs);
+      document.removeEventListener("keydown", closeLogs);
+    };
+  }, [onTerminal, terminalActive]);
 
   const chooseProjectAction = (action: () => void) => {
     setProjectMenuOpen(false);
@@ -219,16 +274,19 @@ function TopBar({
       >
         {darkMode ? <Sun size={17} /> : <Moon size={17} />}
       </button>
-      <button
-        className={`topbar-icon terminal-trigger ${terminalActive ? "is-active" : ""}`}
-        onClick={onTerminal}
-        aria-label={terminalActive ? "Close terminal" : "Open terminal"}
-        aria-pressed={terminalActive}
-        title={backendConnected ? "Open terminal" : "Terminal · R backend offline"}
-      >
-        <TerminalSquare size={18} />
-        <span className={`terminal-status-dot ${backendConnected ? "is-connected" : ""}`} />
-      </button>
+      <div className="logs-menu-shell" ref={logsMenuRef}>
+        <button
+          className={`topbar-icon terminal-trigger ${terminalActive ? "is-active" : ""}`}
+          onClick={onTerminal}
+          aria-label={terminalActive ? "Close execution logs" : "Open execution logs"}
+          aria-expanded={terminalActive}
+          title={backendConnected ? "Execution logs" : "Execution logs · R backend offline"}
+        >
+          <TerminalSquare size={18} />
+          <span className={`terminal-status-dot ${backendConnected ? "is-connected" : ""}`} />
+        </button>
+        {terminalActive && <TerminalPanel connected={backendConnected} entries={executionLogs} />}
+      </div>
       <button
         className={`topbar-icon ${settingsActive ? "is-active" : ""}`}
         onClick={onSettings}
@@ -242,15 +300,14 @@ function TopBar({
   );
 }
 
-type CockpitAppProps = { onBackendOffline?: () => void };
-
-export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
+export default function CockpitApp() {
   const [project, setProject] = useState<ProjectState>(() =>
     structuredClone(emptyProject),
   );
   const [backend, setBackend] = useState<BackendStatus>(initialBackendStatus);
   const [activeSection, setActiveSection] = useState<SectionId>("controls");
   const [activeApplet, setActiveApplet] = useState<CockpitAppletId | null>(null);
+  const [gatingInitialized, setGatingInitialized] = useState(false);
   const [sectionBeforeApplet, setSectionBeforeApplet] =
     useState<SectionId>("controls");
   const [mappingTab, setMappingTab] = useState<
@@ -260,6 +317,7 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
   const [panelPayload, setPanelPayload] = useState<PanelPayload | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [executionLogs, setExecutionLogs] = useState<ExecutionLogEntry[]>([]);
   const [filesOpen, setFilesOpen] = useState(false);
   const [initializationDismissedFor, setInitializationDismissedFor] = useState("");
   const [initializationBusy, setInitializationBusy] = useState(false);
@@ -277,10 +335,27 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
     useState<SectionId>("controls");
   const darkMode = settings.appearance.theme === "dark";
 
+  function appendExecutionLogs(entries: Array<Pick<ExecutionLogEntry, "kind" | "text">>) {
+    const time = logTime();
+    setExecutionLogs((current) => [
+      ...current,
+      ...entries.map((entry, index) => ({
+        ...entry,
+        id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+        time,
+      })),
+    ].slice(-250));
+  }
+
   const refreshProject = useCallback(async (initial = false) => {
     const snapshot = await loadProjectSnapshot();
     if (!snapshot.backend.connected) {
-      onBackendOffline?.();
+      setBackend((current) => ({
+        ...current,
+        connected: false,
+        packageReady: false,
+        message: "The local R backend did not answer. Retrying…",
+      }));
       return;
     }
     setProject(snapshot.project);
@@ -314,9 +389,9 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
             ...savedControl,
             sccDir: savedControl.sccDir ?? "scc",
             controlFile: savedControl.controlFile ?? "fcs_mapping.csv",
-            outputDir: savedControl.outputDir ?? "spectreasy_outputs",
-            // Previous gates are never silently reused when the cockpit opens.
-            manualGateFile: "",
+            outputDir: normalizeCockpitOutputRoot(savedControl.outputDir),
+            // A cockpit project with confirmed gates always reuses its gate CSV.
+            manualGateFile: snapshot.project.scan.gates > 0 ? "ssc_gate_config.csv" : "",
             method:
               savedControl.method ??
               snapshot.project.method ??
@@ -331,7 +406,7 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
             sampleDir: savedSample.sampleDir ?? "samples",
             matrixFile: savedSample.matrixFile ?? "spectreasy_outputs/unmix_controls/scc_reference_matrix.csv",
             detectorNoiseFile: savedSample.detectorNoiseFile ?? "spectreasy_outputs/unmix_controls/scc_detector_noise.csv",
-            outputDir: savedSample.outputDir ?? "spectreasy_outputs",
+            outputDir: normalizeCockpitOutputRoot(savedSample.outputDir),
             method:
               savedSample.method ??
               savedControl.method ??
@@ -360,7 +435,7 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
       });
     }
     return snapshot;
-  }, [onBackendOffline]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -524,6 +599,7 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
   function openApplet(applet: CockpitAppletId, section = activeSection) {
     setSectionBeforeApplet(activeSection);
     setActiveSection(section);
+    if (applet === "control-gating") setGatingInitialized(true);
     setActiveApplet(applet);
   }
 
@@ -573,7 +649,7 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
       label,
       state: "running",
       progress: 0,
-      subtask: "Running in the local R session",
+      subtask: "",
       startedAt: "now",
     });
     const control = settings.control;
@@ -585,13 +661,13 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
             projectPath: settings.projectPath,
             scc_dir: control.sccDir,
             control_file: control.controlFile,
-            output_dir: control.outputDir,
+            output_dir: normalizeCockpitOutputRoot(control.outputDir),
             method: control.method,
             cytometer: control.cytometer,
             auto_create_mapping: control.autoCreateMapping,
             auto_unknown_fluor_policy: control.autoUnknownFluorPolicy,
-            manual_gate_file: control.manualGateFile,
-            gating_mode: control.manualGateFile ? "reuse" : "interactive",
+            manual_gate_file: "ssc_gate_config.csv",
+            gating_mode: "reuse",
             af_n_bands: control.afNBands,
             af_max_cells: control.afMaxCells,
             default_sample_type: control.defaultSampleType,
@@ -634,7 +710,7 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
               sample_dir: sample.sampleDir,
               matrix_file: sample.matrixFile,
               detector_noise_file: sample.detectorNoiseFile,
-              output_dir: sample.outputDir,
+              output_dir: normalizeCockpitOutputRoot(sample.outputDir),
               method: sample.method,
               rwls_max_iter: sample.rwlsMaxIter,
               n_threads: sample.nThreads,
@@ -684,7 +760,21 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
       setToast("Report generation cancelled. No file was changed.");
       return false;
     }
+    appendExecutionLogs([
+      { kind: "command", text: cockpitExecutionCode(action, payload as Record<string, unknown>) },
+      { kind: "info", text: `${label} started.` },
+    ]);
     const response = await attemptWorkflowAction(action, payload);
+    appendExecutionLogs([
+      ...response.logs.map((text) => ({
+        kind: /^warning\b/i.test(text) ? "warning" as const : "info" as const,
+        text,
+      })),
+      {
+        kind: response.success ? "success" as const : "error" as const,
+        text: response.success ? `${label} completed.` : response.message,
+      },
+    ]);
     setToast(response.message);
     if (response.success) {
       setJob({
@@ -706,7 +796,14 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
         startedAt: "now",
         finishedAt: "now",
       });
-      if (!response.backendReachable) onBackendOffline?.();
+      if (!response.backendReachable) {
+        setBackend((current) => ({
+          ...current,
+          connected: false,
+          packageReady: false,
+          message: "The local R backend did not answer. Retrying…",
+        }));
+      }
     }
     return response.success;
   }
@@ -757,21 +854,6 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
     const response = await createControlMapping();
     setToast(response.message);
     if (response.success) await refreshProject();
-  }
-
-  async function terminateBackend() {
-    const terminated = await terminateRSession();
-    if (terminated) {
-      setBackend({
-        ...initialBackendStatus,
-        message: "The local R session was terminated from the cockpit.",
-      });
-      setToast("R session terminated.");
-      onBackendOffline?.();
-    } else {
-      setToast("The R session could not be terminated.");
-    }
-    return terminated;
   }
 
   function downloadArtifact(artifact: Artifact) {
@@ -832,6 +914,7 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
         onOpenProject={() => void chooseProject("open")}
         onSettings={toggleSettings}
         onTerminal={() => setTerminalOpen((value) => !value)}
+        executionLogs={executionLogs}
       />
       <div className="app-body">
         <main className="main-area" id="cockpit-main" tabIndex={-1}>
@@ -881,7 +964,15 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
           </button>
         </div>
       )}
-      {activeApplet && (
+      {gatingInitialized && (
+        <CockpitApplet
+          applet="control-gating"
+          theme={settings.appearance.theme}
+          active={activeApplet === "control-gating"}
+          onExit={exitApplet}
+        />
+      )}
+      {activeApplet && activeApplet !== "control-gating" && (
         <CockpitApplet applet={activeApplet} theme={settings.appearance.theme} onExit={exitApplet} />
       )}
       {filesOpen && (
@@ -906,19 +997,6 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
           }}
         />
       )}
-      {terminalOpen && <TerminalPanel
-        key={project.projectPath}
-        connected={backend.connected}
-        projectPath={project.projectPath}
-        widthPct={settings.appearance.terminalWidthPct}
-        heightPct={settings.appearance.terminalHeightPct}
-        onClose={() => setTerminalOpen(false)}
-        onRefresh={async () => {
-          await refreshProject(false);
-        }}
-        onTerminate={terminateBackend}
-        onSizeChange={(size) => updateSettings("appearance", size)}
-      />}
     </div>
   );
 }

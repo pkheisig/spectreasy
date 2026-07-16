@@ -4,17 +4,14 @@ import {
   AlertCircle,
   ArrowRight,
   Beaker,
-  Check,
   CircleCheckBig,
   FlaskConical,
   FolderOpen,
-  Info,
   Layers3,
   Play,
   Plus,
   RefreshCcw,
   Save,
-  Search,
   Settings2,
   WandSparkles,
   X,
@@ -134,15 +131,7 @@ function MappingWorkspace({
   | "onOpenApplet"
 > & { onViewReports: () => void }) {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
-  const [mappingQuery, setMappingQuery] = useState("");
-  const filteredMapping = useMemo(() => {
-    const query = mappingQuery.trim().toLowerCase();
-    if (!query) return project.mapping;
-    return project.mapping.filter((row) =>
-      [row.file, row.fluorophore, row.marker, row.channel, row.controlType]
-        .some((value) => value.toLowerCase().includes(query)),
-    );
-  }, [mappingQuery, project.mapping]);
+  const [bulkFillColumn, setBulkFillColumn] = useState<"controlType" | "universalNegative" | null>(null);
   const negativeCandidates = useMemo(
     () => project.mapping.filter((row) =>
       row.marker.trim().toLowerCase() === "autofluorescence" || /^af(?:$|_|\b)/i.test(row.fluorophore.trim()),
@@ -153,6 +142,13 @@ function MappingWorkspace({
     setSelectedRows((rows) =>
       rows.includes(id) ? rows.filter((row) => row !== id) : [...rows, id],
     );
+  const firstMappingRow = project.mapping[0];
+  const confirmBulkFill = () => {
+    if (!bulkFillColumn || !firstMappingRow) return;
+    const value = firstMappingRow[bulkFillColumn];
+    project.mapping.forEach((row) => onUpdateMapping(row.id, { [bulkFillColumn]: value }));
+    setBulkFillColumn(null);
+  };
   return (
     <>
       <div className="subnav">
@@ -173,7 +169,8 @@ function MappingWorkspace({
         <button
           className={mappingTab === "build" ? "is-active" : ""}
           onClick={() => setMappingTab("build")}
-          disabled={project.mapping.length === 0}
+          disabled={project.scan.gates === 0}
+          title={project.scan.gates === 0 ? "Confirm control gates first" : undefined}
         >
           03 Unmixing <StatusPill state={project.scan.matrices > 0 ? "complete" : "ready"} compact />
         </button>
@@ -201,10 +198,8 @@ function MappingWorkspace({
           <div className="card-toolbar">
             <div>
               <h2>
-                fcs_mapping.csv{" "}
-                <span className="dirty-marker">
-                  {project.mappingDirty ? "· unsaved" : "· saved"}
-                </span>
+                fcs_mapping.csv
+                {project.mappingDirty && <span className="dirty-marker"> · unsaved</span>}
               </h2>
             </div>
             <div className="toolbar-actions">
@@ -213,37 +208,21 @@ function MappingWorkspace({
               </button>
             </div>
           </div>
-          <div className="mapping-tools">
-            <label className="search-field compact-search">
-              <Search size={14} />
-              <input
-                value={mappingQuery}
-                onChange={(event) => setMappingQuery(event.target.value)}
-                placeholder="Filter controls"
-                aria-label="Filter control mapping"
-              />
-            </label>
+          {selectedRows.length > 0 && <div className="mapping-tools">
             <div className="bulk-actions">
-              {selectedRows.length > 0 && (
-                <>
-                  <span>{selectedRows.length} selected</span>
-                  <button
-                    className="text-action"
-                    onClick={() =>
-                      selectedRows.forEach((id) =>
-                        onUpdateMapping(id, { controlType: "cell" }),
-                      )
-                    }
-                  >
-                    Set as cell
-                  </button>
-                </>
-              )}
+              <span>{selectedRows.length} selected</span>
+              <button
+                className="text-action"
+                onClick={() =>
+                  selectedRows.forEach((id) =>
+                    onUpdateMapping(id, { controlType: "cell" }),
+                  )
+                }
+              >
+                Set as cell
+              </button>
             </div>
-            <span className="table-note">
-              <Info size={13} /> Channel and marker values are editable mapping fields
-            </span>
-          </div>
+          </div>}
           <div className="mapping-table-wrap">
             <table className="mapping-table">
               <thead>
@@ -266,13 +245,26 @@ function MappingWorkspace({
                   <th>Fluorophore</th>
                   <th>Marker</th>
                   <th>Channel</th>
-                  <th>Type</th>
-                  <th>Univ. neg.</th>
-                  <th />
+                  <th>
+                    <span className="mapping-column-head">
+                      Type
+                      <button type="button" onClick={() => setBulkFillColumn("controlType")} aria-label="Set all type values from the first row" title="Apply first value to all rows">
+                        <WandSparkles size={13} />
+                      </button>
+                    </span>
+                  </th>
+                  <th>
+                    <span className="mapping-column-head">
+                      Univ. neg.
+                      <button type="button" onClick={() => setBulkFillColumn("universalNegative")} aria-label="Set all universal negative values from the first row" title="Apply first value to all rows">
+                        <WandSparkles size={13} />
+                      </button>
+                    </span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {filteredMapping.map((row) => (
+                {project.mapping.map((row) => (
                   <tr key={row.id} className={`${row.warning ? "has-warning" : ""} ${row.ignored ? "is-ignored" : ""}`} title={row.ignoredReason || undefined}>
                     <td>
                       <input
@@ -286,6 +278,7 @@ function MappingWorkspace({
                       <span className="file-cell" title={row.ignoredReason || undefined}>
                         <span className="file-mini-dot" />
                         {row.file}
+                        {row.warning && <AlertCircle size={14} className="row-warning" aria-label={row.warning} />}
                       </span>
                     </td>
                     <td>
@@ -353,27 +346,28 @@ function MappingWorkspace({
                         ))}
                       </GuiSelect>
                     </td>
-                    <td>
-                      {row.warning ? (
-                        <span className="row-warning" title={row.warning}>
-                          <AlertCircle size={15} />
-                        </span>
-                      ) : (
-                        <Check size={14} className="row-ok" />
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="card-foot">
-            <span>
-              <AlertCircle size={14} /> Mapping edits are saved directly to the
-              project CSV.
-            </span>
-          </div>
         </section>
+      )}
+      {bulkFillColumn && firstMappingRow && createPortal(
+        <div className="cockpit-confirm-overlay" role="presentation" onMouseDown={() => setBulkFillColumn(null)}>
+          <div className="cockpit-confirm" role="dialog" aria-modal="true" aria-labelledby="mapping-fill-title" onMouseDown={(event) => event.stopPropagation()}>
+            <WandSparkles size={20} />
+            <h2 id="mapping-fill-title">Apply the first value to all rows?</h2>
+            <p>
+              Set every {bulkFillColumn === "controlType" ? "Type" : "Univ. neg."} entry to <strong>{bulkFillColumn === "controlType" ? (firstMappingRow.controlType === "cell" ? "Cell" : "Bead") : (firstMappingRow.universalNegative || "None")}</strong>?
+            </p>
+            <div>
+              <button className="button button-ghost" onClick={() => setBulkFillColumn(null)}>Cancel</button>
+              <button className="button button-primary" onClick={confirmBulkFill}>Apply to all</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
       {mappingTab === "mapping" && (
         <InlineProjectFiles
@@ -417,7 +411,7 @@ function BuildReferencePanel({
     <section className="surface-card run-card streamlined-run-card">
       <div className="settings-card-plain-header">
         <strong>Settings</strong>
-        <ResetSettingsButton label="control settings" onReset={() => onSettingsChange(defaults)} />
+        <ResetSettingsButton label="control settings" onReset={() => onSettingsChange({ ...defaults, manualGateFile: "ssc_gate_config.csv" })} />
       </div>
       <div className="run-controls">
         <label>
@@ -435,19 +429,6 @@ function BuildReferencePanel({
             <option>RWLS</option>
             <option>NNLS</option>
           </GuiSelect>
-        </label>
-        <label className="toggle-label">
-          <input
-            type="checkbox"
-            checked={settings.manualGateFile.length > 0}
-            onChange={(event) =>
-              onSettingsChange({
-                manualGateFile: event.target.checked ? "ssc_gate_config.csv" : "",
-              })
-            }
-          />
-          <span className="toggle-ui" />
-          <span>Use saved gates</span>
         </label>
         <label className="toggle-label">
           <input
