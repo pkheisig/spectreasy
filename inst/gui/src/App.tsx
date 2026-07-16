@@ -38,7 +38,7 @@ function ConnectedCockpit() {
   }
 
   if (connection === 'offline') {
-    return <SetupExperience onBackendDetected={() => setConnection('connected')} />
+    return <SetupExperience />
   }
 
   return (
@@ -59,7 +59,7 @@ export default function App() {
   }
   const showSetup = params.get('setup') === '1' || !resolveApiToken()
 
-  if (showSetup) return <SetupExperience forceOffline={params.get('emulate') === 'offline'} />
+  if (showSetup) return <SetupExperience />
 
   return <ConnectedCockpit />
 }
