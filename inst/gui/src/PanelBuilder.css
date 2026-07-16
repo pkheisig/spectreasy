@@ -129,7 +129,7 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .export-button.icon-only {
@@ -286,7 +286,7 @@
   font-weight: 500;
   outline: none;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s;
 }
 
 .configuration-select {
@@ -301,7 +301,7 @@
   font-weight: 600;
   outline: none;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s;
 }
 
 .instrument-select:focus,
@@ -328,7 +328,7 @@
   border: 1px solid var(--border-color-soft);
   border-radius: 8px;
   background: var(--bg-card);
-  transition: all 0.2s;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s;
 }
 
 .selector-row:hover, .selector-row:focus-within {
@@ -356,7 +356,7 @@
   font-weight: 600;
   color: var(--text-primary);
   background: transparent;
-  transition: all 0.2s;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s;
 }
 
 .selector-input:focus {
@@ -380,7 +380,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .clear-slot:hover {
@@ -417,7 +417,7 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
-  transition: all 0.15s;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .fluor-option:hover {
@@ -502,7 +502,7 @@
   letter-spacing: 0.04em;
   color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s;
 }
 
 .tab-button:hover {
@@ -608,7 +608,7 @@
   font-weight: 600;
   color: var(--text-primary);
   background: transparent;
-  transition: all 0.2s;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s;
   height: 20px;
 }
 
@@ -806,16 +806,16 @@
 }
 
 /* Custom Scrollbar for modern feel */
-::-webkit-scrollbar {
+.panel-builder ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-::-webkit-scrollbar-track {
+.panel-builder ::-webkit-scrollbar-track {
   background: var(--bg-app);
 }
 
-::-webkit-scrollbar-thumb {
+.panel-builder ::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.1);
   border-radius: 4px;
 }
@@ -824,7 +824,7 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
-::-webkit-scrollbar-thumb:hover {
+.panel-builder ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.2);
 }
 

@@ -508,6 +508,7 @@ test_that("unmix_controls supports fixed AF k-means bands from SCC mapping", {
         auto_create_mapping = FALSE,
         output_dir = output_dir,
         unmixing_method = "WLS",
+        gating_mode = "automatic",
         af_n_bands = 2
     )
     

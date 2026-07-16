@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useId, useRef } from 'react';
 import { Check, ChevronDown, Settings, Save, RefreshCw, Sun, Moon, Info } from 'lucide-react';
 import axios from 'axios';
 import ResidualPlot from './ResidualPlot';
@@ -90,7 +90,9 @@ type StyledDropdownProps = {
 
 const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)', width, theme, onChange }: StyledDropdownProps) => {
     const [open, setOpen] = useState(false);
+    const [activeIndex, setActiveIndex] = useState(0);
     const rootRef = useRef<HTMLDivElement>(null);
+    const listboxId = useId();
 
     useEffect(() => {
         if (!open) return;
@@ -109,16 +111,42 @@ const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)'
     }, [open]);
 
     const displayValue = value || emptyLabel;
+    const handleKeyDown = (event: React.KeyboardEvent) => {
+        if (!options.length) return;
+        if (event.key === 'Escape') {
+            setOpen(false);
+            return;
+        }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+            event.preventDefault();
+            setOpen(true);
+            setActiveIndex(previous => {
+                if (event.key === 'Home') return 0;
+                if (event.key === 'End') return options.length - 1;
+                const delta = event.key === 'ArrowDown' ? 1 : -1;
+                return (previous + delta + options.length) % options.length;
+            });
+        } else if ((event.key === 'Enter' || event.key === ' ') && open) {
+            event.preventDefault();
+            onChange(options[activeIndex]);
+            setOpen(false);
+        }
+    };
     return (
-        <div ref={rootRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+        <div ref={rootRef} onKeyDown={handleKeyDown} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
             <span style={{ color: theme.textMuted, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{label}</span>
             <button
                 type="button"
                 aria-haspopup="listbox"
                 aria-expanded={open}
+                aria-controls={listboxId}
+                aria-activedescendant={open && options[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
                 aria-label={`${label}: ${displayValue}`}
                 title={displayValue}
-                onClick={() => setOpen(previous => !previous)}
+                onClick={() => {
+                    setActiveIndex(Math.max(0, options.indexOf(value)));
+                    setOpen(previous => !previous);
+                }}
                 style={{
                     width,
                     maxWidth: '32vw',
@@ -136,7 +164,7 @@ const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)'
                     boxShadow: open ? `0 0 0 2px ${theme.accentGlow}` : 'none',
                     fontFamily: 'inherit',
                     fontSize: 11,
-                    fontWeight: 650,
+                    fontWeight: 500,
                     textAlign: 'left',
                     cursor: options.length > 0 ? 'pointer' : 'default'
                 }}
@@ -146,6 +174,7 @@ const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)'
             </button>
             {open && (
                 <div
+                    id={listboxId}
                     role="listbox"
                     aria-label={label}
                     style={{
@@ -166,10 +195,11 @@ const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)'
                 >
                     {options.length === 0 ? (
                         <div style={{ padding: '9px 10px', color: theme.textMuted, fontSize: 11 }}>{emptyLabel}</div>
-                    ) : options.map(option => {
+                    ) : options.map((option, index) => {
                         const selected = option === value;
                         return (
                             <button
+                                id={`${listboxId}-${index}`}
                                 type="button"
                                 role="option"
                                 aria-selected={selected}
@@ -189,15 +219,16 @@ const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)'
                                     padding: '0 8px',
                                     border: 0,
                                     borderRadius: 6,
-                                    background: selected ? theme.glassHighlight : 'transparent',
+                                    background: selected || activeIndex === index ? theme.glassHighlight : 'transparent',
                                     color: selected ? theme.accent : theme.text,
                                     fontFamily: 'inherit',
                                     fontSize: 11,
-                                    fontWeight: selected ? 750 : 600,
+                                    fontWeight: selected ? 600 : 400,
                                     textAlign: 'left',
                                     cursor: 'pointer'
                                 }}
                                 onMouseEnter={event => { if (!selected) event.currentTarget.style.background = theme.glassHighlight; }}
+                                onFocus={() => setActiveIndex(index)}
                                 onMouseLeave={event => { if (!selected) event.currentTarget.style.background = 'transparent'; }}
                             >
                                 <span style={{ display: 'grid', placeItems: 'center' }}>{selected && <Check size={13} />}</span>
@@ -238,6 +269,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     const [rawData, setRawData] = useState<DataRow[]>([]);
     const [isUnmixingMatrix, setIsUnmixingMatrix] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+    const [errorMessage, setErrorMessage] = useState('');
     const [guiStateLoaded, setGuiStateLoaded] = useState(false);
     const [unmixingMethod, setUnmixingMethod] = useState<UnmixingMethod>('Spectreasy');
 
@@ -315,17 +347,13 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             return;
         }
         setLoading(true);
-        const resMatrix = await axios.get(`${API_BASE}/load_matrix?filename=${encodeURIComponent(filename)}`);
-        if (!resMatrix.data.error) {
+        setErrorMessage('');
+        try {
+            const resMatrix = await axios.get(`${API_BASE}/load_matrix?filename=${encodeURIComponent(filename)}`);
+            if (resMatrix.data?.error) throw new Error(asScalarString(resMatrix.data.error));
             const matrixData = Array.isArray(resMatrix.data) ? resMatrix.data as MatrixRow[] : [];
             if (matrixData.length === 0) {
-                setMatrix([]);
-                setDetectors([]);
-                setDetectorLabels([]);
-                setUnmixedData([]);
-                setCurrentFile(filename);
-                setLoading(false);
-                return;
+                throw new Error(`Matrix ${filename} contains no rows.`);
             }
             setMatrix(matrixData);
             setIsUnmixingMatrix(isUnmixingFilename(filename));
@@ -334,22 +362,31 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             setDetectorLabels(detNames);
             const activeSample = sampleName && sampleName.length > 0 ? sampleName : (sampleFiles[0] || '');
             await fetchSampleData(activeSample, matrixData, filename, detNames);
+            setCurrentFile(filename);
+        } catch (error) {
+            setMatrix([]);
+            setDetectors([]);
+            setDetectorLabels([]);
+            setUnmixedData([]);
+            setErrorMessage(error instanceof Error ? error.message : 'Could not load the selected matrix.');
+        } finally {
+            setLoading(false);
         }
-        setCurrentFile(filename);
-        setLoading(false);
     };
 
     useEffect(() => {
         const init = async () => {
-            await fetchStatus();
-            const [mats, samples] = await Promise.all([fetchMatrices(), fetchSamples()]);
-            await fetchUserGuiState();
-            const firstMatrix = pickPreferredMatrix(mats, currentFile);
-            const firstSample = samples[0] || '';
-            if (firstSample) setCurrentSample(firstSample);
-            if (firstMatrix) {
-                await fetchData(firstMatrix, firstSample);
-            } else {
+            try {
+                await fetchStatus();
+                const [mats, samples] = await Promise.all([fetchMatrices(), fetchSamples()]);
+                await fetchUserGuiState();
+                const firstMatrix = pickPreferredMatrix(mats, currentFile);
+                const firstSample = samples[0] || '';
+                if (firstSample) setCurrentSample(firstSample);
+                if (firstMatrix) await fetchData(firstMatrix, firstSample);
+                else setLoading(false);
+            } catch (error) {
+                setErrorMessage(error instanceof Error ? error.message : 'Matrix Adjustment could not reach the local R backend.');
                 setLoading(false);
             }
         };
@@ -374,20 +411,22 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         } else if (typeof filename === 'boolean') {
             useType = filename ? 'unmixing' : 'reference';
         }
-        const res = await axios.post(`${API_BASE}/unmix`, {
-            matrix_json: M_obj,
-            raw_data_json: currentRaw,
-            type: useType,
-            matrix_filename: typeof filename === 'string' ? filename : currentFile,
-            method: unmixingMethodRef.current
-        });
-        if (Array.isArray(res.data)) {
-            setUnmixedData(res.data as DataRow[]);
-            return true;
-        } else if (res.data?.error) {
+        try {
+            const res = await axios.post(`${API_BASE}/unmix`, {
+                matrix_json: M_obj,
+                raw_data_json: currentRaw,
+                type: useType,
+                matrix_filename: typeof filename === 'string' ? filename : currentFile,
+                method: unmixingMethodRef.current
+            });
+            if (Array.isArray(res.data)) {
+                setUnmixedData(res.data as DataRow[]);
+                return true;
+            }
+            throw new Error(asScalarString(res.data?.error, 'The R backend returned no unmixed data.'));
+        } catch (error) {
             setUnmixedData([]);
-        } else {
-            setUnmixedData([]);
+            setErrorMessage(error instanceof Error ? error.message : 'Sample unmixing failed.');
         }
         return false;
     };
@@ -428,18 +467,24 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     };
 
     const saveMatrix = async () => {
+        if (!currentFile || matrix.length === 0) return;
         setSaveStatus('saving');
-        const newName = currentFile.replace('.csv', '_adjusted.csv');
-        const result = await axios.post(`${API_BASE}/save_matrix`, {
-            filename: newName,
-            source_filename: currentFile,
-            matrix_json: matrix
-        }).catch(() => null);
-        if (result) {
+        setErrorMessage('');
+        const newName = /\.csv$/i.test(currentFile)
+            ? currentFile.replace(/\.csv$/i, '_adjusted.csv')
+            : `${currentFile}_adjusted.csv`;
+        try {
+            const result = await axios.post(`${API_BASE}/save_matrix`, {
+                filename: newName,
+                source_filename: currentFile,
+                matrix_json: matrix
+            });
+            if (result.data?.error) throw new Error(asScalarString(result.data.error));
             setSaveStatus('saved');
-            fetchMatrices();
-            setTimeout(() => setSaveStatus('idle'), 2000);
-        } else {
+            await fetchMatrices();
+            window.setTimeout(() => setSaveStatus('idle'), 2000);
+        } catch (error) {
+            setErrorMessage(error instanceof Error ? error.message : 'The adjusted matrix could not be saved.');
             setSaveStatus('idle');
         }
     };
@@ -480,8 +525,14 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         setCurrentSample(sampleName);
         if (!sampleName || matrix.length === 0) return;
         setLoading(true);
-        await fetchSampleData(sampleName, matrix, currentFile, detectors);
-        setLoading(false);
+        setErrorMessage('');
+        try {
+            await fetchSampleData(sampleName, matrix, currentFile, detectors);
+        } catch (error) {
+            setErrorMessage(error instanceof Error ? error.message : 'Could not load the selected sample.');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const svgRef = useRef<SVGSVGElement>(null);
@@ -735,6 +786,11 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                     </div>
                 </div>
             </header>
+            {errorMessage && (
+                <div role="alert" style={{ margin: '12px 18px 0', padding: '10px 12px', color: g.accent, border: `1px solid ${g.accent}`, borderRadius: 7, background: g.glassBg }}>
+                    {errorMessage}
+                </div>
+            )}
 
             <div style={{ flex: 1, display: 'flex', minWidth: 0, overflowX: 'hidden', overflowY: 'visible' }}>
                 <div style={{ flex: 1, minWidth: 0, maxWidth: '100%', display: 'flex', flexDirection: 'column', padding: 16, gap: 16, overflowX: 'hidden', overflowY: 'visible' }}>

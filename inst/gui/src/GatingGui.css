@@ -1,4 +1,4 @@
-:root {
+.app-shell {
   color-scheme: light;
   font-family: Avenir Next, "Segoe UI", sans-serif;
   background: #f5f3ee;
@@ -21,7 +21,6 @@
   --bead-gate-fill: rgba(128, 82, 199, 0.16);
 }
 
-body.dark,
 .app-shell.dark {
   color-scheme: dark;
   background: #121816;
@@ -49,11 +48,12 @@ body.dark,
   background-size: 22px 22px !important;
 }
 
-* {
+.app-shell,
+.app-shell * {
   box-sizing: border-box;
 }
 
-body {
+.app-shell {
   margin: 0;
   min-width: 0;
   min-height: 100vh;
@@ -67,12 +67,12 @@ body {
   background-size: 22px 22px;
 }
 
-body::-webkit-scrollbar {
+.app-shell::-webkit-scrollbar {
   width: 0;
   height: 0;
 }
 
-button {
+.app-shell button {
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--ink);
@@ -87,11 +87,11 @@ button {
   cursor: pointer;
 }
 
-button:hover {
+.app-shell button:hover {
   border-color: #a8b0aa;
 }
 
-button:disabled {
+.app-shell button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -138,7 +138,6 @@ button:disabled {
   backdrop-filter: blur(2px);
 }
 
-body.dark .initial-loading-overlay,
 .app-shell.dark .initial-loading-overlay {
   background: rgba(18, 24, 22, 0.42);
 }
@@ -379,14 +378,12 @@ body.dark .initial-loading-overlay,
   line-height: 1.45;
 }
 
-body.dark .gating-status-banner,
 .app-shell.dark .gating-status-banner {
   color: #f2d894;
   border-color: #6f5b29;
   background: #302918;
 }
 
-body.dark .gating-status-banner.is-error,
 .app-shell.dark .gating-status-banner.is-error {
   color: #ffc2bc;
   border-color: #75413c;
@@ -464,13 +461,11 @@ body.dark .gating-status-banner.is-error,
   opacity: 0.62;
 }
 
-body.dark .control-navigation .icon-button,
 .app-shell.dark .control-navigation .icon-button {
   border-color: #697771;
   color: #d2ddd8;
 }
 
-body.dark .control-navigation .icon-button:disabled,
 .app-shell.dark .control-navigation .icon-button:disabled {
   border-color: #46514d;
   color: #76827d;
@@ -577,7 +572,6 @@ body.dark .control-navigation .icon-button:disabled,
 }
 
 .gating-help-button,
-body.dark .gating-help-button,
 .app-shell.dark .gating-help-button {
   border-color: transparent;
   background: transparent;
@@ -585,7 +579,6 @@ body.dark .gating-help-button,
 }
 
 .gating-help-button:hover,
-body.dark .gating-help-button:hover,
 .app-shell.dark .gating-help-button:hover {
   border-color: transparent;
   background: var(--wash);
@@ -737,7 +730,6 @@ body.dark .gating-help-button:hover,
   opacity: 0.72;
 }
 
-body.dark .auto-histogram-button:disabled,
 .app-shell.dark .auto-histogram-button:disabled {
   background: #343b38;
   color: #8e9894;
@@ -1183,13 +1175,12 @@ body.dark .auto-histogram-button:disabled,
   }
 }
 
-button.on {
+.app-shell button.on {
   background: var(--ink);
   color: white;
   border-color: var(--ink);
 }
 
-body.dark .plot-toolbar button.on,
 .app-shell.dark .plot-toolbar button.on {
   background: #42564f;
   color: #f7fbf9;
@@ -1257,7 +1248,7 @@ body.dark .plot-toolbar button.on,
   background: var(--panel);
   color: var(--muted);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .transform-dropdown {
@@ -1275,7 +1266,7 @@ body.dark .plot-toolbar button.on,
   background: var(--panel);
   color: var(--ink);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 500;
   position: relative;
 }
 
@@ -1311,6 +1302,7 @@ body.dark .plot-toolbar button.on,
 .transform-menu button {
   width: 100%;
   min-height: 30px;
+  font-weight: 400;
   justify-content: flex-start;
   gap: 7px;
   border: 0;
@@ -1366,29 +1358,29 @@ body.dark .plot-toolbar button.on,
   stroke-width: 2.2;
 }
 
-button.btn-positive-gate {
+.app-shell button.btn-positive-gate {
   border-color: #d65238;
   color: #d65238;
 }
 
-button.btn-positive-gate.on {
+.app-shell button.btn-positive-gate.on {
   background: #d65238 !important;
   color: white !important;
   border-color: #d65238 !important;
 }
 
-button.btn-negative-gate {
+.app-shell button.btn-negative-gate {
   border-color: #263f73;
   color: #263f73;
 }
 
-button.btn-negative-gate.on {
+.app-shell button.btn-negative-gate.on {
   background: #263f73 !important;
   color: white !important;
   border-color: #263f73 !important;
 }
 
-button.btn-negative-gate:disabled {
+.app-shell button.btn-negative-gate:disabled {
   border-color: var(--line);
   color: var(--muted);
   background: var(--wash);
@@ -1396,7 +1388,7 @@ button.btn-negative-gate:disabled {
   cursor: not-allowed;
 }
 
-button.btn-clear-histogram {
+.app-shell button.btn-clear-histogram {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1405,7 +1397,7 @@ button.btn-clear-histogram {
   background: var(--panel);
 }
 
-button.btn-clear-histogram:hover {
+.app-shell button.btn-clear-histogram:hover {
   border-color: var(--muted);
   color: var(--ink);
   background: var(--panel);

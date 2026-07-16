@@ -556,7 +556,7 @@ unmix_controls <- function(
 
     if (identical(gating_mode, "interactive")) {
         if (!interactive()) {
-            if (gate_file_exists) {
+            if (gate_file_exists && manual_gate_file_explicit) {
                 warning("gating_mode = 'interactive' requires an interactive R session; reusing the existing manual_gate_file instead.", call. = FALSE)
                 gating_mode_used <- "reuse"
                 .spectreasy_console_field("Gate CSV", .spectreasy_console_path(manual_gate_file))
@@ -567,9 +567,12 @@ unmix_controls <- function(
                     call. = FALSE
                 )
             } else {
-                warning("gating_mode = 'interactive' requires an interactive R session; continuing with automatic GMM gating.", call. = FALSE)
-                manual_gate_file <- NULL
-                gating_mode_used <- "automatic"
+                stop(
+                    "gating_mode = 'interactive' requires an interactive R session. ",
+                    "Run interactively to review gates, explicitly provide manual_gate_file, ",
+                    "or set gating_mode = 'automatic'.",
+                    call. = FALSE
+                )
             }
         } else {
             manual_gate_file <- gate_controls(

@@ -2,7 +2,8 @@
 #'
 #' Downloads the example-data zip archive from the matching GitHub release,
 #' unzips it automatically, and returns the local paths to the extracted
-#' `sample/` and `scc/` folders.
+#' `sample/` (or `samples/`) and `scc/` folders. Project-local copies use the
+#' standard `samples/` and `scc/` names.
 #'
 #' The downloaded archive is cached under [tools::R_user_dir()] so it only needs
 #' to be fetched once unless `force = TRUE`. If `dest_dir` is supplied, the cached
@@ -15,13 +16,13 @@
 #' @param cache_dir Directory used for the downloaded zip and extracted files.
 #'   Defaults to a package-specific user cache directory.
 #' @param dest_dir Optional destination directory for a project-local copy of the
-#'   extracted `sample/` and `scc/` folders. For example,
-#'   `spectreasy_example_data(dest_dir = getwd())` will place `sample/` and
+#'   extracted sample and `scc/` folders. For example,
+#'   `spectreasy_example_data(dest_dir = getwd())` will place `samples/` and
 #'   `scc/` in the current working directory. If `NULL` (default), the cached
 #'   extracted paths are returned directly.
 #' @param force Logical; if `TRUE`, redownload and re-extract the archive even if
 #'   a cached copy is already available. When `dest_dir` is supplied, `force = TRUE`
-#'   also refreshes the copied project-local `sample/` and `scc/` folders.
+#'   also refreshes the copied project-local `samples/` and `scc/` folders.
 #' @param quiet Logical; if `TRUE`, suppress progress messages where possible.
 #'
 #' @return A named list with elements `root_dir`, `zip_file`, `sample_dir`,
@@ -74,7 +75,7 @@ spectreasy_example_data <- function(
         unlink(zip_file, force = TRUE)
     }
 
-    sample_dir <- .spectreasy_find_example_subdir(extract_root, "sample")
+    sample_dir <- .spectreasy_find_example_sample_dir(extract_root)
     scc_dir <- .spectreasy_find_example_subdir(extract_root, "scc")
 
     needs_extract <- is.null(sample_dir) || is.null(scc_dir)
@@ -87,11 +88,11 @@ spectreasy_example_data <- function(
         dir.create(extract_root, recursive = TRUE, showWarnings = FALSE)
         utils::unzip(zip_file, exdir = extract_root)
 
-        sample_dir <- .spectreasy_find_example_subdir(extract_root, "sample")
+        sample_dir <- .spectreasy_find_example_sample_dir(extract_root)
         scc_dir <- .spectreasy_find_example_subdir(extract_root, "scc")
         if (is.null(sample_dir) || is.null(scc_dir)) {
             stop(
-                "Example data archive did not contain the expected 'sample/' and 'scc/' folders: ",
+                "Example data archive did not contain the expected 'sample/' or 'samples/' folder and 'scc/' folder: ",
                 asset,
                 call. = FALSE
             )
@@ -185,10 +186,18 @@ spectreasy_example_data <- function(
     normalizePath(hits[[1]], mustWork = TRUE)
 }
 
+.spectreasy_find_example_sample_dir <- function(root_dir) {
+    sample_dir <- .spectreasy_find_example_subdir(root_dir, "samples")
+    if (is.null(sample_dir)) {
+        sample_dir <- .spectreasy_find_example_subdir(root_dir, "sample")
+    }
+    sample_dir
+}
+
 .spectreasy_copy_example_dirs <- function(sample_dir, scc_dir, dest_dir, force = FALSE) {
     dir.create(dest_dir, recursive = TRUE, showWarnings = FALSE)
 
-    sample_dest <- file.path(dest_dir, "sample")
+    sample_dest <- file.path(dest_dir, "samples")
     scc_dest <- file.path(dest_dir, "scc")
 
     if (isTRUE(force) && dir.exists(sample_dest)) {
@@ -199,10 +208,12 @@ spectreasy_example_data <- function(
     }
 
     if (!dir.exists(sample_dest)) {
-        ok <- file.copy(sample_dir, dest_dir, recursive = TRUE)
-        if (!ok) {
-            stop("Could not copy example sample/ folder into dest_dir: ", dest_dir, call. = FALSE)
+        if (!dir.create(sample_dest, recursive = TRUE, showWarnings = FALSE)) {
+            stop("Could not create example samples/ folder in dest_dir: ", dest_dir, call. = FALSE)
         }
+        source_files <- list.files(sample_dir, full.names = TRUE, all.files = TRUE, no.. = TRUE)
+        ok <- !length(source_files) || all(file.copy(source_files, sample_dest, recursive = TRUE))
+        if (!ok) stop("Could not copy example files into samples/: ", dest_dir, call. = FALSE)
     }
     if (!dir.exists(scc_dest)) {
         ok <- file.copy(scc_dir, dest_dir, recursive = TRUE)

@@ -29,7 +29,7 @@ This vignette demonstrates the primary `spectreasy` workflow on the
 release-hosted example dataset. The example project contains:
 
 - single-color controls in `scc/`
-- one experimental sample in `sample/sample.fcs`
+- one experimental sample in `samples/sample.fcs`
 
 The user-facing workflow is:
 
@@ -125,7 +125,7 @@ ctrl <- unmix_controls(
 )
 
 unmixed <- unmix_samples(
-  sample_dir = file.path(project_dir, "sample"),
+  sample_dir = file.path(project_dir, "samples"),
   unmixing_matrix_file = file.path(
     project_dir,
     "spectreasy_outputs",
@@ -262,7 +262,7 @@ with `unmix_samples()`. The reference matrix written by
 
 ```{r, eval = FALSE}
 unmixed <- unmix_samples(
-  sample_dir = "sample",
+  sample_dir = "samples",
   output_dir = "spectreasy_outputs"
 )
 ```
@@ -361,7 +361,7 @@ Then unmix samples with the control-stage matrix. AF settings stay in
 
 ```{r, eval = FALSE}
 unmixed_multi_af <- unmix_samples(
-  sample_dir = "sample",
+  sample_dir = "samples",
   unmixing_matrix_file = ctrl_multi_af$reference_matrix_file,
   unmixing_method = "Spectreasy",
   output_dir = "spectreasy_outputs_multi_af"
@@ -406,7 +406,7 @@ mapped_names[na_idx] <- rownames(reference_matrix)[na_idx]
 rownames(reference_matrix) <- unname(mapped_names)
 
 unmixed_direct <- unmix_samples(
-  sample_dir = file.path(project_dir, "sample"),
+  sample_dir = file.path(project_dir, "samples"),
   M = reference_matrix,
   unmixing_method = "WLS",
   output_dir = file.path(project_dir, "spectreasy_outputs_direct")

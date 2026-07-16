@@ -1,0 +1,16 @@
+import type { ProjectState } from './types'
+
+export const emptyProject: ProjectState = {
+  projectName: 'Choose a project folder',
+  projectPath: '',
+  cytometer: 'Auto',
+  method: 'Spectreasy',
+  lastAction: '',
+  lastActionAt: '',
+  artifacts: [],
+  mapping: [],
+  mappingDirty: false,
+  gatesDirty: false,
+  missingInputDirs: [],
+  scan: { controls: 0, samples: 0, matrices: 0, reports: 0, qcMetrics: 0, spectralVariants: 0, gates: 0 },
+}

@@ -40,7 +40,7 @@ Summary of the workflow:
 2. Run `unmix_controls()`
 3. Review and supplement the generated `fcs_mapping.csv`
 4. Confirm the mapping file by typing `y` in the console
-5. Perform gating on unstianed and single-color control files via the browser GUI
+5. Perform gating on unstained and single-color control files via the browser GUI
 6. Run `unmix_samples()`
 7. Review the QC reports that are generated during unmixing
 
@@ -59,7 +59,7 @@ if (dir.exists(project_dir)) {
 example_paths <- spectreasy_example_data(dest_dir = project_dir)
 
 list.files(project_dir, recursive = TRUE)
-#> [1] "sample/sample.fcs"               "scc/Alexa Fluor 700 (Beads).fcs"
+#> [1] "samples/sample.fcs"              "scc/Alexa Fluor 700 (Beads).fcs"
 #> [3] "scc/BUV395 (Beads).fcs"          "scc/BV510 (Beads).fcs"          
 #> [5] "scc/FITC (Beads).fcs"            "scc/LIVE DEAD NIR (Cells).fcs"  
 #> [7] "scc/PerCP-Cy5.5 (Beads).fcs"     "scc/Unstained (Cells).fcs"
@@ -163,14 +163,14 @@ After the control-stage workflow has completed, unmix the experimental files wit
 
 ```r
 unmixed <- unmix_samples(
-  sample_dir = "sample",
+  sample_dir = "samples",
   output_dir = "spectreasy_outputs"
 )
 ```
 
 For the example dataset, this writes:
 
-- `spectreasy_outputs/unmix_samples/unmixed_fcs/sample_unmixed.fcs`
+- `spectreasy_outputs/unmix_samples/unmixed_fcs/sample_Spectreasy-100AF.fcs`
 
 and returns a named list with one element per sample.
 
@@ -267,7 +267,7 @@ ctrl_multi_af <- unmix_controls(
 Then pass the saved control-stage matrix to `unmix_samples()`.
 ```r
 unmixed_multi_af <- unmix_samples(
-  sample_dir = "sample",
+  sample_dir = "samples",
   unmixing_matrix_file = ctrl_multi_af$reference_matrix_file,
   output_dir = "spectreasy_outputs_multi_af"
 )
@@ -295,16 +295,16 @@ Profiles are stored under `af_profile_dir()`, which defaults to the user-level `
 
 ## Use a reviewed control CSV and gating set in non-interactive workflows
 
-For re-runs (e.g., testing different `af_n_bands` or `unmixing_method`), you can supply pre-existing `fcs_mapping.csv` and `ssc_gate_config.csv` files via the parameters `control_file` and `gating_file` to `unmix_controls()`. This will skip the mapping confirmation prompt and interactive gating GUI.
+For an explicitly non-interactive re-run, supply a reviewed mapping and gate file and set `gating_mode = "reuse"`. Saved gates are not reused merely because a CSV happens to exist; the default interactive mode opens the gating GUI.
 
 ```r
 control_file <- file.path(project_dir, "fcs_mapping.csv")
-gating_file <- file.path(project_dir, "ssc_gate_config.csv")
+manual_gate_file <- file.path(project_dir, "ssc_gate_config.csv")
 
 ctrl_noninteractive <- unmix_controls(
   scc_dir = file.path(project_dir, "scc"),
   control_file = control_file,
-  gating_file = gating_file,
+  manual_gate_file = manual_gate_file,
   gating_mode = "reuse",
   cytometer = "auto",
   output_dir = file.path(project_dir, "spectreasy_outputs_noninteractive"),
@@ -330,7 +330,7 @@ mapped_names[na_idx] <- rownames(reference_matrix)[na_idx]
 rownames(reference_matrix) <- unname(mapped_names)
 
 unmixed_direct <- unmix_samples(
-  sample_dir = file.path(project_dir, "sample"),
+  sample_dir = file.path(project_dir, "samples"),
   M = reference_matrix,
   output_dir = file.path(project_dir, "spectreasy_outputs_direct")
 )

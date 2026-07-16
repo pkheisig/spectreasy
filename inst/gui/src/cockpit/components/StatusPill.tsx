@@ -1,4 +1,4 @@
-import { AlertCircle, Check, Clock3, FlaskConical, Info, LoaderCircle, MinusCircle, XCircle } from 'lucide-react'
+import { AlertCircle, Check, Clock3, Info, LoaderCircle, MinusCircle, XCircle } from 'lucide-react'
 import type { StepState, ArtifactStatus } from '../types'
 
 type StatusPillProps = {
@@ -16,7 +16,6 @@ const labels: Record<string, string> = {
   blocked: 'Blocked',
   idle: 'Not started',
   user: 'User supplied',
-  synthetic: 'Synthetic',
   missing: 'Missing',
   unknown: 'Unknown',
   connected: 'Connected',
@@ -33,7 +32,6 @@ const icons = {
   blocked: XCircle,
   idle: MinusCircle,
   user: Info,
-  synthetic: FlaskConical,
   missing: XCircle,
   unknown: Info,
   offline: LoaderCircle,

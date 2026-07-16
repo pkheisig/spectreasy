@@ -16,6 +16,7 @@ import {
   createProjectFolder,
   downloadTextFile,
   initialBackendStatus,
+  initializeProject,
   loadPanelPayload,
   loadProjectSnapshot,
   persistControlMapping,
@@ -23,12 +24,13 @@ import {
   selectProjectFolder,
   terminateRSession,
 } from "./api";
-import { emptyProject } from "./mockData";
+import { emptyProject } from "./projectState";
 import { WorkflowRail } from "./components/WorkflowRail";
 import { GuiSelect } from "./components/GuiSelect";
 import { CockpitApplet } from "./components/CockpitApplet";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { ProjectFilesDialog } from "./components/ProjectFilesDialog";
+import { ProjectInitializationDialog } from "./components/ProjectInitializationDialog";
 import { WorkflowWorkspace } from "./workspaces/WorkflowWorkspace";
 import { defaultWorkflowSettings, normalizeInterfaceScale } from "./types";
 import type {
@@ -240,7 +242,9 @@ function TopBar({
   );
 }
 
-export default function CockpitApp() {
+type CockpitAppProps = { onBackendOffline?: () => void };
+
+export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
   const [project, setProject] = useState<ProjectState>(() =>
     structuredClone(emptyProject),
   );
@@ -257,6 +261,9 @@ export default function CockpitApp() {
   const [toast, setToast] = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [initializationDismissedFor, setInitializationDismissedFor] = useState("");
+  const [initializationBusy, setInitializationBusy] = useState(false);
+  const [initializationMessage, setInitializationMessage] = useState("");
   const [settings, setSettings] = useState<WorkflowSettings>(() => {
     const initial = defaultWorkflowSettings('');
     const savedTheme = window.localStorage.getItem("spectreasy-theme");
@@ -272,6 +279,10 @@ export default function CockpitApp() {
 
   const refreshProject = useCallback(async (initial = false) => {
     const snapshot = await loadProjectSnapshot();
+    if (!snapshot.backend.connected) {
+      onBackendOffline?.();
+      return;
+    }
     setProject(snapshot.project);
     setBackend(snapshot.backend);
     if (!initial && snapshot.project.projectPath) {
@@ -283,12 +294,7 @@ export default function CockpitApp() {
     if (initial) {
       const saved = snapshot.savedSettings ?? {};
       setSettings((current) => {
-        const {
-          gateFile: legacyGateFile,
-          ...savedControl
-        } = (saved.control ?? {}) as Partial<WorkflowSettings["control"]> & {
-          gateFile?: string;
-        };
+        const savedControl = (saved.control ?? {}) as Partial<WorkflowSettings["control"]>;
         const savedSample: Partial<WorkflowSettings["sample"]> =
           saved.sample ?? {};
         const explicitCytometer = window.localStorage.getItem(
@@ -306,13 +312,11 @@ export default function CockpitApp() {
           control: {
             ...current.control,
             ...savedControl,
-            sccDir: "scc",
-            controlFile: "fcs_mapping.csv",
-            outputDir: "spectreasy_outputs/unmix_controls",
-            manualGateFile:
-              savedControl.manualGateFile ??
-              legacyGateFile ??
-              "ssc_gate_config.csv",
+            sccDir: savedControl.sccDir ?? "scc",
+            controlFile: savedControl.controlFile ?? "fcs_mapping.csv",
+            outputDir: savedControl.outputDir ?? "spectreasy_outputs",
+            // Previous gates are never silently reused when the cockpit opens.
+            manualGateFile: "",
             method:
               savedControl.method ??
               snapshot.project.method ??
@@ -324,10 +328,10 @@ export default function CockpitApp() {
           sample: {
             ...current.sample,
             ...savedSample,
-            sampleDir: "samples",
-            matrixFile: "spectreasy_outputs/unmix_controls/scc_reference_matrix.csv",
-            detectorNoiseFile: "spectreasy_outputs/unmix_controls/scc_detector_noise.csv",
-            outputDir: "spectreasy_outputs/unmix_samples/unmixed_fcs",
+            sampleDir: savedSample.sampleDir ?? "samples",
+            matrixFile: savedSample.matrixFile ?? "spectreasy_outputs/unmix_controls/scc_reference_matrix.csv",
+            detectorNoiseFile: savedSample.detectorNoiseFile ?? "spectreasy_outputs/unmix_controls/scc_detector_noise.csv",
+            outputDir: savedSample.outputDir ?? "spectreasy_outputs",
             method:
               savedSample.method ??
               savedControl.method ??
@@ -355,7 +359,8 @@ export default function CockpitApp() {
         };
       });
     }
-  }, []);
+    return snapshot;
+  }, [onBackendOffline]);
 
   useEffect(() => {
     let cancelled = false;
@@ -402,36 +407,6 @@ export default function CockpitApp() {
     document.addEventListener("keydown", exitOverlay);
     return () => document.removeEventListener("keydown", exitOverlay);
   }, [activeSection, filesOpen, sectionBeforeSettings]);
-
-  useEffect(() => {
-    if (job.state !== "running") return;
-    const timer = window.setTimeout(() => {
-      setJob((current) => {
-        if (current.progress >= 100)
-          return {
-            ...current,
-            state: "complete",
-            finishedAt: "now",
-            subtask: "Outputs written to a new run folder",
-            output: "9 artifacts",
-          };
-        const nextProgress = Math.min(100, current.progress + 20);
-        const subtasks = [
-          "Validating inputs and detector sets",
-          "Applying gates and building background",
-          "Unmixing events in R",
-          "Caching QC metrics and plots",
-          "Writing manifest and reports",
-        ];
-        return {
-          ...current,
-          progress: nextProgress,
-          subtask: subtasks[Math.min(4, Math.floor(nextProgress / 20))],
-        };
-      });
-    }, 650);
-    return () => window.clearTimeout(timer);
-  }, [job]);
 
   useEffect(() => {
     if (!toast) return;
@@ -572,21 +547,33 @@ export default function CockpitApp() {
     setActiveSection(section);
   }
 
-  function exitApplet() {
+  async function exitApplet() {
+    const closingApplet = activeApplet;
     setActiveApplet(null);
     setActiveSection(sectionBeforeApplet);
-    void refreshProject();
+    const snapshot = await refreshProject();
+    if (closingApplet === "control-gating" && snapshot?.project.scan.gates) {
+      setSettings((current) => ({
+        ...current,
+        control: { ...current.control, manualGateFile: "ssc_gate_config.csv" },
+      }));
+    }
   }
 
   async function runAction(
     action: "control" | "sample" | "control-report" | "sample-report" | "af",
     label: string,
   ) {
+    if (action === "control" && !settings.control.manualGateFile) {
+      setToast("Review and confirm the control gates before running the control workflow.");
+      openApplet("control-gating", "controls");
+      return false;
+    }
     setJob({
       label,
       state: "running",
       progress: 0,
-      subtask: "Preparing inputs and checking prerequisites",
+      subtask: "Running in the local R session",
       startedAt: "now",
     });
     const control = settings.control;
@@ -596,15 +583,15 @@ export default function CockpitApp() {
       action === "control"
         ? {
             projectPath: settings.projectPath,
-            scc_dir: "scc",
-            control_file: "fcs_mapping.csv",
-            output_dir: "spectreasy_outputs/unmix_controls",
+            scc_dir: control.sccDir,
+            control_file: control.controlFile,
+            output_dir: control.outputDir,
             method: control.method,
             cytometer: control.cytometer,
             auto_create_mapping: control.autoCreateMapping,
             auto_unknown_fluor_policy: control.autoUnknownFluorPolicy,
             manual_gate_file: control.manualGateFile,
-            gating_mode: control.manualGateFile ? "reuse" : "automatic",
+            gating_mode: control.manualGateFile ? "reuse" : "interactive",
             af_n_bands: control.afNBands,
             af_max_cells: control.afMaxCells,
             default_sample_type: control.defaultSampleType,
@@ -644,10 +631,10 @@ export default function CockpitApp() {
         : action === "sample"
           ? {
               projectPath: settings.projectPath,
-              sample_dir: "samples",
-              matrix_file: "spectreasy_outputs/unmix_controls/scc_reference_matrix.csv",
-              detector_noise_file: "spectreasy_outputs/unmix_controls/scc_detector_noise.csv",
-              output_dir: "spectreasy_outputs/unmix_samples/unmixed_fcs",
+              sample_dir: sample.sampleDir,
+              matrix_file: sample.matrixFile,
+              detector_noise_file: sample.detectorNoiseFile,
+              output_dir: sample.outputDir,
               method: sample.method,
               rwls_max_iter: sample.rwlsMaxIter,
               n_threads: sample.nThreads,
@@ -699,10 +686,29 @@ export default function CockpitApp() {
     }
     const response = await attemptWorkflowAction(action, payload);
     setToast(response.message);
-    if (response.connected) {
-      window.setTimeout(() => void refreshProject(), 500);
+    if (response.success) {
+      setJob({
+        label,
+        state: "complete",
+        progress: 100,
+        subtask: "Completed in the local R session",
+        startedAt: "now",
+        finishedAt: "now",
+        output: response.outputCount ? `${response.outputCount} output${response.outputCount === 1 ? "" : "s"}` : undefined,
+      });
+      await refreshProject();
+    } else {
+      setJob({
+        label,
+        state: "failed",
+        progress: 0,
+        subtask: response.message,
+        startedAt: "now",
+        finishedAt: "now",
+      });
+      if (!response.backendReachable) onBackendOffline?.();
     }
-    return response.connected;
+    return response.success;
   }
 
   async function loadPanel() {
@@ -734,6 +740,19 @@ export default function CockpitApp() {
     }
   }
 
+  async function confirmProjectInitialization() {
+    if (!project.projectPath || initializationBusy) return;
+    setInitializationBusy(true);
+    setInitializationMessage("");
+    const result = await initializeProject(project.projectPath);
+    setInitializationMessage(result.message);
+    if (result.success) {
+      await refreshProject(true);
+      setInitializationDismissedFor("");
+    }
+    setInitializationBusy(false);
+  }
+
   async function createMapping() {
     const response = await createControlMapping();
     setToast(response.message);
@@ -748,6 +767,7 @@ export default function CockpitApp() {
         message: "The local R session was terminated from the cockpit.",
       });
       setToast("R session terminated.");
+      onBackendOffline?.();
     } else {
       setToast("The R session could not be terminated.");
     }
@@ -793,6 +813,7 @@ export default function CockpitApp() {
 
   return (
     <div className="cockpit-app">
+      <a className="skip-link" href="#cockpit-main">Skip to workflow</a>
       <TopBar
         project={project}
         cytometer={settings.control.cytometer}
@@ -813,7 +834,7 @@ export default function CockpitApp() {
         onTerminal={() => setTerminalOpen((value) => !value)}
       />
       <div className="app-body">
-        <main className="main-area">
+        <main className="main-area" id="cockpit-main" tabIndex={-1}>
           <WorkflowRail
             activeSection={activeSection}
             project={project}
@@ -852,7 +873,7 @@ export default function CockpitApp() {
         </main>
       </div>
       {toast && (
-        <div className="toast">
+        <div className="toast" role="status" aria-live="polite">
           <Sparkles size={15} />
           <span>{toast}</span>
           <button onClick={() => setToast(null)} aria-label="Dismiss message">
@@ -867,7 +888,22 @@ export default function CockpitApp() {
         <ProjectFilesDialog
           projectName={project.projectName}
           onClose={() => setFilesOpen(false)}
-          onChanged={() => refreshProject(false)}
+          onChanged={async () => {
+            await refreshProject(false);
+          }}
+        />
+      )}
+      {project.projectPath && project.missingInputDirs.length > 0 && initializationDismissedFor !== project.projectPath && (
+        <ProjectInitializationDialog
+          projectName={project.projectName}
+          missingFolders={project.missingInputDirs}
+          busy={initializationBusy}
+          message={initializationMessage}
+          onConfirm={() => void confirmProjectInitialization()}
+          onCancel={() => {
+            setInitializationMessage("");
+            setInitializationDismissedFor(project.projectPath);
+          }}
         />
       )}
       {terminalOpen && <TerminalPanel
@@ -876,7 +912,9 @@ export default function CockpitApp() {
         widthPct={settings.appearance.terminalWidthPct}
         heightPct={settings.appearance.terminalHeightPct}
         onClose={() => setTerminalOpen(false)}
-        onRefresh={() => refreshProject(false)}
+        onRefresh={async () => {
+          await refreshProject(false);
+        }}
         onTerminate={terminateBackend}
         onSizeChange={(size) => updateSettings("appearance", size)}
       />}

@@ -1,4 +1,4 @@
-test_that("cockpit project file routes create and manage input folders", {
+test_that("cockpit project initialization is explicit and file helpers are safe", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
     skip_if_not(file.exists(api_path))
@@ -15,51 +15,30 @@ test_that("cockpit project file routes create and manage input folders", {
     )]
     on.exit(options(old_options), add = TRUE)
 
-    router <- plumber::plumb(api_path)
-    context_route <- router$routes$project$context$getFunc()
-    file_routes <- router$routes$project$files
-    direct_file_routes <- file_routes[names(file_routes) == ""]
-    list_route <- direct_file_routes[[which(vapply(direct_file_routes, function(route) identical(route$verbs, "GET"), logical(1)))]]$getFunc()
-    upload_route <- direct_file_routes[[which(vapply(direct_file_routes, function(route) identical(route$verbs, "POST"), logical(1)))]]$getFunc()
-    delete_route <- direct_file_routes[[which(vapply(direct_file_routes, function(route) identical(route$verbs, "DELETE"), logical(1)))]]$getFunc()
-    delete_all_route <- file_routes$all$getFunc()
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
 
-    request <- new.env(parent = emptyenv())
-    request$postBody <- jsonlite::toJSON(list(projectPath = project), auto_unbox = TRUE)
-    selected <- context_route(request)
-    expect_true(selected$success)
+    api_env$gui_set_project_context(project)
+    scan <- api_env$gui_project_scan(project)
+    expect_setequal(scan$missing_input_dirs, c("scc", "samples"))
+    expect_false(dir.exists(file.path(project, "scc")))
+    expect_false(dir.exists(file.path(project, "samples")))
+
+    api_env$gui_ensure_project_input_dirs(project)
     expect_true(dir.exists(file.path(project, "scc")))
     expect_true(dir.exists(file.path(project, "samples")))
 
-    request$postBody <- jsonlite::toJSON(list(
-        kind = "controls",
-        filename = "Control 01.fcs",
-        content_base64 = jsonlite::base64_enc(charToRaw("FCS-test-payload")),
-        overwrite = FALSE
-    ), auto_unbox = TRUE)
-    uploaded <- upload_route(request)
-    expect_true(uploaded$success)
-    expect_true(file.exists(file.path(project, "scc", "Control 01.fcs")))
+    files <- file.path(project, "scc", c("Control 10.fcs", "Control 2.fcs", "Control 1.fcs"))
+    file.create(files)
+    listed <- api_env$gui_project_file_rows("controls")
+    expect_identical(listed$name, c("Control 1.fcs", "Control 2.fcs", "Control 10.fcs"))
 
-    listed <- list_route("controls")
-    expect_true(listed$success)
-    expect_identical(listed$files$name, "Control 01.fcs")
-    expect_identical(listed$files$kind, "controls")
-    expect_gt(listed$files$size, 0)
-
-    duplicate <- upload_route(request)
-    expect_false(duplicate$success)
-    expect_match(duplicate$error, "already exists")
-
-    removed <- delete_route("controls", "Control 01.fcs")
-    expect_true(removed$success)
-    expect_false(file.exists(file.path(project, "scc", "Control 01.fcs")))
-
-    file.create(file.path(project, "samples", c("Sample 01.fcs", "Sample 02.FCS")))
-    deleted_all <- delete_all_route("samples")
-    expect_true(deleted_all$success)
-    expect_identical(deleted_all$deleted, 2L)
-    expect_length(list.files(file.path(project, "samples"), pattern = "\\.fcs$", ignore.case = TRUE), 0L)
+    valid_fcs <- tempfile(fileext = ".fcs")
+    invalid_fcs <- tempfile(fileext = ".fcs")
+    writeBin(c(charToRaw("FCS3.1"), charToRaw("payload")), valid_fcs)
+    writeBin(charToRaw("not-fcs"), invalid_fcs)
+    expect_true(api_env$gui_validate_fcs_upload(valid_fcs))
+    expect_error(api_env$gui_validate_fcs_upload(invalid_fcs), "valid FCS header")
 })
 
 test_that("project picker routes distinguish opening from creating", {
@@ -67,13 +46,49 @@ test_that("project picker routes distinguish opening from creating", {
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
     skip_if_not(file.exists(api_path))
 
-    router <- plumber::plumb(api_path)
-    select_route <- router$routes$project$select$getFunc()
-    create_route <- router$routes$project$create$getFunc()
+    collect_endpoints <- function(node) {
+        if (inherits(node, "PlumberEndpoint")) return(list(node))
+        if (!is.list(node)) return(list())
+        unlist(lapply(seq_along(node), function(index) collect_endpoints(node[[index]])), recursive = FALSE)
+    }
+    endpoints <- collect_endpoints(plumber::plumb(api_path)$routes)
+    by_path <- function(path) endpoints[[which(vapply(endpoints, function(endpoint) identical(endpoint$path, path), logical(1)))[1]]]
+    select_route <- by_path("/project/select")$getFunc()
+    create_route <- by_path("/project/create")$getFunc()
     select_body <- paste(deparse(body(select_route)), collapse = "\n")
     create_body <- paste(deparse(body(create_route)), collapse = "\n")
     expect_match(select_body, "allow_create = FALSE", fixed = TRUE)
     expect_match(create_body, "allow_create = TRUE", fixed = TRUE)
+})
+
+test_that("cockpit API keeps all critical route families registered", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    skip_if_not(file.exists(api_path))
+
+    router <- plumber::plumb(api_path)
+    endpoints <- unlist(router$endpoints, recursive = FALSE, use.names = FALSE)
+    paths <- unique(vapply(endpoints, function(endpoint) endpoint$path, character(1)))
+    critical_paths <- c(
+        "/status",
+        "/gui_state",
+        "/control_mapping",
+        "/gate_files",
+        "/spectral_panel",
+        "/spectral_panel_metrics",
+        "/af_profiles",
+        "/af_profiles/delete",
+        "/project/context",
+        "/project/files",
+        "/project/initialize",
+        "/project/upload-start",
+        "/workflow/control",
+        "/workflow/sample"
+    )
+
+    expect_true(all(critical_paths %in% paths))
+    expect_false("/import_sample_content" %in% paths)
+    expect_false("/workflow/synthetic" %in% paths)
 })
 
 test_that("cockpit project files reject traversal and non-FCS input", {

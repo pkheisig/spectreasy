@@ -1774,7 +1774,7 @@ function(req) {
 }
 
 #* Delete a saved AF profile
-#* @delete /af_profiles
+#* @delete /af_profiles/delete
 #* @param name Profile name
 function(name = "") {
     if (is.null(name) || !nzchar(trimws(as.character(name)[1]))) {
@@ -1835,57 +1835,6 @@ function() {
     if (!dir.exists(samples_dir)) return(character(0))
     files <- list.files(samples_dir, pattern = "\\.fcs$", ignore.case = TRUE)
     return(as.character(sort(files)))
-}
-
-#* CORS preflight for import_sample_content
-#* @options /import_sample_content
-function(res) {
-    return("")
-}
-
-#* Import a sample from uploaded binary content
-#* @post /import_sample_content
-function(req) {
-    body <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
-    if (is.null(body)) {
-        return(list(error = "Missing request body"))
-    }
-
-    filename <- if (is.null(body$filename)) "" else as.character(body$filename)[1]
-    content_b64 <- if (is.null(body$content_base64)) "" else as.character(body$content_base64)[1]
-    filename <- trimws(filename)
-
-    if (!nzchar(filename)) {
-        return(list(error = "Missing filename"))
-    }
-    if (!nzchar(content_b64)) {
-        return(list(error = "Missing content_base64"))
-    }
-
-    safe_name <- basename(filename)
-    if (!grepl("\\.fcs$", safe_name, ignore.case = TRUE)) {
-        safe_name <- paste0(safe_name, ".fcs")
-    }
-
-    payload <- tryCatch(
-        jsonlite::base64_dec(content_b64),
-        error = function(e) NULL
-    )
-    if (is.null(payload) || length(payload) == 0) {
-        return(list(error = "Invalid or empty sample content"))
-    }
-
-    samples_dir <- get_samples_dir()
-    if (!dir.exists(samples_dir)) {
-        dir.create(samples_dir, recursive = TRUE, showWarnings = FALSE)
-    }
-
-    dest <- file.path(samples_dir, safe_name)
-    con <- file(dest, open = "wb")
-    on.exit(close(con), add = TRUE)
-    writeBin(payload, con)
-
-    return(list(success = TRUE, filename = safe_name, path = dest))
 }
 
 #* List GUI config presets
@@ -2477,6 +2426,53 @@ gui_project_file_rows <- function(kind) {
     rows[order(gui_natural_sort_key(rows$name), tolower(rows$name)), , drop = FALSE]
 }
 
+.gui_project_uploads <- new.env(parent = emptyenv())
+
+gui_project_upload_id <- function() {
+    paste(sample(c(letters, LETTERS, 0:9), 32L, replace = TRUE), collapse = "")
+}
+
+gui_project_upload_session <- function(upload_id) {
+    upload_id <- trimws(as.character(upload_id)[1])
+    if (!nzchar(upload_id) || !exists(upload_id, envir = .gui_project_uploads, inherits = FALSE)) {
+        stop("Upload session not found or expired.", call. = FALSE)
+    }
+    get(upload_id, envir = .gui_project_uploads, inherits = FALSE)
+}
+
+gui_project_upload_discard <- function(upload_id) {
+    upload_id <- trimws(as.character(upload_id)[1])
+    if (nzchar(upload_id) && exists(upload_id, envir = .gui_project_uploads, inherits = FALSE)) {
+        session <- get(upload_id, envir = .gui_project_uploads, inherits = FALSE)
+        unlink(session$temporary, force = TRUE)
+        rm(list = upload_id, envir = .gui_project_uploads)
+    }
+    invisible(NULL)
+}
+
+gui_project_upload_discard_stale <- function(max_age_seconds = 3600) {
+    upload_ids <- ls(envir = .gui_project_uploads, all.names = TRUE)
+    now <- Sys.time()
+    for (upload_id in upload_ids) {
+        session <- get(upload_id, envir = .gui_project_uploads, inherits = FALSE)
+        age <- suppressWarnings(as.numeric(difftime(now, session$created, units = "secs")))
+        if (!is.finite(age) || age > max_age_seconds) gui_project_upload_discard(upload_id)
+    }
+    invisible(NULL)
+}
+
+gui_validate_fcs_upload <- function(path) {
+    size <- file.info(path)$size
+    if (!is.finite(size) || size < 6) stop("Uploaded FCS file is empty or truncated.", call. = FALSE)
+    connection <- file(path, open = "rb")
+    on.exit(close(connection), add = TRUE)
+    header <- rawToChar(readBin(connection, what = "raw", n = 6L))
+    if (!grepl("^FCS[0-9]\\.[0-9]$", header)) {
+        stop("Uploaded file does not contain a valid FCS header.", call. = FALSE)
+    }
+    invisible(TRUE)
+}
+
 gui_natural_sort_key <- function(x) {
     vapply(as.character(x), function(value) {
         parts <- regmatches(value, gregexpr("[0-9]+|[^0-9]+", value, perl = TRUE))[[1]]
@@ -2788,35 +2784,97 @@ function(kind = "controls") {
     )
 }
 
-#* Upload one FCS file to the active project's controls or samples folder
-#* @post /project/files
+#* Begin a bounded-memory FCS upload
+#* @post /project/upload-start
 function(req) {
     body <- gui_workflow_body(req)
     tryCatch({
+        gui_project_upload_discard_stale()
         location <- gui_project_file_location(
             gui_workflow_value(body, "kind", ""),
             gui_workflow_value(body, "filename", "")
         )
-        content <- gui_workflow_value(body, "content_base64", "")
-        if (!nzchar(content)) stop("Uploaded file is empty.", call. = FALSE)
-        overwrite <- gui_workflow_bool(body, "overwrite", FALSE)
-        if (file.exists(location$path) && !overwrite) {
-            stop("A file named '", location$filename, "' already exists.", call. = FALSE)
+        if (!dir.exists(location$directory)) {
+            stop("Create the project's scc and samples folders before adding files.", call. = FALSE)
         }
-        payload <- tryCatch(jsonlite::base64_dec(content), error = function(e) NULL)
-        if (is.null(payload) || !length(payload)) stop("Uploaded file is empty or invalid.", call. = FALSE)
+        size <- gui_workflow_number(body, "size", 0, integer = TRUE, minimum = 1)
+        maximum <- as.numeric(getOption("spectreasy.gui_max_upload_bytes", 50 * 1024^3))
+        if (is.finite(maximum) && size > maximum) {
+            stop("Uploaded file exceeds the configured size limit.", call. = FALSE)
+        }
+        if (file.exists(location$path)) stop("A file named '", location$filename, "' already exists.", call. = FALSE)
+        upload_id <- gui_project_upload_id()
         temporary <- tempfile("spectreasy-upload-", tmpdir = location$directory)
-        on.exit(unlink(temporary, force = TRUE), add = TRUE)
-        connection <- file(temporary, open = "wb")
+        if (!file.create(temporary)) stop("Could not prepare the upload destination.", call. = FALSE)
+        assign(upload_id, list(
+            location = location,
+            temporary = temporary,
+            size = size,
+            written = 0,
+            created = Sys.time()
+        ), envir = .gui_project_uploads)
+        list(success = TRUE, upload_id = upload_id)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Append one encoded chunk to an FCS upload
+#* @post /project/upload-chunk
+function(req) {
+    body <- gui_workflow_body(req)
+    upload_id <- gui_workflow_value(body, "upload_id", "")
+    tryCatch({
+        session <- gui_project_upload_session(upload_id)
+        offset <- gui_workflow_number(body, "offset", 0, integer = TRUE, minimum = 0)
+        if (!identical(as.numeric(offset), as.numeric(session$written))) {
+            stop("Upload chunk is out of sequence; restart the upload.", call. = FALSE)
+        }
+        content <- gui_workflow_value(body, "content_base64", "")
+        payload <- tryCatch(jsonlite::base64_dec(content), error = function(e) NULL)
+        if (is.null(payload) || !length(payload)) stop("Upload chunk is empty or invalid.", call. = FALSE)
+        if (session$written + length(payload) > session$size) stop("Upload exceeds the declared file size.", call. = FALSE)
+        connection <- file(session$temporary, open = "ab")
         on.exit(try(close(connection), silent = TRUE), add = TRUE)
         writeBin(payload, connection)
         close(connection)
-        if (file.exists(location$path)) unlink(location$path, force = TRUE)
-        if (!file.rename(temporary, location$path)) stop("Could not save uploaded file.", call. = FALSE)
-        row <- gui_project_file_rows(location$kind)
-        row <- row[row$name == location$filename, , drop = FALSE]
+        session$written <- session$written + length(payload)
+        assign(upload_id, session, envir = .gui_project_uploads)
+        list(success = TRUE, written = session$written)
+    }, error = function(e) {
+        gui_project_upload_discard(upload_id)
+        list(success = FALSE, error = conditionMessage(e))
+    })
+}
+
+#* Validate and commit an FCS upload
+#* @post /project/upload-finish
+function(req) {
+    body <- gui_workflow_body(req)
+    upload_id <- gui_workflow_value(body, "upload_id", "")
+    tryCatch({
+        session <- gui_project_upload_session(upload_id)
+        if (!identical(as.numeric(session$written), as.numeric(session$size))) {
+            stop("Upload is incomplete.", call. = FALSE)
+        }
+        gui_validate_fcs_upload(session$temporary)
+        if (file.exists(session$location$path)) stop("The destination file now exists; the upload was not overwritten.", call. = FALSE)
+        if (!file.rename(session$temporary, session$location$path)) stop("Could not save uploaded file.", call. = FALSE)
+        rm(list = upload_id, envir = .gui_project_uploads)
+        rows <- gui_project_file_rows(session$location$kind)
+        row <- rows[rows$name == session$location$filename, , drop = FALSE]
         list(success = TRUE, file = row)
-    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+    }, error = function(e) {
+        gui_project_upload_discard(upload_id)
+        list(success = FALSE, error = conditionMessage(e))
+    })
+}
+
+#* Cancel an incomplete FCS upload
+#* @post /project/upload-abort
+function(req) {
+    body <- gui_workflow_body(req)
+    upload_id <- gui_workflow_value(body, "upload_id", "")
+    gui_project_upload_discard(upload_id)
+    list(success = TRUE)
 }
 
 #* Delete one FCS file from the active project's controls or samples folder
@@ -2839,6 +2897,9 @@ function(kind = "", filename = "") {
 function(kind = "") {
     tryCatch({
         location <- gui_project_file_location(kind)
+        if (!dir.exists(location$directory)) {
+            return(list(success = TRUE, deleted = 0L))
+        }
         files <- list.files(location$directory, pattern = "\\.fcs$", ignore.case = TRUE, full.names = TRUE)
         if (length(files)) {
             removed <- unlink(files, force = TRUE)
@@ -2969,11 +3030,9 @@ function(req) {
     method <- gui_workflow_value(body, "method", get_unmixing_method())
     cytometer <- gui_workflow_value(body, "cytometer", "auto")
     gate_file <- gui_workflow_file_or_null(
-        gui_workflow_value(body, "manual_gate_file", "ssc_gate_config.csv"),
+        gui_workflow_value(body, "manual_gate_file", ""),
         root = gui_workflow_root(body)
     )
-    gate_file_available <- length(gate_file) > 0L &&
-        !is.na(gate_file[1]) && nzchar(trimws(as.character(gate_file)[1]))
     control_args <- c(
         list(
             scc_dir = scc_dir,
@@ -3008,7 +3067,7 @@ function(req) {
             gating_mode = gui_workflow_value(
                 body,
                 "gating_mode",
-                if (gate_file_available) "reuse" else "interactive"
+                "interactive"
             ),
             manual_gate_file = gate_file,
             scc_background_method = gui_workflow_value(body, "scc_background_method", "scatter_knn"),
@@ -3163,42 +3222,6 @@ function(req) {
     output_file <- file.path(output_dir, "method_comparison.csv")
     utils::write.csv(comparison_df, output_file, row.names = FALSE, quote = TRUE)
     list(success = TRUE, result = list(sample = basename(sample_files[1]), matrix = matrix_file, output_file = output_file, rows = comparison_df))
-}
-
-#* Generate a synthetic SCC FCS from one matrix signature
-#* @post /workflow/synthetic
-function(req) {
-    body <- gui_workflow_body(req)
-    root <- gui_workflow_root(body)
-    matrix_input <- gui_workflow_value(body, "matrix_file", "")
-    matrix_file <- gui_workflow_file_or_null(matrix_input, root = root)
-    if (is.null(matrix_file) || !file.exists(matrix_file)) {
-        return(list(success = FALSE, error = "Select a readable reference matrix before generating synthetic SCC."))
-    }
-    matrix_df <- read_matrix_csv(matrix_file)
-    if (ncol(matrix_df) < 2 || nrow(matrix_df) == 0) return(list(success = FALSE, error = "The selected matrix has no usable signatures."))
-    marker <- gui_workflow_value(body, "marker", as.character(matrix_df[[1]][1]))
-    marker_index <- match(marker, as.character(matrix_df[[1]]))
-    if (is.na(marker_index)) return(list(success = FALSE, error = paste("Marker not found in matrix:", marker)))
-    detectors <- colnames(matrix_df)[-1]
-    signature <- suppressWarnings(as.numeric(matrix_df[marker_index, -1, drop = TRUE]))
-    events_n <- gui_workflow_number(body, "events", 1000, integer = TRUE, minimum = 1)
-    noise <- gui_workflow_number(body, "noise", 0.02, minimum = 0)
-    seed <- gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1)
-    set.seed(seed)
-    synthetic <- matrix(rep(signature, each = events_n), nrow = events_n, ncol = length(signature), byrow = FALSE)
-    synthetic <- matrix(pmax(0, synthetic * exp(matrix(stats::rnorm(events_n * length(signature), mean = 0, sd = noise), nrow = events_n))), nrow = events_n, ncol = length(signature))
-    colnames(synthetic) <- detectors
-    output_input <- gui_workflow_value(body, "output_file", file.path("spectreasy_outputs", "synthetic_scc", paste0("synthetic_", gsub("[^A-Za-z0-9._-]+", "_", marker), ".fcs")))
-    output_file <- if (grepl("^(/|[A-Za-z]:[/\\\\])", output_input)) output_input else file.path(root, output_input)
-    output_file <- normalizePath(output_file, mustWork = FALSE)
-    root_prefix <- paste0(normalizePath(root, mustWork = FALSE), .Platform$file.sep)
-    if (!startsWith(output_file, root_prefix)) return(list(success = FALSE, error = "Synthetic output must stay inside the active project."))
-    dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
-    flowCore::write.FCS(flowCore::flowFrame(synthetic), output_file)
-    truth_file <- sub("\\.fcs$", "_truth.csv", output_file, ignore.case = TRUE)
-    utils::write.csv(data.frame(marker = marker, detector = detectors, signature = signature), truth_file, row.names = FALSE, quote = TRUE)
-    list(success = TRUE, result = list(output_file = output_file, truth_file = truth_file, marker = marker, events = events_n, detectors = length(detectors)))
 }
 
 #* Render a report from existing Spectreasy outputs

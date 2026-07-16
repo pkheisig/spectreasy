@@ -379,6 +379,7 @@ test_that("unmix_controls runs end-to-end on synthetic SCC files", {
         control_file = control_csv,
         output_dir = output_dir,
         unmixing_method = "OLS",
+        gating_mode = "automatic",
         n_threads = 2,
         save_qc_png = TRUE,
         seed = 1,
@@ -419,6 +420,7 @@ test_that("unmix workflows route a shared output root into stage-specific unmixe
         control_file = control_csv,
         output_dir = project_dir,
         unmixing_method = "OLS",
+        gating_mode = "automatic",
         save_report = FALSE,
         seed = 1,
         subsample_n = 120
@@ -453,6 +455,7 @@ test_that("unmix_controls handles WLS output with AF controls", {
             control_file = control_csv,
             output_dir = output_dir,
             unmixing_method = "WLS",
+            gating_mode = "automatic",
             af_n_bands = 1,
             seed = 1,
             subsample_n = 400
@@ -494,6 +497,7 @@ test_that("unmix_controls tolerates a missing unstained mapping row", {
         control_file = control_csv,
         output_dir = output_dir,
         unmixing_method = "WLS",
+        gating_mode = "automatic",
         seed = 1,
         subsample_n = 300
     )

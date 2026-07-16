@@ -33,9 +33,9 @@ test_that("spectreasy_example_data downloads, unzips, caches, and can copy local
     dest_dir <- tempfile("spectreasy_example_dest_")
     local_paths <- spectreasy::spectreasy_example_data(asset = zip_file, cache_dir = cache_dir, dest_dir = dest_dir)
     expect_equal(normalizePath(local_paths$root_dir), normalizePath(dest_dir, mustWork = FALSE))
-    expect_equal(basename(local_paths$sample_dir), "sample")
+    expect_equal(basename(local_paths$sample_dir), "samples")
     expect_equal(basename(local_paths$scc_dir), "scc")
-    expect_true(file.exists(file.path(dest_dir, "sample", "sample.fcs")))
+    expect_true(file.exists(file.path(dest_dir, "samples", "sample.fcs")))
     expect_true(file.exists(file.path(dest_dir, "scc", "FITC (Beads).fcs")))
 })
 
@@ -55,10 +55,34 @@ test_that("spectreasy_example_data validates archive contents and dest_dir", {
 
     expect_error(
         spectreasy::spectreasy_example_data(asset = zip_file, cache_dir = tempfile("spectreasy_example_bad_cache_")),
-        regexp = "expected 'sample/' and 'scc/' folders"
+        regexp = "expected 'sample/' or 'samples/' folder and 'scc/' folder"
     )
     expect_error(
         spectreasy::spectreasy_example_data(asset = zip_file, dest_dir = ""),
         regexp = "dest_dir must be NULL or a non-empty directory path"
     )
+})
+
+test_that("spectreasy_example_data accepts archives using the standard samples folder", {
+    skip_if_not(nzchar(Sys.which("zip")))
+
+    src_root <- tempfile("spectreasy_example_samples_src_")
+    dir.create(src_root)
+    dir.create(file.path(src_root, "samples"))
+    dir.create(file.path(src_root, "scc"))
+    writeBin(charToRaw("sample"), file.path(src_root, "samples", "sample.fcs"))
+    writeBin(charToRaw("control"), file.path(src_root, "scc", "control.fcs"))
+
+    zip_file <- tempfile(fileext = ".zip")
+    old_wd <- getwd()
+    on.exit(setwd(old_wd), add = TRUE)
+    setwd(src_root)
+    utils::zip(zipfile = zip_file, files = c("samples", "scc"), flags = "-r9Xq")
+
+    paths <- spectreasy::spectreasy_example_data(
+        asset = zip_file,
+        cache_dir = tempfile("spectreasy_example_samples_cache_")
+    )
+    expect_equal(basename(paths$sample_dir), "samples")
+    expect_true(file.exists(file.path(paths$sample_dir, "sample.fcs")))
 })

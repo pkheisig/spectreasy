@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { probeLocalBackend, resolveApiToken } from './apiBase'
 import { SetupExperience } from './setup/SetupExperience'
 
@@ -9,6 +9,7 @@ type CockpitConnection = 'checking' | 'connected' | 'offline'
 
 function ConnectedCockpit() {
   const [connection, setConnection] = useState<CockpitConnection>('checking')
+  const markOffline = useCallback(() => setConnection('offline'), [])
 
   useEffect(() => {
     let cancelled = false
@@ -42,7 +43,7 @@ function ConnectedCockpit() {
 
   return (
     <Suspense fallback={<div className="app-loading">Loading Spectreasy cockpit…</div>}>
-      <CockpitApp />
+      <CockpitApp onBackendOffline={markOffline} />
     </Suspense>
   )
 }

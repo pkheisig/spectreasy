@@ -15,7 +15,7 @@ export type CockpitAppletId =
   | 'control-qc-report'
   | 'sample-qc-report'
 
-export type ArtifactStatus = 'current' | 'stale' | 'user' | 'synthetic' | 'missing' | 'unknown'
+export type ArtifactStatus = 'current' | 'stale' | 'user' | 'missing' | 'unknown'
 export type JobState = 'idle' | 'running' | 'complete' | 'failed'
 export type StepState = 'complete' | 'ready' | 'warning' | 'blocked' | 'stale' | 'idle'
 
@@ -56,6 +56,7 @@ export type ProjectState = {
   mapping: MappingRow[]
   mappingDirty: boolean
   gatesDirty: boolean
+  missingInputDirs: string[]
   scan: {
     controls: number
     samples: number
@@ -235,12 +236,12 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
     control: {
       sccDir: 'scc',
       controlFile: 'fcs_mapping.csv',
-      outputDir: 'spectreasy_outputs/unmix_controls',
+      outputDir: 'spectreasy_outputs',
       method: 'Spectreasy',
       cytometer: 'auto',
       autoCreateMapping: true,
       autoUnknownFluorPolicy: 'by_channel',
-      manualGateFile: 'ssc_gate_config.csv',
+      manualGateFile: '',
       afNBands: 100,
       afMaxCells: 50000,
       defaultSampleType: 'beads',
@@ -280,7 +281,7 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       sampleDir: 'samples',
       matrixFile: 'spectreasy_outputs/unmix_controls/scc_reference_matrix.csv',
       detectorNoiseFile: 'spectreasy_outputs/unmix_controls/scc_detector_noise.csv',
-      outputDir: 'spectreasy_outputs/unmix_samples/unmixed_fcs',
+      outputDir: 'spectreasy_outputs',
       method: 'Spectreasy',
       rwlsMaxIter: 1,
       nThreads: 1,

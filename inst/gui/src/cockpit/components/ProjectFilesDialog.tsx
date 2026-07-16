@@ -3,7 +3,7 @@ import { FolderOpen, Trash2, Upload, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { deleteAllProjectFiles, deleteProjectFile, listProjectFiles, uploadProjectFile } from '../api'
 import { ProjectFileRows } from './ProjectFileList'
-import type { DragEvent } from 'react'
+import type { DragEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { ProjectFileEntry, ProjectFileKind } from '../api'
 
 type Props = {
@@ -21,6 +21,8 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
   const [message, setMessage] = useState('')
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLElement>(null)
+  const controlsTabRef = useRef<HTMLButtonElement>(null)
 
   const refresh = useCallback(async (selectedKind = kind) => {
     setLoading(true)
@@ -40,6 +42,43 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
     })
     return () => { cancelled = true }
   }, [kind])
+
+  useEffect(() => {
+    controlsTabRef.current?.focus()
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  function handleTabKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    const nextKind: ProjectFileKind = kind === 'controls' ? 'samples' : 'controls'
+    setLoading(true)
+    setKind(nextKind)
+    window.requestAnimationFrame(() => {
+      const tabs = dialogRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+      tabs?.[nextKind === 'controls' ? 0 : 1]?.focus()
+    })
+  }
 
   async function addFiles(selected: FileList | File[]) {
     const incoming = Array.from(selected)
@@ -95,7 +134,7 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
 
   return createPortal(
     <div className="project-files-overlay" role="presentation" onMouseDown={onClose}>
-      <section className="project-files-dialog" role="dialog" aria-modal="true" aria-labelledby="project-files-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section ref={dialogRef} className="project-files-dialog" role="dialog" aria-modal="true" aria-labelledby="project-files-title" onMouseDown={(event) => event.stopPropagation()}>
         <header className="project-files-header">
           <div className="project-files-heading">
             <FolderOpen size={19} />
@@ -107,13 +146,16 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
           <button className="project-files-icon" type="button" onClick={onClose} aria-label="Close files"><X size={18} /></button>
         </header>
 
-        <div className="project-files-tabs" role="tablist" aria-label="Project file folders">
-          <button type="button" role="tab" aria-selected={kind === 'controls'} className={kind === 'controls' ? 'is-active' : ''} onClick={() => { setLoading(true); setKind('controls') }}>Controls</button>
-          <button type="button" role="tab" aria-selected={kind === 'samples'} className={kind === 'samples' ? 'is-active' : ''} onClick={() => { setLoading(true); setKind('samples') }}>Samples</button>
+        <div className="project-files-tabs" role="tablist" aria-label="Project file folders" onKeyDown={handleTabKeyDown}>
+          <button ref={controlsTabRef} id="project-files-controls-tab" type="button" role="tab" aria-controls="project-files-panel" tabIndex={kind === 'controls' ? 0 : -1} aria-selected={kind === 'controls'} className={kind === 'controls' ? 'is-active' : ''} onClick={() => { setLoading(true); setKind('controls') }}>Controls</button>
+          <button id="project-files-samples-tab" type="button" role="tab" aria-controls="project-files-panel" tabIndex={kind === 'samples' ? 0 : -1} aria-selected={kind === 'samples'} className={kind === 'samples' ? 'is-active' : ''} onClick={() => { setLoading(true); setKind('samples') }}>Samples</button>
         </div>
 
         <div
           className={`project-files-dropzone ${dragActive ? 'is-dragging' : ''}`}
+          id="project-files-panel"
+          role="tabpanel"
+          aria-labelledby={kind === 'controls' ? 'project-files-controls-tab' : 'project-files-samples-tab'}
           onDragEnter={(event) => { event.preventDefault(); setDragActive(true) }}
           onDragOver={(event) => event.preventDefault()}
           onDragLeave={(event) => { if (event.currentTarget === event.target) setDragActive(false) }}
@@ -135,7 +177,7 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
           <ProjectFileRows files={files} loading={loading} busy={busy} emptyLabel="Drop FCS files here or use Add FCS files" onDelete={removeFile} />
         </div>
         <footer className="project-files-footer">
-          <span className={message && /could not|not an|already exists|did not/i.test(message) ? 'is-error' : ''}>{message || `${files.length} FCS file${files.length === 1 ? '' : 's'}`}</span>
+          <span role="status" aria-live="polite" className={message && /could not|not an|already exists|did not/i.test(message) ? 'is-error' : ''}>{message || `${files.length} FCS file${files.length === 1 ? '' : 's'}`}</span>
           <span>Drag and drop adds files to the selected folder.</span>
         </footer>
       </section>

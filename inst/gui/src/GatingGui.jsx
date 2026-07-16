@@ -1938,10 +1938,8 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
   const payloadCacheRef = useRef({})
   const spectrumBatchRef = useRef('')
 
-  // Sync dark mode class to document body
   useEffect(() => {
     if (embedded) return
-    document.body.classList.toggle('dark', darkMode)
     window.localStorage.setItem(THEME_STORAGE_KEY, darkMode ? 'dark' : 'light')
   }, [darkMode, embedded])
 

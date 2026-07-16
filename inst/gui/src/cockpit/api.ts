@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { emptyProject } from './mockData'
+import { emptyProject } from './projectState'
 import { resolveApiBase, resolveApiToken } from '../apiBase'
 import type { Artifact, BackendStatus, PanelPayload, ProjectState, Report, WorkflowSettings } from './types'
 
@@ -7,7 +7,7 @@ const API_BASE = resolveApiBase()
 
 const client = axios.create({
   baseURL: API_BASE,
-  timeout: 900,
+  timeout: 30000,
   headers: { 'X-Spectreasy-Token': resolveApiToken() },
 })
 
@@ -41,6 +41,12 @@ export function rowsFromBackend(value: unknown): Array<Record<string, unknown>> 
   const lengths = Object.values(columns).filter(Array.isArray).map((column) => column.length)
   const length = Math.max(0, ...lengths)
   return Array.from({ length }, (_, index) => Object.fromEntries(Object.entries(columns).map(([key, column]) => [key, Array.isArray(column) ? column[index] : column])))
+}
+
+function stringsFromBackend(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => scalarValue(item)).filter(Boolean)
+  const scalar = scalarValue(value)
+  return scalar ? [scalar] : []
 }
 
 function normalizeMappingRows(value: unknown): ProjectState['mapping'] {
@@ -86,7 +92,7 @@ function liveArtifacts(projectPath: string, value: unknown): Artifact[] {
   matrices.forEach((file) => out.push(artifact(file, 'Matrices', /variant/i.test(file) ? 'Spectral library' : 'Matrix', 'Project matrix artifact')))
   const reports = files.filter((file) => /(^|\/)(reports|spectreasy_outputs)\//i.test(file) && /\.(html?|pdf)$/i.test(file)).slice(-8)
   reports.forEach((file) => out.push(artifact(file, 'Reports', /sample|qc_samples/i.test(file) ? 'Sample QC report' : 'QC report', 'Project report')))
-  files.filter((file) => /metric.*\.csv$/i.test(file)).slice(0, 6).forEach((file) => out.push(artifact(file, 'QC Metrics', 'Metrics', 'QC metric table', /sample|013/i.test(file) ? 'stale' : 'current')))
+  files.filter((file) => /metric.*\.csv$/i.test(file)).slice(0, 6).forEach((file) => out.push(artifact(file, 'QC Metrics', 'Metrics', 'QC metric table')))
   return out
 }
 
@@ -118,7 +124,17 @@ export async function loadProjectSnapshot(): Promise<{ project: ProjectState; ba
     const liveMapping = normalizeMappingRows(mappingResponse?.data?.rows)
     const statusOk = scalarValue(status.status) === 'ok'
     const rawScan = (projectResponse?.data?.scan ?? {}) as Record<string, unknown>
-    const backendScan = Object.fromEntries(Object.entries(rawScan).map(([key, value]) => [key, Number(scalarValue(value, '0'))])) as Partial<ProjectState['scan']>
+    const scanCount = (snakeCase: string, camelCase = snakeCase) =>
+      Number(scalarValue(rawScan[snakeCase] ?? rawScan[camelCase], '0')) || 0
+    const backendScan: ProjectState['scan'] = {
+      controls: scanCount('controls'),
+      samples: scanCount('samples'),
+      matrices: scanCount('matrices'),
+      reports: scanCount('reports'),
+      gates: scanCount('gates'),
+      qcMetrics: scanCount('qc_metrics', 'qcMetrics'),
+      spectralVariants: scanCount('spectral_variants', 'spectralVariants'),
+    }
     const backend: BackendStatus = {
       connected: statusOk,
       version: scalarValue(status.version, 'Spectreasy R package'),
@@ -140,6 +156,7 @@ export async function loadProjectSnapshot(): Promise<{ project: ProjectState; ba
       cytometer: scalarValue(status.panel_cytometer, emptyProject.cytometer),
       artifacts: liveProjectArtifacts,
       mapping: liveMapping,
+      missingInputDirs: stringsFromBackend(projectResponse?.data?.missing_input_dirs),
       scan: { ...emptyProject.scan, ...backendScan, matrices: matrices.length, samples: samples.length },
     }
     const savedConfig = unboxGuiState(guiStateResponse?.data?.config) as Record<string, unknown> | undefined
@@ -208,15 +225,6 @@ export async function listSampleFiles(): Promise<string[]> {
   }
 }
 
-export async function importSampleContent(filename: string, contentBase64: string): Promise<boolean> {
-  try {
-    const response = await client.post('/import_sample_content', { filename, content_base64: contentBase64 })
-    return scalarValue(response.data?.success, 'false') === 'true'
-  } catch {
-    return false
-  }
-}
-
 export type ProjectFileKind = 'controls' | 'samples'
 
 export type ProjectFileEntry = {
@@ -227,17 +235,17 @@ export type ProjectFileEntry = {
   kind: ProjectFileKind
 }
 
-function fileAsBase64(file: File): Promise<string> {
+function blobAsBase64(blob: Blob, label: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(reader.error ?? new Error(`Could not read ${file.name}.`))
+    reader.onerror = () => reject(reader.error ?? new Error(`Could not read ${label}.`))
     reader.onload = () => {
       const result = String(reader.result ?? '')
       const separator = result.indexOf(',')
-      if (separator < 0) reject(new Error(`Could not encode ${file.name}.`))
+      if (separator < 0) reject(new Error(`Could not encode ${label}.`))
       else resolve(result.slice(separator + 1))
     }
-    reader.readAsDataURL(file)
+    reader.readAsDataURL(blob)
   })
 }
 
@@ -260,14 +268,31 @@ export async function listProjectFiles(kind: ProjectFileKind): Promise<{ success
 
 export async function uploadProjectFile(kind: ProjectFileKind, file: File): Promise<{ success: boolean; message: string }> {
   if (!/\.fcs$/i.test(file.name)) return { success: false, message: `${file.name} is not an FCS file.` }
+  let uploadId = ''
   try {
-    const contentBase64 = await fileAsBase64(file)
-    const response = await client.post('/project/files', {
+    const start = await client.post('/project/upload-start', {
       kind,
       filename: file.name,
-      content_base64: contentBase64,
-      overwrite: false,
-    }, { timeout: 0 })
+      size: file.size,
+    }, { timeout: 30000 })
+    const started = scalarValue(start.data?.success, 'false') === 'true'
+    uploadId = scalarValue(start.data?.upload_id)
+    if (!started || !uploadId) {
+      return { success: false, message: scalarValue(start.data?.error, `${file.name} could not be added.`) }
+    }
+    const chunkSize = 4 * 1024 * 1024
+    for (let offset = 0; offset < file.size; offset += chunkSize) {
+      const chunk = file.slice(offset, Math.min(file.size, offset + chunkSize))
+      const response = await client.post('/project/upload-chunk', {
+        upload_id: uploadId,
+        offset,
+        content_base64: await blobAsBase64(chunk, file.name),
+      }, { timeout: 120000 })
+      if (scalarValue(response.data?.success, 'false') !== 'true') {
+        return { success: false, message: scalarValue(response.data?.error, `${file.name} could not be added.`) }
+      }
+    }
+    const response = await client.post('/project/upload-finish', { upload_id: uploadId }, { timeout: 120000 })
     const success = scalarValue(response.data?.success, 'false') === 'true'
     return {
       success,
@@ -276,6 +301,7 @@ export async function uploadProjectFile(kind: ProjectFileKind, file: File): Prom
         : scalarValue(response.data?.error, `${file.name} could not be added.`),
     }
   } catch {
+    if (uploadId) void client.post('/project/upload-abort', { upload_id: uploadId }, { timeout: 5000 }).catch(() => undefined)
     return { success: false, message: `${file.name} could not be added. The local R backend did not answer.` }
   }
 }
@@ -413,7 +439,25 @@ export async function loadProjectReports(): Promise<Report[]> {
 }
 
 export function projectFileUrl(path: string): string {
-  return `${API_BASE}/project/file?path=${encodeURIComponent(path)}`
+  const params = new URLSearchParams({ path, token: resolveApiToken() })
+  return `${API_BASE}/project/file?${params.toString()}`
+}
+
+export async function initializeProject(projectPath: string): Promise<{ success: boolean; created: string[]; message: string }> {
+  try {
+    const response = await client.post('/project/initialize', { projectPath }, { timeout: 30000 })
+    const success = scalarValue(response.data?.success, 'false') === 'true'
+    const created = stringsFromBackend(response.data?.created)
+    return {
+      success,
+      created,
+      message: success
+        ? `${created.length ? created.join(' and ') : 'Project input folders'} created.`
+        : scalarValue(response.data?.error, 'Project input folders could not be created.'),
+    }
+  } catch {
+    return { success: false, created: [], message: 'The local R backend did not answer.' }
+  }
 }
 
 function downloadBlob(filename: string, blob: Blob) {
@@ -452,7 +496,7 @@ export async function exportProjectReportPdf(path: string): Promise<boolean> {
 
 export async function deleteAfProfile(name: string): Promise<boolean> {
   try {
-    const response = await client.delete('/af_profiles', { params: { name } })
+    const response = await client.delete('/af_profiles/delete', { params: { name } })
     return scalarValue(response.data?.success, 'false') === 'true'
   } catch {
     return false
@@ -599,33 +643,40 @@ export function createProjectFolder() {
   return pickProjectFolder('/project/create')
 }
 
-export async function attemptWorkflowAction(action: string, payload: Record<string, unknown>): Promise<{ connected: boolean; message: string }> {
+export type WorkflowActionResult = {
+  success: boolean
+  backendReachable: boolean
+  message: string
+  outputCount: number
+}
+
+export async function attemptWorkflowAction(action: string, payload: Record<string, unknown>): Promise<WorkflowActionResult> {
   const endpoint = action === 'control' ? '/workflow/control' : action === 'sample' ? '/workflow/sample' : action === 'af' ? '/workflow/af' : '/workflow/report'
   try {
     const response = await client.post(endpoint, payload, { timeout: 900000 })
-    const success = scalarValue(response.data?.success, 'true')
+    const success = scalarValue(response.data?.success, 'false')
     const error = scalarValue(response.data?.error, '')
     if (success === 'false' || error) {
-      return { connected: false, message: error || 'The R backend rejected this workflow action.' }
+      return { success: false, backendReachable: true, message: error || 'The R backend rejected this workflow action.', outputCount: 0 }
     }
-    return { connected: true, message: 'Job accepted by the R backend.' }
-  } catch {
-    return { connected: false, message: 'Preview job queued locally. Connect the R backend to run the full Spectreasy workflow.' }
+    const result = response.data?.result
+    const outputCount = result && typeof result === 'object'
+      ? Object.values(result as Record<string, unknown>).filter((value) => value != null && scalarValue(value).length > 0).length
+      : 0
+    return { success: true, backendReachable: true, message: 'Workflow completed in the local R session.', outputCount }
+  } catch (error) {
+    const status = axios.isAxiosError(error) ? error.response?.status : undefined
+    return {
+      success: false,
+      backendReachable: status != null,
+      message: status === 403
+        ? 'This cockpit tab belongs to a different R session. Reopen the URL printed by the active spectreasy_gui() process.'
+        : 'The local R backend did not answer. Keep spectreasy_gui() running and retry.',
+      outputCount: 0,
+    }
   }
 }
 
-export async function attemptDiagnosticAction(action: 'compare' | 'synthetic', payload: Record<string, unknown>): Promise<{ connected: boolean; message: string; result?: unknown }> {
-  const endpoint = action === 'compare' ? '/workflow/compare' : '/workflow/synthetic'
-  try {
-    const response = await client.post(endpoint, payload, { timeout: 900000 })
-    const success = scalarValue(response.data?.success, 'true')
-    const error = scalarValue(response.data?.error, '')
-    if (success === 'false' || error) return { connected: false, message: error || 'The R backend rejected this diagnostic action.' }
-    return { connected: true, message: action === 'compare' ? 'Method comparison completed in the R backend.' : 'Synthetic SCC FCS written by the R backend.', result: response.data?.result }
-  } catch {
-    return { connected: false, message: 'The diagnostic action could not reach the R backend.' }
-  }
-}
 
 export function downloadTextFile(filename: string, content: string) {
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
