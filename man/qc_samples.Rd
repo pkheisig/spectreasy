@@ -26,6 +26,7 @@ qc_samples(
   save_qc_pngs = FALSE,
   qc_metrics_dir = NULL,
   report_format = "html",
+  report_per_sample = FALSE,
   overwrite = c("version", "overwrite", "error"),
   report_run_settings = list(),
   report_artifact_paths = list()
@@ -97,6 +98,9 @@ CSVs are written alongside the report.}
 
 \item{report_format}{Report format, `"html"` (default) or `"pdf"`.
 Matching is case-insensitive.}
+
+\item{report_per_sample}{Logical; when `TRUE`, PDF output writes one report
+per sample and HTML output provides a sample selector. Default is `FALSE`.}
 
 \item{overwrite}{HTML collision policy: create a versioned filename
 (default), overwrite, or error. Existing PDF behavior is unchanged.}

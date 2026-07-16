@@ -57,16 +57,16 @@ test_that("sample HTML report follows PDF plot order and writes an NxN companion
     expect_match(html, "--report-width", fixed = TRUE)
     nxn_html <- paste(readLines(report$companion_files, warn = FALSE), collapse = "\n")
     expect_match(nxn_html, "matrix-canvas", fixed = TRUE)
-    expect_match(nxn_html, "zoom-controls", fixed = TRUE)
-    expect_match(nxn_html, "data-zoom=\"out\"", fixed = TRUE)
-    expect_match(nxn_html, "data-zoom=\"fit\"", fixed = TRUE)
-    expect_match(nxn_html, "data-zoom=\"in\"", fixed = TRUE)
-    expect_match(nxn_html, "width:min(1120px", fixed = TRUE)
-    expect_match(nxn_html, "height:min(72vh,760px)", fixed = TRUE)
-    expect_match(nxn_html, "NxN scatter matrix for sample_a", fixed = TRUE)
-    expect_equal(length(strsplit(nxn_html, "class=\"matrix-canvas\"", fixed = TRUE)[[1]]) - 1L, 1L)
-    expect_equal(length(strsplit(nxn_html, "<img", fixed = TRUE)[[1]]) - 1L, 1L)
+    expect_match(nxn_html, "id=\"sample-select\"", fixed = TRUE)
+    expect_match(nxn_html, "id=\"gradient-select\"", fixed = TRUE)
+    expect_match(nxn_html, "id=\"plot-type\"", fixed = TRUE)
+    expect_match(nxn_html, "id=\"point-size\"", fixed = TRUE)
+    expect_match(nxn_html, "id=\"cell-size\"", fixed = TRUE)
+    expect_match(nxn_html, '"name":"sample_a"', fixed = TRUE)
+    expect_equal(length(strsplit(nxn_html, "id=\"matrix-canvas\"", fixed = TRUE)[[1]]) - 1L, 1L)
+    expect_false(grepl("<img", nxn_html, fixed = TRUE))
     expect_false(grepl("<section", nxn_html, fixed = TRUE))
+    expect_match(html, "reportUrl.searchParams.set('path',companionPath)", fixed = TRUE)
 })
 
 test_that("sample detector residual table includes every available detector", {
@@ -261,7 +261,7 @@ test_that("control HTML NxN points remain visible in the full high-resolution ma
     expect_equal(point_layers[[1]]$aes_params$alpha, 0.82)
 })
 
-test_that("HTML writes one standalone one-page viewer per selected sample matrix", {
+test_that("HTML writes one interactive viewer with a selector for all selected sample matrices", {
     markers <- paste0("M", seq_len(6))
     M <- matrix(stats::runif(length(markers) * 4), nrow = length(markers), dimnames = list(markers, paste0("D", 1:4)))
     results <- as.data.frame(matrix(stats::rnorm(80 * length(markers)), nrow = 80))
@@ -278,17 +278,68 @@ test_that("HTML writes one standalone one-page viewer per selected sample matrix
     )
     expect_length(report$report_data$plot_manifest$nxn, 2)
     expect_setequal(names(report$report_data$plot_manifest$nxn), c("sample_a", "sample_b"))
-    expect_length(report$companion_files, 2)
-    expect_setequal(names(report$companion_files), c("sample_a", "sample_b"))
+    expect_length(report$companion_files, 1)
+    expect_identical(names(report$companion_files), "Samples")
     expect_true(all(file.exists(report$companion_files)))
-    for (path in report$companion_files) {
-        companion <- paste(readLines(path, warn = FALSE), collapse = "\n")
-        expect_equal(length(strsplit(companion, "class=\"matrix-canvas\"", fixed = TRUE)[[1]]) - 1L, 1L)
-        expect_equal(length(strsplit(companion, "<img", fixed = TRUE)[[1]]) - 1L, 1L)
-        expect_false(grepl("<section", companion, fixed = TRUE))
-    }
+    companion <- paste(readLines(report$companion_files, warn = FALSE), collapse = "\n")
+    expect_equal(length(strsplit(companion, "id=\"matrix-canvas\"", fixed = TRUE)[[1]]) - 1L, 1L)
+    expect_match(companion, '"name":"sample_a"', fixed = TRUE)
+    expect_match(companion, '"name":"sample_b"', fixed = TRUE)
+    expect_match(companion, "Density", fixed = TRUE)
+    expect_match(companion, "Hexbin", fixed = TRUE)
+    expect_false(grepl("<img", companion, fixed = TRUE))
+    expect_false(grepl("<section", companion, fixed = TRUE))
     main_html <- paste(readLines(report$output_file, warn = FALSE), collapse = "\n")
-    expect_equal(length(strsplit(main_html, "class=\"companion-link\"", fixed = TRUE)[[1]]) - 1L, 2L)
+    expect_equal(length(strsplit(main_html, "class=\"companion-link\"", fixed = TRUE)[[1]]) - 1L, 1L)
+})
+
+test_that("per-sample HTML reporting uses one report with a sample selector", {
+    markers <- c("FITC", "PE")
+    M <- matrix(c(1, 0.2, 0.1, 1), nrow = 2, dimnames = list(markers, c("B1-A", "YG1-A")))
+    results <- data.frame(
+        File = rep(c("sample_a", "sample_b"), each = 12),
+        FITC = stats::rnorm(24),
+        PE = stats::rnorm(24)
+    )
+    report <- qc_samples(
+        results,
+        M = M,
+        output_file = tempfile(fileext = ".html"),
+        report_per_sample = TRUE,
+        sample_nxn_max_points = 10,
+        overwrite = "overwrite"
+    )
+    html <- paste(readLines(report$output_file, warn = FALSE), collapse = "\n")
+    expect_match(html, "id=\"report-sample\"", fixed = TRUE)
+    expect_match(html, ">sample_a</option>", fixed = TRUE)
+    expect_match(html, ">sample_b</option>", fixed = TRUE)
+    expect_equal(length(strsplit(html, "data-sample-panel=", fixed = TRUE)[[1]]) - 1L, 2L)
+    expect_match(html, "sample-1-spectra", fixed = TRUE)
+    expect_match(html, "sample-2-spectra", fixed = TRUE)
+    expect_false(formals(unmix_samples)$report_per_sample)
+    expect_false(formals(qc_samples)$report_per_sample)
+})
+
+test_that("per-sample PDF reporting writes one named file per sample", {
+    markers <- c("FITC", "PE")
+    M <- matrix(c(1, 0.2, 0.1, 1), nrow = 2, dimnames = list(markers, c("B1-A", "YG1-A")))
+    results <- data.frame(
+        File = rep(c("sample_a", "sample_b"), each = 8),
+        FITC = stats::rnorm(16),
+        PE = stats::rnorm(16)
+    )
+    report <- qc_samples(
+        results,
+        M = M,
+        output_file = file.path(tempdir(), "per_sample_qc.pdf"),
+        report_format = "pdf",
+        report_per_sample = TRUE,
+        sample_nxn_max_points = 8
+    )
+    expect_identical(names(report$output_file), c("sample_a", "sample_b"))
+    expect_true(all(file.exists(report$output_file)))
+    expect_match(basename(report$output_file[[1]]), "per_sample_qc_sample_a.pdf", fixed = TRUE)
+    expect_match(basename(report$output_file[[2]]), "per_sample_qc_sample_b.pdf", fixed = TRUE)
 })
 
 test_that("interactive GUI gating remains the default and its four PDF panels are reused", {

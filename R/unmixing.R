@@ -809,6 +809,9 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   unmixing. Defaults to `TRUE`.
 #' @param report_format Report format, either `"html"` (default) or `"pdf"`.
 #'   Only the selected format is written. Matching is case-insensitive.
+#' @param report_per_sample Logical; if `TRUE`, PDF output writes one report
+#'   per sample, while HTML output adds a sample selector to one report.
+#'   Defaults to `FALSE`.
 #' @param save_qc_plots Logical; if `TRUE`, save QC report plots as PNG files
 #'   in `qc_plot_dir` while creating the report.
 #' @param qc_plot_dir Directory for sample QC report PNG files when
@@ -891,6 +894,7 @@ unmix_samples <- function(sample_dir = "samples",
                           write_fcs = TRUE,
                           save_report = TRUE,
                           report_format = "html",
+                          report_per_sample = FALSE,
                           save_qc_plots = FALSE,
                           qc_plot_dir = NULL,
                           plot_n_events = 10000L,
@@ -908,6 +912,7 @@ unmix_samples <- function(sample_dir = "samples",
     report_format <- .match_arg_ci(report_format, c("html", "pdf"), "report_format")
     write_fcs <- .normalize_scalar_logical(write_fcs, "write_fcs")
     save_report <- .normalize_scalar_logical(save_report, "save_report")
+    report_per_sample <- .normalize_scalar_logical(report_per_sample, "report_per_sample")
     save_qc_plots <- .normalize_scalar_logical(save_qc_plots, "save_qc_plots")
     verbose <- .normalize_scalar_logical(verbose, "verbose")
     .with_optional_seed(seed)
@@ -1201,6 +1206,7 @@ unmix_samples <- function(sample_dir = "samples",
             qc_plot_dir = qc_plot_dir,
             save_qc_pngs = save_qc_plots,
             report_format = report_format,
+            report_per_sample = report_per_sample,
             overwrite = "overwrite",
             report_artifact_paths = list(
                 matrix = if (!isTRUE(unmixing_matrix_file_missing)) unmixing_matrix_file else NULL,
@@ -1219,6 +1225,7 @@ unmix_samples <- function(sample_dir = "samples",
                 estimate_af = estimate_af,
                 write_fcs = write_fcs,
                 save_qc_plots = save_qc_plots,
+                report_per_sample = report_per_sample,
                 plot_n_events = plot_n_events,
                 chunk_size = chunk_size,
                 seed = seed
@@ -1229,8 +1236,9 @@ unmix_samples <- function(sample_dir = "samples",
         attr(results, "qc_metrics_dir") <- qc_samples_dir
         attr(results, "qc_plot_dir") <- report_res$qc_plot_dir
         attr(results, "qc_report_data") <- report_res$report_data
-        if (!file.exists(report_res$output_file)) {
-            stop("Automatic sample QC report was requested but was not created at: ", report_res$output_file, call. = FALSE)
+        missing_report_files <- report_res$output_file[!file.exists(report_res$output_file)]
+        if (length(missing_report_files)) {
+            stop("Automatic sample QC report was requested but was not created at: ", paste(missing_report_files, collapse = ", "), call. = FALSE)
         }
     }
 

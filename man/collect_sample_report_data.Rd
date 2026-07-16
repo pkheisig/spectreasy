@@ -28,6 +28,7 @@ collect_sample_report_data(
   sample_nxn_asinh_cofactor = 150,
   sample_nxn_axis_limit = NULL,
   nxn_all_samples = FALSE,
+  report_per_sample = FALSE,
   plot_dir = NULL
 )
 }
@@ -82,6 +83,9 @@ separate companion HTML file.}
 \item{sample_nxn_axis_limit}{Optional symmetric NxN axis limit.}
 
 \item{nxn_all_samples}{Whether to include NxN pages for every sample.}
+
+\item{report_per_sample}{Whether the HTML report should expose a sample
+selector and sample-specific report content.}
 
 \item{plot_dir}{Directory used for cached report PNG files.}
 }

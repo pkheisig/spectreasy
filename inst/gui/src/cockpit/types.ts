@@ -178,6 +178,7 @@ export type SampleSettings = {
   writeFcs: boolean
   saveReport: boolean
   outputFormat: 'html' | 'pdf'
+  reportPerSample: boolean
   saveQcPlots: boolean
   plotNEvents: number
   chunkSize: number
@@ -299,6 +300,7 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       writeFcs: true,
       saveReport: true,
       outputFormat: 'html',
+      reportPerSample: false,
       saveQcPlots: false,
       plotNEvents: 10000,
       chunkSize: 50000,

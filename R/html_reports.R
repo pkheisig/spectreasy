@@ -79,6 +79,7 @@
             sample_nxn_asinh_cofactor = 150,
             sample_nxn_axis_limit = NULL,
             nxn_all_samples = FALSE,
+            report_per_sample = FALSE,
             save_qc_pngs = FALSE
         )
         labels <- c(
@@ -91,7 +92,7 @@
             matrix_markers_per_page = "Matrix markers per page", sample_nxn_rows_per_page = "NxN rows per page",
             sample_nxn_max_points = "NxN events per sample", sample_nxn_transform = "NxN transform",
             sample_nxn_asinh_cofactor = "NxN asinh cofactor", sample_nxn_axis_limit = "NxN axis limit",
-            nxn_all_samples = "NxN for all samples", save_qc_pngs = "Save report PNGs"
+            nxn_all_samples = "NxN for all samples", report_per_sample = "Report per sample", save_qc_pngs = "Save report PNGs"
         )
     }
     list(defaults = defaults, labels = labels)
@@ -444,6 +445,41 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
     out
 }
 
+.report_sample_nxn_interactive_data <- function(results_df,
+                                                markers,
+                                                max_points = 1000,
+                                                transform = c("none", "asinh"),
+                                                asinh_cofactor = 150,
+                                                axis_limit = NULL,
+                                                all_samples = FALSE) {
+    transform <- .match_arg_ci(transform, c("none", "asinh"), "transform")
+    markers <- intersect(as.character(markers), colnames(results_df))
+    if (!("File" %in% colnames(results_df)) || length(markers) < 2L) return(NULL)
+    sample_names <- unique(as.character(results_df$File))
+    sample_names <- sample_names[!is.na(sample_names) & nzchar(sample_names)]
+    if (!isTRUE(all_samples) && length(sample_names)) sample_names <- sample_names[1]
+    fixed_limits <- .compute_qc_report_fixed_scatter_limits(axis_limit, transform, asinh_cofactor)
+    samples <- lapply(sample_names, function(sample_name) {
+        values <- suppressWarnings(as.matrix(results_df[results_df$File == sample_name, markers, drop = FALSE]))
+        storage.mode(values) <- "double"
+        if (nrow(values) > max_points) {
+            keep <- unique(round(seq(1, nrow(values), length.out = max_points)))
+            values <- values[keep, , drop = FALSE]
+        }
+        if (identical(transform, "asinh")) values <- asinh(values / asinh_cofactor)
+        limits <- lapply(seq_along(markers), function(index) {
+            if (!is.null(fixed_limits)) fixed_limits else .compute_qc_report_scatter_limits(values[, index])
+        })
+        list(name = sample_name, values = values, limits = limits)
+    })
+    list(
+        markers = markers,
+        transform = transform,
+        asinh_cofactor = asinh_cofactor,
+        samples = samples
+    )
+}
+
 #' Collect sample QC report data
 #' @param results Unmixed sample results from [unmix_samples()] or a compatible
 #'   combined data frame with a `File` column.
@@ -473,6 +509,8 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
 #' @param sample_nxn_asinh_cofactor Asinh cofactor for NxN plots.
 #' @param sample_nxn_axis_limit Optional symmetric NxN axis limit.
 #' @param nxn_all_samples Whether to include NxN pages for every sample.
+#' @param report_per_sample Whether the HTML report should expose a sample
+#'   selector and sample-specific report content.
 #' @param plot_dir Directory used for cached report PNG files.
 #' @return A `spectreasy_sample_report_data` object.
 #' @export
@@ -483,7 +521,8 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
                                        overview_files_per_page=15, matrix_markers_per_page=20,
                                        sample_nxn_rows_per_page=10, sample_nxn_max_points=max_events_per_sample,
                                        sample_nxn_transform=c("none","asinh"), sample_nxn_asinh_cofactor=150,
-                                       sample_nxn_axis_limit=NULL, nxn_all_samples=FALSE, plot_dir=NULL) {
+                                       sample_nxn_axis_limit=NULL, nxn_all_samples=FALSE,
+                                       report_per_sample=FALSE, plot_dir=NULL) {
     if (is.null(results)) stop("No unmixed results provided for the sample HTML report.",call.=FALSE)
     if (is.null(M)) stop("No reference matrix provided for the sample HTML report.",call.=FALSE)
     M <- .as_reference_matrix(M,"M")
@@ -573,6 +612,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
         }, character(1))
     }
     nxn_markers <- markers[!grepl("^AF($|_)",markers,ignore.case=TRUE)]
+    include_all_nxn <- isTRUE(nxn_all_samples) || isTRUE(report_per_sample)
     nxn <- .build_qc_report_sample_scatter_pages(
         results_df,
         markers = nxn_markers,
@@ -581,10 +621,10 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
         transform = sample_nxn_transform,
         asinh_cofactor = sample_nxn_asinh_cofactor,
         axis_limit = sample_nxn_axis_limit,
-        all_samples = nxn_all_samples
+        all_samples = include_all_nxn
     )
     selected_samples <- samples
-    if (!isTRUE(nxn_all_samples) && length(selected_samples)) selected_samples <- selected_samples[1]
+    if (!include_all_nxn && length(selected_samples)) selected_samples <- selected_samples[1]
     if (length(nxn)) names(nxn) <- rep_len(selected_samples, length(nxn))
     nxn_files <- character()
     if(length(nxn)) {
@@ -608,11 +648,20 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     fcs_paths <- if(!is.null(output_dir) && dir.exists(output_dir)) list.files(output_dir,pattern="\\.fcs$",full.names=TRUE,ignore.case=TRUE) else character()
     metric_paths <- if(!is.null(qc_metrics_dir) && dir.exists(qc_metrics_dir)) list.files(qc_metrics_dir,pattern="\\.csv$",full.names=TRUE,ignore.case=TRUE) else character()
     source_paths <- unique(c(matrix_source,detector_noise_file,spectral_variant_library_file,unlist(artifact_paths,recursive=TRUE,use.names=FALSE)))
+    nxn_interactive <- .report_sample_nxn_interactive_data(
+        results_df = results_df,
+        markers = nxn_markers,
+        max_points = sample_nxn_max_points,
+        transform = sample_nxn_transform,
+        asinh_cofactor = sample_nxn_asinh_cofactor,
+        axis_limit = sample_nxn_axis_limit,
+        all_samples = include_all_nxn
+    )
     out <- list(report_type="Sample QC",project_path=normalizePath(project_path,mustWork=FALSE),created_at=Sys.time(),version=as.character(utils::packageVersion("spectreasy")),unmixing_method=method,
         matrix=M,matrix_source=matrix_source,matrix_preview=.report_matrix_preview(M),peak_detectors=.report_peak_detectors(M),detector_metadata=pd %||% attr(M,"detector_pd"),detector_noise_file=detector_noise_file,
         residual_metadata=list(metric=if(.uses_wls_residual_metric(method)) "wls_weighted_rms" else "raw_rms"),af_metadata=attr(results,"blind_af_info") %||% attr(M,"blind_af_info"),spectral_variant_metadata=attr(results,"spectral_variant_library"),spectral_variant_library_file=spectral_variant_library_file,
         samples=sample_table,markers=markers,detectors=colnames(M),warnings=unique(as.character(warnings)),nps=nps,nps_note=if(identical(method,"NNLS")) "Skipped for NNLS because constrained outputs are non-negative by construction." else NULL,
-        similarity=similarity,spread=spread,detector_rms=detector_rms,reconstruction_error=reconstruction,plots=unique(plot_files),plot_manifest=list(reference=reference_file,similarity=similarity_files,nps=nps_files,nxn=nxn_files,detector_rms=detector_rms_file,reconstruction=reconstruction_files),artifacts=.report_artifacts(c(source_paths,fcs_paths,metric_paths,plot_files)),source_fingerprint=.report_source_fingerprint(source_paths),run_settings=run_settings,
+        similarity=similarity,spread=spread,detector_rms=detector_rms,reconstruction_error=reconstruction,nxn_interactive=nxn_interactive,plots=unique(plot_files),plot_manifest=list(reference=reference_file,similarity=similarity_files,nps=nps_files,nxn=nxn_files,detector_rms=detector_rms_file,reconstruction=reconstruction_files),artifacts=.report_artifacts(c(source_paths,fcs_paths,metric_paths,plot_files)),source_fingerprint=.report_source_fingerprint(source_paths),run_settings=c(list(report_per_sample=isTRUE(report_per_sample)),run_settings),
         counts=list(samples=length(samples),markers=sum(!af_rows),detectors=ncol(M),af_bands=sum(af_rows)),input_status=if(isTRUE(attr(M,"adjusted"))) "Adjusted" else if(isTRUE(attr(M,"synthetic"))) "Synthetic" else "Measured")
     class(out) <- c("spectreasy_sample_report_data","spectreasy_report_data","list")
     out
@@ -725,7 +774,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     }
     links <- paste(vapply(seq_along(paths), function(i) {
         basename_path <- basename(paths[i])
-        label <- if (identical(report_type, "control")) "Open high-resolution control NxN matrix" else paste0("Open ", labels[i], " NxN matrix")
+        label <- if (identical(report_type, "control")) "Open high-resolution control NxN matrix" else "Open interactive sample NxN matrix"
         paste0(
             "<a class=\"companion-link\" data-companion=\"", .report_html_escape(basename_path),
             "\" href=\"", .report_html_escape(basename_path), "\">", .report_html_escape(label), " &rarr;</a>"
@@ -734,7 +783,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     description <- if (identical(report_type, "control")) {
         "The complete control NxN scatter matrix is saved separately as a high-resolution PNG for detailed review and zooming."
     } else {
-        "Each selected sample has its own compact one-page NxN viewer containing one complete matrix with zoom controls and two-dimensional scrolling."
+        "The interactive NxN viewer provides sample selection, color gradients, plot types, point sizing, and adjustable matrix cells."
     }
     paste0("<p>", description, "</p><div class=\"companion-links\">", links, "</div>")
 }
@@ -786,10 +835,9 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     paths <- if (inherits(report_data, "spectreasy_control_report_data")) {
         file.path(dirname(output_file), paste0(stem, "_nxn.png"))
     } else {
-        slugs <- .report_filename_slug(entries$label, fallback = "sample")
-        file.path(dirname(output_file), paste0(stem, "_nxn_", slugs, ".html"))
+        file.path(dirname(output_file), paste0(stem, "_nxn.html"))
     }
-    stats::setNames(paths, entries$label)
+    stats::setNames(paths, if (inherits(report_data, "spectreasy_control_report_data")) entries$label else "Samples")
 }
 
 .report_resolve_bundle <- function(path, overwrite, report_data = NULL) {
@@ -814,9 +862,9 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
 .report_render_nxn_companions <- function(report_data, output_files) {
     entries <- .report_nxn_entries(report_data)
     if (!nrow(entries)) return(character())
-    if (length(output_files) != nrow(entries)) stop("NxN companion path count does not match the matrix plot count.", call. = FALSE)
     is_control <- inherits(report_data, "spectreasy_control_report_data")
     if (is_control) {
+        if (length(output_files) != nrow(entries)) stop("NxN companion path count does not match the matrix plot count.", call. = FALSE)
         rendered <- vapply(seq_len(nrow(entries)), function(i) {
             source <- entries$path[i]
             target <- output_files[i]
@@ -835,22 +883,22 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     template <- system.file("report_templates", "nxn_report.html", package = "spectreasy")
     if (!nzchar(template)) template <- file.path("inst", "report_templates", "nxn_report.html")
     if (!file.exists(template)) stop("Spectreasy NxN HTML report template was not found.", call. = FALSE)
-    rendered <- vapply(seq_len(nrow(entries)), function(i) {
-        html <- paste(readLines(template, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
-        report_label <- paste0("Sample NxN scatter matrix: ", entries$label[i])
-        replacements <- list(
-            "{{REPORT_TITLE}}" = paste("Spectreasy", report_label),
-            "{{REPORT_CLASS}}" = "report-sample",
-            "{{REPORT_HEADING}}" = report_label,
-            "{{REPORT_META}}" = "One complete matrix - use the zoom controls and two-dimensional scrolling for detailed review",
-            "{{MATRIX_LABEL}}" = .report_html_escape(entries$label[i]),
-            "{{MATRIX_IMAGE}}" = .report_image_uri(entries$path[i])
-        )
-        for (key in names(replacements)) html <- gsub(key, replacements[[key]], html, fixed = TRUE)
-        writeLines(html, output_files[i], useBytes = TRUE)
-        normalizePath(output_files[i], mustWork = TRUE)
-    }, character(1))
-    stats::setNames(rendered, entries$label)
+    if (length(output_files) != 1L) stop("Sample HTML reports require one interactive NxN companion.", call. = FALSE)
+    matrix_data <- report_data$nxn_interactive
+    if (is.null(matrix_data) || !length(matrix_data$samples)) stop("Interactive sample NxN data was not available.", call. = FALSE)
+    matrix_json <- jsonlite::toJSON(matrix_data, auto_unbox = TRUE, dataframe = "rows", matrix = "rowmajor", na = "null", digits = 9)
+    matrix_json <- gsub("</", "<\\/", matrix_json, fixed = TRUE)
+    html <- paste(readLines(template, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+    replacements <- list(
+        "{{REPORT_TITLE}}" = "Spectreasy sample NxN scatter matrices",
+        "{{REPORT_CLASS}}" = "report-sample",
+        "{{REPORT_HEADING}}" = "Sample NxN scatter matrix",
+        "{{REPORT_META}}" = "Interactive sample review",
+        "{{MATRIX_DATA}}" = matrix_json
+    )
+    for (key in names(replacements)) html <- gsub(key, replacements[[key]], html, fixed = TRUE)
+    writeLines(html, output_files[1], useBytes = TRUE)
+    stats::setNames(normalizePath(output_files[1], mustWork = TRUE), "Samples")
 }
 
 .report_sections <- function(x, nxn_companion_files = NULL) {
@@ -914,17 +962,38 @@ render_qc_html_report <- function(report_data, output_file, overwrite=c("version
     if(!nzchar(template)) template <- file.path("inst","report_templates","qc_report.html")
     if(!file.exists(template)) stop("Spectreasy HTML report template was not found.",call.=FALSE)
     html <- paste(readLines(template,warn=FALSE,encoding="UTF-8"),collapse="\n")
-    sections <- .report_sections(report_data, nxn_companion_files = nxn_companion_files)
+    sample_reports <- report_data$sample_reports %||% list()
+    sections <- if (length(sample_reports)) .report_sections(sample_reports[[1]], nxn_companion_files = nxn_companion_files) else .report_sections(report_data, nxn_companion_files = nxn_companion_files)
     toc_titles <- vapply(sections,`[`,character(1),1)
     toc_labels <- vapply(seq_along(sections),function(i) .report_toc_label(names(sections)[i],toc_titles[i]),character(1))
-    toc <- paste0("<a href=\"#",names(sections),"\">",.report_html_escape(toc_labels),"</a>",collapse="")
-    body <- paste(vapply(seq_along(sections),function(i) .report_section(names(sections)[i],sections[[i]][1],sections[[i]][2]),character(1)),collapse="")
+    toc_prefix <- if (length(sample_reports)) "sample-1-" else ""
+    toc <- paste0("<a data-section=\"", names(sections), "\" href=\"#",toc_prefix,names(sections),"\">",.report_html_escape(toc_labels),"</a>",collapse="")
+    selector <- ""
+    if (length(sample_reports)) {
+        sample_names <- names(sample_reports)
+        if (is.null(sample_names) || any(!nzchar(sample_names))) sample_names <- paste("Sample", seq_along(sample_reports))
+        selector <- paste0(
+            "<div class=\"report-sample-selector\"><label for=\"report-sample\">Sample</label><select id=\"report-sample\">",
+            paste0("<option value=\"", seq_along(sample_reports), "\">", .report_html_escape(sample_names), "</option>", collapse = ""),
+            "</select></div>"
+        )
+        body <- paste(vapply(seq_along(sample_reports), function(sample_index) {
+            sample_sections <- .report_sections(sample_reports[[sample_index]], nxn_companion_files = nxn_companion_files)
+            sample_body <- paste(vapply(seq_along(sample_sections), function(i) {
+                section_html <- .report_section(names(sample_sections)[i], sample_sections[[i]][1], sample_sections[[i]][2])
+                sub(paste0("id=\"", names(sample_sections)[i], "\""), paste0("id=\"sample-", sample_index, "-", names(sample_sections)[i], "\""), section_html, fixed = TRUE)
+            }, character(1)), collapse = "")
+            paste0("<div class=\"sample-report-panel", if (sample_index == 1L) " is-active" else "", "\" data-sample-panel=\"", sample_index, "\">", sample_body, "</div>")
+        }, character(1)), collapse = "")
+    } else {
+        body <- paste(vapply(seq_along(sections),function(i) .report_section(names(sections)[i],sections[[i]][1],sections[[i]][2]),character(1)),collapse="")
+    }
     counts <- report_data$counts
     summary <- c(list(`Created`=format(report_data$created_at,"%Y-%m-%d %H:%M:%S %Z"),`Spectreasy`=report_data$version,`Method`=report_data$unmixing_method,`Cytometer`=report_data$cytometer %||% "Not recorded"),counts,.report_changed_run_settings(report_data))
     summary_html <- paste(vapply(names(summary),function(nm) paste0("<div><small>",.report_html_escape(nm),"</small><strong>",.report_html_escape(.report_scalar(summary[[nm]])),"</strong></div>"),character(1)),collapse="")
     header <- paste0("<header><span class=\"kicker\">Spectreasy &middot; ",.report_html_escape(report_data$report_type),"</span><h1>",.report_html_escape(report_data$report_type)," report</h1><p class=\"paths\">",.report_html_escape(report_data$project_path),"</p><div class=\"summary-grid\">",summary_html,"</div></header>")
     report_class <- if (inherits(report_data, "spectreasy_control_report_data")) "report-control" else "report-sample"
-    replacements <- list("{{REPORT_TITLE}}"=paste("Spectreasy",report_data$report_type,"report"),"{{REPORT_CLASS}}"=report_class,"{{REPORT_TOC}}"=toc,"{{REPORT_HEADER}}"=header,"{{REPORT_BODY}}"=body)
+    replacements <- list("{{REPORT_TITLE}}"=paste("Spectreasy",report_data$report_type,"report"),"{{REPORT_CLASS}}"=report_class,"{{REPORT_TOC}}"=toc,"{{REPORT_HEADER}}"=header,"{{REPORT_SELECTOR}}"=selector,"{{REPORT_BODY}}"=body)
     for(key in names(replacements)) html <- gsub(key,replacements[[key]],html,fixed=TRUE)
     writeLines(html,output_file,useBytes=TRUE)
     companion_files <- character()

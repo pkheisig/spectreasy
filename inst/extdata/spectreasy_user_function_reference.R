@@ -119,6 +119,7 @@
         write_fcs = TRUE,
         save_report = TRUE,
         report_format = "html",
+        report_per_sample = FALSE,
         save_qc_plots = FALSE,
         qc_plot_dir = NULL,
         plot_n_events = 10000L,
@@ -179,6 +180,7 @@
         save_qc_pngs = FALSE,
         qc_metrics_dir = NULL,
         report_format = "html",
+        report_per_sample = FALSE,
         overwrite = "version",
         report_run_settings = list(),
         report_artifact_paths = list()
@@ -235,6 +237,7 @@
         sample_nxn_asinh_cofactor = 150,
         sample_nxn_axis_limit = NULL,
         nxn_all_samples = FALSE,
+        report_per_sample = FALSE,
         plot_dir = NULL
     )
 

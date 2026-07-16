@@ -603,252 +603,86 @@ function ConfigurableSamplesWorkspace({
   onRefresh: WorkflowWorkspaceProps["onRefresh"];
 }) {
   const defaults = defaultWorkflowSettings("").sample;
+  const [advanced, setAdvanced] = useState(false);
   return (
     <>
-      <section className="surface-card sample-run-card streamlined-run-card">
-        <details className="settings-section" open>
-          <summary>
-            <SettingsCardSummary icon={<Settings2 size={14} />} title="Settings" onReset={() => onSettingsChange(defaults)} />
-          </summary>
-          <div className="settings-form-grid">
-            <label>
-              Samples folder
-              <input
-                value={settings.sampleDir}
-                onChange={(event) => onSettingsChange({ sampleDir: event.target.value })}
-              />
+      <section className="surface-card run-card streamlined-run-card">
+        <div className="settings-card-plain-header">
+          <strong>Settings</strong>
+          <ResetSettingsButton label="sample settings" onReset={() => onSettingsChange(defaults)} />
+        </div>
+        <div className="run-controls">
+          <label>
+            <span>Unmixing method</span>
+            <GuiSelect value={settings.method} onChange={(event) => onSettingsChange({ method: event.target.value })}>
+              <option>Spectreasy</option>
+              <option>AutoSpectral</option>
+              <option>OLS</option>
+              <option>WLS</option>
+              <option>RWLS</option>
+              <option>NNLS</option>
+            </GuiSelect>
+          </label>
+          <label className="toggle-label">
+            <input type="checkbox" checked={settings.saveReport} onChange={(event) => onSettingsChange({ saveReport: event.target.checked })} />
+            <span className="toggle-ui" />
+            <span>Generate report</span>
+          </label>
+          <label>
+            <span>Report format</span>
+            <GuiSelect value={settings.outputFormat} onChange={(event) => onSettingsChange({ outputFormat: event.target.value as SampleSettings["outputFormat"] })}>
+              <option value="html">HTML</option>
+              <option value="pdf">PDF</option>
+            </GuiSelect>
+          </label>
+          <label className="toggle-label">
+            <input type="checkbox" checked={settings.saveQcPlots} onChange={(event) => onSettingsChange({ saveQcPlots: event.target.checked })} />
+            <span className="toggle-ui" />
+            <span>Save standalone QC plots</span>
+          </label>
+        </div>
+        <button className="advanced-toggle" onClick={() => setAdvanced(!advanced)}>
+          <Settings2 size={15} /> Advanced settings <span>{advanced ? "−" : "+"}</span>
+        </button>
+        {advanced && (
+          <div className="advanced-grid">
+            <label>Samples folder<input value={settings.sampleDir} onChange={(event) => onSettingsChange({ sampleDir: event.target.value })} /></label>
+            <label>Unmixing matrix<input value={settings.matrixFile} onChange={(event) => onSettingsChange({ matrixFile: event.target.value })} /></label>
+            <label>Detector noise file<input value={settings.detectorNoiseFile} onChange={(event) => onSettingsChange({ detectorNoiseFile: event.target.value })} placeholder="Optional" /></label>
+            <label>RWLS max iterations<input type="number" min="1" value={settings.rwlsMaxIter} onChange={(event) => onSettingsChange({ rwlsMaxIter: Number(event.target.value) })} /></label>
+            <label>Threads<input type="number" min="1" value={settings.nThreads} onChange={(event) => onSettingsChange({ nThreads: Number(event.target.value) })} /></label>
+            <label>Plot events<input type="number" min="1" value={settings.plotNEvents} onChange={(event) => onSettingsChange({ plotNEvents: Number(event.target.value) })} /></label>
+            <label>Chunk size<input type="number" min="1" value={settings.chunkSize} onChange={(event) => onSettingsChange({ chunkSize: Number(event.target.value) })} /></label>
+            <label>Variant top-k<input type="number" min="1" value={settings.spectralVariantTopK} onChange={(event) => onSettingsChange({ spectralVariantTopK: Number(event.target.value) })} /></label>
+            <label>Variant min abundance<input type="number" min="0" step="0.01" value={settings.spectralVariantMinAbundance} onChange={(event) => onSettingsChange({ spectralVariantMinAbundance: Number(event.target.value) })} /></label>
+            <label>Variant positive fraction<input type="number" min="0" max="1" step="0.01" value={settings.spectralVariantPositiveFraction} onChange={(event) => onSettingsChange({ spectralVariantPositiveFraction: Number(event.target.value) })} /></label>
+            <label>Variant min improvement<input type="number" min="0" step="0.01" value={settings.spectralVariantMinImprovement} onChange={(event) => onSettingsChange({ spectralVariantMinImprovement: Number(event.target.value) })} /></label>
+            <label>Spectral variant library<input value={settings.spectralVariantLibraryFile} onChange={(event) => onSettingsChange({ spectralVariantLibraryFile: event.target.value })} placeholder="Optional .rds file" /></label>
+            <label>Spectreasy weight quantile<input type="number" min="0" max="1" step="0.01" value={settings.spectreasyWeightQuantile} onChange={(event) => onSettingsChange({ spectreasyWeightQuantile: Number(event.target.value) })} /></label>
+            <label className="toggle-label">
+              <input type="checkbox" checked={settings.reportPerSample} onChange={(event) => onSettingsChange({ reportPerSample: event.target.checked })} />
+              <span className="toggle-ui" /><span>One QC report per sample</span>
             </label>
-            <label>
-              Unmixing matrix
-              <input
-                value={settings.matrixFile}
-                onChange={(event) => onSettingsChange({ matrixFile: event.target.value })}
-              />
-            </label>
-            <label>
-              Detector noise file
-              <input
-                value={settings.detectorNoiseFile}
-                onChange={(event) => onSettingsChange({ detectorNoiseFile: event.target.value })}
-                placeholder="Optional"
-              />
-            </label>
-            <label>
-              Unmixing method
-              <GuiSelect
-                value={settings.method}
-                onChange={(event) =>
-                  onSettingsChange({ method: event.target.value })
-                }
-              >
-                <option>Spectreasy</option>
-                <option>AutoSpectral</option>
-                <option>OLS</option>
-                <option>WLS</option>
-                <option>RWLS</option>
-                <option>NNLS</option>
-              </GuiSelect>
-            </label>
-            <label>
-              RWLS max iterations
-              <input
-                type="number"
-                min="1"
-                value={settings.rwlsMaxIter}
-                onChange={(event) => onSettingsChange({ rwlsMaxIter: Number(event.target.value) })}
-              />
-            </label>
-            <label>
-              Threads
-              <input
-                type="number"
-                min="1"
-                value={settings.nThreads}
-                onChange={(event) =>
-                  onSettingsChange({ nThreads: Number(event.target.value) })
-                }
-              />
-            </label>
-            <label>
-              Variant min abundance
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={settings.spectralVariantMinAbundance}
-                onChange={(event) => onSettingsChange({ spectralVariantMinAbundance: Number(event.target.value) })}
-              />
-            </label>
-            <label>
-              Variant positive fraction
-              <input
-                type="number"
-                min="0"
-                max="1"
-                step="0.01"
-                value={settings.spectralVariantPositiveFraction}
-                onChange={(event) => onSettingsChange({ spectralVariantPositiveFraction: Number(event.target.value) })}
-              />
-            </label>
-            <label>
-              Variant min improvement
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={settings.spectralVariantMinImprovement}
-                onChange={(event) => onSettingsChange({ spectralVariantMinImprovement: Number(event.target.value) })}
-              />
-            </label>
-            <label>
-              Spectral variant library
-              <input
-                value={settings.spectralVariantLibraryFile}
-                onChange={(event) => onSettingsChange({ spectralVariantLibraryFile: event.target.value })}
-                placeholder="Optional .rds file"
-              />
-            </label>
-            <label>
-              Plot events
-              <input
-                type="number"
-                min="1"
-                value={settings.plotNEvents}
-                onChange={(event) =>
-                  onSettingsChange({ plotNEvents: Number(event.target.value) })
-                }
-              />
-            </label>
-            <label>
-              Chunk size
-              <input
-                type="number"
-                min="1"
-                value={settings.chunkSize}
-                onChange={(event) =>
-                  onSettingsChange({ chunkSize: Number(event.target.value) })
-                }
-              />
-            </label>
-            <label>
-              Variant top-k
-              <input
-                type="number"
-                min="1"
-                value={settings.spectralVariantTopK}
-                onChange={(event) =>
-                  onSettingsChange({
-                    spectralVariantTopK: Number(event.target.value),
-                  })
-                }
-              />
-            </label>
-            <label>
-              Spectreasy weight quantile
-              <input
-                type="number"
-                min="0"
-                max="1"
-                step="0.01"
-                value={settings.spectreasyWeightQuantile}
-                onChange={(event) =>
-                  onSettingsChange({
-                    spectreasyWeightQuantile: Number(event.target.value),
-                  })
-                }
-              />
-            </label>
-            <label>
-              Seed
-              <input
-                type="number"
-                min="1"
-                value={settings.seed}
-                onChange={(event) =>
-                  onSettingsChange({ seed: Number(event.target.value) })
-                }
-              />
-            </label>
-            <label>
-              Output folder
-              <input
-                value={settings.outputDir}
-                onChange={(event) =>
-                  onSettingsChange({ outputDir: event.target.value })
-                }
-              />
+            <label>Seed<input type="number" min="1" value={settings.seed} onChange={(event) => onSettingsChange({ seed: Number(event.target.value) })} /></label>
+            <label>Output folder<input value={settings.outputDir} onChange={(event) => onSettingsChange({ outputDir: event.target.value })} /></label>
+            <label className="toggle-label">
+              <input type="checkbox" checked={settings.estimateAf} onChange={(event) => onSettingsChange({ estimateAf: event.target.checked })} />
+              <span className="toggle-ui" /><span>Estimate AF from samples</span>
             </label>
             <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={settings.writeFcs}
-                onChange={(event) =>
-                  onSettingsChange({ writeFcs: event.target.checked })
-                }
-              />
-              <span className="toggle-ui" />
-              <span>Write FCS outputs</span>
-            </label>
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={settings.saveReport}
-                onChange={(event) =>
-                  onSettingsChange({ saveReport: event.target.checked })
-                }
-              />
-              <span className="toggle-ui" />
-              <span>Generate report</span>
-            </label>
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={settings.estimateAf}
-                onChange={(event) =>
-                  onSettingsChange({ estimateAf: event.target.checked })
-                }
-              />
-              <span className="toggle-ui" />
-              <span>Estimate AF from samples</span>
-            </label>
-            <label>
-              Report format
-              <GuiSelect
-                value={settings.outputFormat}
-                onChange={(event) =>
-                  onSettingsChange({
-                    outputFormat: event.target.value as SampleSettings["outputFormat"],
-                  })
-                }
-              >
-                <option value="html">HTML</option>
-                <option value="pdf">PDF</option>
-              </GuiSelect>
-            </label>
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={settings.saveQcPlots}
-                onChange={(event) =>
-                  onSettingsChange({ saveQcPlots: event.target.checked })
-                }
-              />
-              <span className="toggle-ui" />
-              <span>Save standalone QC plots</span>
+              <input type="checkbox" checked={settings.writeFcs} onChange={(event) => onSettingsChange({ writeFcs: event.target.checked })} />
+              <span className="toggle-ui" /><span>Write FCS outputs</span>
             </label>
             <label>
               Return type
-              <GuiSelect
-                value={settings.returnType}
-                onChange={(event) => onSettingsChange({ returnType: event.target.value as SampleSettings["returnType"] })}
-              >
+              <GuiSelect value={settings.returnType} onChange={(event) => onSettingsChange({ returnType: event.target.value as SampleSettings["returnType"] })}>
                 <option value="list">List</option>
                 <option value="flowSet">flowSet</option>
                 <option value="SingleCellExperiment">SingleCellExperiment</option>
               </GuiSelect>
             </label>
           </div>
-        </details>
+        )}
         <div className="run-footer run-footer-actions-only">
           <button
             className="button button-primary large-button"
@@ -1015,7 +849,7 @@ function ConfigurableAfWorkspace({
                 onChange={(event) =>
                   onSettingsChange({ saveName: event.target.value })
                 }
-                placeholder="Optional profile name"
+                placeholder="Defaults to source filename"
               />
             </label>
             <label>
@@ -1067,8 +901,7 @@ function ConfigurableAfWorkspace({
             className="button button-primary large-button"
             onClick={() => void extractProfile()}
           >
-            <WandSparkles size={15} /> Extract profile{" "}
-            {settings.saveName ? `& save “${settings.saveName}”` : ""}
+            <WandSparkles size={15} /> Extract & save profile
           </button>
         </section>
         <section className="surface-card af-library-card">

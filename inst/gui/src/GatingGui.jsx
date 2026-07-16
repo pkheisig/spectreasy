@@ -1847,8 +1847,8 @@ function GatePlot({
               y={PAD.top}
               width={Math.abs(xToScreen(hoverPt.x) - xToScreen(draft[0].x))}
               height={PLOT_HEIGHT - PAD.bottom - PAD.top}
-              fill={histogramGateType === 'positive' ? 'rgba(214, 82, 56, 0.1)' : 'rgba(38, 63, 115, 0.1)'}
-              stroke={histogramGateType === 'positive' ? '#d65238' : '#263f73'}
+              fill={histogramGateType === 'positive' ? 'rgba(214, 82, 56, 0.1)' : 'var(--negative-gate-preview)'}
+              stroke={histogramGateType === 'positive' ? '#d65238' : 'var(--negative-gate)'}
               strokeWidth="1.6"
               strokeDasharray="4 4"
               clipPath="url(#plot-clip)"

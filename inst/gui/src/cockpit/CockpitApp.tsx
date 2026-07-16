@@ -729,6 +729,7 @@ export default function CockpitApp() {
               write_fcs: sample.writeFcs,
               save_report: sample.saveReport,
               report_format: sample.outputFormat,
+              report_per_sample: sample.reportPerSample,
               save_qc_plots: sample.saveQcPlots,
               plot_n_events: sample.plotNEvents,
               chunk_size: sample.chunkSize,

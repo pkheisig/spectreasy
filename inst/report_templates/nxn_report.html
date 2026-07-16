@@ -6,58 +6,77 @@
   <title>{{REPORT_TITLE}}</title>
   <style>
     :root { --ink:#251d19; --muted:#75665e; --paper:#faf5ef; --card:#fffefa; --line:#e4d9ce; --accent:#f28b54; --accent-dark:#b75525; }
-    body.report-control { --ink:#18232e; --muted:#657383; --paper:#f2f7fb; --card:#fcfeff; --line:#d6e2ed; --accent:#70afe8; --accent-dark:#3379b8; }
     * { box-sizing:border-box; }
-    html { scroll-behavior:auto; }
-    body { margin:0; color:var(--ink); background:var(--paper); font:15px/1.5 Georgia,"Times New Roman",serif; }
-    header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:20px; padding:14px 20px; color:white; background:#332722; box-shadow:0 8px 24px rgba(71,43,28,.16); }
-    header h1 { flex:0 0 auto; margin:0; font-size:19px; font-weight:500; }
-    header p { flex:1 1 auto; margin:0; color:#f0d8ca; font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
-    .zoom-controls { display:flex; flex:0 0 auto; align-items:center; gap:6px; }
-    .zoom-controls button { min-width:34px; height:32px; padding:0 10px; border:1px solid rgba(255,255,255,.28); border-radius:5px; color:white; background:rgba(255,255,255,.08); cursor:pointer; font:700 13px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
-    .zoom-controls button:hover { border-color:var(--accent); background:rgba(255,255,255,.16); }
-    .zoom-controls output { min-width:48px; text-align:center; color:#f0d8ca; font:11px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
-    main { width:min(1120px,calc(100% - 40px)); margin:24px auto 36px; }
-    .matrix-canvas { width:100%; height:min(72vh,760px); min-height:420px; overflow:auto; border:1px solid var(--line); background:white; box-shadow:0 10px 32px rgba(71,43,28,.08); }
-    .matrix-canvas img { display:block; width:auto; max-width:none; height:auto; margin:auto; }
-    @media (max-width:760px) { header{position:relative;align-items:flex-start;flex-wrap:wrap;gap:8px}header p{flex-basis:100%}.zoom-controls{order:3}main{width:calc(100% - 16px);margin:8px auto 20px}.matrix-canvas{height:68vh;min-height:320px} }
-    @media print { header{position:relative}main{height:auto;padding:0}.matrix-canvas{height:auto;overflow:visible;border:0}.matrix-canvas img{max-width:100%;height:auto} }
+    body { margin:0; color:var(--ink); background:var(--paper); font:14px/1.4 Avenir Next,"Segoe UI",sans-serif; }
+    header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:18px; min-height:64px; padding:10px 16px; color:white; background:#332722; box-shadow:0 8px 24px rgba(71,43,28,.16); }
+    header h1 { flex:0 0 auto; margin:0; font-size:18px; font-weight:700; }
+    header p { margin:0 auto 0 0; color:#f0d8ca; font-size:12px; }
+    .controls { display:flex; align-items:flex-end; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+    .controls label { display:grid; gap:3px; color:#eadbd2; font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+    .controls select { min-width:126px; }
+    .controls select,.controls input { height:31px; accent-color:var(--accent); }
+    .controls select { padding:0 26px 0 8px; color:white; border:1px solid rgba(255,255,255,.25); border-radius:5px; background:#493a33; }
+    .range-row { display:flex; align-items:center; gap:6px; }
+    .range-row input { width:92px; }
+    .range-row output { min-width:34px; color:white; font-size:11px; text-align:right; }
+    main { padding:18px; }
+    .matrix-shell { width:100%; height:calc(100vh - 100px); min-height:440px; overflow:auto; border:1px solid var(--line); background:white; box-shadow:0 10px 32px rgba(71,43,28,.08); }
+    canvas { display:block; background:#fff; }
+    @media (max-width:980px) { header{position:relative;align-items:flex-start;flex-wrap:wrap}.controls{width:100%;justify-content:flex-start}main{padding:8px}.matrix-shell{height:72vh} }
+    @media print { header{position:relative}.controls{display:none}.matrix-shell{height:auto;overflow:visible;border:0;box-shadow:none}canvas{max-width:100%;height:auto!important} }
   </style>
 </head>
 <body class="{{REPORT_CLASS}}">
   <header>
-    <h1>{{REPORT_HEADING}}</h1>
-    <p>{{REPORT_META}}</p>
-    <div class="zoom-controls" aria-label="Matrix zoom controls">
-      <button type="button" data-zoom="out" aria-label="Zoom out">&minus;</button>
-      <button type="button" data-zoom="fit">Fit</button>
-      <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
-      <output id="zoom-value" aria-live="polite">100%</output>
+    <div><h1>{{REPORT_HEADING}}</h1><p>{{REPORT_META}}</p></div>
+    <div class="controls" aria-label="Scatter matrix display controls">
+      <label>Sample<select id="sample-select"></select></label>
+      <label>Color gradient<select id="gradient-select"><option value="viridis">Viridis</option><option value="turbo">Turbo</option><option value="ocean">Ocean</option><option value="inferno">Inferno</option><option value="mono">Monochrome</option></select></label>
+      <label>Plot type<select id="plot-type"><option value="scatter">Scatter</option><option value="density">Density</option><option value="hexbin">Hexbin</option></select></label>
+      <label>Point size<span class="range-row"><input id="point-size" type="range" min="0.5" max="4" step="0.25" value="1.25"><output id="point-size-value">1.25</output></span></label>
+      <label>Plot size<span class="range-row"><input id="cell-size" type="range" min="90" max="240" step="10" value="140"><output id="cell-size-value">140px</output></span></label>
     </div>
   </header>
-  <main><div class="matrix-canvas"><img id="matrix-image" alt="NxN scatter matrix for {{MATRIX_LABEL}}" src="{{MATRIX_IMAGE}}"></div></main>
+  <main><div class="matrix-shell"><canvas id="matrix-canvas" role="img" aria-label="Interactive sample NxN scatter matrix"></canvas></div></main>
   <script>
     (function(){
-      var canvas=document.querySelector('.matrix-canvas');
-      var image=document.getElementById('matrix-image');
-      var output=document.getElementById('zoom-value');
-      var zoom=1;
-      function fitScale(){
-        if(!image.naturalWidth||!image.naturalHeight)return 1;
-        return Math.min(canvas.clientWidth/image.naturalWidth,canvas.clientHeight/image.naturalHeight,1);
+      var DATA={{MATRIX_DATA}};
+      var canvas=document.getElementById('matrix-canvas');
+      var ctx=canvas.getContext('2d');
+      var sampleSelect=document.getElementById('sample-select');
+      var gradientSelect=document.getElementById('gradient-select');
+      var plotType=document.getElementById('plot-type');
+      var pointSize=document.getElementById('point-size');
+      var cellSize=document.getElementById('cell-size');
+      var pointValue=document.getElementById('point-size-value');
+      var cellValue=document.getElementById('cell-size-value');
+      var palettes={
+        viridis:['#440154','#3b528b','#21918c','#5ec962','#fde725'],
+        turbo:['#30123b','#466be3','#28bceb','#32f298','#a4fc3c','#f9ba38','#e44818','#7a0403'],
+        ocean:['#081d58','#225ea8','#1d91c0','#41b6c4','#7fcdbb','#c7e9b4'],
+        inferno:['#000004','#420a68','#932667','#dd513a','#fca50a','#fcffa4'],
+        mono:['#d9e8f4','#8db9d8','#397eae','#123d5b']
+      };
+      DATA.samples.forEach(function(sample,index){var option=document.createElement('option');option.value=String(index);option.textContent=sample.name;sampleSelect.appendChild(option)});
+      function hexToRgb(hex){var value=parseInt(hex.slice(1),16);return[(value>>16)&255,(value>>8)&255,value&255]}
+      function colorAt(t){var colors=palettes[gradientSelect.value]||palettes.viridis;t=Math.max(0,Math.min(1,t));var scaled=t*(colors.length-1);var i=Math.min(colors.length-2,Math.floor(scaled));var f=scaled-i;var a=hexToRgb(colors[i]),b=hexToRgb(colors[i+1]);return'rgb('+Math.round(a[0]+(b[0]-a[0])*f)+','+Math.round(a[1]+(b[1]-a[1])*f)+','+Math.round(a[2]+(b[2]-a[2])*f)+')'}
+      function normalized(value,limit){return Math.max(0,Math.min(1,(value-limit[0])/((limit[1]-limit[0])||1)))}
+      function binsFor(sample,xIndex,yIndex,bins){var counts=new Uint32Array(bins*bins),max=0;var xLim=sample.limits[xIndex],yLim=sample.limits[yIndex];sample.values.forEach(function(row){var x=row[xIndex],y=row[yIndex];if(x===null||y===null||!isFinite(x)||!isFinite(y))return;var bx=Math.min(bins-1,Math.floor(normalized(x,xLim)*bins));var by=Math.min(bins-1,Math.floor(normalized(y,yLim)*bins));var idx=by*bins+bx;counts[idx]++;if(counts[idx]>max)max=counts[idx]});return{counts:counts,max:max}}
+      function drawHex(cx,cy,r){ctx.beginPath();for(var i=0;i<6;i++){var angle=Math.PI/3*i;var x=cx+Math.cos(angle)*r,y=cy+Math.sin(angle)*r;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)}ctx.closePath();ctx.fill()}
+      function drawPanel(sample,xIndex,yIndex,left,top,size){
+        var pad=8,inner=size-pad*2,xLim=sample.limits[xIndex],yLim=sample.limits[yIndex];
+        ctx.save();ctx.beginPath();ctx.rect(left,top,size,size);ctx.clip();ctx.fillStyle='#fff';ctx.fillRect(left,top,size,size);ctx.strokeStyle='#e4d9ce';ctx.lineWidth=1;ctx.strokeRect(left+.5,top+.5,size-1,size-1);
+        var zeroX=left+pad+normalized(0,xLim)*inner,zeroY=top+size-pad-normalized(0,yLim)*inner;ctx.strokeStyle='#edc5ad';ctx.lineWidth=.7;ctx.beginPath();ctx.moveTo(zeroX,top+pad);ctx.lineTo(zeroX,top+size-pad);ctx.moveTo(left+pad,zeroY);ctx.lineTo(left+size-pad,zeroY);ctx.stroke();
+        if(plotType.value==='scatter'){
+          var radius=Number(pointSize.value);sample.values.forEach(function(row){var x=row[xIndex],y=row[yIndex];if(x===null||y===null||!isFinite(x)||!isFinite(y))return;var nx=normalized(x,xLim),ny=normalized(y,yLim);ctx.globalAlpha=.58;ctx.fillStyle=colorAt((nx+ny)/2);ctx.beginPath();ctx.arc(left+pad+nx*inner,top+size-pad-ny*inner,radius,0,Math.PI*2);ctx.fill()});ctx.globalAlpha=1;
+        }else{
+          var bins=plotType.value==='hexbin'?Math.max(8,Math.round(size/12)):Math.max(10,Math.round(size/8));var grid=binsFor(sample,xIndex,yIndex,bins);if(grid.max){for(var by=0;by<bins;by++)for(var bx=0;bx<bins;bx++){var count=grid.counts[by*bins+bx];if(!count)continue;var strength=Math.log1p(count)/Math.log1p(grid.max);ctx.globalAlpha=.18+.82*strength;ctx.fillStyle=colorAt(strength);var px=left+pad+(bx+.5)/bins*inner,py=top+size-pad-(by+.5)/bins*inner;if(plotType.value==='hexbin')drawHex(px,py,Math.max(2,inner/bins*.58));else ctx.fillRect(left+pad+bx/bins*inner,top+pad+(bins-1-by)/bins*inner,inner/bins+1,inner/bins+1)}}ctx.globalAlpha=1;
+        }
+        ctx.restore();
       }
       function render(){
-        if(!image.naturalWidth)return;
-        image.style.width=Math.max(1,Math.round(image.naturalWidth*fitScale()*zoom))+'px';
-        output.value=Math.round(zoom*100)+'%';
-        output.textContent=output.value;
-      }
-      document.querySelector('[data-zoom="out"]').addEventListener('click',function(){zoom=Math.max(.4,zoom-.2);render()});
-      document.querySelector('[data-zoom="fit"]').addEventListener('click',function(){zoom=1;render();canvas.scrollTo(0,0)});
-      document.querySelector('[data-zoom="in"]').addEventListener('click',function(){zoom=Math.min(4,zoom+.2);render()});
-      image.addEventListener('load',render);
-      window.addEventListener('resize',render);
-      if(image.complete)render();
+        var sample=DATA.samples[Number(sampleSelect.value)||0];if(!sample)return;var markers=DATA.markers,n=markers.length,cell=Number(cellSize.value),label=92,total=label+n*cell,dpr=Math.min(2,window.devicePixelRatio||1);canvas.width=Math.round(total*dpr);canvas.height=Math.round(total*dpr);canvas.style.width=total+'px';canvas.style.height=total+'px';ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,total,total);ctx.fillStyle='#fff';ctx.fillRect(0,0,total,total);ctx.fillStyle='#4d433d';ctx.font='600 11px Avenir Next, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';markers.forEach(function(marker,i){ctx.save();ctx.translate(label+i*cell+cell/2,label-8);ctx.rotate(-Math.PI/4);ctx.textAlign='left';ctx.fillText(marker,0,0);ctx.restore();ctx.save();ctx.translate(label-8,label+i*cell+cell/2);ctx.textAlign='right';ctx.fillText(marker,0,0);ctx.restore()});for(var row=1;row<n;row++)for(var col=0;col<row;col++)drawPanel(sample,col,row,label+col*cell,label+row*cell,cell);pointValue.textContent=Number(pointSize.value).toFixed(2);cellValue.textContent=cell+'px';canvas.setAttribute('aria-label','NxN scatter matrix for '+sample.name)}
+      [sampleSelect,gradientSelect,plotType,pointSize,cellSize].forEach(function(control){control.addEventListener('input',render);control.addEventListener('change',render)});render();
     })();
   </script>
 </body>

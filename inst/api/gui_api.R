@@ -3142,6 +3142,7 @@ function(req) {
             write_fcs = gui_workflow_bool(body, "write_fcs", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
             report_format = gui_workflow_value(body, "report_format", "html"),
+            report_per_sample = gui_workflow_bool(body, "report_per_sample", FALSE),
             save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
             plot_n_events = gui_workflow_number(body, "plot_n_events", 10000, integer = TRUE, minimum = 1),
             chunk_size = gui_workflow_number(body, "chunk_size", 50000, integer = TRUE, minimum = 1),
@@ -3278,6 +3279,20 @@ function(res) {
     return("")
 }
 
+gui_default_af_profile_name <- function(fcs_file, existing_names = character()) {
+    stem <- tools::file_path_sans_ext(basename(as.character(fcs_file)[1]))
+    stem <- gsub("[^A-Za-z0-9._-]+", "_", trimws(stem))
+    stem <- gsub("^_+|_+$", "", stem)
+    if (!nzchar(stem)) stem <- "af_profile"
+    candidate <- stem
+    suffix <- 2L
+    while (candidate %in% existing_names) {
+        candidate <- paste0(stem, "_", suffix)
+        suffix <- suffix + 1L
+    }
+    candidate
+}
+
 #* Extract one AF profile through Spectreasy R
 #* @post /workflow/af
 function(req) {
@@ -3300,24 +3315,26 @@ function(req) {
     profile <- run$result
     save_name <- trimws(as.character(gui_workflow_value(body, "save_name", ""))[1])
     save_overwrite <- isTRUE(gui_workflow_bool(body, "save_overwrite", FALSE))
-    saved_path <- NULL
-    if (nzchar(save_name)) {
-        saved_path <- tryCatch(
-            spectreasy::save_af_profile(save_name, profile, overwrite = save_overwrite),
-            error = function(e) e
-        )
-        if (inherits(saved_path, "error")) {
-            run$success <- FALSE
-            run$error <- conditionMessage(saved_path)
-            return(run)
-        }
-        saved_path <- as.character(saved_path)
+    if (!nzchar(save_name)) {
+        existing_profiles <- tryCatch(spectreasy::list_af_profiles(), error = function(e) data.frame())
+        existing_names <- if (nrow(existing_profiles) > 0L) existing_profiles$name else character()
+        save_name <- gui_default_af_profile_name(fcs_file, existing_names)
     }
+    saved_path <- tryCatch(
+        spectreasy::save_af_profile(save_name, profile, overwrite = save_overwrite),
+        error = function(e) e
+    )
+    if (inherits(saved_path, "error")) {
+        run$success <- FALSE
+        run$error <- conditionMessage(saved_path)
+        return(run)
+    }
+    saved_path <- as.character(saved_path)
     run$result <- list(
         bands = nrow(profile$profile),
         detectors = ncol(profile$profile),
         source = fcs_file,
-        profile_name = if (nzchar(save_name)) save_name else NULL,
+        profile_name = save_name,
         profile_path = saved_path
     )
     run

@@ -12,6 +12,20 @@ with_cockpit_af_profiles <- function(names, code) {
     force(code)
 }
 
+test_that("cockpit derives collision-safe AF profile names from source files", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+    expect_identical(api_env$gui_default_af_profile_name("/data/Unstained cells.fcs"), "Unstained_cells")
+    expect_identical(
+        api_env$gui_default_af_profile_name("/data/Unstained cells.fcs", c("Unstained_cells", "Unstained_cells_2")),
+        "Unstained_cells_3"
+    )
+})
+
 test_that("cockpit active AF profile filters only the obsolete unstained cell control", {
     with_cockpit_af_profiles("PBMC_saved", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")

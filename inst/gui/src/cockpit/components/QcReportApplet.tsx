@@ -121,28 +121,12 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot, i
           <span>The local R backend did not return the report list.</span>
         </div>
       ) : reportsForKind.length && report?.path ? (
-        <div className="qc-report-layout">
-          <aside className="qc-report-library" aria-label={`${kind} QC report history`}>
-            {reportsForKind.map((candidate) => (
-              <button
-                type="button"
-                className={candidate.path === report.path ? 'is-selected' : ''}
-                key={candidate.id}
-                onClick={() => setSelectedReportPath(candidate.path)}
-              >
-                <span>{candidate.format}</span>
-                <strong>{reportLabel(candidate.path)}</strong>
-                <small>{candidate.created}</small>
-              </button>
-            ))}
-          </aside>
-          <iframe
-            className="qc-report-frame"
-            src={projectFileUrl(report.path, projectPath)}
-            title={`${kind} QC report`}
-            {...(report.format === 'HTML' ? { sandbox: 'allow-scripts' } : {})}
-          />
-        </div>
+        <iframe
+          className="qc-report-frame"
+          src={projectFileUrl(report.path, projectPath)}
+          title={`${kind} QC report`}
+          {...(report.format === 'HTML' ? { sandbox: 'allow-scripts' } : {})}
+        />
       ) : (
         <div className="qc-report-empty">
           <strong>No QC report yet</strong>

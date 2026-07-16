@@ -27,6 +27,7 @@ unmix_samples(
   write_fcs = TRUE,
   save_report = TRUE,
   report_format = "html",
+  report_per_sample = FALSE,
   save_qc_plots = FALSE,
   qc_plot_dir = NULL,
   plot_n_events = 10000L,
@@ -127,6 +128,10 @@ unmixing. Defaults to `TRUE`.}
 
 \item{report_format}{Report format, either `"html"` (default) or `"pdf"`.
 Only the selected format is written. Matching is case-insensitive.}
+
+\item{report_per_sample}{Logical; if `TRUE`, PDF output writes one report
+per sample, while HTML output adds a sample selector to one report.
+Defaults to `FALSE`.}
 
 \item{save_qc_plots}{Logical; if `TRUE`, save QC report plots as PNG files
 in `qc_plot_dir` while creating the report.}

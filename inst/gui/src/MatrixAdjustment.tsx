@@ -84,14 +84,16 @@ type StyledDropdownProps = {
     options: readonly string[];
     emptyLabel?: string;
     width: number;
+    showEnd?: boolean;
     theme: DropdownTheme;
     onChange: (value: string) => void;
 };
 
-const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)', width, theme, onChange }: StyledDropdownProps) => {
+const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)', width, showEnd = false, theme, onChange }: StyledDropdownProps) => {
     const [open, setOpen] = useState(false);
     const [activeIndex, setActiveIndex] = useState(0);
     const rootRef = useRef<HTMLDivElement>(null);
+    const listboxRef = useRef<HTMLDivElement>(null);
     const listboxId = useId();
 
     useEffect(() => {
@@ -109,6 +111,14 @@ const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)'
             window.removeEventListener('keydown', closeOnEscape);
         };
     }, [open]);
+
+    useEffect(() => {
+        if (!open || !showEnd) return;
+        const frame = window.requestAnimationFrame(() => {
+            if (listboxRef.current) listboxRef.current.scrollLeft = listboxRef.current.scrollWidth;
+        });
+        return () => window.cancelAnimationFrame(frame);
+    }, [open, showEnd]);
 
     const displayValue = value || emptyLabel;
     const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -169,23 +179,31 @@ const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)'
                     cursor: options.length > 0 ? 'pointer' : 'default'
                 }}
             >
-                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayValue}</span>
+                {showEnd ? (
+                    <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', display: 'flex', justifyContent: 'flex-end' }}>
+                        <span style={{ flex: '0 0 auto', whiteSpace: 'nowrap' }}>{displayValue}</span>
+                    </span>
+                ) : (
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayValue}</span>
+                )}
                 <ChevronDown size={14} style={{ flex: '0 0 auto', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 140ms ease' }} />
             </button>
             {open && (
                 <div
+                    ref={listboxRef}
                     id={listboxId}
                     role="listbox"
                     aria-label={label}
                     style={{
                         position: 'absolute',
                         top: 'calc(100% + 6px)',
-                        left: 0,
+                        left: showEnd ? 'auto' : 0,
+                        right: showEnd ? 0 : 'auto',
                         zIndex: 100,
-                        width,
-                        maxWidth: 'min(32vw, 360px)',
+                        width: showEnd ? Math.max(width, 520) : width,
+                        maxWidth: showEnd ? 'min(70vw, 720px)' : 'min(32vw, 360px)',
                         maxHeight: 280,
-                        overflowY: 'auto',
+                        overflow: 'auto',
                         padding: 5,
                         border: `1px solid ${theme.glassBorder}`,
                         borderRadius: 9,
@@ -210,10 +228,11 @@ const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)'
                                     setOpen(false);
                                 }}
                                 style={{
-                                    width: '100%',
+                                    width: showEnd ? 'max-content' : '100%',
+                                    minWidth: '100%',
                                     minHeight: 31,
                                     display: 'grid',
-                                    gridTemplateColumns: '16px minmax(0, 1fr)',
+                                    gridTemplateColumns: showEnd ? '16px max-content' : '16px minmax(0, 1fr)',
                                     alignItems: 'center',
                                     gap: 7,
                                     padding: '0 8px',
@@ -232,7 +251,7 @@ const StyledDropdown = ({ label, value, options, emptyLabel = '(none available)'
                                 onMouseLeave={event => { if (!selected) event.currentTarget.style.background = 'transparent'; }}
                             >
                                 <span style={{ display: 'grid', placeItems: 'center' }}>{selected && <Check size={13} />}</span>
-                                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{option}</span>
+                                <span style={{ minWidth: 0, overflow: showEnd ? 'visible' : 'hidden', textOverflow: showEnd ? 'clip' : 'ellipsis', whiteSpace: 'nowrap' }}>{option}</span>
                             </button>
                         );
                     })}
@@ -698,7 +717,8 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                         value={currentFile}
                         options={matrices}
                         emptyLabel="(no matrices found)"
-                        width={230}
+                        width={390}
+                        showEnd
                         theme={g}
                         onChange={value => void fetchData(value, currentSample)}
                     />

@@ -977,6 +977,31 @@
     pages
 }
 
+.qc_report_sample_names <- function(results) {
+    results_df <- .normalize_qc_report_results_df(results)
+    if (!("File" %in% colnames(results_df))) return(character())
+    sample_names <- unique(as.character(results_df$File))
+    sample_names[!is.na(sample_names) & nzchar(sample_names)]
+}
+
+.subset_qc_report_sample <- function(results, sample_name) {
+    if (is.null(results)) return(NULL)
+    original_attributes <- attributes(results)
+    if (is.data.frame(results)) {
+        if (!("File" %in% colnames(results))) return(results)
+        out <- results[as.character(results$File) == sample_name, , drop = FALSE]
+    } else if (is.list(results)) {
+        result_names <- names(results)
+        if (is.null(result_names)) return(results)
+        out <- results[result_names == sample_name]
+    } else {
+        return(results)
+    }
+    preserved <- setdiff(names(original_attributes), c("names", "row.names", "class", "dim", "dimnames"))
+    for (attribute_name in preserved) attr(out, attribute_name) <- original_attributes[[attribute_name]]
+    out
+}
+
 #' Generate a Full Sample PDF Report
 #'
 #' Creates a multi-page report summarizing unmixing quality, including spectra,
@@ -1039,6 +1064,8 @@
 #'   CSVs are written alongside the report.
 #' @param report_format Report format, `"html"` (default) or `"pdf"`.
 #'   Matching is case-insensitive.
+#' @param report_per_sample Logical; when `TRUE`, PDF output writes one report
+#'   per sample and HTML output provides a sample selector. Default is `FALSE`.
 #' @param overwrite HTML collision policy: create a versioned filename
 #'   (default), overwrite, or error. Existing PDF behavior is unchanged.
 #' @param report_run_settings Additional workflow settings recorded in HTML.
@@ -1091,6 +1118,7 @@ qc_samples <- function(results,
                        save_qc_pngs = FALSE,
                        qc_metrics_dir = NULL,
                        report_format = "html",
+                       report_per_sample = FALSE,
                        overwrite = c("version", "overwrite", "error"),
                        report_run_settings = list(),
                        report_artifact_paths = list()) {
@@ -1103,6 +1131,7 @@ qc_samples <- function(results,
         output_missing = output_file_missing
     )
     output_file <- output_spec$path
+    report_per_sample <- .normalize_scalar_logical(report_per_sample, "report_per_sample")
     if (is.null(output_file) || !nzchar(trimws(as.character(output_file)[1]))) {
         stop("Please supply output_file to save the QC report.", call. = FALSE)
     }
@@ -1138,6 +1167,47 @@ qc_samples <- function(results,
         }
     }
 
+    if (identical(output_spec$format, "pdf") && isTRUE(report_per_sample)) {
+        sample_names <- .qc_report_sample_names(results)
+        if (!length(sample_names)) stop("No sample names were available for per-sample PDF reports.", call. = FALSE)
+        sample_slugs <- .report_filename_slug(sample_names, fallback = "sample")
+        stem <- tools::file_path_sans_ext(basename(output_file))
+        sample_files <- file.path(dirname(output_file), paste0(stem, "_", sample_slugs, ".pdf"))
+        sample_results <- lapply(seq_along(sample_names), function(index) {
+            qc_samples(
+                results = .subset_qc_report_sample(results, sample_names[index]),
+                M = M,
+                output_file = sample_files[index],
+                unmixing_method = unmixing_method,
+                res_list = .subset_qc_report_sample(res_list, sample_names[index]),
+                pd = pd,
+                max_events_per_sample = max_events_per_sample,
+                overview_files_per_page = overview_files_per_page,
+                matrix_markers_per_page = matrix_markers_per_page,
+                sample_nxn_rows_per_page = sample_nxn_rows_per_page,
+                sample_nxn_max_points = sample_nxn_max_points,
+                sample_nxn_transform = sample_nxn_transform,
+                sample_nxn_asinh_cofactor = sample_nxn_asinh_cofactor,
+                sample_nxn_axis_limit = sample_nxn_axis_limit,
+                nxn_all_samples = TRUE,
+                qc_plot_dir = if (is.null(qc_plot_dir)) NULL else file.path(qc_plot_dir, sample_slugs[index]),
+                save_qc_pngs = save_qc_pngs,
+                qc_metrics_dir = if (is.null(qc_metrics_dir)) NULL else file.path(qc_metrics_dir, sample_slugs[index]),
+                report_format = "pdf",
+                report_per_sample = FALSE,
+                overwrite = overwrite,
+                report_run_settings = c(list(report_per_sample = TRUE), report_run_settings),
+                report_artifact_paths = report_artifact_paths
+            )
+        })
+        sample_files <- stats::setNames(normalizePath(sample_files, mustWork = TRUE), sample_names)
+        return(invisible(list(
+            output_file = sample_files,
+            qc_plot_dir = lapply(sample_results, `[[`, "qc_plot_dir"),
+            qc_metrics_dir = lapply(sample_results, `[[`, "qc_metrics_dir")
+        )))
+    }
+
     if (identical(output_spec$format, "html")) {
         html_plot_dir <- if (isTRUE(save_qc_pngs)) {
             .prepare_qc_report_png_dir(
@@ -1171,6 +1241,7 @@ qc_samples <- function(results,
                     sample_nxn_asinh_cofactor = sample_nxn_asinh_cofactor,
                     sample_nxn_axis_limit = sample_nxn_axis_limit,
                     nxn_all_samples = nxn_all_samples,
+                    report_per_sample = report_per_sample,
                     save_qc_pngs = save_qc_pngs,
                     report_format = "html"
                 ),
@@ -1185,8 +1256,41 @@ qc_samples <- function(results,
             sample_nxn_asinh_cofactor = sample_nxn_asinh_cofactor,
             sample_nxn_axis_limit = sample_nxn_axis_limit,
             nxn_all_samples = nxn_all_samples,
+            report_per_sample = report_per_sample,
             plot_dir = html_plot_dir
         )
+        if (isTRUE(report_per_sample)) {
+            sample_names <- .qc_report_sample_names(results)
+            sample_slugs <- .report_filename_slug(sample_names, fallback = "sample")
+            sample_reports <- lapply(seq_along(sample_names), function(index) {
+                sample_data <- collect_sample_report_data(
+                    results = .subset_qc_report_sample(results, sample_names[index]),
+                    M = M,
+                    unmixing_method = unmixing_method,
+                    res_list = .subset_qc_report_sample(res_list, sample_names[index]),
+                    pd = pd,
+                    matrix_source = unmixing_matrix_file,
+                    qc_metrics_dir = if (is.null(qc_metrics_dir)) NULL else file.path(qc_metrics_dir, sample_slugs[index]),
+                    artifact_paths = report_artifact_paths,
+                    run_settings = c(list(report_per_sample = TRUE), report_run_settings),
+                    max_events_per_sample = max_events_per_sample,
+                    overview_files_per_page = overview_files_per_page,
+                    matrix_markers_per_page = matrix_markers_per_page,
+                    sample_nxn_rows_per_page = sample_nxn_rows_per_page,
+                    sample_nxn_max_points = sample_nxn_max_points,
+                    sample_nxn_transform = sample_nxn_transform,
+                    sample_nxn_asinh_cofactor = sample_nxn_asinh_cofactor,
+                    sample_nxn_axis_limit = sample_nxn_axis_limit,
+                    nxn_all_samples = FALSE,
+                    report_per_sample = FALSE,
+                    plot_dir = file.path(html_plot_dir, "samples", sample_slugs[index])
+                )
+                if (!isTRUE(save_qc_pngs)) sample_data <- .report_embed_plot_manifest(sample_data)
+                sample_data
+            })
+            names(sample_reports) <- sample_names
+            report_data$sample_reports <- sample_reports
+        }
         if (!isTRUE(save_qc_pngs)) report_data <- .report_embed_plot_manifest(report_data)
         return(render_qc_html_report(report_data, output_file, overwrite = overwrite))
     }

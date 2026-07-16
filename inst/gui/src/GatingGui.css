@@ -17,6 +17,10 @@
   --axis-color: #6d756f;
   --histogram-fill: rgba(38, 63, 115, 0.3);
   --histogram-stroke: #263f73;
+  --negative-gate: #4b91cf;
+  --negative-gate-fill: rgba(75, 145, 207, 0.2);
+  --negative-gate-preview: rgba(75, 145, 207, 0.14);
+  --negative-gate-on-ink: #ffffff;
   --bead-gate: #8052c7;
   --bead-gate-fill: rgba(128, 82, 199, 0.16);
 }
@@ -39,6 +43,10 @@
   --axis-color: #a9b7b1;
   --histogram-fill: rgba(120, 156, 255, 0.34);
   --histogram-stroke: #9bb6ff;
+  --negative-gate: #78c9ff;
+  --negative-gate-fill: rgba(120, 201, 255, 0.26);
+  --negative-gate-preview: rgba(120, 201, 255, 0.2);
+  --negative-gate-on-ink: #07171f;
   --bead-gate: #b794ff;
   --bead-gate-fill: rgba(183, 148, 255, 0.2);
   background:
@@ -1353,8 +1361,8 @@
 }
 
 .gate-path-neg {
-  fill: rgba(38, 63, 115, 0.16);
-  stroke: #263f73;
+  fill: var(--negative-gate-fill);
+  stroke: var(--negative-gate);
   stroke-width: 2.2;
 }
 
@@ -1370,14 +1378,14 @@
 }
 
 .app-shell button.btn-negative-gate {
-  border-color: #263f73;
-  color: #263f73;
+  border-color: var(--negative-gate);
+  color: var(--negative-gate);
 }
 
 .app-shell button.btn-negative-gate.on {
-  background: #263f73 !important;
-  color: white !important;
-  border-color: #263f73 !important;
+  background: var(--negative-gate) !important;
+  color: var(--negative-gate-on-ink) !important;
+  border-color: var(--negative-gate) !important;
 }
 
 .app-shell button.btn-negative-gate:disabled {
