@@ -8,14 +8,13 @@ import {
   RefreshCw,
   TerminalSquare,
 } from 'lucide-react'
-import { resolveApiBase } from '../apiBase'
+import { probeLocalBackend } from '../apiBase'
 import { installAndLaunchCommand, launchCommand } from './installCommands'
 import './setup.css'
 
 const installCommand = installAndLaunchCommand
 
 type BackendState = 'checking' | 'offline' | 'detected'
-const apiBase = resolveApiBase()
 
 function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false)
@@ -68,7 +67,13 @@ function ConnectionState({ state, onCheck }: { state: BackendState; onCheck: () 
   )
 }
 
-export function SetupExperience({ forceOffline = false }: { forceOffline?: boolean }) {
+export function SetupExperience({
+  forceOffline = false,
+  onBackendDetected,
+}: {
+  forceOffline?: boolean
+  onBackendDetected?: () => void
+}) {
   const [backendState, setBackendState] = useState<BackendState>(forceOffline ? 'offline' : 'checking')
   const launcherHref = `${import.meta.env.BASE_URL}spectreasy-launcher.R`
 
@@ -78,23 +83,21 @@ export function SetupExperience({ forceOffline = false }: { forceOffline?: boole
       return
     }
     setBackendState('checking')
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 1400)
-    try {
-      const response = await fetch(`${apiBase}/status`, { cache: 'no-store', signal: controller.signal })
-      setBackendState(response.ok ? 'detected' : 'offline')
-    } catch {
-      setBackendState('offline')
-    } finally {
-      window.clearTimeout(timeout)
+    const detected = await probeLocalBackend(1400)
+    setBackendState(detected ? 'detected' : 'offline')
+    if (detected) {
+      onBackendDetected?.()
     }
-  }, [forceOffline])
+  }, [forceOffline, onBackendDetected])
 
   useEffect(() => {
     if (forceOffline) return
-    void checkBackend()
+    const initialCheck = window.setTimeout(() => void checkBackend(), 0)
     const interval = window.setInterval(() => void checkBackend(), 4000)
-    return () => window.clearInterval(interval)
+    return () => {
+      window.clearTimeout(initialCheck)
+      window.clearInterval(interval)
+    }
   }, [checkBackend, forceOffline])
 
   return (
