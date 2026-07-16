@@ -11,9 +11,9 @@ Invisibly returns `NULL`. This function blocks while the local GUI
 application is running.
 }
 \description{
-Starts the local Spectreasy R backend and opens the hosted cockpit. Choose
-the project folder from the Active project button in the header; the R
-working directory is not used as an implicit project.
+Starts the local Spectreasy R backend and opens the hosted cockpit. The
+current R working directory is opened as the initial project. Use the
+project button in the header to create or open a different project.
 }
 \details{
 This is the recommended entry point for interactive use:

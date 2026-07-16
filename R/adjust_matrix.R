@@ -432,9 +432,9 @@ adjust_matrix <- function(matrix_dir = NULL,
 
 #' Launch the Spectreasy Cockpit
 #'
-#' Starts the local Spectreasy R backend and opens the hosted cockpit. Choose
-#' the project folder from the Active project button in the header; the R
-#' working directory is not used as an implicit project.
+#' Starts the local Spectreasy R backend and opens the hosted cockpit. The
+#' current R working directory is opened as the initial project. Use the
+#' project button in the header to create or open a different project.
 #'
 #' This is the recommended entry point for interactive use:
 #' `library(spectreasy); spectreasy_gui()`.
@@ -447,8 +447,7 @@ adjust_matrix <- function(matrix_dir = NULL,
 #'   spectreasy_gui()
 #' }
 spectreasy_gui <- function() {
-    project_dir <- file.path(tempdir(), "spectreasy-cockpit-session")
-    dir.create(project_dir, recursive = TRUE, showWarnings = FALSE)
+    project_dir <- normalizePath(getwd(), mustWork = TRUE)
     samples_dir <- file.path(project_dir, "samples")
     .launch_spectreasy_gui(
         matrix_dir = project_dir,
@@ -458,7 +457,7 @@ spectreasy_gui <- function() {
             "spectreasy.cockpit_url",
             "https://pkheisig.github.io/spectreasy/"
         ),
-        initial_project_selected = FALSE
+        initial_project_selected = TRUE
     )
     invisible(NULL)
 }

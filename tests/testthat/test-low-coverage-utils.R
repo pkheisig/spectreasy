@@ -238,6 +238,29 @@ test_that("adjust_matrix internal helpers validate packaged assets and dev-mode 
     expect_equal(frontend_dev$npm_bin, "npm")
 })
 
+test_that("spectreasy_gui opens the R working directory as the initial project", {
+    project_dir <- tempfile("spectreasy_cockpit_project_")
+    dir.create(project_dir, recursive = TRUE, showWarnings = FALSE)
+    old_wd <- getwd()
+    on.exit(setwd(old_wd), add = TRUE)
+    setwd(project_dir)
+
+    launch_args <- NULL
+    testthat::local_mocked_bindings(
+        .launch_spectreasy_gui = function(...) {
+            launch_args <<- list(...)
+            invisible(NULL)
+        },
+        .package = "spectreasy"
+    )
+
+    expect_null(spectreasy::spectreasy_gui())
+    expect_identical(launch_args$matrix_dir, normalizePath(project_dir))
+    expect_identical(launch_args$samples_dir, file.path(normalizePath(project_dir), "samples"))
+    expect_identical(launch_args$mode, "cockpit")
+    expect_true(launch_args$initial_project_selected)
+})
+
 test_that("adjust_matrix dev-server helper starts npm with API base and restores working directory", {
     tmp_gui_path <- tempfile("spectreasy_gui_dev_server_")
     dir.create(tmp_gui_path, recursive = TRUE, showWarnings = FALSE)
