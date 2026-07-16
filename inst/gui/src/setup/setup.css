@@ -83,7 +83,6 @@
   padding: 58px 0 72px;
 }
 .setup-intro { margin-bottom: 28px; }
-.setup-eyebrow,
 .setup-card-state {
   color: var(--setup-orange-deep);
   font-size: 11px;
@@ -173,9 +172,11 @@
 .setup-code-single code {
   min-width: 0;
   flex: 1;
+  overflow-x: auto;
   color: #f0e8df;
   font: 14.5px/1.5 "SFMono-Regular", Consolas, monospace;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 .setup-copy-button {
   min-width: 118px;

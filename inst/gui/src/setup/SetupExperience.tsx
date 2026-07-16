@@ -63,8 +63,7 @@ export function SetupExperience() {
 
       <main className="setup-main">
         <section className="setup-intro">
-          <span className="setup-eyebrow">Local setup</span>
-          <h1>Start the cockpit</h1>
+          <h1>Setup</h1>
         </section>
 
         <div className="setup-grid">
@@ -72,8 +71,8 @@ export function SetupExperience() {
             <div className="setup-card-head">
               <StepNumber>1</StepNumber>
               <div>
-                <span className="setup-card-state">R + Spectreasy installed</span>
-                <h2>Start the cockpit</h2>
+                <span className="setup-card-state">R + Spectreasy installed?</span>
+                <h2>Start the app</h2>
               </div>
               <TerminalSquare size={20} aria-hidden="true" />
             </div>
@@ -87,7 +86,7 @@ export function SetupExperience() {
             <div className="setup-card-head">
               <StepNumber>2</StepNumber>
               <div>
-                <span className="setup-card-state">R installed</span>
+                <span className="setup-card-state">R installed?</span>
                 <h2>Install Spectreasy</h2>
               </div>
               <PackageOpen size={20} aria-hidden="true" />
@@ -102,7 +101,7 @@ export function SetupExperience() {
             <div className="setup-card-head">
               <StepNumber>3</StepNumber>
               <div>
-                <span className="setup-card-state">No R or R below 4.5</span>
+                <span className="setup-card-state">No R or R below 4.5?</span>
                 <h2>Install R 4.5.0 or newer</h2>
               </div>
               <a className="setup-cran-link" href="https://cran.r-project.org/" target="_blank" rel="noreferrer">
