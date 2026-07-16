@@ -248,7 +248,9 @@
     # Interactive tools
     # -------------------------------------------------------------------------
 
-    spectreasy_gui()
+    spectreasy_gui(
+        port = 8000
+    )
 
     adjust_matrix(
         matrix_dir = NULL,
