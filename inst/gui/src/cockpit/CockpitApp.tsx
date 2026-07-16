@@ -308,6 +308,7 @@ export default function CockpitApp() {
   const [mappingTab, setMappingTab] = useState<
     "mapping" | "gating" | "build" | "qc"
   >("mapping");
+  const [sampleTab, setSampleTab] = useState<"unmixing" | "qc">("unmixing");
   const [job, setJob] = useState<Job>(emptyJob);
   const [panelPayload, setPanelPayload] = useState<PanelPayload | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -614,14 +615,6 @@ export default function CockpitApp() {
       openApplet("matrix-adjustment", section);
       return;
     }
-    if (section === "control-reports") {
-      openApplet("control-qc-report", section);
-      return;
-    }
-    if (section === "sample-reports") {
-      openApplet("sample-qc-report", section);
-      return;
-    }
     setActiveSection(section);
   }
 
@@ -782,7 +775,8 @@ export default function CockpitApp() {
         setActiveSection("controls");
         setMappingTab("qc");
       } else if (action === "sample" && sample.saveReport) {
-        openApplet("sample-qc-report", "sample-reports");
+        setActiveSection("samples");
+        setSampleTab("qc");
       }
     } else {
       setJob({
@@ -863,13 +857,21 @@ export default function CockpitApp() {
   }
 
   function selectArtifact(artifact: Artifact) {
+    if (artifact.group === "Reports" || artifact.group === "QC Metrics") {
+      if (artifact.type === "Sample QC report") {
+        setActiveSection("samples");
+        setSampleTab("qc");
+      } else {
+        setActiveSection("controls");
+        setMappingTab("qc");
+      }
+      return;
+    }
     const sectionMap: Record<string, SectionId> = {
       Controls: "controls",
       Gates: "controls",
       Samples: "samples",
       Matrices: "matrix",
-      Reports: "control-reports",
-      "QC Metrics": "control-reports",
       "AF Profiles": "af",
       "Panel Builder": "panel",
       Logs: "settings",
@@ -883,8 +885,6 @@ export default function CockpitApp() {
       ({
         controls: "Controls",
         samples: "Samples",
-        "control-reports": "Controls QC report",
-        "sample-reports": "Samples QC report",
         matrix: "Matrix review",
         panel: "Panel builder",
         af: "AF library",
@@ -938,6 +938,8 @@ export default function CockpitApp() {
               activeSection={activeSection}
               mappingTab={mappingTab}
               setMappingTab={setMappingTab}
+              sampleTab={sampleTab}
+              setSampleTab={setSampleTab}
               onUpdateMapping={updateMapping}
               onRun={runAction}
               onRefresh={() => void refreshProject()}

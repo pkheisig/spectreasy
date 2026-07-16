@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, CircleDot, FileCode2, Folder, Gauge, Layers3, PanelTop, Search, Sparkles, Table2, TerminalSquare } from 'lucide-react'
+import { ChevronDown, ChevronRight, CircleDot, Folder, Gauge, Layers3, PanelTop, Search, Table2, TerminalSquare } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { Artifact, ProjectState, SectionId } from '../types'
@@ -17,8 +17,6 @@ const groupMeta: Array<{ name: string; icon: LucideIcon; section?: SectionId }> 
   { name: 'Samples', icon: Layers3, section: 'samples' },
   { name: 'Gates', icon: Gauge, section: 'controls' },
   { name: 'Matrices', icon: Table2, section: 'matrix' },
-  { name: 'Reports', icon: FileCode2, section: 'control-reports' },
-  { name: 'QC Metrics', icon: Sparkles, section: 'control-reports' },
   { name: 'AF Profiles', icon: CircleDot, section: 'af' },
   { name: 'Panel Builder', icon: PanelTop, section: 'panel' },
   { name: 'Logs', icon: TerminalSquare, section: 'settings' },

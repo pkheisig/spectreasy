@@ -1,8 +1,6 @@
 export type SectionId =
   | 'controls'
   | 'samples'
-  | 'control-reports'
-  | 'sample-reports'
   | 'matrix'
   | 'panel'
   | 'af'

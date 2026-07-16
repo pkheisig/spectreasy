@@ -1,6 +1,5 @@
 import {
   ChevronRight,
-  FileOutput,
   FolderCog,
   Wrench,
 } from 'lucide-react'
@@ -32,15 +31,6 @@ const groups: NavigationGroup[] = [
     ],
   },
   {
-    id: 'outputs',
-    title: 'Results',
-    icon: FileOutput,
-    items: [
-      { id: 'control-reports', title: 'Controls QC report', detail: 'Review control QC output' },
-      { id: 'sample-reports', title: 'Samples QC report', detail: 'Review sample QC output' },
-    ],
-  },
-  {
     id: 'tools',
     title: 'Other tools',
     icon: Wrench,
@@ -60,8 +50,6 @@ function sectionCount(section: SectionId, project: ProjectState) {
   const counts: Partial<Record<SectionId, number>> = {
     controls: project.scan.controls,
     samples: project.scan.samples,
-    'control-reports': project.artifacts.filter((artifact) => artifact.type === 'Control QC report' || artifact.type === 'QC report').length,
-    'sample-reports': project.artifacts.filter((artifact) => artifact.type === 'Sample QC report').length,
     matrix: project.scan.matrices,
     af: project.artifacts.filter((artifact) => artifact.group === 'AF Profiles').length,
   }

@@ -42,7 +42,7 @@ import { AppearanceSettings } from "../components/AppearanceSettings";
 import { GuiSelect } from "../components/GuiSelect";
 import { InlineProjectFiles } from "../components/ProjectFileList";
 import { JobStrip } from "../components/JobStrip";
-import { ControlReportPanel } from "../components/ControlReportPanel";
+import { QcReportPanel } from "../components/ControlReportPanel";
 import { ResetSettingsButton, SettingsCardSummary } from "../components/SettingsCardSummary";
 import { defaultWorkflowSettings } from "../types";
 
@@ -53,6 +53,8 @@ export type WorkflowWorkspaceProps = {
   activeSection: SectionId;
   mappingTab: "mapping" | "gating" | "build" | "qc";
   setMappingTab: (tab: "mapping" | "gating" | "build" | "qc") => void;
+  sampleTab: "unmixing" | "qc";
+  setSampleTab: (tab: "unmixing" | "qc") => void;
   onUpdateMapping: (id: string, patch: Partial<MappingRow>) => void;
   onRun: (
     action: "control" | "sample" | "af",
@@ -137,6 +139,7 @@ function MappingWorkspace({
     ),
     [project.mapping],
   );
+  const controlReportCount = project.artifacts.filter((artifact) => artifact.type === "Control QC report").length;
   const toggleRow = (id: string) =>
     setSelectedRows((rows) =>
       rows.includes(id) ? rows.filter((row) => row !== id) : [...rows, id],
@@ -176,9 +179,8 @@ function MappingWorkspace({
         <button
           className={mappingTab === "qc" ? "is-active" : ""}
           onClick={() => setMappingTab("qc")}
-          disabled={project.mapping.length === 0}
         >
-          04 Quality Control <StatusPill state={project.scan.reports > 0 ? "complete" : "idle"} compact />
+          04 Quality Control <StatusPill state={controlReportCount > 0 ? "complete" : "idle"} compact />
         </button>
       </div>
       {mappingTab === "mapping" && project.mapping.length === 0 && (
@@ -376,15 +378,23 @@ function MappingWorkspace({
         />
       )}
       {mappingTab === "build" && (
-        <BuildReferencePanel
-          settings={settings.control}
-          onSettingsChange={(patch) => onSettingsChange("control", patch)}
-          onRun={onRun}
-        />
+        <>
+          <BuildReferencePanel
+            settings={settings.control}
+            onSettingsChange={(patch) => onSettingsChange("control", patch)}
+            onRun={onRun}
+          />
+          <InlineProjectFiles
+            kind="controls"
+            refreshKey={`${project.projectPath}:${project.scan.controls}`}
+            onChanged={onRefresh}
+          />
+        </>
       )}
       {mappingTab === "qc" && (
-        <ControlReportPanel
+        <QcReportPanel
           project={project}
+          kind="control"
           onView={onViewReports}
         />
       )}
@@ -602,6 +612,28 @@ function ConfigurableSamplesWorkspace({
           </summary>
           <div className="settings-form-grid">
             <label>
+              Samples folder
+              <input
+                value={settings.sampleDir}
+                onChange={(event) => onSettingsChange({ sampleDir: event.target.value })}
+              />
+            </label>
+            <label>
+              Unmixing matrix
+              <input
+                value={settings.matrixFile}
+                onChange={(event) => onSettingsChange({ matrixFile: event.target.value })}
+              />
+            </label>
+            <label>
+              Detector noise file
+              <input
+                value={settings.detectorNoiseFile}
+                onChange={(event) => onSettingsChange({ detectorNoiseFile: event.target.value })}
+                placeholder="Optional"
+              />
+            </label>
+            <label>
               Unmixing method
               <GuiSelect
                 value={settings.method}
@@ -618,6 +650,15 @@ function ConfigurableSamplesWorkspace({
               </GuiSelect>
             </label>
             <label>
+              RWLS max iterations
+              <input
+                type="number"
+                min="1"
+                value={settings.rwlsMaxIter}
+                onChange={(event) => onSettingsChange({ rwlsMaxIter: Number(event.target.value) })}
+              />
+            </label>
+            <label>
               Threads
               <input
                 type="number"
@@ -626,6 +667,45 @@ function ConfigurableSamplesWorkspace({
                 onChange={(event) =>
                   onSettingsChange({ nThreads: Number(event.target.value) })
                 }
+              />
+            </label>
+            <label>
+              Variant min abundance
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={settings.spectralVariantMinAbundance}
+                onChange={(event) => onSettingsChange({ spectralVariantMinAbundance: Number(event.target.value) })}
+              />
+            </label>
+            <label>
+              Variant positive fraction
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                value={settings.spectralVariantPositiveFraction}
+                onChange={(event) => onSettingsChange({ spectralVariantPositiveFraction: Number(event.target.value) })}
+              />
+            </label>
+            <label>
+              Variant min improvement
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={settings.spectralVariantMinImprovement}
+                onChange={(event) => onSettingsChange({ spectralVariantMinImprovement: Number(event.target.value) })}
+              />
+            </label>
+            <label>
+              Spectral variant library
+              <input
+                value={settings.spectralVariantLibraryFile}
+                onChange={(event) => onSettingsChange({ spectralVariantLibraryFile: event.target.value })}
+                placeholder="Optional .rds file"
               />
             </label>
             <label>
@@ -701,17 +781,6 @@ function ConfigurableSamplesWorkspace({
             <label className="toggle-label">
               <input
                 type="checkbox"
-                checked={settings.estimateAf}
-                onChange={(event) =>
-                  onSettingsChange({ estimateAf: event.target.checked })
-                }
-              />
-              <span className="toggle-ui" />
-              <span>Estimate AF from samples</span>
-            </label>
-            <label className="toggle-label">
-              <input
-                type="checkbox"
                 checked={settings.writeFcs}
                 onChange={(event) =>
                   onSettingsChange({ writeFcs: event.target.checked })
@@ -730,6 +799,17 @@ function ConfigurableSamplesWorkspace({
               />
               <span className="toggle-ui" />
               <span>Generate report</span>
+            </label>
+            <label className="toggle-label">
+              <input
+                type="checkbox"
+                checked={settings.estimateAf}
+                onChange={(event) =>
+                  onSettingsChange({ estimateAf: event.target.checked })
+                }
+              />
+              <span className="toggle-ui" />
+              <span>Estimate AF from samples</span>
             </label>
             <label>
               Report format
@@ -756,6 +836,17 @@ function ConfigurableSamplesWorkspace({
               <span className="toggle-ui" />
               <span>Save standalone QC plots</span>
             </label>
+            <label>
+              Return type
+              <GuiSelect
+                value={settings.returnType}
+                onChange={(event) => onSettingsChange({ returnType: event.target.value as SampleSettings["returnType"] })}
+              >
+                <option value="list">List</option>
+                <option value="flowSet">flowSet</option>
+                <option value="SingleCellExperiment">SingleCellExperiment</option>
+              </GuiSelect>
+            </label>
           </div>
         </details>
         <div className="run-footer run-footer-actions-only">
@@ -773,6 +864,43 @@ function ConfigurableSamplesWorkspace({
         refreshKey={`${project.projectPath}:${project.scan.samples}`}
         onChanged={onRefresh}
       />
+    </>
+  );
+}
+
+function SamplesWorkspace(props: WorkflowWorkspaceProps) {
+  const sampleReports = props.project.artifacts.filter((artifact) => artifact.type === "Sample QC report");
+  return (
+    <>
+      <div className="subnav">
+        <button
+          className={props.sampleTab === "unmixing" ? "is-active" : ""}
+          onClick={() => props.setSampleTab("unmixing")}
+        >
+          01 Unmixing <StatusPill state={props.project.scan.samples > 0 ? "ready" : "idle"} compact />
+        </button>
+        <button
+          className={props.sampleTab === "qc" ? "is-active" : ""}
+          onClick={() => props.setSampleTab("qc")}
+        >
+          02 Quality Control <StatusPill state={sampleReports.length > 0 ? "complete" : "idle"} compact />
+        </button>
+      </div>
+      {props.sampleTab === "unmixing" ? (
+        <ConfigurableSamplesWorkspace
+          project={props.project}
+          settings={props.settings.sample}
+          onSettingsChange={(patch) => props.onSettingsChange("sample", patch)}
+          onRun={props.onRun}
+          onRefresh={props.onRefresh}
+        />
+      ) : (
+        <QcReportPanel
+          project={props.project}
+          kind="sample"
+          onView={(reportPath) => props.onOpenApplet("sample-qc-report", reportPath)}
+        />
+      )}
     </>
   );
 }
@@ -1950,15 +2078,7 @@ export function WorkflowWorkspace(
     <div className="workspace-content">
       <JobStrip job={job} />
       {activeSection === "controls" && <ControlsWorkspace {...props} />}
-      {activeSection === "samples" && (
-        <ConfigurableSamplesWorkspace
-          project={props.project}
-          settings={props.settings.sample}
-          onSettingsChange={(patch) => props.onSettingsChange("sample", patch)}
-          onRun={props.onRun}
-          onRefresh={props.onRefresh}
-        />
-      )}
+      {activeSection === "samples" && <SamplesWorkspace {...props} />}
       {activeSection === "af" && (
         <ConfigurableAfWorkspace
           settings={props.settings.af}
