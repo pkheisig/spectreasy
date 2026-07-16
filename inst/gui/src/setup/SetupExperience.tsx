@@ -119,7 +119,6 @@ export function SetupExperience() {
 
       <footer className="setup-footer">
         <span>Spectreasy 1.0</span>
-        <span>No data is uploaded. Everything stays on your computer.</span>
         <a href="https://github.com/pkheisig/spectreasy" target="_blank" rel="noreferrer">
           Source code <ExternalLink size={12} />
         </a>

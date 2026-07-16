@@ -136,6 +136,7 @@ export function WorkflowRail({ activeSection, project, showCounts, width, onWidt
           )
         })}
       </div>
+      <p className="rail-privacy">No data is uploaded. Everything stays on your computer.</p>
       <div className="workflow-rail-resizer" role="separator" aria-label="Resize navigation" aria-orientation="vertical" onPointerDown={beginResize} />
     </nav>
   )

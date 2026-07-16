@@ -261,8 +261,7 @@
   background: #e3ded7;
   font-size: 12px;
 }
-.setup-footer span:nth-child(2) { margin-left: auto; }
-.setup-footer a { display: inline-flex; align-items: center; gap: 5px; color: #a05225; text-decoration: none; }
+.setup-footer a { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: #a05225; text-decoration: none; }
 
 @keyframes setup-spin { to { transform: rotate(360deg); } }
 
@@ -271,7 +270,7 @@
   .setup-grid { grid-template-columns: minmax(0, 1fr); }
   .setup-r-panel { grid-column: auto; }
   .setup-footer { align-items: flex-start; flex-direction: column; gap: 7px; padding-top: 16px; padding-bottom: 16px; }
-  .setup-footer span:nth-child(2) { margin-left: 0; }
+  .setup-footer a { margin-left: 0; }
 }
 
 @media (max-width: 540px) {
