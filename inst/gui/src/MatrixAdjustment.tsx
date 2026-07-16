@@ -395,7 +395,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const runUnmix = async (currentM: MatrixRow[], currentRaw: DataRow[], filename: string | boolean = currentFile) => {
+    async function runUnmix(currentM: MatrixRow[], currentRaw: DataRow[], filename: string | boolean = currentFile) {
         if (!Array.isArray(currentM) || currentM.length === 0 || !Array.isArray(currentRaw) || currentRaw.length === 0) {
             setUnmixedData([]);
             return false;
@@ -429,7 +429,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             setErrorMessage(error instanceof Error ? error.message : 'Sample unmixing failed.');
         }
         return false;
-    };
+    }
 
     const handleUnmixingMethodChange = (method: UnmixingMethod) => {
         unmixingMethodRef.current = method;
@@ -489,7 +489,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         }
     };
 
-    const applyConfig = (cfg: unknown) => {
+    function applyConfig(cfg: unknown) {
         if (!cfg || typeof cfg !== 'object') return;
         const viewConfig = cfg as ViewConfig;
         if (typeof viewConfig.residualCellSize === 'number') setResidualCellSize(viewConfig.residualCellSize);
@@ -499,7 +499,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             setDragSensitivity(Math.max(0, Math.min(0.3, viewConfig.dragSensitivity)));
         }
         if (!embedded && (viewConfig.theme === 'dark' || viewConfig.theme === 'light')) setTheme(viewConfig.theme);
-    };
+    }
 
     const buildConfig = () => ({
         residualCellSize,
@@ -554,11 +554,12 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         const y = chartHeight - Number(row[det]) * (chartHeight - 32) - 24;
         return `${idx === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
+    const renderedTheme = embedded && cockpitTheme ? cockpitTheme : theme;
     const residualRenderKey = [
         residualCellSize,
         pointSize,
         pointOpacity,
-        theme === 'dark' ? '#ff7a1a' : '#8052c7',
+        renderedTheme === 'dark' ? '#ff7a1a' : '#8052c7',
         dragSensitivity,
         unmixedData.length
     ].join(':');
@@ -568,7 +569,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         : 'Load raw detector FCS to adjust crosstalk';
 
     // iOS 26 Glassy Theme
-    const glassyTheme = theme === 'dark' ? {
+    const glassyTheme = renderedTheme === 'dark' ? {
         bgGradient: '#121816',
         // Glass panel styles
         glassBg: '#1e2522',
@@ -612,10 +613,6 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         localStorage.setItem('spectreasy-theme', theme);
     }, [embedded, g.bgGradient, theme]);
 
-    useEffect(() => {
-        if (embedded && cockpitTheme) setTheme(cockpitTheme);
-    }, [cockpitTheme, embedded]);
-
     const glassCard = {
         background: g.glassBg,
         border: `1px solid ${g.glassBorder}`,
@@ -638,7 +635,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: g.bgGradient,
-            backgroundImage: theme === 'dark'
+            backgroundImage: renderedTheme === 'dark'
                 ? 'linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px), linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px)'
                 : 'linear-gradient(90deg, rgba(38,63,115,.035) 1px, transparent 1px), linear-gradient(rgba(38,63,115,.035) 1px, transparent 1px)',
             backgroundSize: '22px 22px',
@@ -661,7 +658,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             display: 'flex',
             flexDirection: 'column',
             backgroundColor: g.bgGradient,
-            backgroundImage: theme === 'dark'
+            backgroundImage: renderedTheme === 'dark'
                 ? 'linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px), linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px)'
                 : 'linear-gradient(90deg, rgba(38,63,115,.035) 1px, transparent 1px), linear-gradient(rgba(38,63,115,.035) 1px, transparent 1px)',
             backgroundSize: '22px 22px',
@@ -696,29 +693,24 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: 8, flex: '1 1 560px', justifyContent: 'flex-end' }}>
-                    {[
-                        {
-                            label: 'Matrix', value: currentFile, width: 230,
-                            options: matrices, empty: '(no matrices found)',
-                            change: (value: string) => void fetchData(value, currentSample)
-                        },
-                        {
-                            label: 'Sample', value: currentSample, width: 210,
-                            options: sampleFiles, empty: '(no samples found)',
-                            change: (value: string) => void handleSampleChange(value)
-                        }
-                    ].map(control => (
-                        <StyledDropdown
-                            key={control.label}
-                            label={control.label}
-                            value={control.value}
-                            options={control.options}
-                            emptyLabel={control.empty}
-                            width={control.width}
-                            theme={g}
-                            onChange={control.change}
-                        />
-                    ))}
+                    <StyledDropdown
+                        label="Matrix"
+                        value={currentFile}
+                        options={matrices}
+                        emptyLabel="(no matrices found)"
+                        width={230}
+                        theme={g}
+                        onChange={value => void fetchData(value, currentSample)}
+                    />
+                    <StyledDropdown
+                        label="Sample"
+                        value={currentSample}
+                        options={sampleFiles}
+                        emptyLabel="(no samples found)"
+                        width={210}
+                        theme={g}
+                        onChange={value => void handleSampleChange(value)}
+                    />
                     <StyledDropdown
                         label="Method"
                         value={unmixingMethod}
@@ -922,7 +914,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                                                             yKey={rowName}
                                                             data={unmixedData}
                                                             size={residualCellSize - 10}
-                                                            pointColor={theme === 'dark' ? '#ff7a1a' : '#8052c7'}
+                                                            pointColor={renderedTheme === 'dark' ? '#ff7a1a' : '#8052c7'}
                                                             pointOpacity={pointOpacity}
                                                             pointSize={pointSize}
                                                             sensitivity={dragSensitivity}

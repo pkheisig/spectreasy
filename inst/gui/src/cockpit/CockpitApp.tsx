@@ -907,6 +907,7 @@ export default function CockpitApp({ onBackendOffline }: CockpitAppProps) {
         />
       )}
       {terminalOpen && <TerminalPanel
+        key={project.projectPath}
         connected={backend.connected}
         projectPath={project.projectPath}
         widthPct={settings.appearance.terminalWidthPct}

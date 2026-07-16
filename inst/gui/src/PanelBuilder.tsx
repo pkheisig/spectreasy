@@ -599,10 +599,6 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
     }, [embedded, theme]);
 
     useEffect(() => {
-        if (embedded && cockpitTheme) setTheme(cockpitTheme);
-    }, [cockpitTheme, embedded]);
-
-    useEffect(() => {
         localStorage.setItem('spectreasy_slots', JSON.stringify(slots));
     }, [slots]);
 
@@ -1037,7 +1033,7 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
     const signatureColumnWidth = signaturePlotWidth / Math.max(1, payload.detectors.length);
 
     return (
-        <div className={`panel-builder ${theme}`}>
+        <div className={`panel-builder ${embedded && cockpitTheme ? cockpitTheme : theme}`}>
             <header className="panel-topbar">
                 <div>
                     <h1>Spectral Panel Builder</h1>
@@ -1385,7 +1381,7 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
                                                         {selected.map((colName, colIndex) => {
                                                             if (colIndex > rowIndex) return null;
                                                             const value = rowName === colName ? 1 : toSimilarityValue(similarityByName.get(rowName)?.[colName]);
-                                                            const cellStyle = getSimilarityStyle(value, rowName === colName, theme);
+                                                            const cellStyle = getSimilarityStyle(value, rowName === colName, embedded && cockpitTheme ? cockpitTheme : theme);
                                                             return (
                                                                 <td key={colName} style={cellStyle}>
                                                                     {value.toFixed(value === 1 ? 0 : 2)}
@@ -1415,7 +1411,7 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
                                     const row = spectraByName.get(fluor);
                                     if (!row) return null;
                                     
-                                    const isDark = theme === 'dark';
+                                    const isDark = (embedded && cockpitTheme ? cockpitTheme : theme) === 'dark';
                                     const plotBg = isDark ? '#0b1110' : '#f8f7f3';
                                     const plotStroke = isDark ? '#52615b' : '#c7c3ba';
                                     const textHeading = isDark ? '#f0f3f2' : '#17201d';

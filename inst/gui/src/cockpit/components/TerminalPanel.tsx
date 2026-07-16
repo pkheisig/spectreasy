@@ -54,10 +54,6 @@ export function TerminalPanel({ connected, projectPath, widthPct, heightPct, onC
   const historyDraftRef = useRef('')
 
   useEffect(() => {
-    setCwd(projectPath)
-  }, [projectPath])
-
-  useEffect(() => {
     if (connected && !wasConnectedRef.current) {
       setEntries((current) => {
         const onlyOfflineNotice = current.length === 1 && current[0].output.startsWith('The GitHub Pages cockpit')

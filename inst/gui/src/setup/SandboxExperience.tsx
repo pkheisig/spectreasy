@@ -300,9 +300,12 @@ export default function SandboxExperience() {
   }, [])
 
   useEffect(() => {
-    void refresh()
+    const initial = window.setTimeout(() => void refresh(), 0)
     const interval = window.setInterval(() => void refresh(), 1200)
-    return () => window.clearInterval(interval)
+    return () => {
+      window.clearTimeout(initial)
+      window.clearInterval(interval)
+    }
   }, [refresh])
 
   const runAction = useCallback(async (action: string) => {
