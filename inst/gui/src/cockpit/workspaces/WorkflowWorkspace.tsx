@@ -11,7 +11,6 @@ import {
   Play,
   Plus,
   RefreshCcw,
-  Save,
   Settings2,
   WandSparkles,
   X,
@@ -204,7 +203,7 @@ function MappingWorkspace({
             </div>
             <div className="toolbar-actions">
               <button className="button button-primary" onClick={onSaveMapping}>
-                <Save size={14} /> Save mapping
+                <CircleCheckBig size={14} /> Confirm
               </button>
             </div>
           </div>

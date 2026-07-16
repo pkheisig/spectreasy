@@ -2186,6 +2186,7 @@ gui_restore_working_directory <- function(path) {
 
 gui_workflow_run <- function(body, action, expr) {
     root <- gui_workflow_root(body)
+    gui_set_project_context(root)
     old_wd <- getwd()
     on.exit(gui_restore_working_directory(old_wd), add = TRUE)
     setwd(root)
@@ -2596,8 +2597,17 @@ gui_project_report_files <- function(root, files = NULL) {
     relative_files <- gui_project_relative_path(files, root)
     files[
         grepl("\\.(html?|pdf)$", relative_files, ignore.case = TRUE) &
-            grepl("(^|/)(reports|spectreasy_outputs)/", relative_files, ignore.case = TRUE, perl = TRUE)
+            grepl("(^|/)(reports|spectreasy_outputs(?:_[^/]+)?)/", relative_files, ignore.case = TRUE, perl = TRUE)
     ]
+}
+
+gui_project_report_type <- function(relative_path) {
+    relative_path <- gsub("\\\\", "/", as.character(relative_path)[1])
+    if (grepl("panel", relative_path, ignore.case = TRUE)) return("Panel overview")
+    if (grepl("(^|/)(unmix_samples|qc_samples)(/|$)|qc_samples_report", relative_path, ignore.case = TRUE, perl = TRUE)) {
+        return("Sample QC")
+    }
+    "Control QC"
 }
 
 gui_resolve_project_report <- function(path, root = get_matrix_dir()) {
@@ -2678,8 +2688,9 @@ function(project_path = "") {
     if (length(reports) == 0L) return(list(reports = data.frame()))
     relative <- function(path) gui_project_relative_path(path, root)
     rows <- lapply(reports, function(report) {
-        is_sample <- grepl("sample|qc_samples", report, ignore.case = TRUE)
-        is_panel <- grepl("panel", report, ignore.case = TRUE)
+        relative_report <- relative(report)
+        report_type <- gui_project_report_type(relative_report)
+        is_sample <- identical(report_type, "Sample QC")
         source_pattern <- if (is_sample) {
             "(^|/)(samples?/.*\\.fcs$|.*reference_matrix.*\\.csv$|.*detector_noise.*\\.csv$|.*spectral_variant.*\\.rds$)"
         } else {
@@ -2689,8 +2700,8 @@ function(project_path = "") {
         source_files <- setdiff(source_files, report)
         stale <- length(source_files) > 0L && any(file.info(source_files)$mtime > file.info(report)$mtime)
         data.frame(
-            path = relative(report),
-            report_type = if (is_panel) "Panel overview" else if (is_sample) "Sample QC" else "Control QC",
+            path = relative_report,
+            report_type = report_type,
             format = if (grepl("\\.pdf$", report, ignore.case = TRUE)) "PDF" else "HTML",
             created = format(file.info(report)$mtime, "%Y-%m-%dT%H:%M:%S%z"),
             created_epoch = as.numeric(file.info(report)$mtime),
@@ -2704,13 +2715,15 @@ function(project_path = "") {
 #* Stream a project artifact through the local R backend
 #* @get /project/file
 #* @param path Relative path inside the active project
+#* @param project_path Active cockpit project directory
 #* @param token Active cockpit session token
-function(path = "", token = "", req, res) {
+function(path = "", project_path = "", token = "", req, res) {
     if (!gui_api_token_value_allowed(token) && !gui_api_token_allowed(req)) {
         res$status <- 403
         return(list(error = "This project artifact belongs to a different or inactive Spectreasy session."))
     }
-    root <- normalizePath(get_matrix_dir(), mustWork = FALSE)
+    root <- if (is.null(project_path) || !nzchar(trimws(as.character(project_path)[1]))) get_matrix_dir() else as.character(project_path)[1]
+    root <- normalizePath(root, mustWork = FALSE)
     relative <- gsub("\\\\", "/", trimws(as.character(path)[1]))
     parts <- strsplit(relative, "/", fixed = TRUE)[[1]]
     if (!nzchar(relative) || any(parts %in% c("", ".", ".."))) {
@@ -2747,7 +2760,8 @@ function(path = "", token = "", req, res) {
 function(req) {
     body <- gui_workflow_body(req)
     tryCatch({
-        report_file <- gui_resolve_project_report(gui_workflow_value(body, "path", ""))
+        root <- gui_workflow_root(body)
+        report_file <- gui_resolve_project_report(gui_workflow_value(body, "path", ""), root = root)
         pdf_file <- gui_export_html_report_pdf(report_file)
         on.exit(unlink(pdf_file, force = TRUE), add = TRUE)
         list(

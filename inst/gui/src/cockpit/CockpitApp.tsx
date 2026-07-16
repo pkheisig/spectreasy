@@ -623,16 +623,22 @@ export default function CockpitApp() {
     setActiveSection(section);
   }
 
-  async function exitApplet() {
+  async function exitApplet(reason: "exit" | "confirmed" = "exit") {
     const closingApplet = activeApplet;
     setActiveApplet(null);
     setActiveSection(sectionBeforeApplet);
     const snapshot = await refreshProject();
-    if (closingApplet === "control-gating" && snapshot?.project.scan.gates) {
-      setSettings((current) => ({
-        ...current,
-        control: { ...current.control, manualGateFile: "ssc_gate_config.csv" },
-      }));
+    if (closingApplet === "control-gating") {
+      if (reason === "confirmed" || snapshot?.project.scan.gates) {
+        setSettings((current) => ({
+          ...current,
+          control: { ...current.control, manualGateFile: "ssc_gate_config.csv" },
+        }));
+      }
+      if (reason === "confirmed") {
+        setActiveSection("controls");
+        setMappingTab("build");
+      }
     }
   }
 
@@ -781,12 +787,18 @@ export default function CockpitApp() {
         label,
         state: "complete",
         progress: 100,
-        subtask: "Completed in the local R session",
+        subtask: "",
         startedAt: "now",
         finishedAt: "now",
         output: response.outputCount ? `${response.outputCount} output${response.outputCount === 1 ? "" : "s"}` : undefined,
       });
       await refreshProject();
+      if (action === "control") {
+        setActiveSection("controls");
+        setMappingTab("qc");
+      } else if (action === "sample" && sample.saveReport) {
+        openApplet("sample-qc-report", "sample-reports");
+      }
     } else {
       setJob({
         label,
@@ -820,10 +832,13 @@ export default function CockpitApp() {
     }
   }
 
-  async function saveMapping() {
+  async function confirmMapping() {
     const mapping = await persistControlMapping(project.mapping);
-    if (mapping.success)
+    if (mapping.success) {
       setProject((current) => ({ ...current, mappingDirty: false }));
+      setMappingTab("gating");
+      openApplet("control-gating", "controls");
+    }
     setToast(mapping.message);
   }
 
@@ -945,7 +960,7 @@ export default function CockpitApp() {
               onSelectArtifact={selectArtifact}
               onLoadPanel={() => void loadPanel()}
               panelPayload={panelPayload}
-              onSave={() => void saveMapping()}
+              onSave={() => void confirmMapping()}
               onCreateMapping={() => void createMapping()}
               onSectionChange={navigateToSection}
               settings={settings}
@@ -968,12 +983,13 @@ export default function CockpitApp() {
         <CockpitApplet
           applet="control-gating"
           theme={settings.appearance.theme}
+          projectPath={settings.projectPath}
           active={activeApplet === "control-gating"}
           onExit={exitApplet}
         />
       )}
       {activeApplet && activeApplet !== "control-gating" && (
-        <CockpitApplet applet={activeApplet} theme={settings.appearance.theme} onExit={exitApplet} />
+        <CockpitApplet applet={activeApplet} theme={settings.appearance.theme} projectPath={settings.projectPath} onExit={exitApplet} />
       )}
       {filesOpen && (
         <ProjectFilesDialog

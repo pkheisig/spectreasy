@@ -170,6 +170,37 @@ test_that("cockpit resolves only in-project HTML reports", {
     expect_error(api_env$gui_resolve_project_report("spectreasy_outputs/unmix_controls/report.pdf", root), "not found")
 })
 
+test_that("cockpit discovers and classifies control and sample reports from relative project paths", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+    root <- tempfile("sample_named_cockpit_project_")
+    control <- file.path(root, "spectreasy_outputs", "unmix_controls", "qc_controls", "qc_controls_report.html")
+    sample <- file.path(root, "spectreasy_outputs", "unmix_samples", "qc_samples", "qc_samples_report.html")
+    custom <- file.path(root, "spectreasy_outputs_065", "unmix_samples", "qc_samples", "qc_samples_report.html")
+    dir.create(dirname(control), recursive = TRUE)
+    dir.create(dirname(sample), recursive = TRUE)
+    dir.create(dirname(custom), recursive = TRUE)
+    writeLines("<!doctype html><title>Controls</title>", control)
+    writeLines("<!doctype html><title>Samples</title>", sample)
+    writeLines("<!doctype html><title>Custom output root</title>", custom)
+
+    reports <- api_env$gui_project_report_files(root)
+    relative <- vapply(reports, api_env$gui_project_relative_path, character(1), root = root)
+    types <- vapply(relative, api_env$gui_project_report_type, character(1))
+
+    expect_setequal(relative, c(
+        "spectreasy_outputs/unmix_controls/qc_controls/qc_controls_report.html",
+        "spectreasy_outputs/unmix_samples/qc_samples/qc_samples_report.html",
+        "spectreasy_outputs_065/unmix_samples/qc_samples/qc_samples_report.html"
+    ))
+    expect_identical(unname(types[grepl("unmix_controls", relative)]), c("Control QC"))
+    expect_identical(unname(types[grepl("unmix_samples", relative)]), c("Sample QC", "Sample QC"))
+})
+
 test_that("cockpit exports existing HTML through Chromium without rerunning QC", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")

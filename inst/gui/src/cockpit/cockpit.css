@@ -481,8 +481,9 @@ html[data-theme="dark"] .appearance-field-grid label > strong { color: #f0f3f2; 
   font-size: 17px;
 }
 
-/* Embedded gating restores the standalone component's own geometry after the
-   cockpit's generic sidebar and icon classes enter the cascade. */
+/* Embedded gating uses the standalone app's exact sidebar and action styles.
+   The higher specificity only shields them from the cockpit's generic class
+   names; values below mirror GatingGui.css. */
 .cockpit-applet .app-shell > .gating-sidebar {
   flex: 0 0 var(--gating-sidebar-width, 192px);
   width: var(--gating-sidebar-width, 192px);
@@ -492,6 +493,8 @@ html[data-theme="dark"] .appearance-field-grid label > strong { color: #f0f3f2; 
   border-right: 1px solid var(--line);
   background: var(--panel);
   overflow: auto;
+  min-width: 0;
+  transition: flex-basis 180ms ease, width 180ms ease, padding 180ms ease;
 }
 .cockpit-applet .app-shell > .gating-sidebar.is-collapsed {
   flex-basis: 34px;
@@ -500,45 +503,59 @@ html[data-theme="dark"] .appearance-field-grid label > strong { color: #f0f3f2; 
   overflow: hidden;
 }
 .cockpit-applet .gating-sidebar-toggle {
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-  min-height: 28px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin: 0 0 2px auto;
   padding: 0;
-}
-.cockpit-applet .gating-sidebar-toggle > svg {
-  display: block;
-  width: 18px;
-  height: 18px;
+  border-radius: 5px;
+  color: var(--muted);
 }
 .cockpit-applet .gating-topbar .icon-button {
-  width: 42px;
-  min-width: 42px;
-  height: 42px;
-  min-height: 42px;
+  width: 36px;
+  height: 34px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
 }
-.cockpit-applet .gating-topbar .icon-button > svg {
-  width: 21px;
-  height: 21px;
+.cockpit-applet .gating-topbar .icon-button:hover {
+  color: var(--ink);
+  border-color: #a8b0aa;
+  background: var(--panel);
+}
+.cockpit-applet .gating-topbar .gating-help-button {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.cockpit-applet .gating-topbar .gating-help-button:hover {
+  border-color: transparent;
+  background: var(--wash);
+  color: var(--ink);
+  box-shadow: none;
 }
 .cockpit-applet .app-shell .confirm {
-  min-height: 42px;
-  padding: 0 17px;
-  color: #fff;
-  border-color: #da6a25;
-  background: #ef8a4b;
-  box-shadow: 0 4px 12px rgba(218, 106, 37, .2);
-}
-.cockpit-applet .app-shell .confirm:hover:not(:disabled) {
-  border-color: #c75e20;
-  background: #dc722f;
+  background: var(--accent-2);
+  border-color: #b53f2b;
+  color: white;
 }
 .cockpit-applet .app-shell .confirm:disabled {
-  color: #fffdfa;
-  border-color: #a8a49b;
   background: #b8b5ad;
-  box-shadow: none;
+  border-color: #a8a49b;
+  color: #fffdfa;
+  opacity: .85;
 }
 .cockpit-applet .plot-svg .axis-tick-label[text-anchor="middle"] {
   transform: translateY(-3px);

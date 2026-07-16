@@ -11,6 +11,7 @@ import type { Report } from '../types'
 type QcReportAppletProps = {
   kind: 'control' | 'sample'
   theme: 'light' | 'dark'
+  projectPath: string
 }
 
 function reportTime(report: Report): number {
@@ -26,7 +27,7 @@ function newestReport(reports: Report[], kind: 'control' | 'sample') {
     .reduce<Report | null>((newest, report) => !newest || reportTime(report) > reportTime(newest) ? report : newest, null)
 }
 
-export default function QcReportApplet({ kind, theme }: QcReportAppletProps) {
+export default function QcReportApplet({ kind, theme, projectPath }: QcReportAppletProps) {
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -35,7 +36,7 @@ export default function QcReportApplet({ kind, theme }: QcReportAppletProps) {
 
   useEffect(() => {
     let active = true
-    void loadProjectReports().then((nextReports) => {
+    void loadProjectReports(projectPath).then((nextReports) => {
       if (!active) return
       setReports(nextReports)
       setLoading(false)
@@ -43,19 +44,19 @@ export default function QcReportApplet({ kind, theme }: QcReportAppletProps) {
     return () => {
       active = false
     }
-  }, [kind])
+  }, [kind, projectPath])
 
   const download = async () => {
     if (!report?.path) return
     setMessage('')
-    if (!await downloadProjectReport(report.path)) setMessage(`Could not download the ${report.format} report.`)
+    if (!await downloadProjectReport(report.path, projectPath)) setMessage(`Could not download the ${report.format} report.`)
   }
 
   const exportPdf = async () => {
     if (!report?.path) return
     setMessage('')
     setExporting(true)
-    const success = await exportProjectReportPdf(report.path)
+    const success = await exportProjectReportPdf(report.path, projectPath)
     setExporting(false)
     if (!success) setMessage('Could not export the existing HTML report as PDF.')
   }
@@ -80,7 +81,7 @@ export default function QcReportApplet({ kind, theme }: QcReportAppletProps) {
       ) : report?.path ? (
         <iframe
           className="qc-report-frame"
-          src={projectFileUrl(report.path)}
+          src={projectFileUrl(report.path, projectPath)}
           title={`${kind} QC report`}
           {...(report.format === 'HTML' ? { sandbox: 'allow-scripts' } : {})}
         />

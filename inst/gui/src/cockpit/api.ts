@@ -412,9 +412,9 @@ export async function selectAfSourceFile(): Promise<{ success: boolean; cancelle
   }
 }
 
-export async function loadProjectReports(): Promise<Report[]> {
+export async function loadProjectReports(projectPath = ''): Promise<Report[]> {
   try {
-    const response = await client.get('/project/reports')
+    const response = await client.get('/project/reports', { params: { project_path: projectPath } })
     return rowsFromBackend(response.data?.reports).map((row) => {
       const normalized = String(row.path ?? '').replace(/\\/g, '/')
       const format = String(row.format ?? (normalized.toLowerCase().endsWith('.pdf') ? 'PDF' : 'HTML')) as 'HTML' | 'PDF'
@@ -438,8 +438,8 @@ export async function loadProjectReports(): Promise<Report[]> {
   }
 }
 
-export function projectFileUrl(path: string): string {
-  const params = new URLSearchParams({ path, token: resolveApiToken() })
+export function projectFileUrl(path: string, projectPath = ''): string {
+  const params = new URLSearchParams({ path, project_path: projectPath, token: resolveApiToken() })
   return `${API_BASE}/project/file?${params.toString()}`
 }
 
@@ -469,9 +469,9 @@ function downloadBlob(filename: string, blob: Blob) {
   URL.revokeObjectURL(href)
 }
 
-export async function downloadProjectReport(path: string): Promise<boolean> {
+export async function downloadProjectReport(path: string, projectPath = ''): Promise<boolean> {
   try {
-    const response = await client.get('/project/file', { params: { path }, responseType: 'blob', timeout: 120000 })
+    const response = await client.get('/project/file', { params: { path, project_path: projectPath }, responseType: 'blob', timeout: 120000 })
     downloadBlob(path.split('/').pop() || 'spectreasy_qc_report.html', response.data as Blob)
     return true
   } catch {
@@ -479,9 +479,9 @@ export async function downloadProjectReport(path: string): Promise<boolean> {
   }
 }
 
-export async function exportProjectReportPdf(path: string): Promise<boolean> {
+export async function exportProjectReportPdf(path: string, projectPath = ''): Promise<boolean> {
   try {
-    const response = await client.post('/project/report/export-pdf', { path }, { timeout: 120000 })
+    const response = await client.post('/project/report/export-pdf', { path, projectPath }, { timeout: 120000 })
     if (response.data?.error || !response.data?.content_base64) return false
     downloadBase64File(
       scalarValue(response.data.filename, 'spectreasy_qc_report.pdf'),

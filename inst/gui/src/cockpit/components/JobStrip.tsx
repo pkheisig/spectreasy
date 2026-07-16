@@ -25,7 +25,7 @@ export function JobStrip({ job }: { job: Job }) {
         <div className={`progress-track ${job.state === 'running' ? 'is-indeterminate' : ''}`}>
           <span style={job.state === 'running' ? undefined : { width: `${job.progress}%` }} />
         </div>
-        {job.state !== 'running' && <span>{job.progress}%</span>}
+        {job.state === 'failed' && <span>{job.progress}%</span>}
       </div>
       <StatusPill
         state={state}
