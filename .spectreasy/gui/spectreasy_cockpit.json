@@ -90,11 +90,7 @@
       "sidebarWidth": 242,
       "cornerRadius": 16,
       "shadows": "subtle",
-      "reduceMotion": false,
-      "highContrast": false,
-      "backgroundTexture": true,
-      "showSectionCounts": true,
-      "stickyHeader": true
+      "backgroundTexture": true
     }
   }
 }

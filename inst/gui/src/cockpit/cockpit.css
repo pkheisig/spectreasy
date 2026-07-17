@@ -21,6 +21,11 @@
 #root { min-height: 100vh; }
 .cockpit-app { min-height: 100vh; color: var(--ink); background: #ebe7e1; }
 .cockpit-app::before { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .24; background-image: radial-gradient(rgba(32, 43, 43, .12) .5px, transparent .5px); background-size: 7px 7px; mix-blend-mode: multiply; z-index: 10; }
+.project-loading-overlay { position: fixed; inset: 0; z-index: 2147483000; display: grid; place-items: center; padding: 24px; background: rgba(15,17,18,.56); backdrop-filter: blur(4px); animation: cockpit-fade-in .18s ease both; }
+.project-loading-card { display: grid; justify-items: center; gap: 10px; min-width: 230px; padding: 24px 28px; color: var(--ink); border: 1px solid var(--line); border-radius: 12px; background: var(--paper); box-shadow: 0 24px 70px rgba(0,0,0,.25); }
+.project-loading-card svg { color: var(--coral); }
+.project-loading-card strong { font-size: 17px; line-height: 1.1; }
+.project-loading-card span { color: var(--ink-soft); font-size: 12px; font-weight: 700; }
 
 .topbar { height: 72px; padding: 0 26px 0 28px; display: flex; align-items: center; gap: 18px; color: #edf0e9; background: var(--graphite-deep); border-bottom: 1px solid rgba(238, 241, 232, .08); position: relative; z-index: 5; }
 .brand-lockup { display: flex; align-items: center; gap: 11px; min-width: 174px; }

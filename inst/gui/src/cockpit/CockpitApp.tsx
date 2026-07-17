@@ -5,6 +5,7 @@ import {
   FolderOpen,
   CircleHelp,
   Files as FilesIcon,
+  LoaderCircle,
   Settings,
   Sun,
   TerminalSquare,
@@ -340,6 +341,7 @@ export default function CockpitApp() {
   const [initializationDismissedFor, setInitializationDismissedFor] = useState("");
   const [initializationBusy, setInitializationBusy] = useState(false);
   const [initializationMessage, setInitializationMessage] = useState("");
+  const [projectLoading, setProjectLoading] = useState(false);
   const [settings, setSettings] = useState<WorkflowSettings>(() => {
     const initial = defaultWorkflowSettings('');
     const savedTheme = window.localStorage.getItem("spectreasy-theme");
@@ -887,13 +889,19 @@ export default function CockpitApp() {
   }
 
   async function chooseProject(mode: "create" | "open") {
-    const response = mode === "create"
-      ? await createProjectFolder()
-      : await selectProjectFolder();
-    if (!response.cancelled && !response.success) appendExecutionLogs([{ kind: "error", text: response.message }]);
-    if (response.success) {
-      if (response.projectPath) window.sessionStorage.setItem("spectreasy-project-path", response.projectPath);
-      await refreshProject(true, response.projectPath);
+    if (projectLoading) return;
+    setProjectLoading(true);
+    try {
+      const response = mode === "create"
+        ? await createProjectFolder()
+        : await selectProjectFolder();
+      if (!response.cancelled && !response.success) appendExecutionLogs([{ kind: "error", text: response.message }]);
+      if (response.success) {
+        if (response.projectPath) window.sessionStorage.setItem("spectreasy-project-path", response.projectPath);
+        await refreshProject(true, response.projectPath);
+      }
+    } finally {
+      setProjectLoading(false);
     }
   }
 
@@ -960,7 +968,8 @@ export default function CockpitApp() {
 
   return (
     <div className="cockpit-app">
-      <a className="skip-link" href="#cockpit-main">Skip to workflow</a>
+      <div className="cockpit-app-content" inert={projectLoading} aria-hidden={projectLoading}>
+        <a className="skip-link" href="#cockpit-main">Skip to workflow</a>
       <TopBar
         project={project}
         cytometer={settings.control.cytometer}
@@ -1069,6 +1078,16 @@ export default function CockpitApp() {
             setInitializationDismissedFor(project.projectPath);
           }}
         />
+      )}
+      </div>
+      {projectLoading && (
+        <div className="project-loading-overlay" role="status" aria-live="polite" aria-label="Loading project files">
+          <div className="project-loading-card">
+            <LoaderCircle className="is-spinning" size={36} aria-hidden="true" />
+            <strong>Loading project files...</strong>
+            <span>Preparing the selected project</span>
+          </div>
+        </div>
       )}
     </div>
   );
