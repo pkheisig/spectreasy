@@ -1,5 +1,4 @@
 import {
-  Contrast,
   Moon,
   Sun,
   Type,
@@ -114,18 +113,9 @@ export function AppearanceSettings({ value, onChange, onReset }: Props) {
         </section>
 
         <section className="appearance-group">
-          <div className="appearance-group-heading">
-            <Contrast size={16} />
-            <div>
-              <strong>Navigation and behavior</strong>
-            </div>
-          </div>
+          <div className="appearance-group-heading"><Type size={16} /><div><strong>Interface details</strong></div></div>
           <div className="preference-toggles">
-            <label><input type="checkbox" checked={value.showSectionCounts} onChange={(event) => onChange({ showSectionCounts: event.target.checked })} /><span>Show file counts</span></label>
-            <label><input type="checkbox" checked={value.stickyHeader} onChange={(event) => onChange({ stickyHeader: event.target.checked })} /><span>Keep header visible</span></label>
             <label><input type="checkbox" checked={value.backgroundTexture} onChange={(event) => onChange({ backgroundTexture: event.target.checked })} /><span>Subtle background texture</span></label>
-            <label><input type="checkbox" checked={value.reduceMotion} onChange={(event) => onChange({ reduceMotion: event.target.checked })} /><span>Reduce motion</span></label>
-            <label><input type="checkbox" checked={value.highContrast} onChange={(event) => onChange({ highContrast: event.target.checked })} /><Contrast size={14} /><span>Higher contrast</span></label>
           </div>
         </section>
       </div>

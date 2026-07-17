@@ -923,7 +923,7 @@ function ConfigurableAfWorkspace({
     Array<{ name: string; bands: number; detectors: number; created: string; active: boolean }>
   >([]);
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof loadAfProfileData>>>(null);
-  const [confirmAction, setConfirmAction] = useState<{ type: "link" | "unlink" | "delete"; name: string } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: "link" | "unlink" | "delete" | "overwrite"; name: string } | null>(null);
   const [renameAction, setRenameAction] = useState<{ original: string; value: string; error: string } | null>(null);
 
   const refreshProfiles = async () => {
@@ -991,12 +991,20 @@ function ConfigurableAfWorkspace({
     if (result.success && result.path) onSettingsChange({ fcsFile: result.path });
   };
 
-  const extractProfile = async () => {
+  const runExtractProfile = async () => {
     const saved = await onRun("af", "Extract AF profile");
     if (saved) {
       await refreshProfiles();
       onRefresh();
     }
+  };
+
+  const extractProfile = () => {
+    if (settings.saveOverwrite) {
+      setConfirmAction({ type: "overwrite", name: settings.saveName || settings.fcsFile });
+      return;
+    }
+    void runExtractProfile();
   };
 
   const chartWidth = Math.max(760, (preview?.detectors.length ?? 0) * 22 + 92);
@@ -1096,7 +1104,7 @@ function ConfigurableAfWorkspace({
           </div>
           <button
             className="button button-primary large-button"
-            onClick={() => void extractProfile()}
+            onClick={extractProfile}
           >
             <WandSparkles size={15} /> Extract & save profile
           </button>
@@ -1197,8 +1205,8 @@ function ConfigurableAfWorkspace({
       </div>
       {confirmAction && createPortal(<div className="cockpit-confirm-overlay" role="presentation" onMouseDown={() => setConfirmAction(null)}>
         <div className="cockpit-confirm" role="dialog" aria-modal="true" aria-labelledby="af-confirm-title" onMouseDown={(event) => event.stopPropagation()}>
-          <h2 id="af-confirm-title">{confirmAction.type === "link" ? "Link this AF profile?" : confirmAction.type === "unlink" ? "Unlink this AF profile?" : "Delete this AF profile?"}</h2>
-          <p>{confirmAction.type === "link" ? `Use ${confirmAction.name} as this dataset's unstained cell control? The mapped unstained cell file will be ignored.` : confirmAction.type === "unlink" ? `${confirmAction.name} will no longer replace this dataset's mapped unstained cell control.` : `${confirmAction.name} will be permanently removed from the package root.`}</p>
+          <h2 id="af-confirm-title">{confirmAction.type === "link" ? "Link this AF profile?" : confirmAction.type === "unlink" ? "Unlink this AF profile?" : confirmAction.type === "overwrite" ? "Overwrite this AF profile?" : "Delete this AF profile?"}</h2>
+          <p>{confirmAction.type === "link" ? `Use ${confirmAction.name} as this dataset's unstained cell control? The mapped unstained cell file will be ignored.` : confirmAction.type === "unlink" ? `${confirmAction.name} will no longer replace this dataset's mapped unstained cell control.` : confirmAction.type === "overwrite" ? `The existing ${confirmAction.name} profile will be replaced with the newly extracted profile.` : `${confirmAction.name} will be permanently removed from the package root.`}</p>
           <div>
             <button className="button button-ghost" onClick={() => setConfirmAction(null)}>Cancel</button>
             <button className={`button ${confirmAction.type === "delete" ? "button-danger" : "button-primary"}`} onClick={() => {
@@ -1206,8 +1214,9 @@ function ConfigurableAfWorkspace({
               setConfirmAction(null);
               if (action.type === "link") void linkProfile(action.name);
               else if (action.type === "unlink") void unlinkProfile(action.name);
+              else if (action.type === "overwrite") void runExtractProfile();
               else void removeProfile(action.name);
-            }}>{confirmAction.type === "link" ? "Link to dataset" : confirmAction.type === "unlink" ? "Unlink from dataset" : "Delete"}</button>
+            }}>{confirmAction.type === "link" ? "Link to dataset" : confirmAction.type === "unlink" ? "Unlink from dataset" : confirmAction.type === "overwrite" ? "Extract & overwrite" : "Delete"}</button>
           </div>
         </div>
       </div>, document.body)}

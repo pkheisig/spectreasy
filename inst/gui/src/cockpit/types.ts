@@ -66,7 +66,6 @@ export type ProjectState = {
     reports: number
     qcMetrics: number
     spectralVariants: number
-    afProfiles: number
     gates: number
   }
 }
@@ -206,11 +205,7 @@ export type AppearanceSettings = {
   sidebarWidth: number
   cornerRadius: number
   shadows: 'none' | 'subtle' | 'raised'
-  reduceMotion: boolean
-  highContrast: boolean
   backgroundTexture: boolean
-  showSectionCounts: boolean
-  stickyHeader: boolean
 }
 
 export const INTERFACE_SCALE_MIN = 55
@@ -326,11 +321,7 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       sidebarWidth: 242,
       cornerRadius: 8,
       shadows: 'subtle',
-      reduceMotion: false,
-      highContrast: false,
       backgroundTexture: false,
-      showSectionCounts: true,
-      stickyHeader: true,
     },
   }
 }

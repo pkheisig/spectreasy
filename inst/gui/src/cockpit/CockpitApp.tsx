@@ -446,7 +446,10 @@ export default function CockpitApp() {
           },
           appearance: {
             ...current.appearance,
-            ...(saved.appearance ?? {}),
+            theme: saved.appearance?.theme === "dark" ? "dark" : (saved.appearance?.theme === "light" ? "light" : current.appearance.theme),
+            density: saved.appearance?.density === "compact" || saved.appearance?.density === "spacious" || saved.appearance?.density === "comfortable"
+              ? saved.appearance.density
+              : current.appearance.density,
             fontFamily:
               String(saved.appearance?.fontFamily ?? "") === "source-sans"
                 ? "atkinson"
@@ -456,6 +459,11 @@ export default function CockpitApp() {
               saved.appearance?.sidebarWidth === 220
                 ? 242
                 : (saved.appearance?.sidebarWidth ?? current.appearance.sidebarWidth),
+            cornerRadius: typeof saved.appearance?.cornerRadius === "number" ? saved.appearance.cornerRadius : current.appearance.cornerRadius,
+            shadows: saved.appearance?.shadows === "none" || saved.appearance?.shadows === "raised" || saved.appearance?.shadows === "subtle"
+              ? saved.appearance.shadows
+              : current.appearance.shadows,
+            backgroundTexture: typeof saved.appearance?.backgroundTexture === "boolean" ? saved.appearance.backgroundTexture : current.appearance.backgroundTexture,
           },
         };
       });
@@ -502,6 +510,17 @@ export default function CockpitApp() {
   }, [backend.connected, project.controlInputDir, project.projectPath, project.sampleInputDir, refreshProject]);
 
   useEffect(() => {
+    if (!backend.connected || !project.projectPath) return;
+    let refreshing = false;
+    const timer = window.setInterval(() => {
+      if (refreshing) return;
+      refreshing = true;
+      void refreshProject(false).finally(() => { refreshing = false; });
+    }, 10000);
+    return () => window.clearInterval(timer);
+  }, [backend.connected, project.projectPath, refreshProject]);
+
+  useEffect(() => {
     if (!settingsReady) return;
     const timer = window.setTimeout(() => void persistGuiState(project, settings), 450);
     return () => window.clearTimeout(timer);
@@ -533,10 +552,7 @@ export default function CockpitApp() {
     root.dataset.theme = appearance.theme;
     root.dataset.density = appearance.density;
     root.dataset.shadows = appearance.shadows;
-    root.dataset.contrast = appearance.highContrast ? "high" : "normal";
     root.dataset.texture = appearance.backgroundTexture ? "on" : "off";
-    root.dataset.motion = appearance.reduceMotion ? "reduced" : "full";
-    root.dataset.stickyHeader = appearance.stickyHeader ? "on" : "off";
     root.style.setProperty("--ui-zoom", String(scale));
     root.style.setProperty("--scaled-viewport-height", `${100 / scale}vh`);
     root.style.setProperty("--corner-radius", `${appearance.cornerRadius}px`);
@@ -971,7 +987,6 @@ export default function CockpitApp() {
           <WorkflowRail
             activeSection={activeSection}
             project={project}
-            showCounts={settings.appearance.showSectionCounts}
             width={settings.appearance.sidebarWidth}
             onWidthChange={(sidebarWidth) => updateSettings("appearance", { sidebarWidth })}
             onChange={navigateToSection}

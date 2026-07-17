@@ -384,7 +384,6 @@ html[data-theme="dark"] .matrix-workspace .matrix-bar-row i { background: #303a3
 .button-primary:hover { color: #fff; border-color: var(--teal-deep); background: var(--teal-deep); }
 .text-action { color: var(--cockpit-accent-ink); }
 .app-body { height: calc(var(--scaled-viewport-height) - 72px); }
-html[data-sticky-header="on"] .topbar { position: sticky; top: 0; }
 html[data-sidebar="narrow"] .workflow-rail { flex-basis: 178px; }
 html[data-sidebar="wide"] .workflow-rail { flex-basis: 242px; }
 html[data-shadows="none"] { --shadow: none; }
@@ -393,10 +392,7 @@ html[data-density="compact"] .workspace-content { padding-top: 24px; }
 html[data-density="compact"] .surface-card { padding: 14px; }
 html[data-density="spacious"] .workspace-content { padding-top: 42px; }
 html[data-density="spacious"] .surface-card { padding: 24px; }
-html[data-texture="on"] .main-canvas { background-image: radial-gradient(rgba(31, 122, 109, .1) .5px, transparent .5px); background-size: 8px 8px; }
-html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; transition-duration: .001ms !important; }
-html[data-contrast="high"] .cockpit-app { color: #07100d; }
-html[data-contrast="high"] .workspace-header p, html[data-contrast="high"] .section-title p { color: #39443f; }
+html[data-texture="on"] .main-canvas { background-image: radial-gradient(rgba(31, 122, 109, .14) .65px, transparent .65px); background-size: 7px 7px; }
 
 .rail-intro strong { display: block; margin-top: 5px; overflow: hidden; color: var(--ink); font-size: 15.5px; text-overflow: ellipsis; white-space: nowrap; }
 .rail-group-toggle, .rail-subitem { width: 100%; display: flex; align-items: center; color: #5d6964; border: 0; background: transparent; text-align: left; }
@@ -405,7 +401,7 @@ html[data-contrast="high"] .workspace-header p, html[data-contrast="high"] .sect
 .rail-group-toggle { min-height: 38px; gap: 9px; padding: 0 9px; border-radius: var(--corner-radius); font-size: 14.5px; font-weight: 700; }
 .rail-group.contains-active > .rail-group-toggle { color: var(--ink); }
 .rail-group-toggle span { min-width: 0; flex: 1; }
-.rail-chevron { transition: transform .16s ease; }
+.rail-chevron { transition: transform .25s ease; }
 .rail-group-toggle[aria-expanded="true"] .rail-chevron { transform: rotate(90deg); }
 .rail-subsections { display: grid; gap: 2px; margin: 2px 0 5px 16px; padding-left: 10px; border-left: 1px solid #cbc7bf; }
 .rail-subitem { min-height: 43px; gap: 7px; padding: 6px 7px 6px 9px; border-radius: calc(var(--corner-radius) - 2px); }
@@ -505,7 +501,7 @@ html[data-theme="dark"] .appearance-field-grid label > strong { color: #f0f3f2; 
   background: var(--panel);
   overflow: auto;
   min-width: 0;
-  transition: flex-basis 180ms ease, width 180ms ease, padding 180ms ease;
+  transition: flex-basis 300ms ease, width 300ms ease, padding 300ms ease;
 }
 .cockpit-applet .app-shell > .gating-sidebar.is-collapsed {
   flex-basis: 34px;
@@ -636,7 +632,7 @@ html[data-theme="dark"] .appearance-field-grid label > strong { color: #f0f3f2; 
 .gui-select { min-height: 31px; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 9px; color: #44524e; border: 1px solid #d8d2ca; border-radius: 6px; background: #fbf8f4; font: inherit; font-size: 14.5px; text-align: left; }
 .gui-select:hover, .gui-select.is-open { border-color: #d78555; background: #fffdf9; }
 .gui-select > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gui-select > svg { flex: 0 0 auto; color: #707873; transition: transform .15s ease; }
+.gui-select > svg { flex: 0 0 auto; color: #707873; transition: transform .24s ease; }
 .gui-select.is-open > svg { transform: rotate(180deg); }
 .gui-select-menu { position: fixed; z-index: 2147483600; max-height: 280px; overflow: auto; padding: 5px; border: 1px solid #575651; border-radius: 9px; background: #4c4c48; box-shadow: 0 15px 35px rgba(25, 25, 23, .28); }
 .gui-select-menu button { width: 100%; min-height: 30px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 9px; color: #f2efeb; border: 0; border-radius: 6px; background: transparent; font: 400 14px/1.2 var(--ui-font, sans-serif); text-align: left; white-space: nowrap; }
@@ -671,10 +667,10 @@ html[data-theme="dark"] .mapping-table .gui-select:hover, html[data-theme="dark"
 
 /* Cockpit motion, terminal, and AF profile workflow. */
 :root { interpolate-size: allow-keywords; }
-button, .surface-card, .workflow-rail, .main-canvas, .cockpit-applet { transition: color .18s ease, background-color .18s ease, border-color .18s ease, box-shadow .18s ease, opacity .2s ease, transform .2s ease; }
-.rail-subsections { display: grid; max-height: 0; margin-top: 0; margin-bottom: 0; overflow: hidden; opacity: 0; transform: translateY(-4px); transition: max-height .26s ease, opacity .2s ease, transform .24s ease, margin .24s ease; }
+button, .surface-card, .workflow-rail, .main-canvas, .cockpit-applet { transition: color .28s ease, background-color .28s ease, border-color .28s ease, box-shadow .28s ease, opacity .3s ease, transform .3s ease; }
+.rail-subsections { display: grid; max-height: 0; margin-top: 0; margin-bottom: 0; overflow: hidden; opacity: 0; transform: translateY(-4px); transition: max-height .36s ease, opacity .3s ease, transform .34s ease, margin .34s ease; }
 .rail-subsections.is-open { max-height: 420px; margin-top: 2px; margin-bottom: 5px; opacity: 1; transform: translateY(0); }
-details.settings-section::details-content { block-size: 0; overflow: clip; opacity: 0; transform: translateY(-5px); transition: block-size .3s cubic-bezier(.16,1,.3,1), opacity .22s ease, transform .28s cubic-bezier(.16,1,.3,1), content-visibility .3s allow-discrete; transition-behavior: allow-discrete; }
+details.settings-section::details-content { block-size: 0; overflow: clip; opacity: 0; transform: translateY(-5px); transition: block-size .4s cubic-bezier(.16,1,.3,1), opacity .32s ease, transform .36s cubic-bezier(.16,1,.3,1), content-visibility .4s allow-discrete; transition-behavior: allow-discrete; }
 details.settings-section[open]::details-content { block-size: auto; opacity: 1; transform: translateY(0); }
 .project-switcher { min-width: 112px; }
 .project-switcher strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

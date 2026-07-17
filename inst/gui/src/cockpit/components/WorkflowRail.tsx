@@ -3,7 +3,7 @@ import {
   FolderCog,
   Wrench,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import type { ProjectState, SectionId } from '../types'
@@ -11,7 +11,6 @@ import type { ProjectState, SectionId } from '../types'
 type RailProps = {
   activeSection: SectionId
   project: ProjectState
-  showCounts: boolean
   width: number
   onWidthChange: (width: number) => void
   onChange: (section: SectionId) => void
@@ -41,23 +40,34 @@ const groups: NavigationGroup[] = [
     ],
   },
 ]
+const NAVIGATION_GROUPS_STORAGE_KEY = 'spectreasy-navigation-groups'
+
+function loadOpenGroups(): Record<string, boolean> {
+  try {
+    const stored = window.localStorage.getItem(NAVIGATION_GROUPS_STORAGE_KEY)
+    if (!stored) return {}
+    const parsed = JSON.parse(stored)
+    if (!parsed || typeof parsed !== 'object') return {}
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([key, value]) => (key === 'workflow' || key === 'tools') && typeof value === 'boolean'),
+    ) as Record<string, boolean>
+  } catch {
+    return {}
+  }
+}
 
 function groupForSection(section: SectionId) {
   return groups.find((group) => group.items.some((item) => item.id === section))?.id
 }
 
-function sectionCount(section: SectionId, project: ProjectState) {
-  const counts: Partial<Record<SectionId, number>> = {
-    controls: project.scan.controls,
-    samples: project.scan.samples,
-    af: project.scan.afProfiles,
-  }
-  return counts[section]
-}
-
-export function WorkflowRail({ activeSection, project, showCounts, width, onWidthChange, onChange }: RailProps) {
+export function WorkflowRail({ activeSection, project, width, onWidthChange, onChange }: RailProps) {
   const activeGroup = groupForSection(activeSection)
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(loadOpenGroups)
+
+  useEffect(() => {
+    window.localStorage.setItem(NAVIGATION_GROUPS_STORAGE_KEY, JSON.stringify(openGroups))
+  }, [openGroups])
 
   function beginResize(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault()
@@ -101,7 +111,6 @@ export function WorkflowRail({ activeSection, project, showCounts, width, onWidt
               </button>
                 <div className={`rail-subsections ${isOpen ? 'is-open' : ''}`} id={`rail-group-${group.id}`} aria-hidden={!isOpen}>
                   {group.items.map((item) => {
-                    const count = sectionCount(item.id, project)
                     return (
                       <button
                         key={item.id}
@@ -114,7 +123,6 @@ export function WorkflowRail({ activeSection, project, showCounts, width, onWidt
                           <strong>{item.title}</strong>
                           <small>{item.detail}</small>
                         </span>
-                        {showCounts && count !== undefined && <span className="rail-count">{count}</span>}
                       </button>
                     )
                   })}
