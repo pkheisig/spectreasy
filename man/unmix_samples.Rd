@@ -12,7 +12,7 @@ unmix_samples(
     "scc_reference_matrix.csv"),
   detector_noise_file = NULL,
   control_file = NULL,
-  unmixing_method = "Spectreasy",
+  unmixing_method = "AutoSpectral",
   rwls_max_iter = 1L,
   n_threads = 1L,
   spectral_variant_library = NULL,

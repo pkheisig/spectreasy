@@ -28,7 +28,7 @@ get_samples_dir <- function() {
 }
 
 get_unmixing_method <- function() {
-    method <- getOption("spectreasy.unmixing_method", "Spectreasy")
+    method <- getOption("spectreasy.unmixing_method", "AutoSpectral")
     spectreasy:::.normalize_unmix_method(method)
 }
 

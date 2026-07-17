@@ -297,7 +297,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
     const [guiStateLoaded, setGuiStateLoaded] = useState(false);
-    const [unmixingMethod, setUnmixingMethod] = useState<UnmixingMethod>('Spectreasy');
+    const [unmixingMethod, setUnmixingMethod] = useState<UnmixingMethod>('AutoSpectral');
 
     const [residualCellSize, setResidualCellSize] = useState(130);
     const [pointSize, setPointSize] = useState(1.5);
@@ -312,7 +312,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     });
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [hoveredSignature, setHoveredSignature] = useState<string | null>(null);
-    const unmixingMethodRef = useRef<UnmixingMethod>('Spectreasy');
+    const unmixingMethodRef = useRef<UnmixingMethod>('AutoSpectral');
 
     useEffect(() => {
         const previousTitle = document.title;

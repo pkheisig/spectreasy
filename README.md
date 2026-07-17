@@ -232,7 +232,7 @@ The sections below are for understanding, tuning, or reusing pieces of the workf
 
 ## Unmixing in spectreasy
 
-By default, `spectreasy` uses `unmixing_method = "Spectreasy"`. The approach builds on AutoSpectral which performs per-event AF matching based on minimizing overall marker leakage, as well as per-event SCC spectral variant matching. For more information, visit [AutoSpectral](https://github.com/DrCytometer/AutoSpectral). The SCC event-selection and variant-detection design is inspired by [Spectracle](https://github.com/nlaniewski/spectracle)
+By default, `spectreasy` uses `unmixing_method = "AutoSpectral"`. This method performs per-event AF matching based on minimizing overall marker leakage, as well as per-event SCC spectral variant matching. For more information, visit [AutoSpectral](https://github.com/DrCytometer/AutoSpectral). The SCC event-selection and variant-detection design is inspired by [Spectracle](https://github.com/nlaniewski/spectracle)
 
 For both `Spectreasy` and `AutoSpectral`, SCC processing starts with the positive histogram population selected in the gating GUI. When no saved positive gate is available, the same automatic histogram fallback is applied. Bright-candidate selection, negative-source resolution, scatter-KNN subtraction, and spectral-shape selection then operate only within that positive population.
 
