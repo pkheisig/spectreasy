@@ -1595,7 +1595,7 @@ function ConfigurableSettingsWorkspace({
           </label>}
         </div>
       </details>
-      <details className="surface-card settings-section">
+      <details className="surface-card settings-section" open>
         <summary>
           <SettingsCardSummary icon={<Beaker size={15} />} title="Sample-stage parameters" onReset={() => onSettingsChange("sample", { ...defaults.sample, sampleDir: sample.sampleDir })} />
         </summary>
