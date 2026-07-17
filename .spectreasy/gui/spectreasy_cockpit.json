@@ -86,13 +86,13 @@
       "theme": "dark",
       "density": "comfortable",
       "fontScale": 75,
-      "fontFamily": "avenir",
+      "fontFamily": "futura",
       "sidebarWidth": 242,
-      "cornerRadius": 8,
+      "cornerRadius": 16,
       "shadows": "subtle",
       "reduceMotion": false,
       "highContrast": false,
-      "backgroundTexture": false,
+      "backgroundTexture": true,
       "showSectionCounts": true,
       "stickyHeader": true
     }
