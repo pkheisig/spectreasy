@@ -57,6 +57,8 @@ export type ProjectState = {
   mappingDirty: boolean
   gatesDirty: boolean
   missingInputDirs: string[]
+  controlInputDir: string
+  sampleInputDir: string
   scan: {
     controls: number
     samples: number

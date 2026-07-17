@@ -345,6 +345,40 @@ list_af_profiles <- function() {
     out[order(out$name), , drop = FALSE]
 }
 
+#' Rename a saved AF profile
+#'
+#' @param name Existing profile name.
+#' @param new_name New profile name. Use letters, numbers, `.`, `_`, and `-`.
+#'
+#' @return Invisibly returns the renamed profile's file path.
+#' @export
+rename_af_profile <- function(name, new_name) {
+    name <- .validate_af_profile_name(name)
+    new_name <- .validate_af_profile_name(new_name)
+    source <- .af_profile_file(name, create_dir = FALSE)
+    if (!file.exists(source)) stop("AF profile not found: ", name, call. = FALSE)
+    if (identical(name, new_name)) return(invisible(source))
+    target <- .af_profile_file(new_name, create_dir = TRUE)
+    if (file.exists(target)) stop("AF profile already exists: ", new_name, call. = FALSE)
+
+    profile <- readRDS(source)
+    profile$name <- new_name
+    temporary <- tempfile("af_profile_rename_", tmpdir = dirname(target), fileext = ".rds")
+    on.exit(unlink(temporary, force = TRUE), add = TRUE)
+    saveRDS(profile, temporary, version = 3)
+    if (!file.rename(temporary, target)) {
+        if (!file.copy(temporary, target, overwrite = FALSE)) {
+            stop("Could not save renamed AF profile: ", new_name, call. = FALSE)
+        }
+    }
+    if (unlink(source, force = TRUE) != 0L) {
+        unlink(target, force = TRUE)
+        stop("Could not remove the previous AF profile: ", name, call. = FALSE)
+    }
+    .spectreasy_console_field("Renamed", paste0("AF profile '", name, "' to '", new_name, "'"))
+    invisible(target)
+}
+
 #' Delete a saved AF profile
 #'
 #' @param name Profile name.

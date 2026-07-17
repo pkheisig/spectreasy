@@ -73,7 +73,7 @@ function normalizeMappingRows(value: unknown): ProjectState['mapping'] {
   }).filter((row) => row.file.length > 0)
 }
 
-function liveArtifacts(projectPath: string, value: unknown, reportValue: unknown): Artifact[] {
+function liveArtifacts(projectPath: string, value: unknown, reportValue: unknown, controlInputDir: string, sampleInputDir: string): Artifact[] {
   const files = Array.isArray(value) ? value.map((file) => String(file).replace(/\\/g, '/')).filter(Boolean) : []
   const absolute = (relative: string) => `${projectPath.replace(/\\/g, '/').replace(/\/$/, '')}/${relative}`
   const artifact = (file: string, group: string, type: string, detail: string, status: Artifact['status'] = 'current'): Artifact => ({
@@ -88,12 +88,16 @@ function liveArtifacts(projectPath: string, value: unknown, reportValue: unknown
     updated: 'Present in active project',
   })
   const out: Artifact[] = []
-  const controls = files.filter((file) => /(^|\/)(scc|controls?)\/.*\.fcs$/i.test(file))
-  const samples = files.filter((file) => /(^|\/)samples?\/.*\.fcs$/i.test(file))
-  if (controls.length) out.push(artifact('scc/', 'Controls', 'Folder', `${controls.length} FCS file${controls.length === 1 ? '' : 's'}`))
+  const directoryFiles = (directory: string) => {
+    const prefix = `${directory.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')}/`.toLowerCase()
+    return files.filter((file) => file.toLowerCase().startsWith(prefix) && /\.fcs$/i.test(file))
+  }
+  const controls = directoryFiles(controlInputDir)
+  const samples = directoryFiles(sampleInputDir)
+  if (controls.length) out.push(artifact(`${controlInputDir}/`, 'Controls', 'Folder', `${controls.length} FCS file${controls.length === 1 ? '' : 's'}`))
   files.filter((file) => /^fcs_mapping\.csv$/i.test(file)).forEach((file) => out.push(artifact(file, 'Controls', 'Mapping', 'Control mapping CSV')))
   files.filter((file) => /gate.*\.csv$/i.test(file)).forEach((file) => out.push(artifact(file, 'Gates', 'Gates', 'Saved gate configuration')))
-  if (samples.length) out.push(artifact('samples/', 'Samples', 'Folder', `${samples.length} FCS file${samples.length === 1 ? '' : 's'}`))
+  if (samples.length) out.push(artifact(`${sampleInputDir}/`, 'Samples', 'Folder', `${samples.length} FCS file${samples.length === 1 ? '' : 's'}`))
   const matrices = files.filter((file) => /(matrix|unmixing|detector_noise|variant).*\.(csv|rds)$/i.test(file)).slice(0, 12)
   matrices.forEach((file) => out.push(artifact(file, 'Matrices', /variant/i.test(file) ? 'Spectral library' : 'Matrix', 'Project matrix artifact')))
   rowsFromBackend(reportValue)
@@ -150,6 +154,9 @@ export async function loadProjectSnapshot(requestedProjectPath = ''): Promise<{ 
     const liveMapping = normalizeMappingRows(mappingResponse?.data?.rows)
     const statusOk = scalarValue(status.status) === 'ok'
     const rawScan = (projectResponse?.data?.scan ?? {}) as Record<string, unknown>
+    const rawLayout = (projectResponse?.data?.layout ?? {}) as Record<string, unknown>
+    const controlInputDir = scalarValue(rawLayout.control_input_dir, 'scc')
+    const sampleInputDir = scalarValue(rawLayout.sample_input_dir, 'samples')
     const scanCount = (snakeCase: string, camelCase = snakeCase) =>
       Number(scalarValue(rawScan[snakeCase] ?? rawScan[camelCase], '0')) || 0
     const backendScan: ProjectState['scan'] = {
@@ -195,6 +202,8 @@ export async function loadProjectSnapshot(requestedProjectPath = ''): Promise<{ 
       projectPath,
       projectResponse?.data?.files,
       exactReports,
+      controlInputDir,
+      sampleInputDir,
     )
     const project: ProjectState = {
       ...emptyProject,
@@ -205,11 +214,46 @@ export async function loadProjectSnapshot(requestedProjectPath = ''): Promise<{ 
       artifacts: liveProjectArtifacts,
       mapping: liveMapping,
       missingInputDirs: stringsFromBackend(projectResponse?.data?.missing_input_dirs),
+      controlInputDir,
+      sampleInputDir,
       scan: { ...emptyProject.scan, ...backendScan, matrices: matrices.length, samples: samples.length },
     }
     return { project, backend, savedSettings }
   } catch {
     return { project: structuredClone(emptyProject), backend: initialBackendStatus }
+  }
+}
+
+export async function updateProjectInputDirectory(
+  role: 'controls' | 'samples',
+  path: string,
+  projectPath: string,
+): Promise<{ success: boolean; message: string; controlInputDir?: string; sampleInputDir?: string }> {
+  try {
+    const response = await client.post('/project/layout', { role, path, projectPath }, { timeout: 30000 })
+    if (!response.data?.success) return { success: false, message: scalarValue(response.data?.error, 'Could not update the input directory.') }
+    return {
+      success: true,
+      message: `${role === 'controls' ? 'Control' : 'Sample'} input directory updated.`,
+      controlInputDir: scalarValue(response.data?.layout?.control_input_dir),
+      sampleInputDir: scalarValue(response.data?.layout?.sample_input_dir),
+    }
+  } catch (error) {
+    const detail = axios.isAxiosError(error) ? scalarValue(error.response?.data?.error) : ''
+    return { success: false, message: detail || 'Could not update the input directory.' }
+  }
+}
+
+export async function loadProjectInputDirectories(projectPath: string): Promise<{ controlInputDir: string; sampleInputDir: string } | null> {
+  try {
+    const response = await client.get('/project/layout', { params: { project_path: projectPath }, timeout: 5000 })
+    if (!response.data?.success) return null
+    return {
+      controlInputDir: scalarValue(response.data?.layout?.control_input_dir, 'scc'),
+      sampleInputDir: scalarValue(response.data?.layout?.sample_input_dir, 'samples'),
+    }
+  } catch {
+    return null
   }
 }
 
@@ -545,6 +589,20 @@ export async function deleteAfProfile(name: string, projectPath = ''): Promise<b
     return scalarValue(response.data?.success, 'false') === 'true'
   } catch {
     return false
+  }
+}
+
+export async function renameAfProfile(profileName: string, newName: string, projectPath: string): Promise<{ success: boolean; message: string; name?: string }> {
+  try {
+    const response = await client.post('/af_profiles/rename', { profile_name: profileName, new_name: newName, projectPath })
+    const success = scalarValue(response.data?.success, 'false') === 'true'
+    return {
+      success,
+      name: success ? scalarValue(response.data?.new_name, newName) : undefined,
+      message: success ? `${profileName} renamed to ${newName}.` : scalarValue(response.data?.error, `Could not rename ${profileName}.`),
+    }
+  } catch {
+    return { success: false, message: `Could not rename ${profileName}.` }
   }
 }
 

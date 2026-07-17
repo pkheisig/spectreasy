@@ -10,6 +10,25 @@
 }
 
 * { box-sizing: border-box; }
+
+/* Keep every surface scrollable without reserving space for scrollbar chrome. */
+html,
+body,
+#root,
+#root * {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar,
+#root *::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, select { font: inherit; }
 select, option { font-weight: 400; }

@@ -59,11 +59,12 @@ export function ProjectFileRows({ files, loading, busy = false, emptyLabel = 'No
 type InlineProps = {
   kind: ProjectFileKind
   projectPath: string
+  directory: string
   refreshKey: string
   onChanged: () => void | Promise<void>
 }
 
-export function InlineProjectFiles({ kind, projectPath, refreshKey, onChanged }: InlineProps) {
+export function InlineProjectFiles({ kind, projectPath, directory, refreshKey, onChanged }: InlineProps) {
   const [files, setFiles] = useState<ProjectFileEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -101,7 +102,7 @@ export function InlineProjectFiles({ kind, projectPath, refreshKey, onChanged }:
 
   return (
     <section className="surface-card project-inline-files" aria-label={`${kind === 'controls' ? 'Control' : 'Sample'} files`}>
-      <div className="project-inline-files-path">{kind === 'controls' ? 'scc' : 'samples'}/</div>
+      <div className="project-inline-files-path">{directory}/</div>
       <ProjectFileRows files={files} loading={loading} busy={busy} onDelete={remove} />
       {message && <div className="project-inline-files-message">{message}</div>}
     </section>

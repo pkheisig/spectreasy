@@ -50,7 +50,6 @@ function sectionCount(section: SectionId, project: ProjectState) {
   const counts: Partial<Record<SectionId, number>> = {
     controls: project.scan.controls,
     samples: project.scan.samples,
-    matrix: project.scan.matrices,
     af: project.artifacts.filter((artifact) => artifact.group === 'AF Profiles').length,
   }
   return counts[section]

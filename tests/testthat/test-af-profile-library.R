@@ -36,6 +36,28 @@ test_that("save_af_profile stores only AF rows from a full reference matrix", {
     })
 })
 
+test_that("rename_af_profile preserves profile contents and rejects collisions", {
+    with_local_af_profile_dir({
+        profile <- matrix(
+            c(1, 0.4, 0.1),
+            nrow = 1,
+            dimnames = list("AF", c("B1-A", "YG1-A", "R1-A"))
+        )
+        spectreasy::save_af_profile("original_profile", profile)
+        renamed_path <- spectreasy::rename_af_profile("original_profile", "renamed_profile")
+
+        expect_true(file.exists(renamed_path))
+        expect_false(file.exists(file.path(dirname(renamed_path), "original_profile.rds")))
+        expect_identical(spectreasy::list_af_profiles()$name, "renamed_profile")
+        expect_equal(spectreasy::load_af_profile("renamed_profile")$profile, profile)
+        expect_error(spectreasy::load_af_profile("original_profile"), "not found")
+
+        spectreasy::save_af_profile("existing_profile", profile)
+        expect_error(spectreasy::rename_af_profile("renamed_profile", "existing_profile"), "already exists")
+        expect_error(spectreasy::rename_af_profile("renamed_profile", "invalid profile"), "may only contain")
+    })
+})
+
 test_that("add_af_profile appends loaded AF bands and replaces existing AF by default", {
     with_local_af_profile_dir({
         profile <- matrix(c(

@@ -8,6 +8,7 @@ import {
   FlaskConical,
   FolderOpen,
   Layers3,
+  Pencil,
   Play,
   Plus,
   RefreshCcw,
@@ -35,6 +36,7 @@ import {
   deleteAfProfile,
   listAfProfiles,
   loadAfProfileData,
+  renameAfProfile,
   selectAfSourceFile,
 } from "../api";
 import { StatusPill } from "../components/StatusPill";
@@ -77,6 +79,7 @@ export type WorkflowWorkspaceProps = {
       | Partial<WorkflowSettings["appearance"]>
       | { projectPath: string },
   ) => void;
+  onInputDirectoryChange: (role: "controls" | "samples", path: string) => Promise<void>;
   onOpenApplet: (applet: CockpitAppletId, reportPath?: string) => void;
   onSaveMapping?: () => void;
 };
@@ -115,6 +118,7 @@ function MappingWorkspace({
   onRefresh,
   settings,
   onSettingsChange,
+  onInputDirectoryChange,
   onViewReports,
   onOpenApplet,
 }: Pick<
@@ -129,6 +133,7 @@ function MappingWorkspace({
   | "onCreateMapping"
   | "settings"
   | "onSettingsChange"
+  | "onInputDirectoryChange"
   | "onOpenApplet"
 > & { onViewReports: (reportPath: string) => void }) {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
@@ -187,7 +192,7 @@ function MappingWorkspace({
         <section className="surface-card mapping-empty-state">
           <div>
             <h2>No control mapping created</h2>
-            <p>Create <code>fcs_mapping.csv</code> from the FCS files in the project's <code>scc</code> folder.</p>
+            <p>Create <code>fcs_mapping.csv</code> from the FCS files in <code>{settings.control.sccDir}</code>.</p>
           </div>
           <button className="button button-primary create-control-file-button" onClick={onCreateMapping}>
             <Plus size={15} /> Create control file
@@ -374,6 +379,7 @@ function MappingWorkspace({
         <InlineProjectFiles
           kind="controls"
           projectPath={project.projectPath}
+          directory={project.controlInputDir}
           refreshKey={`${project.projectPath}:${project.scan.controls}`}
           onChanged={onRefresh}
         />
@@ -383,11 +389,13 @@ function MappingWorkspace({
           <BuildReferencePanel
             settings={settings.control}
             onSettingsChange={(patch) => onSettingsChange("control", patch)}
+            onInputDirectoryChange={onInputDirectoryChange}
             onRun={onRun}
           />
           <InlineProjectFiles
             kind="controls"
             projectPath={project.projectPath}
+            directory={project.controlInputDir}
             refreshKey={`${project.projectPath}:${project.scan.controls}`}
             onChanged={onRefresh}
           />
@@ -407,10 +415,12 @@ function MappingWorkspace({
 function BuildReferencePanel({
   settings,
   onSettingsChange,
+  onInputDirectoryChange,
   onRun,
 }: {
   settings: ControlSettings;
   onSettingsChange: (patch: Partial<ControlSettings>) => void;
+  onInputDirectoryChange: WorkflowWorkspaceProps["onInputDirectoryChange"];
   onRun: WorkflowWorkspaceProps["onRun"];
 }) {
   const method = settings.method;
@@ -421,7 +431,7 @@ function BuildReferencePanel({
     <section className="surface-card run-card streamlined-run-card">
       <div className="settings-card-plain-header">
         <strong>Settings</strong>
-        <ResetSettingsButton label="control settings" onReset={() => onSettingsChange({ ...defaults, manualGateFile: "ssc_gate_config.csv" })} />
+        <ResetSettingsButton label="control settings" onReset={() => onSettingsChange({ ...defaults, sccDir: settings.sccDir, manualGateFile: "ssc_gate_config.csv" })} />
       </div>
       <div className="run-controls">
         <label>
@@ -486,6 +496,14 @@ function BuildReferencePanel({
       </button>
       {advanced && (
         <div className="advanced-grid">
+          <label>
+            Control FCS folder
+            <input
+              value={settings.sccDir}
+              onChange={(event) => onSettingsChange({ sccDir: event.target.value })}
+              onBlur={(event) => void onInputDirectoryChange("controls", event.currentTarget.value)}
+            />
+          </label>
           <label>
             Output folder
             <input
@@ -738,12 +756,14 @@ function ConfigurableSamplesWorkspace({
   onSettingsChange,
   onRun,
   onRefresh,
+  onInputDirectoryChange,
 }: {
   project: ProjectState;
   settings: SampleSettings;
   onSettingsChange: (patch: Partial<SampleSettings>) => void;
   onRun: WorkflowWorkspaceProps["onRun"];
   onRefresh: WorkflowWorkspaceProps["onRefresh"];
+  onInputDirectoryChange: WorkflowWorkspaceProps["onInputDirectoryChange"];
 }) {
   const defaults = defaultWorkflowSettings("").sample;
   const [advanced, setAdvanced] = useState(false);
@@ -752,7 +772,7 @@ function ConfigurableSamplesWorkspace({
       <section className="surface-card run-card streamlined-run-card">
         <div className="settings-card-plain-header">
           <strong>Settings</strong>
-          <ResetSettingsButton label="sample settings" onReset={() => onSettingsChange(defaults)} />
+          <ResetSettingsButton label="sample settings" onReset={() => onSettingsChange({ ...defaults, sampleDir: settings.sampleDir })} />
         </div>
         <div className="run-controls">
           <label>
@@ -789,7 +809,7 @@ function ConfigurableSamplesWorkspace({
         </button>
         {advanced && (
           <div className="advanced-grid">
-            <label>Samples folder<input value={settings.sampleDir} onChange={(event) => onSettingsChange({ sampleDir: event.target.value })} /></label>
+            <label>Sample FCS folder<input value={settings.sampleDir} onChange={(event) => onSettingsChange({ sampleDir: event.target.value })} onBlur={(event) => void onInputDirectoryChange("samples", event.currentTarget.value)} /></label>
             <label>Unmixing matrix<input value={settings.matrixFile} onChange={(event) => onSettingsChange({ matrixFile: event.target.value })} /></label>
             <label>Detector noise file<input value={settings.detectorNoiseFile} onChange={(event) => onSettingsChange({ detectorNoiseFile: event.target.value })} placeholder="Optional" /></label>
             <label>Output folder<input value={settings.outputDir} onChange={(event) => onSettingsChange({ outputDir: event.target.value })} /></label>
@@ -839,6 +859,7 @@ function ConfigurableSamplesWorkspace({
       <InlineProjectFiles
         kind="samples"
         projectPath={project.projectPath}
+        directory={project.sampleInputDir}
         refreshKey={`${project.projectPath}:${project.scan.samples}`}
         onChanged={onRefresh}
       />
@@ -871,6 +892,7 @@ function SamplesWorkspace(props: WorkflowWorkspaceProps) {
           onSettingsChange={(patch) => props.onSettingsChange("sample", patch)}
           onRun={props.onRun}
           onRefresh={props.onRefresh}
+          onInputDirectoryChange={props.onInputDirectoryChange}
         />
       ) : (
         <QcReportPanel
@@ -902,6 +924,7 @@ function ConfigurableAfWorkspace({
   >([]);
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof loadAfProfileData>>>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: "link" | "unlink" | "delete"; name: string } | null>(null);
+  const [renameAction, setRenameAction] = useState<{ original: string; value: string; error: string } | null>(null);
 
   const refreshProfiles = async () => {
     const nextProfiles = await listAfProfiles(projectPath);
@@ -936,6 +959,28 @@ function ConfigurableAfWorkspace({
       await refreshProfiles();
       onRefresh();
     }
+  };
+
+  const renameProfile = async () => {
+    if (!renameAction) return;
+    const newName = renameAction.value.trim();
+    if (!newName) {
+      setRenameAction({ ...renameAction, error: "Enter a profile name." });
+      return;
+    }
+    if (newName === renameAction.original) {
+      setRenameAction({ ...renameAction, error: "Enter a different profile name." });
+      return;
+    }
+    const result = await renameAfProfile(renameAction.original, newName, projectPath);
+    if (!result.success) {
+      setRenameAction({ ...renameAction, error: result.message });
+      return;
+    }
+    setRenameAction(null);
+    await refreshProfiles();
+    setPreview(await loadAfProfileData(result.name ?? newName));
+    onRefresh();
   };
 
   const chooseSource = async () => {
@@ -1079,6 +1124,12 @@ function ConfigurableAfWorkspace({
                       <Layers3 size={14} /> {profile.active ? "Unlink from dataset" : "Link to dataset"}
                     </button>
                     <button
+                      className="text-action"
+                      onClick={() => setRenameAction({ original: profile.name, value: profile.name, error: "" })}
+                    >
+                      <Pencil size={14} /> Rename
+                    </button>
+                    <button
                       className="text-action danger"
                       onClick={() => setConfirmAction({ type: "delete", name: profile.name })}
                     >
@@ -1141,7 +1192,7 @@ function ConfigurableAfWorkspace({
       {confirmAction && createPortal(<div className="cockpit-confirm-overlay" role="presentation" onMouseDown={() => setConfirmAction(null)}>
         <div className="cockpit-confirm" role="dialog" aria-modal="true" aria-labelledby="af-confirm-title" onMouseDown={(event) => event.stopPropagation()}>
           <h2 id="af-confirm-title">{confirmAction.type === "link" ? "Link this AF profile?" : confirmAction.type === "unlink" ? "Unlink this AF profile?" : "Delete this AF profile?"}</h2>
-          <p>{confirmAction.type === "link" ? `Use ${confirmAction.name} as this dataset's unstained cell control? The mapped unstained cell file will be ignored.` : confirmAction.type === "unlink" ? `${confirmAction.name} will no longer replace this dataset's mapped unstained cell control.` : `${confirmAction.name} will be permanently removed from the local profile library.`}</p>
+          <p>{confirmAction.type === "link" ? `Use ${confirmAction.name} as this dataset's unstained cell control? The mapped unstained cell file will be ignored.` : confirmAction.type === "unlink" ? `${confirmAction.name} will no longer replace this dataset's mapped unstained cell control.` : `${confirmAction.name} will be permanently removed from the package root.`}</p>
           <div>
             <button className="button button-ghost" onClick={() => setConfirmAction(null)}>Cancel</button>
             <button className={`button ${confirmAction.type === "delete" ? "button-danger" : "button-primary"}`} onClick={() => {
@@ -1151,6 +1202,31 @@ function ConfigurableAfWorkspace({
               else if (action.type === "unlink") void unlinkProfile(action.name);
               else void removeProfile(action.name);
             }}>{confirmAction.type === "link" ? "Link to dataset" : confirmAction.type === "unlink" ? "Unlink from dataset" : "Delete"}</button>
+          </div>
+        </div>
+      </div>, document.body)}
+      {renameAction && createPortal(<div className="cockpit-confirm-overlay" role="presentation" onMouseDown={() => setRenameAction(null)}>
+        <div className="cockpit-confirm cockpit-rename-profile" role="dialog" aria-modal="true" aria-labelledby="af-rename-title" onMouseDown={(event) => event.stopPropagation()}>
+          <h2 id="af-rename-title">Rename AF profile</h2>
+          <label>
+            Profile name
+            <input
+              autoFocus
+              value={renameAction.value}
+              onFocus={(event) => event.currentTarget.select()}
+              onChange={(event) => setRenameAction({ ...renameAction, value: event.target.value, error: "" })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void renameProfile();
+                }
+              }}
+            />
+          </label>
+          {renameAction.error && <p className="cockpit-confirm-error" role="alert">{renameAction.error}</p>}
+          <div>
+            <button className="button button-ghost" onClick={() => setRenameAction(null)}>Cancel</button>
+            <button className="button button-primary" onClick={() => void renameProfile()}>Rename</button>
           </div>
         </div>
       </div>, document.body)}
@@ -1182,7 +1258,7 @@ function ConfigurableSettingsWorkspace({
       />
       <details className="surface-card settings-section" open>
         <summary>
-          <SettingsCardSummary icon={<CircleCheckBig size={15} />} title="Control-stage parameters" onReset={() => onSettingsChange("control", defaults.control)} />
+          <SettingsCardSummary icon={<CircleCheckBig size={15} />} title="Control-stage parameters" onReset={() => onSettingsChange("control", { ...defaults.control, sccDir: control.sccDir })} />
         </summary>
         <div className="settings-form-grid">
           <label>
@@ -1521,7 +1597,7 @@ function ConfigurableSettingsWorkspace({
       </details>
       <details className="surface-card settings-section">
         <summary>
-          <SettingsCardSummary icon={<Beaker size={15} />} title="Sample-stage parameters" onReset={() => onSettingsChange("sample", defaults.sample)} />
+          <SettingsCardSummary icon={<Beaker size={15} />} title="Sample-stage parameters" onReset={() => onSettingsChange("sample", { ...defaults.sample, sampleDir: sample.sampleDir })} />
         </summary>
         <div className="settings-form-grid">
           <label>
@@ -2078,14 +2154,14 @@ export function WorkflowWorkspace(
             onSettingsChange={(patch) =>
               props.onSettingsChange("control", patch)
             }
-            onReset={() => props.onSettingsChange("control", defaultWorkflowSettings(props.settings.projectPath).control)}
+            onReset={() => props.onSettingsChange("control", { ...defaultWorkflowSettings(props.settings.projectPath).control, sccDir: props.settings.control.sccDir })}
           />
           <SampleOutputTuning
             settings={props.settings.sample}
             onSettingsChange={(patch) =>
               props.onSettingsChange("sample", patch)
             }
-            onReset={() => props.onSettingsChange("sample", defaultWorkflowSettings(props.settings.projectPath).sample)}
+            onReset={() => props.onSettingsChange("sample", { ...defaultWorkflowSettings(props.settings.projectPath).sample, sampleDir: props.settings.sample.sampleDir })}
           />
         </>
       )}

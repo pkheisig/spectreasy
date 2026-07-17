@@ -61,6 +61,46 @@ test_that("project picker routes distinguish opening from creating", {
     expect_match(create_body, "allow_create = TRUE", fixed = TRUE)
 })
 
+test_that("project input layout persists GUI renames and follows manual filesystem renames", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+    project <- tempfile("cockpit_project_layout_")
+    dir.create(file.path(project, "scc"), recursive = TRUE)
+    dir.create(file.path(project, "samples"), recursive = TRUE)
+    file.create(file.path(project, "scc", "control.fcs"))
+    file.create(file.path(project, "samples", "sample.fcs"))
+    on.exit(unlink(project, recursive = TRUE, force = TRUE), add = TRUE)
+
+    layout <- api_env$gui_project_layout(project)
+    expect_identical(layout$control_input_dir, "scc")
+    expect_identical(layout$sample_input_dir, "samples")
+    expect_true(file.exists(file.path(project, "scc", api_env$gui_project_input_marker_name())))
+    expect_true(file.exists(file.path(project, "samples", api_env$gui_project_input_marker_name())))
+
+    expect_true(file.rename(file.path(project, "scc"), file.path(project, "single_stains")))
+    reconciled <- api_env$gui_project_layout(project)
+    expect_identical(reconciled$control_input_dir, "single_stains")
+    expect_identical(api_env$gui_project_file_rows("controls", project)$name, "control.fcs")
+
+    updated <- api_env$gui_update_project_input_dir(project, "samples", "data/specimens")
+    expect_identical(updated$sample_input_dir, "data/specimens")
+    expect_true(file.exists(file.path(project, "data", "specimens", "sample.fcs")))
+    expect_identical(api_env$gui_project_file_rows("samples", project)$name, "sample.fcs")
+
+    persisted <- jsonlite::fromJSON(file.path(project, ".spectreasy", "project.json"))
+    expect_identical(persisted$control_input_dir, "single_stains")
+    expect_identical(persisted$sample_input_dir, "data/specimens")
+    scan <- api_env$gui_project_scan(project)
+    expect_identical(scan$scan$controls, 1L)
+    expect_identical(scan$scan$samples, 1L)
+    expect_error(api_env$gui_update_project_input_dir(project, "samples", "../outside"), "invalid path component")
+    expect_error(api_env$gui_update_project_input_dir(project, "samples", "single_stains"), "must be different")
+})
+
 test_that("cockpit API keeps all critical route families registered", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
@@ -78,7 +118,9 @@ test_that("cockpit API keeps all critical route families registered", {
         "/spectral_panel_metrics",
         "/af_profiles",
         "/af_profiles/delete",
+        "/af_profiles/rename",
         "/project/context",
+        "/project/layout",
         "/project/files",
         "/project/initialize",
         "/project/upload-start",

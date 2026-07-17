@@ -117,6 +117,40 @@ test_that("cockpit can unlink only the AF profile linked to a dataset", {
     })
 })
 
+test_that("cockpit rename keeps the active dataset profile link synchronized", {
+    with_cockpit_af_profiles("profile_before", {
+        api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+        if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+        skip_if_not(file.exists(api_path))
+
+        router <- plumber::plumb(api_path)
+        endpoints <- unlist(router$endpoints, recursive = FALSE, use.names = FALSE)
+        endpoint <- endpoints[[which(vapply(endpoints, function(item) identical(item$path, "/af_profiles/rename"), logical(1)))[1]]]
+        rename_route <- endpoint$getFunc()
+        root <- tempfile("cockpit_af_rename_")
+        dir.create(file.path(root, ".spectreasy"), recursive = TRUE)
+        on.exit(unlink(root, recursive = TRUE, force = TRUE), add = TRUE)
+        jsonlite::write_json(
+            list(profile_name = "profile_before"),
+            file.path(root, ".spectreasy", "active_af_profile.json"),
+            auto_unbox = TRUE
+        )
+        request <- list(postBody = jsonlite::toJSON(list(
+            profile_name = "profile_before",
+            new_name = "profile_after",
+            projectPath = root
+        ), auto_unbox = TRUE))
+
+        result <- rename_route(request)
+        expect_true(result$success)
+        expect_identical(result$new_name, "profile_after")
+        active <- jsonlite::fromJSON(file.path(root, ".spectreasy", "active_af_profile.json"))
+        expect_identical(active$profile_name, "profile_after")
+        expect_true("profile_after" %in% spectreasy::list_af_profiles()$name)
+        expect_false("profile_before" %in% spectreasy::list_af_profiles()$name)
+    })
+})
+
 test_that("cockpit removes a stale project link when its global AF profile is gone", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")

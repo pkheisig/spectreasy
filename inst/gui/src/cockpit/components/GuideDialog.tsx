@@ -6,60 +6,54 @@ const sections = [
   {
     id: 'start', label: 'Getting started', title: 'Set up a project',
     content: <>
-      <p><strong>Choose Project → Open project</strong> and select the folder that contains your experiment. Spectreasy uses that folder for every path shown in the cockpit.</p>
-      <ol><li>Place single-colour controls in <strong>scc/</strong>.</li><li>Place experimental files in <strong>samples/</strong>.</li><li>Use <strong>Files</strong> to inspect, add, or remove FCS files without leaving the cockpit.</li></ol>
-      <p className="guide-callout"><strong>Project selection is tab-specific.</strong> Each tab keeps its own selected project, while both tabs still use the same local R backend. Always check the project name before starting a long workflow.</p>
+      <p>Click on <strong>Project</strong> to open a project directory that contains your experiment or create a new one.</p>
+      <ol><li>Place single-colour controls in the configured <strong>Control FCS folder</strong>.</li><li>Place experimental files in the configured <strong>Sample FCS folder</strong>.</li></ol>
+      <p>Use <strong>Files</strong> to inspect, add, or remove FCS files.</p>
+      <p className="guide-callout"><strong>Projects are instance-specific</strong>, meaning each instance of the Spectreasy GUI (i.e., browser tab) keeps its own selected project. All instances still use the same local R backend. Always check the project name before starting a workflow.</p>
+      <p>For code and documentation, visit the <a href="https://github.com/pkheisig/spectreasy" target="_blank" rel="noopener noreferrer"><strong><u>Github repository</u></strong> </a>.</p>
     </>,
   },
   {
-    id: 'controls', label: 'Controls', title: 'Build the reference matrix',
+    id: 'controls', label: 'Controls', title: 'Unmix control files',
     content: <>
       <p>The Controls workflow follows four ordered stages: <strong>Mapping, Gating, Unmixing, and Quality Control</strong>.</p>
-      <ol><li><strong>Mapping:</strong> create or review <code>fcs_mapping.csv</code>. Confirming saves the table and opens gating.</li><li><strong>Gating:</strong> select the cell or bead population, singlets, positive events, and any negative population. <strong>Confirm</strong> saves <code>ssc_gate_config.csv</code> and advances to Unmixing.</li><li><strong>Unmixing:</strong> choose the method and report options. Advanced settings expose method-specific and output controls.</li><li><strong>Quality Control:</strong> open any report created in the selected output folder. Repeated runs remain available as separate numbered report folders.</li></ol>
-    </>,
-  },
-  {
-    id: 'gating', label: 'Gating', title: 'Review control gates',
-    content: <>
-      <p>Choose a control in the left sidebar, then work from scatter gates toward the histogram gate. The highlighted sidebar entry is the file currently shown.</p>
-      <ul><li><strong>Neg / Pos</strong> selects the population being edited.</li><li><strong>Magic wand</strong> proposes gates; inspect every proposal before confirming.</li><li><strong>Settings</strong> changes point count, point size, histogram bins, transforms, and view ranges.</li><li><strong>Save / Load</strong> writes or opens a gate CSV. Confirm uses the project gate file for the cockpit workflow.</li></ul>
-      <p className="guide-callout">Closing with <strong>Exit</strong> returns without advancing. Closing with <strong>Confirm</strong> saves the reviewed gates and opens Controls step 03.</p>
+      <ol><li><strong>Mapping:</strong> create or review <code>fcs_mapping.csv</code>. This table tells Spectrasy how to process each control file in the backend, like assigning fluorophore names and background controls. Confirming saves the table and opens gating.</li><li><strong>Gating:</strong> select the cell or bead population, singlets, positive events, and any negative population (when no background control is present in the mapping table). Histogram gates can be automatically generated after singlet gating and then manually adjusted. Gates are applied across all bead- or cell-based controls but can be made file-specific. <strong>Confirm</strong> saves <code>ssc_gate_config.csv</code> and advances to Unmixing.</li><li><strong>Unmixing:</strong> choose the unmixing method (algorithm) and report options. Advanced settings expose method-specific parameters and output controls.</li><li><strong>Quality Control:</strong> open and inspect SCC unmixing quality control reports. Repeated runs remain available as separate entries.</li></ol>
     </>,
   },
   {
     id: 'samples', label: 'Samples', title: 'Unmix sample files',
     content: <>
-      <p>Samples has two stages: <strong>Unmixing</strong> and <strong>Quality Control</strong>. The selected project’s <code>samples/</code> files are listed below the settings card.</p>
-      <ul><li>Select the reference matrix and, when applicable, detector-noise and spectral-variant files produced by Controls.</li><li><strong>Generate report</strong> enables report format and related options.</li><li><strong>One report per sample</strong> creates separate PDFs; HTML uses a sample selector in one interactive report.</li><li><strong>Write FCS outputs</strong> writes unmixed files to a numbered output folder so earlier runs are preserved.</li></ul>
-    </>,
-  },
-  {
-    id: 'reports', label: 'Reports', title: 'Inspect quality control',
-    content: <>
-      <p>Quality Control lists reports found only inside the current project’s selected output root. The folder prefix identifies the run, for example <code>qc_controls_2/qc_controls_report.html</code>.</p>
-      <ul><li><strong>HTML</strong> reports are interactive and may include plot controls and sample selectors.</li><li><strong>PDF</strong> reports are fixed documents intended for review and sharing.</li><li>Use the card actions to open, download, or export an existing HTML report to PDF.</li><li>A <strong>stale</strong> label means an upstream input is newer than that report.</li></ul>
+      <p>Samples has two stages: <strong>Unmixing</strong> and <strong>Quality Control</strong>.</p>
+      <ol><li><strong>Unmixing:</strong> choose the unmixing method (algorithm) and report options. Advanced settings expose method-specific parameters and output controls.It is recommended to use the same method as in the Controls workflow.</li><li><strong>Quality Control:</strong> open and inspect sample unmixing quality control reports. Repeated runs remain available as separate entries.</li></ol>
     </>,
   },
   {
     id: 'library', label: 'AF library', title: 'Manage autofluorescence profiles',
     content: <>
       <p>Extract an AF profile from an unstained FCS file, give it a reusable name, and save it to the local Spectreasy library.</p>
-      <ul><li><strong>Extract</strong> creates the profile using the selected band count and event limit.</li><li><strong>Activate</strong> links a library profile to the current project and uses it as the unstained reference.</li><li><strong>Apply to matrix</strong> writes the AF rows into a selected matrix.</li><li>Deleting a profile removes it from the local library, not from reports already created.</li></ul>
+      <ul><li><strong>Extract & save</strong> creates the profile using the selected band count and event limit. The profile is saved to the package root directory.</li><li><strong>Link to dataset</strong> links a library profile to the current project and uses it as the unstained reference.</li><li> Modify profiles further using the <strong>Rename</strong> and <strong>Delete</strong> options.</li></ul>
     </>,
   },
   {
-    id: 'tools', label: 'Matrix & panel', title: 'Use the analysis tools',
+    id: 'matrix', label: 'Adjust matrix', title: 'Adjust reference and unmixing matrices',
     content: <>
-      <p><strong>Matrix Adjustment</strong> loads a project matrix and sample, previews residual relationships, and saves an adjusted copy. It never overwrites the selected source matrix.</p>
-      <p><strong>Panel Builder</strong> compares fluorophores for the selected cytometer and configuration. Use similarity and spread information to inspect combinations before exporting the overview.</p>
-      <p className="guide-callout">Both tools inherit the project selected in this browser tab. Their saved interface settings are stored with that project.</p>
+      <p><ol><li><strong>Load</strong> a matrix file and apply it to a sample with the selected unmixing method.</li><li><strong>Preview</strong> residual relationships and adjust population shapes by dragging on the events. A new modified copy will be saved automatically.</li></ol></p>
+
     </>,
   },
   {
-    id: 'settings', label: 'Settings & logs', title: 'Understand the cockpit controls',
+    id: 'panel', label: 'Panel builder', title: 'Design a spectral panel',
     content: <>
-      <ul><li><strong>Cytometer</strong> supplies detector metadata and panel configuration.</li><li><strong>Method</strong> sets the default unmixing method; each workflow card can show method-specific advanced settings.</li><li><strong>Logs</strong> shows the generated operation and grouped R output. Warnings and errors remain separate for visibility.</li><li><strong>Settings</strong> controls theme, typography, scale, sidebar width, and count badges.</li></ul>
-      <p>No data is uploaded. Scientific work runs in the local R process started by <code>spectreasy_gui()</code>.</p>
+      <p><strong>Panel Builder</strong> compares fluorophore spectra for the selected cytometer and configuration.</p>
+      <ol><li><strong>Design</strong> a spectral panel from scratch before starting the experiment</li><li><strong>Optimize</strong> for spectral overlap and panel complexity.</li><li><strong>Validate</strong> experimental data from the QC reports against theoretical indices.</li></ol>
+
+    </>,
+  },
+  {
+    id: 'settings', label: 'Settings & logs', title: 'Settings and session logs',
+    content: <>
+      <ul><li><strong>Cytometer</strong> supplies detector metadata and panel configuration.</li><li><strong>Method</strong> sets the default unmixing method; each workflow card can show method-specific advanced settings.</li><li><strong>Logs</strong> shows the generated operation and grouped R output.</li><li><strong>Settings</strong> page controls global default values, app aesthetics, and more.</li></ul>
+      <p>No data is uploaded to the internet. All processes run in the local R environment started by <code>spectreasy::spectreasy_gui()</code>.</p>
     </>,
   },
 ] as const

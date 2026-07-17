@@ -6,10 +6,8 @@ import {
   CircleHelp,
   Files as FilesIcon,
   Settings,
-  Sparkles,
   Sun,
   TerminalSquare,
-  X,
 } from "lucide-react";
 import {
   attemptWorkflowAction,
@@ -18,11 +16,13 @@ import {
   downloadTextFile,
   initialBackendStatus,
   initializeProject,
+  loadProjectInputDirectories,
   loadPanelPayload,
   loadProjectSnapshot,
   persistControlMapping,
   persistGuiState,
   selectProjectFolder,
+  updateProjectInputDirectory,
 } from "./api";
 import { emptyProject } from "./projectState";
 import { WorkflowRail } from "./components/WorkflowRail";
@@ -333,7 +333,6 @@ export default function CockpitApp() {
   const [sampleTab, setSampleTab] = useState<"unmixing" | "qc">("unmixing");
   const [job, setJob] = useState<Job>(emptyJob);
   const [panelPayload, setPanelPayload] = useState<PanelPayload | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [executionLogs, setExecutionLogs] = useState<ExecutionLogEntry[]>([]);
   const [filesOpen, setFilesOpen] = useState(false);
@@ -404,7 +403,7 @@ export default function CockpitApp() {
         );
         const afFiles = snapshot.project.mapping
           .filter((row) => row.marker.trim().toLowerCase() === "autofluorescence" || /^af(?:$|_|\b)/i.test(row.fluorophore.trim()))
-          .map((row) => `scc/${row.file}`);
+          .map((row) => `${snapshot.project.controlInputDir}/${row.file}`);
         const savedAf: Partial<WorkflowSettings["af"]> = saved.af ?? {};
         const requestedAfFile = savedAf.fcsFile ?? current.af.fcsFile;
         return {
@@ -414,7 +413,7 @@ export default function CockpitApp() {
           control: {
             ...current.control,
             ...savedControl,
-            sccDir: savedControl.sccDir ?? "scc",
+            sccDir: snapshot.project.controlInputDir,
             controlFile: savedControl.controlFile ?? "fcs_mapping.csv",
             outputDir: normalizeCockpitOutputRoot(savedControl.outputDir),
             // A cockpit project with confirmed gates always reuses its gate CSV.
@@ -430,7 +429,7 @@ export default function CockpitApp() {
           sample: {
             ...current.sample,
             ...savedSample,
-            sampleDir: savedSample.sampleDir ?? "samples",
+            sampleDir: snapshot.project.sampleInputDir,
             matrixFile: savedSample.matrixFile ?? "spectreasy_outputs/unmix_controls/scc_reference_matrix.csv",
             detectorNoiseFile: savedSample.detectorNoiseFile ?? "spectreasy_outputs/unmix_controls/scc_detector_noise.csv",
             outputDir: normalizeCockpitOutputRoot(savedSample.outputDir),
@@ -486,6 +485,23 @@ export default function CockpitApp() {
   }, [backend.connected, refreshProject]);
 
   useEffect(() => {
+    if (!backend.connected || !project.projectPath) return;
+    let checking = false;
+    const checkLayout = async () => {
+      if (checking) return;
+      checking = true;
+      const layout = await loadProjectInputDirectories(project.projectPath);
+      checking = false;
+      if (!layout) return;
+      if (layout.controlInputDir !== project.controlInputDir || layout.sampleInputDir !== project.sampleInputDir) {
+        await refreshProject(false);
+      }
+    };
+    const timer = window.setInterval(() => void checkLayout(), 2000);
+    return () => window.clearInterval(timer);
+  }, [backend.connected, project.controlInputDir, project.projectPath, project.sampleInputDir, refreshProject]);
+
+  useEffect(() => {
     if (!settingsReady) return;
     const timer = window.setTimeout(() => void persistGuiState(project, settings), 450);
     return () => window.clearTimeout(timer);
@@ -509,12 +525,6 @@ export default function CockpitApp() {
     document.addEventListener("keydown", exitOverlay);
     return () => document.removeEventListener("keydown", exitOverlay);
   }, [activeSection, filesOpen, sectionBeforeSettings]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 4200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -586,6 +596,22 @@ export default function CockpitApp() {
           : {}),
       },
     }));
+  }
+
+  async function updateInputDirectory(role: "controls" | "samples", path: string) {
+    const currentPath = role === "controls" ? project.controlInputDir : project.sampleInputDir;
+    if (!settings.projectPath || path.trim() === currentPath) return;
+    const result = await updateProjectInputDirectory(role, path.trim(), settings.projectPath);
+    appendExecutionLogs([{ kind: result.success ? "success" : "error", text: result.message }]);
+    if (!result.success) {
+      setSettings((current) => ({
+        ...current,
+        control: role === "controls" ? { ...current.control, sccDir: project.controlInputDir } : current.control,
+        sample: role === "samples" ? { ...current.sample, sampleDir: project.sampleInputDir } : current.sample,
+      }));
+      return;
+    }
+    await refreshProject(false);
   }
 
   function changeCytometer(cytometer: string) {
@@ -668,7 +694,7 @@ export default function CockpitApp() {
     label: string,
   ) {
     if (action === "control" && !settings.control.manualGateFile) {
-      setToast("Review and confirm the control gates before running the control workflow.");
+      appendExecutionLogs([{ kind: "warning", text: "Review and confirm the control gates before running the control workflow." }]);
       openApplet("control-gating", "controls");
       return false;
     }
@@ -785,7 +811,6 @@ export default function CockpitApp() {
         text: response.success ? `${label} completed.` : response.message,
       },
     ]);
-    setToast(response.message);
     if (response.success) {
       setJob({
         label,
@@ -829,11 +854,9 @@ export default function CockpitApp() {
     const payload = await loadPanelPayload("aurora");
     if (payload) {
       setPanelPayload(payload);
-      setToast("Panel library refreshed from the R backend.");
+      appendExecutionLogs([{ kind: "success", text: "Panel library refreshed from the R backend." }]);
     } else {
-      setToast(
-        "Showing the bundled panel library preview. The R backend is not connected.",
-      );
+      appendExecutionLogs([{ kind: "warning", text: "Showing the bundled panel library preview. The R backend is not connected." }]);
     }
   }
 
@@ -844,14 +867,14 @@ export default function CockpitApp() {
       setMappingTab("gating");
       openApplet("control-gating", "controls");
     }
-    setToast(mapping.message);
+    appendExecutionLogs([{ kind: mapping.success ? "success" : "error", text: mapping.message }]);
   }
 
   async function chooseProject(mode: "create" | "open") {
     const response = mode === "create"
       ? await createProjectFolder()
       : await selectProjectFolder();
-    if (!response.cancelled && !response.success) setToast(response.message);
+    if (!response.cancelled && !response.success) appendExecutionLogs([{ kind: "error", text: response.message }]);
     if (response.success) {
       if (response.projectPath) window.sessionStorage.setItem("spectreasy-project-path", response.projectPath);
       await refreshProject(true, response.projectPath);
@@ -873,14 +896,13 @@ export default function CockpitApp() {
 
   async function createMapping() {
     const response = await createControlMapping(project.projectPath);
-    setToast(response.message);
+    appendExecutionLogs([{ kind: response.success ? "success" : "error", text: response.message }]);
     if (response.success) await refreshProject();
   }
 
   function downloadArtifact(artifact: Artifact) {
     const manifest = `Spectreasy artifact\n\nName: ${artifact.name}\nType: ${artifact.type}\nStatus: ${artifact.status}\nPath: ${artifact.path}\nUpdated: ${artifact.updated}\nRun: ${artifact.run ?? "user supplied"}\n`;
     downloadTextFile(`${artifact.name.replaceAll("/", "_")}.txt`, manifest);
-    setToast(`Prepared a local download for ${artifact.name}.`);
   }
 
   function selectArtifact(artifact: Artifact) {
@@ -980,20 +1002,12 @@ export default function CockpitApp() {
               onSectionChange={navigateToSection}
               settings={settings}
               onSettingsChange={updateSettings}
+              onInputDirectoryChange={updateInputDirectory}
               onOpenApplet={(applet, reportPath) => openApplet(applet, activeSection, reportPath)}
             />
           </div>
         </main>
       </div>
-      {toast && (
-        <div className="toast" role="status" aria-live="polite">
-          <Sparkles size={15} />
-          <span>{toast}</span>
-          <button onClick={() => setToast(null)} aria-label="Dismiss message">
-            <X size={14} />
-          </button>
-        </div>
-      )}
       {gatingInitialized && (
         <CockpitApplet
           applet="control-gating"
@@ -1019,6 +1033,8 @@ export default function CockpitApp() {
         <ProjectFilesDialog
           projectName={project.projectName}
           projectPath={project.projectPath}
+          controlInputDir={project.controlInputDir}
+          sampleInputDir={project.sampleInputDir}
           onClose={() => setFilesOpen(false)}
           onChanged={async () => {
             await refreshProject(false);

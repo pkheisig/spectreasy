@@ -9,11 +9,13 @@ import type { ProjectFileEntry, ProjectFileKind } from '../api'
 type Props = {
   projectName: string
   projectPath: string
+  controlInputDir: string
+  sampleInputDir: string
   onClose: () => void
   onChanged: () => void | Promise<void>
 }
 
-export function ProjectFilesDialog({ projectName, projectPath, onClose, onChanged }: Props) {
+export function ProjectFilesDialog({ projectName, projectPath, controlInputDir, sampleInputDir, onClose, onChanged }: Props) {
   const [kind, setKind] = useState<ProjectFileKind>('controls')
   const [files, setFiles] = useState<ProjectFileEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -163,7 +165,7 @@ export function ProjectFilesDialog({ projectName, projectPath, onClose, onChange
           onDrop={receiveDrop}
         >
           <div className="project-files-toolbar">
-            <span>{kind === 'controls' ? 'scc' : 'samples'}/</span>
+            <span>{kind === 'controls' ? controlInputDir : sampleInputDir}/</span>
             {confirmDeleteAll ? <div className="project-files-delete-all-confirm">
               <span>Delete all {files.length} files?</span>
               <button className="button button-danger" type="button" disabled={busy} onClick={() => void removeAllFiles()}>Delete all</button>

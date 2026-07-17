@@ -31,7 +31,7 @@
     if (is.null(samples_dir)) {
         samples_dir <- .default_adjust_matrix_samples_dir(matrix_dir = matrix_dir)
         if (is.null(samples_dir)) {
-            samples_dir <- file.path(matrix_dir, "samples")
+            samples_dir <- .spectreasy_project_input_path(matrix_dir, "samples")
         }
     }
     samples_dir <- normalizePath(samples_dir, mustWork = FALSE)
@@ -70,7 +70,12 @@
     project_dirs <- unique(c(getwd(), .infer_project_dir_from_matrix_dir(matrix_dir)))
     project_dirs <- project_dirs[nzchar(project_dirs)]
 
-    raw_sample_dirs <- file.path(project_dirs, "samples")
+    raw_sample_dirs <- vapply(project_dirs, function(project_dir) {
+        if (!dir.exists(project_dir)) return("")
+        layout <- .spectreasy_project_layout(project_dir, ensure_markers = FALSE, persist = FALSE)
+        file.path(project_dir, layout$sample_input_dir)
+    }, character(1))
+    raw_sample_dirs <- unname(raw_sample_dirs[nzchar(raw_sample_dirs)])
     raw_hit <- raw_sample_dirs[dir.exists(raw_sample_dirs)][1]
     if (!is.na(raw_hit) && nzchar(raw_hit)) {
         return(raw_hit)
@@ -92,10 +97,11 @@
 }
 
 .default_gate_controls_scc_dir <- function() {
-    file.path(getwd(), "scc")
+    layout <- .spectreasy_project_layout(getwd(), ensure_markers = FALSE, persist = FALSE)
+    file.path(getwd(), layout$control_input_dir)
 }
 
-.normalize_gate_controls_paths <- function(scc_dir = "scc",
+.normalize_gate_controls_paths <- function(scc_dir = .default_gate_controls_scc_dir(),
                                            control_file = "fcs_mapping.csv",
                                            gate_file = "ssc_gate_config.csv") {
     if (!dir.exists(scc_dir)) {
@@ -301,8 +307,10 @@
     if (!identical(mode, "control-gating")) {
         project_dir <- .gui_project_dir(dirs$matrix_dir, mode = mode)
         if (is.null(project_dir) || !dir.exists(project_dir)) project_dir <- dirs$matrix_dir
+        project_layout <- .spectreasy_project_layout(project_dir)
         options(
-            spectreasy.gating_scc_dir = file.path(project_dir, "scc"),
+            spectreasy.samples_dir = file.path(project_dir, project_layout$sample_input_dir),
+            spectreasy.gating_scc_dir = file.path(project_dir, project_layout$control_input_dir),
             spectreasy.gating_control_file = file.path(project_dir, "fcs_mapping.csv"),
             spectreasy.gating_gate_file = file.path(project_dir, "ssc_gate_config.csv")
         )
@@ -454,7 +462,7 @@ adjust_matrix <- function(matrix_dir = NULL,
 #' }
 spectreasy_gui <- function(port = 8000) {
     project_dir <- normalizePath(getwd(), mustWork = TRUE)
-    samples_dir <- file.path(project_dir, "samples")
+    samples_dir <- .spectreasy_project_input_path(project_dir, "samples")
     .launch_spectreasy_gui(
         matrix_dir = project_dir,
         samples_dir = samples_dir,

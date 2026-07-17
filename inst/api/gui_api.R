@@ -23,7 +23,7 @@ get_matrix_dir <- function() {
 }
 
 get_samples_dir <- function() {
-    default_samples <- file.path(get_matrix_dir(), "samples")
+    default_samples <- gui_project_input_path(get_matrix_dir(), "samples")
     normalizePath(getOption("spectreasy.samples_dir", default_samples), mustWork = FALSE)
 }
 
@@ -86,6 +86,199 @@ gui_request_project_root <- function(project_path = "", fallback = TRUE) {
     if (!nzchar(value)) stop("A project folder is required for this request.", call. = FALSE)
     if (!dir.exists(value)) stop("Project folder not found: ", value, call. = FALSE)
     normalizePath(value, mustWork = TRUE)
+}
+
+gui_project_layout_config_path <- function(project_path) {
+    file.path(gui_request_project_root(project_path), ".spectreasy", "project.json")
+}
+
+gui_project_input_marker_name <- function() ".spectreasy-input-role.json"
+
+gui_normalize_project_input_dir <- function(value, root, label = "input directory") {
+    value <- gsub("\\\\", "/", trimws(as.character(value)[1]))
+    value <- sub("/+$", "", value)
+    if (!nzchar(value)) stop(label, " cannot be empty.", call. = FALSE)
+    if (grepl("^(/|[A-Za-z]:[/\\\\])", value)) {
+        stop(label, " must be a path inside the active project.", call. = FALSE)
+    }
+    parts <- strsplit(value, "/", fixed = TRUE)[[1]]
+    if (any(parts %in% c("", ".", ".."))) {
+        stop(label, " contains an invalid path component.", call. = FALSE)
+    }
+    if (identical(parts[[1]], ".spectreasy")) {
+        stop(label, " cannot be stored inside the .spectreasy configuration directory.", call. = FALSE)
+    }
+    candidate <- normalizePath(file.path(root, do.call(file.path, as.list(parts))), mustWork = FALSE)
+    root <- normalizePath(root, mustWork = TRUE)
+    if (!startsWith(candidate, paste0(root, .Platform$file.sep))) {
+        stop(label, " must remain inside the active project.", call. = FALSE)
+    }
+    paste(parts, collapse = "/")
+}
+
+gui_write_project_layout <- function(root, layout) {
+    root <- gui_request_project_root(root)
+    control_dir <- gui_normalize_project_input_dir(layout$control_input_dir, root, "Control input directory")
+    sample_dir <- gui_normalize_project_input_dir(layout$sample_input_dir, root, "Sample input directory")
+    if (identical(control_dir, sample_dir)) {
+        stop("Control and sample input directories must be different.", call. = FALSE)
+    }
+    path <- gui_project_layout_config_path(root)
+    dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+    payload <- list(
+        version = 1L,
+        control_input_dir = control_dir,
+        sample_input_dir = sample_dir,
+        updated = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z")
+    )
+    temporary <- tempfile("project_layout_", tmpdir = dirname(path), fileext = ".json")
+    jsonlite::write_json(payload, temporary, auto_unbox = TRUE, pretty = TRUE)
+    if (!file.rename(temporary, path)) {
+        if (!file.copy(temporary, path, overwrite = TRUE)) stop("Could not save the project input-directory configuration.", call. = FALSE)
+        unlink(temporary, force = TRUE)
+    }
+    payload
+}
+
+gui_write_project_input_marker <- function(directory, role) {
+    if (!dir.exists(directory)) return(invisible(FALSE))
+    marker <- file.path(directory, gui_project_input_marker_name())
+    jsonlite::write_json(
+        list(role = role, version = 1L),
+        marker,
+        auto_unbox = TRUE,
+        pretty = TRUE
+    )
+    invisible(TRUE)
+}
+
+gui_discover_project_input_markers <- function(root) {
+    root <- gui_request_project_root(root)
+    markers <- list.files(
+        root,
+        pattern = paste0("^", gsub("\\.", "\\\\.", gui_project_input_marker_name()), "$"),
+        recursive = TRUE,
+        full.names = TRUE,
+        all.files = TRUE,
+        include.dirs = FALSE
+    )
+    result <- list(controls = character(), samples = character())
+    for (marker in markers) {
+        value <- tryCatch(jsonlite::fromJSON(marker, simplifyVector = TRUE), error = function(e) NULL)
+        role <- if (is.null(value$role)) "" else trimws(as.character(value$role)[1])
+        if (!role %in% names(result)) next
+        relative <- gui_project_relative_path(dirname(marker), root)
+        relative <- tryCatch(gui_normalize_project_input_dir(relative, root), error = function(e) "")
+        if (nzchar(relative)) result[[role]] <- unique(c(result[[role]], relative))
+    }
+    result
+}
+
+gui_project_layout <- function(root, reconcile = TRUE, ensure_markers = TRUE) {
+    root <- gui_request_project_root(root)
+    path <- gui_project_layout_config_path(root)
+    stored <- if (file.exists(path)) {
+        tryCatch(jsonlite::fromJSON(path, simplifyVector = TRUE), error = function(e) list())
+    } else list()
+    layout <- list(
+        control_input_dir = tryCatch(
+            gui_normalize_project_input_dir(if (is.null(stored$control_input_dir)) "scc" else stored$control_input_dir, root),
+            error = function(e) "scc"
+        ),
+        sample_input_dir = tryCatch(
+            gui_normalize_project_input_dir(if (is.null(stored$sample_input_dir)) "samples" else stored$sample_input_dir, root),
+            error = function(e) "samples"
+        )
+    )
+    changed <- !file.exists(path)
+    if (isTRUE(reconcile)) {
+        discovered <- gui_discover_project_input_markers(root)
+        role_fields <- c(controls = "control_input_dir", samples = "sample_input_dir")
+        for (role in names(role_fields)) {
+            field <- role_fields[[role]]
+            configured_path <- file.path(root, layout[[field]])
+            candidates <- discovered[[role]]
+            if (!dir.exists(configured_path) && length(candidates) == 1L) {
+                layout[[field]] <- candidates[[1]]
+                changed <- TRUE
+            }
+        }
+    }
+    if (identical(layout$control_input_dir, layout$sample_input_dir)) {
+        layout$sample_input_dir <- "samples"
+        changed <- TRUE
+    }
+    if (isTRUE(ensure_markers)) {
+        gui_write_project_input_marker(file.path(root, layout$control_input_dir), "controls")
+        gui_write_project_input_marker(file.path(root, layout$sample_input_dir), "samples")
+    }
+    if (changed) gui_write_project_layout(root, layout)
+    layout
+}
+
+gui_project_input_path <- function(root, role) {
+    root <- gui_request_project_root(root)
+    layout <- gui_project_layout(root)
+    field <- switch(
+        tolower(trimws(as.character(role)[1])),
+        controls = "control_input_dir",
+        control = "control_input_dir",
+        samples = "sample_input_dir",
+        sample = "sample_input_dir",
+        stop("Input-directory role must be controls or samples.", call. = FALSE)
+    )
+    normalizePath(file.path(root, layout[[field]]), mustWork = FALSE)
+}
+
+gui_update_project_input_dir <- function(root, role, value) {
+    root <- gui_request_project_root(root)
+    role <- tolower(trimws(as.character(role)[1]))
+    field <- switch(role, controls = "control_input_dir", samples = "sample_input_dir", NULL)
+    if (is.null(field)) stop("Input-directory role must be controls or samples.", call. = FALSE)
+    layout <- gui_project_layout(root)
+    next_value <- gui_normalize_project_input_dir(value, root, paste(if (role == "controls") "Control" else "Sample", "input directory"))
+    other_field <- if (field == "control_input_dir") "sample_input_dir" else "control_input_dir"
+    if (identical(next_value, layout[[other_field]])) {
+        stop("Control and sample input directories must be different.", call. = FALSE)
+    }
+    previous_value <- layout[[field]]
+    previous_path <- file.path(root, previous_value)
+    next_path <- file.path(root, next_value)
+    if (!identical(previous_value, next_value)) {
+        if (dir.exists(previous_path) && dir.exists(next_path)) {
+            stop("The requested input directory already exists. Remove it or choose a different name before renaming.", call. = FALSE)
+        }
+        if (dir.exists(previous_path)) {
+            dir.create(dirname(next_path), recursive = TRUE, showWarnings = FALSE)
+            if (!file.rename(previous_path, next_path)) {
+                stop("Could not rename the input directory. Check filesystem permissions and try again.", call. = FALSE)
+            }
+        } else if (!dir.exists(next_path) && !dir.create(next_path, recursive = TRUE, showWarnings = FALSE)) {
+            stop("Could not create the requested input directory.", call. = FALSE)
+        }
+    }
+    layout[[field]] <- next_value
+    layout <- gui_write_project_layout(root, layout)
+    gui_write_project_input_marker(next_path, role)
+    gui_set_project_context(root, reset_gate_cache = role == "controls")
+    layout
+}
+
+# Delegate the API surface to the package-level resolver so the launcher,
+# cockpit, gating applets, and workflows share one layout implementation.
+gui_project_layout_config_path <- function(project_path) spectreasy:::.spectreasy_project_layout_path(gui_request_project_root(project_path))
+gui_project_input_marker_name <- function() spectreasy:::.spectreasy_project_layout_marker_name()
+gui_normalize_project_input_dir <- function(value, root, label = "input directory") spectreasy:::.spectreasy_normalize_project_input_dir(value, gui_request_project_root(root), label)
+gui_write_project_layout <- function(root, layout) spectreasy:::.spectreasy_write_project_layout(gui_request_project_root(root), layout)
+gui_write_project_input_marker <- function(directory, role) spectreasy:::.spectreasy_write_project_input_marker(directory, role)
+gui_discover_project_input_markers <- function(root) spectreasy:::.spectreasy_discover_project_input_markers(gui_request_project_root(root))
+gui_project_layout <- function(root, reconcile = TRUE, ensure_markers = TRUE) spectreasy:::.spectreasy_project_layout(gui_request_project_root(root), reconcile, ensure_markers)
+gui_project_input_path <- function(root, role) spectreasy:::.spectreasy_project_input_path(gui_request_project_root(root), role)
+gui_update_project_input_dir <- function(root, role, value) {
+    root <- gui_request_project_root(root)
+    layout <- spectreasy:::.spectreasy_update_project_input_dir(root, role, value)
+    gui_set_project_context(root, reset_gate_cache = identical(tolower(trimws(as.character(role)[1])), "controls"))
+    layout
 }
 
 gui_project_value <- function(body, fallback = TRUE) {
@@ -243,7 +436,8 @@ user_gui_config_path <- function(module, project_path = "") {
 }
 
 get_gate_scc_dir <- function() {
-    normalizePath(getOption("spectreasy.gating_scc_dir", file.path(get_gui_default_project_dir(), "scc")), mustWork = FALSE)
+    root <- get_gui_default_project_dir()
+    normalizePath(getOption("spectreasy.gating_scc_dir", gui_project_input_path(root, "controls")), mustWork = FALSE)
 }
 
 get_gate_control_file <- function() {
@@ -1337,12 +1531,14 @@ function(req, res) {
 function() {
     project_selected <- isTRUE(getOption("spectreasy.project_selected", TRUE))
     project_path <- if (project_selected) get_matrix_dir() else ""
+    layout <- if (nzchar(project_path) && dir.exists(project_path)) gui_project_layout(project_path) else list()
     return(list(
         status = "ok",
         time = Sys.time(),
         wd = getwd(),
         matrix_dir = get_matrix_dir(),
         samples_dir = get_samples_dir(),
+        project_layout = layout,
         unmixing_method = get_unmixing_method(),
         gui_mode = getOption("spectreasy.gui_mode", "tuner"),
         panel_cytometer = getOption("spectreasy.panel_cytometer", "aurora"),
@@ -1398,7 +1594,7 @@ function(project_path = "") {
     list(rows = rows, exists = TRUE, path = path)
 }
 
-#* Create fcs_mapping.csv from the active project's SCC folder
+#* Create fcs_mapping.csv from the active project's configured control input folder
 #* @post /control_mapping/create
 function(req) {
     body <- gui_workflow_body(req)
@@ -1407,7 +1603,7 @@ function(req) {
         if (is.null(cytometer) || length(cytometer) == 0L || is.na(cytometer[1]) || !nzchar(trimws(as.character(cytometer[1])))) cytometer <- "auto"
         root <- gui_project_value(body)
         rows <- spectreasy::create_control_file(
-            input_folder = file.path(root, "scc"),
+            input_folder = gui_project_input_path(root, "controls"),
             cytometer = cytometer,
             unknown_fluor_policy = "by_channel",
             output_file = file.path(root, "fcs_mapping.csv")
@@ -1772,7 +1968,7 @@ function(name = "") {
     }, error = function(e) list(error = conditionMessage(e)))
 }
 
-gui_pick_af_source_file <- function(initial_dir = file.path(get_matrix_dir(), "scc")) {
+gui_pick_af_source_file <- function(initial_dir = gui_project_input_path(get_matrix_dir(), "controls")) {
     initial_dir <- normalizePath(initial_dir, mustWork = FALSE)
     sysname <- Sys.info()[["sysname"]]
     if (identical(sysname, "Darwin")) {
@@ -1803,7 +1999,7 @@ gui_pick_af_source_file <- function(initial_dir = file.path(get_matrix_dir(), "s
 function(req) {
     body <- gui_workflow_body(req)
     tryCatch({
-        selected <- gui_pick_af_source_file(file.path(gui_project_value(body), "scc"))
+        selected <- gui_pick_af_source_file(gui_project_input_path(gui_project_value(body), "controls"))
         if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
         if (!grepl("\\.fcs$", selected, ignore.case = TRUE)) return(list(success = FALSE, cancelled = FALSE, error = "Select an FCS file."))
         list(success = TRUE, cancelled = FALSE, path = selected)
@@ -1855,6 +2051,29 @@ function(name = "", project_path = "") {
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
 
+#* Rename a saved AF profile and keep an active project link synchronized
+#* @post /af_profiles/rename
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    name <- trimws(as.character(gui_workflow_value(body, "profile_name", ""))[1])
+    new_name <- trimws(as.character(gui_workflow_value(body, "new_name", ""))[1])
+    if (!nzchar(name) || !nzchar(new_name)) return(list(success = FALSE, error = "Current and new profile names are required."))
+    tryCatch({
+        was_active <- identical(gui_read_active_af_profile(root), name)
+        spectreasy::rename_af_profile(name, new_name)
+        if (was_active) {
+            linked <- tryCatch(gui_write_active_af_profile(new_name, root), error = function(e) e)
+            if (inherits(linked, "error")) {
+                try(spectreasy::rename_af_profile(new_name, name), silent = TRUE)
+                stop(conditionMessage(linked), call. = FALSE)
+            }
+            gui_reset_project_gate_session(root)
+        }
+        list(success = TRUE, profile_name = name, new_name = new_name, active = was_active)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
 #* Apply a saved AF profile to a matrix
 #* @post /af_profiles/apply
 function(req) {
@@ -1899,7 +2118,7 @@ function(project_path = "") {
 #* List available sample files
 #* @get /samples
 function(project_path = "") {
-    samples_dir <- file.path(gui_request_project_root(project_path), "samples")
+    samples_dir <- gui_project_input_path(gui_request_project_root(project_path), "samples")
     if (!dir.exists(samples_dir)) return(character(0))
     files <- list.files(samples_dir, pattern = "\\.fcs$", ignore.case = TRUE)
     return(as.character(sort(files)))
@@ -2029,8 +2248,8 @@ function(filename, content, project_path = "") {
 #* @get /data
 #* @param sample_name The name of the sample to load
 function(sample_name = "", project_path = "") {
-    # If no sample provided, take the first one in samples/
-    samples_dir <- file.path(gui_request_project_root(project_path), "samples")
+    # If no sample is provided, use the first file in the configured sample input directory.
+    samples_dir <- gui_project_input_path(gui_request_project_root(project_path), "samples")
     files <- sort(list.files(samples_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE))
     if (length(files) == 0) {
         return(list(error = paste0("No FCS files found in samples directory: ", samples_dir)))
@@ -2332,7 +2551,7 @@ gui_write_active_af_profile <- function(name, root = get_matrix_dir()) {
     name <- trimws(as.character(name)[1])
     if (!nzchar(name)) stop("A saved AF profile name is required.", call. = FALSE)
     profile <- spectreasy::load_af_profile(name, show_plot = FALSE)
-    scc_dir <- file.path(root, "scc")
+    scc_dir <- gui_project_input_path(root, "controls")
     fcs_files <- if (dir.exists(scc_dir)) list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE) else character()
     fcs_files <- fcs_files[!startsWith(basename(fcs_files), "._")]
     if (length(fcs_files) > 0L) {
@@ -2427,6 +2646,8 @@ gui_filtered_control_file <- function(root = get_matrix_dir()) {
 }
 
 gui_project_scan <- function(root) {
+    root <- gui_request_project_root(root)
+    layout <- gui_project_layout(root)
     files <- if (dir.exists(root)) list.files(root, recursive = TRUE, full.names = TRUE, all.files = FALSE) else character()
     files <- normalizePath(files[file.exists(files)], mustWork = FALSE)
     relative <- if (length(files) > 0) {
@@ -2436,8 +2657,14 @@ gui_project_scan <- function(root) {
     }
     relative <- gsub("\\\\", "/", relative)
     count_matches <- function(pattern) sum(grepl(pattern, relative, ignore.case = TRUE, perl = TRUE))
-    controls <- count_matches("(^|/)(scc|controls?)/.*\\.fcs$")
-    samples <- count_matches("(^|/)samples?/.*\\.fcs$")
+    control_files <- if (dir.exists(file.path(root, layout$control_input_dir))) {
+        list.files(file.path(root, layout$control_input_dir), pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+    } else character()
+    sample_files <- if (dir.exists(file.path(root, layout$sample_input_dir))) {
+        list.files(file.path(root, layout$sample_input_dir), pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+    } else character()
+    controls <- length(control_files)
+    samples <- length(sample_files)
     matrices <- count_matches("matrix.*\\.csv$|unmixing.*\\.csv$|detector_noise.*\\.csv$")
     reports <- count_matches("\\.(html?|pdf)$")
     gates <- count_matches("gate.*\\.csv$")
@@ -2456,7 +2683,8 @@ gui_project_scan <- function(root) {
     }
     list(
         project_path = root,
-        missing_input_dirs = basename(gui_missing_project_input_dirs(root)),
+        layout = layout,
+        missing_input_dirs = gui_project_relative_path(gui_missing_project_input_dirs(root), root),
         files = relative,
         scan = list(
             controls = controls,
@@ -2474,26 +2702,33 @@ gui_project_scan <- function(root) {
 
 gui_missing_project_input_dirs <- function(project_path) {
     project_path <- normalizePath(project_path, mustWork = TRUE)
-    paths <- file.path(project_path, c("scc", "samples"))
+    layout <- gui_project_layout(project_path, ensure_markers = FALSE)
+    paths <- file.path(project_path, c(layout$control_input_dir, layout$sample_input_dir))
     paths[!dir.exists(paths)]
 }
 
 gui_ensure_project_input_dirs <- function(project_path) {
     project_path <- normalizePath(project_path, mustWork = TRUE)
-    paths <- file.path(project_path, c("scc", "samples"))
-    for (path in paths) {
+    layout <- gui_project_layout(project_path, ensure_markers = FALSE)
+    roles <- c(controls = layout$control_input_dir, samples = layout$sample_input_dir)
+    paths <- file.path(project_path, unname(roles))
+    for (index in seq_along(paths)) {
+        path <- paths[[index]]
         if (!dir.exists(path) && !dir.create(path, recursive = TRUE, showWarnings = FALSE)) {
             stop("Could not create project input folder: ", path, call. = FALSE)
         }
+        gui_write_project_input_marker(path, names(roles)[[index]])
     }
+    gui_write_project_layout(project_path, layout)
     invisible(paths)
 }
 
 gui_project_file_location <- function(kind, filename = NULL, project_path = "") {
     kind <- tolower(trimws(as.character(kind)[1]))
-    folder <- switch(kind, controls = "scc", samples = "samples", NULL)
-    if (is.null(folder)) stop("File kind must be 'controls' or 'samples'.", call. = FALSE)
     root <- gui_request_project_root(project_path)
+    layout <- gui_project_layout(root)
+    folder <- switch(kind, controls = layout$control_input_dir, samples = layout$sample_input_dir, NULL)
+    if (is.null(folder)) stop("File kind must be 'controls' or 'samples'.", call. = FALSE)
     directory <- file.path(root, folder)
     if (is.null(filename)) return(list(kind = kind, folder = folder, directory = directory))
     candidate <- gsub("\\\\", "/", trimws(as.character(filename)[1]))
@@ -2583,11 +2818,12 @@ gui_natural_sort_key <- function(x) {
 gui_set_project_context <- function(project_path, reset_gate_cache = TRUE) {
     if (!dir.exists(project_path)) stop("Project folder not found: ", project_path, call. = FALSE)
     project_path <- normalizePath(project_path, mustWork = TRUE)
+    layout <- gui_project_layout(project_path)
     project_options <- list(
         spectreasy.project_dir = project_path,
         spectreasy.matrix_dir = project_path,
-        spectreasy.samples_dir = file.path(project_path, "samples"),
-        spectreasy.gating_scc_dir = file.path(project_path, "scc"),
+        spectreasy.samples_dir = file.path(project_path, layout$sample_input_dir),
+        spectreasy.gating_scc_dir = file.path(project_path, layout$control_input_dir),
         spectreasy.gating_control_file = file.path(project_path, "fcs_mapping.csv"),
         spectreasy.gating_gate_file = file.path(project_path, "ssc_gate_config.csv")
     )
@@ -2653,6 +2889,30 @@ function(project_path = "") {
     gui_project_scan(root)
 }
 
+#* Read the active project's control and sample input-directory configuration
+#* @get /project/layout
+function(project_path = "") {
+    tryCatch({
+        root <- gui_request_project_root(project_path)
+        list(success = TRUE, layout = gui_project_layout(root), project = gui_project_scan(root))
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Rename or adopt one project input directory and persist the new layout
+#* @post /project/layout
+function(req) {
+    body <- gui_workflow_body(req)
+    tryCatch({
+        root <- gui_project_value(body)
+        layout <- gui_update_project_input_dir(
+            root,
+            gui_workflow_value(body, "role", ""),
+            gui_workflow_value(body, "path", "")
+        )
+        list(success = TRUE, layout = layout, project = gui_project_scan(root))
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
 gui_project_relative_path <- function(path, root) {
     root_pattern <- gsub("([.|(){}+*?^$\\[\\]\\\\])", "\\\\\\1", normalizePath(root, mustWork = FALSE))
     gsub("\\\\", "/", sub(paste0("^", root_pattern, "[/\\\\]?"), "", path))
@@ -2702,7 +2962,7 @@ gui_project_report_files <- function(root, files = NULL, output_root = "", repor
 }
 
 gui_project_report_source_files <- function(root, sample = FALSE, output_root = "") {
-    input_dir <- file.path(root, if (isTRUE(sample)) "samples" else "scc")
+    input_dir <- gui_project_input_path(root, if (isTRUE(sample)) "samples" else "controls")
     input_files <- if (dir.exists(input_dir)) {
         list.files(input_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     } else {
@@ -2822,9 +3082,9 @@ function(project_path = "", output_root = "", report_type = "") {
         report_type <- gui_project_report_type(relative_report)
         is_sample <- identical(report_type, "Sample QC")
         source_pattern <- if (is_sample) {
-            "(^|/)(samples?/.*\\.fcs$|.*reference_matrix.*\\.csv$|.*detector_noise.*\\.csv$|.*spectral_variant.*\\.rds$)"
+            "\\.fcs$|reference_matrix.*\\.csv$|detector_noise.*\\.csv$|spectral_variant.*\\.rds$"
         } else {
-            "(^|/)(scc/.*\\.fcs$|fcs_mapping\\.csv$|.*gate.*\\.csv$|.*reference_matrix.*\\.csv$|.*detector_noise.*\\.csv$)"
+            "\\.fcs$|fcs_mapping\\.csv$|gate.*\\.csv$|reference_matrix.*\\.csv$|detector_noise.*\\.csv$"
         }
         source_files <- if (is_sample) sample_sources else control_sources
         source_files <- source_files[grepl(source_pattern, relative(source_files), ignore.case = TRUE, perl = TRUE)]
@@ -2921,7 +3181,7 @@ function(req) {
     body <- gui_workflow_body(req)
     tryCatch({
         root <- gui_workflow_root(body)
-        created <- basename(gui_missing_project_input_dirs(root))
+        created <- gui_project_relative_path(gui_missing_project_input_dirs(root), root)
         gui_ensure_project_input_dirs(root)
         list(success = TRUE, created = created, project = gui_project_scan(root))
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
@@ -2972,7 +3232,7 @@ function(req) {
             gui_project_value(body)
         )
         if (!dir.exists(location$directory)) {
-            stop("Create the project's scc and samples folders before adding files.", call. = FALSE)
+            stop("Create the project's configured control and sample input folders before adding files.", call. = FALSE)
         }
         size <- gui_workflow_number(body, "size", 0, integer = TRUE, minimum = 1)
         maximum <- as.numeric(getOption("spectreasy.gui_max_upload_bytes", 50 * 1024^3))
@@ -3099,7 +3359,8 @@ function(res) {
 function(req) {
     body <- gui_workflow_body(req)
     root <- gui_workflow_root(body)
-    scc_dir <- gui_workflow_resolve_path(gui_workflow_value(body, "scc_dir", "scc"), root)
+    layout <- gui_project_layout(root)
+    scc_dir <- gui_workflow_resolve_path(gui_workflow_value(body, "scc_dir", layout$control_input_dir), root)
     control_file <- gui_workflow_resolve_path(gui_workflow_value(body, "control_file", "fcs_mapping.csv"), root)
     active_af_profile <- gui_read_active_af_profile(root)
     if (nzchar(active_af_profile)) {
@@ -3198,7 +3459,8 @@ function(res) {
 function(req) {
     body <- gui_workflow_body(req)
     root <- gui_workflow_root(body)
-    sample_dir <- gui_workflow_resolve_path(gui_workflow_value(body, "sample_dir", "samples"), root)
+    layout <- gui_project_layout(root)
+    sample_dir <- gui_workflow_resolve_path(gui_workflow_value(body, "sample_dir", layout$sample_input_dir), root)
     matrix_file <- gui_workflow_resolve_path(gui_workflow_value(body, "matrix_file", file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv")), root)
     noise_file <- gui_workflow_file_or_null(gui_workflow_value(body, "detector_noise_file", ""), root = root)
     output_dir <- gui_workflow_resolve_path(gui_workflow_value(body, "output_dir", "spectreasy_outputs"), root)
@@ -3258,13 +3520,13 @@ function(res) {
 #* @post /workflow/compare
 function(req) {
     body <- gui_workflow_body(req)
+    root <- gui_workflow_root(body)
     raw_methods <- body$methods
     methods <- unique(as.character(unlist(raw_methods, recursive = TRUE, use.names = FALSE)))
     methods <- methods[nzchar(methods)]
     if (length(methods) == 0) methods <- c("Spectreasy", "OLS", "WLS", "NNLS")
     matrix_input <- gui_workflow_value(body, "matrix_file", "")
-    sample_dir_input <- gui_workflow_value(body, "sample_dir", "samples")
-    root <- gui_workflow_root(body)
+    sample_dir_input <- gui_workflow_value(body, "sample_dir", gui_project_layout(root)$sample_input_dir)
     matrix_file <- gui_workflow_file_or_null(matrix_input, root = root)
     sample_dir <- if (grepl("^(/|[A-Za-z]:[/\\\\])", sample_dir_input)) sample_dir_input else file.path(root, sample_dir_input)
     if (is.null(matrix_file) || !file.exists(matrix_file)) {
@@ -3339,7 +3601,7 @@ function(req) {
             spectreasy::qc_controls(
                 M = M,
                 unmixing_matrix_file = matrix_file,
-                scc_dir = file.path(root, "scc"),
+                scc_dir = gui_project_input_path(root, "controls"),
                 control_file = file.path(root, "fcs_mapping.csv"),
                 output_file = report_file,
                 report_format = report_format,
@@ -3378,7 +3640,7 @@ gui_default_af_profile_name <- function(fcs_file, existing_names = character()) 
 function(req) {
     body <- gui_workflow_body(req)
     root <- gui_workflow_root(body)
-    fcs_file <- gui_workflow_resolve_path(gui_workflow_value(body, "fcs_file", file.path("scc", "unstained_cells.fcs")), root)
+    fcs_file <- gui_workflow_resolve_path(gui_workflow_value(body, "fcs_file", file.path(gui_project_layout(root)$control_input_dir, "unstained_cells.fcs")), root)
     bands <- gui_workflow_number(body, "af_n_bands", 100, integer = TRUE, minimum = 1)
     run <- gui_workflow_run(
         body,
