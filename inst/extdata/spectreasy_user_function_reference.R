@@ -324,8 +324,13 @@
         replace_existing = TRUE
     )
 
+    rename_af_profile(
+        name = "my_af_profile",
+        new_name = "renamed_af_profile"
+    )
+
     delete_af_profile(
-        name = "my_af_profile"
+        name = "renamed_af_profile"
     )
 
     # -------------------------------------------------------------------------
