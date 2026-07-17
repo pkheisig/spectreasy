@@ -83,7 +83,7 @@
       "seed": 1
     },
     "appearance": {
-      "theme": "dark",
+      "theme": "light",
       "density": "comfortable",
       "fontScale": 75,
       "fontFamily": "avenir",

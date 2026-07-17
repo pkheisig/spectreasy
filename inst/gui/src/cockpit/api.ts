@@ -180,7 +180,21 @@ export async function loadProjectSnapshot(requestedProjectPath = ''): Promise<{ 
       ? scalarValue(projectResponse.data?.project_path, '')
       : scalarValue(status.matrix_dir, '')
     const reportedProjectName = scalarValue(status.project_name, '').trim()
-    const savedConfig = unboxGuiState(guiStateResponse?.data?.config) as Record<string, unknown> | undefined
+    // On a fresh browser session the first request cannot be project-scoped
+    // because the project path is not in sessionStorage yet. The cockpit
+    // persists settings in the project, so reload that config after the
+    // project endpoint gives us the canonical path. Keep the initial global
+    // config as a fallback for projects that have no saved state yet.
+    let scopedGuiStateResponse = guiStateResponse
+    if (projectPath && !requestedProjectPath) {
+      scopedGuiStateResponse = await client.get('/gui_state', {
+        params: { module: 'spectreasy_cockpit', project_path: projectPath },
+        timeout: 5000,
+      }).catch(() => guiStateResponse)
+    }
+    const scopedConfig = scopedGuiStateResponse?.data?.config
+    const hasScopedConfig = scopedConfig && typeof scopedConfig === 'object' && Object.keys(scopedConfig).length > 0
+    const savedConfig = unboxGuiState(hasScopedConfig ? scopedConfig : guiStateResponse?.data?.config) as Record<string, unknown> | undefined
     const savedSettings = (savedConfig?.settings ?? savedConfig ?? undefined) as Partial<WorkflowSettings> | undefined
     const [controlReportsResponse, sampleReportsResponse] = projectPath
       ? await Promise.all([
