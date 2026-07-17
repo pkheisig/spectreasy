@@ -58,11 +58,12 @@ export function ProjectFileRows({ files, loading, busy = false, emptyLabel = 'No
 
 type InlineProps = {
   kind: ProjectFileKind
+  projectPath: string
   refreshKey: string
   onChanged: () => void | Promise<void>
 }
 
-export function InlineProjectFiles({ kind, refreshKey, onChanged }: InlineProps) {
+export function InlineProjectFiles({ kind, projectPath, refreshKey, onChanged }: InlineProps) {
   const [files, setFiles] = useState<ProjectFileEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -70,26 +71,26 @@ export function InlineProjectFiles({ kind, refreshKey, onChanged }: InlineProps)
 
   const refresh = useCallback(async () => {
     setLoading(true)
-    const result = await listProjectFiles(kind)
+    const result = await listProjectFiles(kind, projectPath)
     setFiles(result.files)
     setMessage(result.success ? '' : (result.message ?? 'Files could not be loaded.'))
     setLoading(false)
-  }, [kind])
+  }, [kind, projectPath])
 
   useEffect(() => {
     let cancelled = false
-    void listProjectFiles(kind).then((result) => {
+    void listProjectFiles(kind, projectPath).then((result) => {
       if (cancelled) return
       setFiles(result.files)
       setMessage(result.success ? '' : (result.message ?? 'Files could not be loaded.'))
       setLoading(false)
     })
     return () => { cancelled = true }
-  }, [kind, refreshKey])
+  }, [kind, projectPath, refreshKey])
 
   async function remove(filename: string) {
     setBusy(true)
-    const result = await deleteProjectFile(kind, filename)
+    const result = await deleteProjectFile(kind, filename, projectPath)
     if (result.success) {
       await refresh()
       await onChanged()

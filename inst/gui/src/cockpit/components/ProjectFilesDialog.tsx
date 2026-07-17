@@ -8,11 +8,12 @@ import type { ProjectFileEntry, ProjectFileKind } from '../api'
 
 type Props = {
   projectName: string
+  projectPath: string
   onClose: () => void
   onChanged: () => void | Promise<void>
 }
 
-export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
+export function ProjectFilesDialog({ projectName, projectPath, onClose, onChanged }: Props) {
   const [kind, setKind] = useState<ProjectFileKind>('controls')
   const [files, setFiles] = useState<ProjectFileEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -26,22 +27,22 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
 
   const refresh = useCallback(async (selectedKind = kind) => {
     setLoading(true)
-    const result = await listProjectFiles(selectedKind)
+    const result = await listProjectFiles(selectedKind, projectPath)
     setFiles(result.files)
     setMessage(result.success ? '' : (result.message ?? 'Project files could not be loaded.'))
     setLoading(false)
-  }, [kind])
+  }, [kind, projectPath])
 
   useEffect(() => {
     let cancelled = false
-    void listProjectFiles(kind).then((result) => {
+    void listProjectFiles(kind, projectPath).then((result) => {
       if (cancelled) return
       setFiles(result.files)
       setMessage(result.success ? '' : (result.message ?? 'Project files could not be loaded.'))
       setLoading(false)
     })
     return () => { cancelled = true }
-  }, [kind])
+  }, [kind, projectPath])
 
   useEffect(() => {
     controlsTabRef.current?.focus()
@@ -88,7 +89,7 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
     const failures: string[] = []
     let added = 0
     for (const file of incoming) {
-      const result = await uploadProjectFile(kind, file)
+      const result = await uploadProjectFile(kind, file, projectPath)
       if (result.success) added += 1
       else failures.push(result.message)
     }
@@ -104,7 +105,7 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
   async function removeFile(filename: string) {
     if (busy) return
     setBusy(true)
-    const result = await deleteProjectFile(kind, filename)
+    const result = await deleteProjectFile(kind, filename, projectPath)
     if (result.success) {
       await refresh(kind)
       await onChanged()
@@ -116,7 +117,7 @@ export function ProjectFilesDialog({ projectName, onClose, onChanged }: Props) {
   async function removeAllFiles() {
     if (busy) return
     setBusy(true)
-    const result = await deleteAllProjectFiles(kind)
+    const result = await deleteAllProjectFiles(kind, projectPath)
     setConfirmDeleteAll(false)
     if (result.success) {
       await refresh(kind)

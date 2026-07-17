@@ -1070,6 +1070,7 @@
 #'   (default), overwrite, or error. Existing PDF behavior is unchanged.
 #' @param report_run_settings Additional workflow settings recorded in HTML.
 #' @param report_artifact_paths Additional input/output paths recorded in HTML.
+#' @param project_path Project directory recorded in generated report metadata.
 #'
 #' @return Invisibly returns a list with `output_file`, `qc_plot_dir`, and
 #'   `qc_metrics_dir`; writes report artifacts to disk.
@@ -1121,7 +1122,8 @@ qc_samples <- function(results,
                        report_per_sample = FALSE,
                        overwrite = c("version", "overwrite", "error"),
                        report_run_settings = list(),
-                       report_artifact_paths = list()) {
+                       report_artifact_paths = list(),
+                       project_path = getwd()) {
     output_file_missing <- missing(output_file)
     report_format_missing <- missing(report_format)
     output_spec <- .report_output_spec(
@@ -1197,7 +1199,8 @@ qc_samples <- function(results,
                 report_per_sample = FALSE,
                 overwrite = overwrite,
                 report_run_settings = c(list(report_per_sample = TRUE), report_run_settings),
-                report_artifact_paths = report_artifact_paths
+                report_artifact_paths = report_artifact_paths,
+                project_path = project_path
             )
         })
         sample_files <- stats::setNames(normalizePath(sample_files, mustWork = TRUE), sample_names)
@@ -1257,7 +1260,8 @@ qc_samples <- function(results,
             sample_nxn_axis_limit = sample_nxn_axis_limit,
             nxn_all_samples = nxn_all_samples,
             report_per_sample = report_per_sample,
-            plot_dir = html_plot_dir
+            plot_dir = html_plot_dir,
+            project_path = project_path
         )
         if (isTRUE(report_per_sample)) {
             sample_names <- .qc_report_sample_names(results)
@@ -1283,7 +1287,8 @@ qc_samples <- function(results,
                     sample_nxn_axis_limit = sample_nxn_axis_limit,
                     nxn_all_samples = FALSE,
                     report_per_sample = FALSE,
-                    plot_dir = file.path(html_plot_dir, "samples", sample_slugs[index])
+                    plot_dir = file.path(html_plot_dir, "samples", sample_slugs[index]),
+                    project_path = project_path
                 )
                 if (!isTRUE(save_qc_pngs)) sample_data <- .report_embed_plot_manifest(sample_data)
                 sample_data

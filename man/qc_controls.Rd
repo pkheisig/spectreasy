@@ -30,6 +30,7 @@ qc_controls(
   report_plots = list(),
   report_run_settings = list(),
   report_artifact_paths = list(),
+  project_path = getwd(),
   ...
 )
 }
@@ -104,6 +105,8 @@ scatter plots to reuse in HTML output.}
 \item{report_run_settings}{Additional workflow settings recorded in HTML.}
 
 \item{report_artifact_paths}{Additional input/output paths recorded in HTML.}
+
+\item{project_path}{Project directory recorded in generated report metadata.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }

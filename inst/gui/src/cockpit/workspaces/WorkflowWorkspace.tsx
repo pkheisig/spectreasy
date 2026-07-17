@@ -373,6 +373,7 @@ function MappingWorkspace({
       {mappingTab === "mapping" && (
         <InlineProjectFiles
           kind="controls"
+          projectPath={project.projectPath}
           refreshKey={`${project.projectPath}:${project.scan.controls}`}
           onChanged={onRefresh}
         />
@@ -386,6 +387,7 @@ function MappingWorkspace({
           />
           <InlineProjectFiles
             kind="controls"
+            projectPath={project.projectPath}
             refreshKey={`${project.projectPath}:${project.scan.controls}`}
             onChanged={onRefresh}
           />
@@ -485,6 +487,35 @@ function BuildReferencePanel({
       {advanced && (
         <div className="advanced-grid">
           <label>
+            Output folder
+            <input
+              value={settings.outputDir}
+              onChange={(event) => onSettingsChange({ outputDir: event.target.value })}
+            />
+          </label>
+          <label>
+            Threads
+            <input
+              type="number"
+              min="1"
+              value={settings.unmixThreads}
+              onChange={(event) =>
+                onSettingsChange({ unmixThreads: Number(event.target.value) })
+              }
+            />
+          </label>
+          {method === "RWLS" && <label>
+            RWLS max iterations
+            <input
+              type="number"
+              min="1"
+              value={settings.rwlsMaxIter}
+              onChange={(event) =>
+                onSettingsChange({ rwlsMaxIter: Number(event.target.value) })
+              }
+            />
+          </label>}
+          <label>
             AF bands
             <input
               type="number"
@@ -492,6 +523,17 @@ function BuildReferencePanel({
               value={settings.afNBands}
               onChange={(event) =>
                 onSettingsChange({ afNBands: Number(event.target.value) })
+              }
+            />
+          </label>
+          <label>
+            AF maximum cells
+            <input
+              type="number"
+              min="1"
+              value={settings.afMaxCells}
+              onChange={(event) =>
+                onSettingsChange({ afMaxCells: Number(event.target.value) })
               }
             />
           </label>
@@ -510,38 +552,14 @@ function BuildReferencePanel({
               <option value="none">None</option>
             </GuiSelect>
           </label>}
-          <label>
-            Seed
+          {useSpectralPipeline && settings.sccBackgroundMethod === "scatter_knn" && <label>
+            Background neighbours
             <input
               type="number"
               min="1"
-              value={settings.seed}
+              value={settings.sccBackgroundK}
               onChange={(event) =>
-                onSettingsChange({ seed: Number(event.target.value) })
-              }
-            />
-          </label>
-          <label>
-            Threads
-            <input
-              type="number"
-              min="1"
-              value={settings.unmixThreads}
-              onChange={(event) =>
-                onSettingsChange({ unmixThreads: Number(event.target.value) })
-              }
-            />
-          </label>
-          {useSpectralPipeline && <label>
-            Variant top-k
-            <input
-              type="number"
-              min="1"
-              value={settings.spectralVariantTopK}
-              onChange={(event) =>
-                onSettingsChange({
-                  spectralVariantTopK: Number(event.target.value),
-                })
+                onSettingsChange({ sccBackgroundK: Number(event.target.value) })
               }
             />
           </label>}
@@ -559,6 +577,131 @@ function BuildReferencePanel({
                 })
               }
             />
+          </label>}
+          {useSpectralPipeline && <label>
+            Variant SOM nodes
+            <input
+              type="number"
+              min="1"
+              value={settings.spectralVariantSomNodes}
+              onChange={(event) =>
+                onSettingsChange({ spectralVariantSomNodes: Number(event.target.value) })
+              }
+            />
+          </label>}
+          {useSpectralPipeline && <label>
+            Variant top-k
+            <input
+              type="number"
+              min="1"
+              value={settings.spectralVariantTopK}
+              onChange={(event) =>
+                onSettingsChange({
+                  spectralVariantTopK: Number(event.target.value),
+                })
+              }
+            />
+          </label>}
+          {useSpectralPipeline && <label>
+            Variant cosine threshold
+            <input
+              type="number"
+              min="0"
+              max="1"
+              step="0.01"
+              value={settings.spectralVariantCosineThreshold}
+              onChange={(event) =>
+                onSettingsChange({
+                  spectralVariantCosineThreshold: Number(event.target.value),
+                })
+              }
+            />
+          </label>}
+          {useSpectralPipeline && <label>
+            Maximum variants
+            <input
+              type="number"
+              min="1"
+              value={settings.spectralVariantMaxVariants}
+              onChange={(event) =>
+                onSettingsChange({ spectralVariantMaxVariants: Number(event.target.value) })
+              }
+            />
+          </label>}
+          {useSpectralPipeline && <label>
+            Minimum variant events
+            <input
+              type="number"
+              min="1"
+              value={settings.spectralVariantMinEvents}
+              onChange={(event) =>
+                onSettingsChange({ spectralVariantMinEvents: Number(event.target.value) })
+              }
+            />
+          </label>}
+          {useSpectralPipeline && <label>
+            Candidate events
+            <input
+              type="number"
+              min="1"
+              value={settings.autospectralNCandidates}
+              onChange={(event) =>
+                onSettingsChange({ autospectralNCandidates: Number(event.target.value) })
+              }
+            />
+          </label>}
+          {useSpectralPipeline && <label>
+            Spectrum events
+            <input
+              type="number"
+              min="1"
+              value={settings.autospectralNSpectral}
+              onChange={(event) =>
+                onSettingsChange({ autospectralNSpectral: Number(event.target.value) })
+              }
+            />
+          </label>}
+          {useSpectralPipeline && <label>
+            Minimum selector events
+            <input
+              type="number"
+              min="1"
+              value={settings.autospectralMinEvents}
+              onChange={(event) =>
+                onSettingsChange({ autospectralMinEvents: Number(event.target.value) })
+              }
+            />
+          </label>}
+          <label>
+            Scatter panel size (mm)
+            <input
+              type="number"
+              min="1"
+              value={settings.unmixScatterPanelSizeMm}
+              onChange={(event) =>
+                onSettingsChange({ unmixScatterPanelSizeMm: Number(event.target.value) })
+              }
+            />
+          </label>
+          <label>
+            Seed
+            <input
+              type="number"
+              min="1"
+              value={settings.seed}
+              onChange={(event) =>
+                onSettingsChange({ seed: Number(event.target.value) })
+              }
+            />
+          </label>
+          {method === "AutoSpectral" && <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={settings.refine}
+              onChange={(event) => onSettingsChange({ refine: event.target.checked })}
+            />
+            <span className="toggle-ui" />
+            <span>Refine AF bank</span>
           </label>}
         </div>
       )}
@@ -649,30 +792,18 @@ function ConfigurableSamplesWorkspace({
             <label>Samples folder<input value={settings.sampleDir} onChange={(event) => onSettingsChange({ sampleDir: event.target.value })} /></label>
             <label>Unmixing matrix<input value={settings.matrixFile} onChange={(event) => onSettingsChange({ matrixFile: event.target.value })} /></label>
             <label>Detector noise file<input value={settings.detectorNoiseFile} onChange={(event) => onSettingsChange({ detectorNoiseFile: event.target.value })} placeholder="Optional" /></label>
-            <label>RWLS max iterations<input type="number" min="1" value={settings.rwlsMaxIter} onChange={(event) => onSettingsChange({ rwlsMaxIter: Number(event.target.value) })} /></label>
-            <label>Threads<input type="number" min="1" value={settings.nThreads} onChange={(event) => onSettingsChange({ nThreads: Number(event.target.value) })} /></label>
-            <label>Plot events<input type="number" min="1" value={settings.plotNEvents} onChange={(event) => onSettingsChange({ plotNEvents: Number(event.target.value) })} /></label>
-            <label>Chunk size<input type="number" min="1" value={settings.chunkSize} onChange={(event) => onSettingsChange({ chunkSize: Number(event.target.value) })} /></label>
-            <label>Variant top-k<input type="number" min="1" value={settings.spectralVariantTopK} onChange={(event) => onSettingsChange({ spectralVariantTopK: Number(event.target.value) })} /></label>
-            <label>Variant min abundance<input type="number" min="0" step="0.01" value={settings.spectralVariantMinAbundance} onChange={(event) => onSettingsChange({ spectralVariantMinAbundance: Number(event.target.value) })} /></label>
-            <label>Variant positive fraction<input type="number" min="0" max="1" step="0.01" value={settings.spectralVariantPositiveFraction} onChange={(event) => onSettingsChange({ spectralVariantPositiveFraction: Number(event.target.value) })} /></label>
-            <label>Variant min improvement<input type="number" min="0" step="0.01" value={settings.spectralVariantMinImprovement} onChange={(event) => onSettingsChange({ spectralVariantMinImprovement: Number(event.target.value) })} /></label>
-            <label>Spectral variant library<input value={settings.spectralVariantLibraryFile} onChange={(event) => onSettingsChange({ spectralVariantLibraryFile: event.target.value })} placeholder="Optional .rds file" /></label>
-            <label>Spectreasy weight quantile<input type="number" min="0" max="1" step="0.01" value={settings.spectreasyWeightQuantile} onChange={(event) => onSettingsChange({ spectreasyWeightQuantile: Number(event.target.value) })} /></label>
-            <label className="toggle-label">
-              <input type="checkbox" checked={settings.reportPerSample} onChange={(event) => onSettingsChange({ reportPerSample: event.target.checked })} />
-              <span className="toggle-ui" /><span>One QC report per sample</span>
-            </label>
-            <label>Seed<input type="number" min="1" value={settings.seed} onChange={(event) => onSettingsChange({ seed: Number(event.target.value) })} /></label>
             <label>Output folder<input value={settings.outputDir} onChange={(event) => onSettingsChange({ outputDir: event.target.value })} /></label>
-            <label className="toggle-label">
-              <input type="checkbox" checked={settings.estimateAf} onChange={(event) => onSettingsChange({ estimateAf: event.target.checked })} />
-              <span className="toggle-ui" /><span>Estimate AF from samples</span>
-            </label>
-            <label className="toggle-label">
-              <input type="checkbox" checked={settings.writeFcs} onChange={(event) => onSettingsChange({ writeFcs: event.target.checked })} />
-              <span className="toggle-ui" /><span>Write FCS outputs</span>
-            </label>
+            <label>Threads<input type="number" min="1" value={settings.nThreads} onChange={(event) => onSettingsChange({ nThreads: Number(event.target.value) })} /></label>
+            <label>Chunk size<input type="number" min="1" value={settings.chunkSize} onChange={(event) => onSettingsChange({ chunkSize: Number(event.target.value) })} /></label>
+            <label>Plot events<input type="number" min="1" value={settings.plotNEvents} onChange={(event) => onSettingsChange({ plotNEvents: Number(event.target.value) })} /></label>
+            {settings.method === "RWLS" && <label>RWLS max iterations<input type="number" min="1" value={settings.rwlsMaxIter} onChange={(event) => onSettingsChange({ rwlsMaxIter: Number(event.target.value) })} /></label>}
+            {(settings.method === "Spectreasy" || settings.method === "AutoSpectral") && <label>Variant top-k<input type="number" min="1" value={settings.spectralVariantTopK} onChange={(event) => onSettingsChange({ spectralVariantTopK: Number(event.target.value) })} /></label>}
+            {(settings.method === "Spectreasy" || settings.method === "AutoSpectral") && <label>Variant min abundance<input type="number" min="0" step="0.01" value={settings.spectralVariantMinAbundance} onChange={(event) => onSettingsChange({ spectralVariantMinAbundance: Number(event.target.value) })} /></label>}
+            {(settings.method === "Spectreasy" || settings.method === "AutoSpectral") && <label>Variant positive fraction<input type="number" min="0" max="1" step="0.01" value={settings.spectralVariantPositiveFraction} onChange={(event) => onSettingsChange({ spectralVariantPositiveFraction: Number(event.target.value) })} /></label>}
+            {(settings.method === "Spectreasy" || settings.method === "AutoSpectral") && <label>Variant min improvement<input type="number" min="0" step="0.01" value={settings.spectralVariantMinImprovement} onChange={(event) => onSettingsChange({ spectralVariantMinImprovement: Number(event.target.value) })} /></label>}
+            {(settings.method === "Spectreasy" || settings.method === "AutoSpectral") && <label>Spectral variant library<input value={settings.spectralVariantLibraryFile} onChange={(event) => onSettingsChange({ spectralVariantLibraryFile: event.target.value })} placeholder="Optional .rds file" /></label>}
+            {settings.method === "Spectreasy" && <label>Spectreasy weight quantile<input type="number" min="0" max="1" step="0.01" value={settings.spectreasyWeightQuantile} onChange={(event) => onSettingsChange({ spectreasyWeightQuantile: Number(event.target.value) })} /></label>}
+            <label>Seed<input type="number" min="1" value={settings.seed} onChange={(event) => onSettingsChange({ seed: Number(event.target.value) })} /></label>
             <label>
               Return type
               <GuiSelect value={settings.returnType} onChange={(event) => onSettingsChange({ returnType: event.target.value as SampleSettings["returnType"] })}>
@@ -680,6 +811,18 @@ function ConfigurableSamplesWorkspace({
                 <option value="flowSet">flowSet</option>
                 <option value="SingleCellExperiment">SingleCellExperiment</option>
               </GuiSelect>
+            </label>
+            <label className="toggle-label">
+              <input type="checkbox" checked={settings.reportPerSample} onChange={(event) => onSettingsChange({ reportPerSample: event.target.checked })} />
+              <span className="toggle-ui" /><span>One QC report per sample</span>
+            </label>
+            <label className="toggle-label">
+              <input type="checkbox" checked={settings.estimateAf} onChange={(event) => onSettingsChange({ estimateAf: event.target.checked })} />
+              <span className="toggle-ui" /><span>Estimate AF from samples</span>
+            </label>
+            <label className="toggle-label">
+              <input type="checkbox" checked={settings.writeFcs} onChange={(event) => onSettingsChange({ writeFcs: event.target.checked })} />
+              <span className="toggle-ui" /><span>Write FCS outputs</span>
             </label>
           </div>
         )}
@@ -695,6 +838,7 @@ function ConfigurableSamplesWorkspace({
       </section>
       <InlineProjectFiles
         kind="samples"
+        projectPath={project.projectPath}
         refreshKey={`${project.projectPath}:${project.scan.samples}`}
         onChanged={onRefresh}
       />
@@ -740,11 +884,13 @@ function SamplesWorkspace(props: WorkflowWorkspaceProps) {
 }
 
 function ConfigurableAfWorkspace({
+  projectPath,
   settings,
   onSettingsChange,
   onRun,
   onRefresh,
 }: {
+  projectPath: string;
   settings: AfSettings;
   onSettingsChange: (patch: Partial<AfSettings>) => void;
   onRun: WorkflowWorkspaceProps["onRun"];
@@ -758,7 +904,7 @@ function ConfigurableAfWorkspace({
   const [confirmAction, setConfirmAction] = useState<{ type: "link" | "unlink" | "delete"; name: string } | null>(null);
 
   const refreshProfiles = async () => {
-    const nextProfiles = await listAfProfiles();
+    const nextProfiles = await listAfProfiles(projectPath);
     setProfiles(nextProfiles);
     const previewName = nextProfiles.find((profile) => profile.active)?.name ?? nextProfiles[0]?.name;
     setPreview(previewName ? await loadAfProfileData(previewName) : null);
@@ -769,15 +915,15 @@ function ConfigurableAfWorkspace({
       void refreshProfiles();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [projectPath]);
 
   const removeProfile = async (name: string) => {
-    const removed = await deleteAfProfile(name);
+    const removed = await deleteAfProfile(name, projectPath);
     if (removed) await refreshProfiles();
   };
 
   const linkProfile = async (name: string) => {
-    const result = await activateAfProfile(name);
+    const result = await activateAfProfile(name, projectPath);
     if (result.success) {
       await refreshProfiles();
       onRefresh();
@@ -785,7 +931,7 @@ function ConfigurableAfWorkspace({
   };
 
   const unlinkProfile = async (name: string) => {
-    const removed = await deactivateAfProfile(name);
+    const removed = await deactivateAfProfile(name, projectPath);
     if (removed) {
       await refreshProfiles();
       onRefresh();
@@ -793,7 +939,7 @@ function ConfigurableAfWorkspace({
   };
 
   const chooseSource = async () => {
-    const result = await selectAfSourceFile();
+    const result = await selectAfSourceFile(projectPath);
     if (result.success && result.path) onSettingsChange({ fcsFile: result.path });
   };
 
@@ -1914,6 +2060,7 @@ export function WorkflowWorkspace(
       {activeSection === "samples" && <SamplesWorkspace {...props} />}
       {activeSection === "af" && (
         <ConfigurableAfWorkspace
+          projectPath={props.project.projectPath}
           settings={props.settings.af}
           onSettingsChange={(patch) => props.onSettingsChange("af", patch)}
           onRun={props.onRun}

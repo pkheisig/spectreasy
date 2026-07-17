@@ -395,6 +395,7 @@
 #' @param autospectral_refine Logical; when `unmixing_method = "AutoSpectral"`, refine the
 #'   fixed-size k-means AF bank with native AutoSpectral-style unstained residual
 #'   modulation. `TRUE` is rejected for all other unmixing methods.
+#' @param project_path Project directory recorded in generated report metadata.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #'
 #' @return List with `M`, `W`, `unmixed_list`, the effective `gating_mode`, the
@@ -443,6 +444,7 @@ unmix_controls <- function(
     autospectral_n_spectral = 200L,
     autospectral_min_events = 10L,
     autospectral_refine = FALSE,
+    project_path = getwd(),
     ...
 ) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
@@ -804,7 +806,8 @@ unmix_controls <- function(
                     autospectral_n_spectral = autospectral_n_spectral,
                     autospectral_min_events = autospectral_min_events,
                     autospectral_refine = autospectral_refine
-                )
+                ),
+                project_path = project_path
             )
         )
         rendered_report_file <- if (is.list(qc_report)) qc_report$output_file else NULL

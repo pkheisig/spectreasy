@@ -3,6 +3,7 @@ import {
   Menu,
   Moon,
   FolderOpen,
+  CircleHelp,
   Files as FilesIcon,
   Settings,
   Sparkles,
@@ -30,6 +31,7 @@ import { CockpitApplet } from "./components/CockpitApplet";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { ProjectFilesDialog } from "./components/ProjectFilesDialog";
 import { ProjectInitializationDialog } from "./components/ProjectInitializationDialog";
+import { GuideDialog } from "./components/GuideDialog";
 import { WorkflowWorkspace } from "./workspaces/WorkflowWorkspace";
 import { defaultWorkflowSettings, normalizeInterfaceScale } from "./types";
 import type {
@@ -82,11 +84,25 @@ function cockpitExecutionCode(action: "control" | "sample" | "af", payload: Reco
       ? "unmix_samples"
       : "extract_af_profile";
   const excluded = new Set(["projectPath", "save_name", "save_overwrite"]);
+  const pathArguments = new Set(
+    action === "control"
+      ? ["scc_dir", "control_file", "output_dir", "manual_gate_file"]
+      : action === "sample"
+        ? ["sample_dir", "matrix_file", "detector_noise_file", "output_dir", "spectral_variant_library_file"]
+        : ["fcs_file"],
+  );
+  const argumentValue = (key: string, value: unknown): string => {
+    if (!pathArguments.has(key) || typeof value !== "string") return rValue(value);
+    const path = value.trim();
+    if (!path) return "NULL";
+    if (/^(?:\/|[A-Za-z]:[\\/])/.test(path)) return rValue(path);
+    return `file.path(project_dir, ${rValue(path)})`;
+  };
   const args = Object.entries(payload)
     .filter(([key]) => !excluded.has(key))
-    .map(([key, value]) => `  ${argumentAliases[key] ?? key} = ${rValue(value)}`)
+    .map(([key, value]) => `  ${argumentAliases[key] ?? key} = ${argumentValue(key, value)}`)
     .join(",\n");
-  return `# Cockpit-generated R operation\nsetwd(${projectPath})\n${functionName}(\n${args}\n)`;
+  return `# Cockpit-generated R operation\nproject_dir <- ${projectPath}\n${functionName}(\n${args}\n)`;
 }
 
 function normalizeCockpitCytometer(value: unknown): string {
@@ -127,6 +143,7 @@ type TopBarProps = {
   onFiles: () => void;
   onCreateProject: () => void;
   onOpenProject: () => void;
+  onGuide: () => void;
   onSettings: () => void;
   onTerminal: () => void;
   executionLogs: ExecutionLogEntry[];
@@ -146,6 +163,7 @@ function TopBar({
   onFiles,
   onCreateProject,
   onOpenProject,
+  onGuide,
   onSettings,
   onTerminal,
   executionLogs,
@@ -231,6 +249,10 @@ function TopBar({
           <span>Files</span>
         </button>
       </div>
+      <button className="guide-trigger" type="button" onClick={onGuide}>
+        <CircleHelp size={16} />
+        <span>Guide</span>
+      </button>
       <div className="topbar-spacer" />
       <label className="context-select cytometer-select">
         <span className="chip-label">Cytometer</span>
@@ -315,6 +337,7 @@ export default function CockpitApp() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [executionLogs, setExecutionLogs] = useState<ExecutionLogEntry[]>([]);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [initializationDismissedFor, setInitializationDismissedFor] = useState("");
   const [initializationBusy, setInitializationBusy] = useState(false);
   const [initializationMessage, setInitializationMessage] = useState("");
@@ -349,8 +372,9 @@ export default function CockpitApp() {
     });
   }
 
-  const refreshProject = useCallback(async (initial = false) => {
-    const snapshot = await loadProjectSnapshot();
+  const refreshProject = useCallback(async (initial = false, requestedProjectPath = "") => {
+    const tabProjectPath = requestedProjectPath || window.sessionStorage.getItem("spectreasy-project-path") || "";
+    const snapshot = await loadProjectSnapshot(tabProjectPath);
     if (!snapshot.backend.connected) {
       setBackend((current) => ({
         ...current,
@@ -361,6 +385,7 @@ export default function CockpitApp() {
       return;
     }
     setProject(snapshot.project);
+    if (snapshot.project.projectPath) window.sessionStorage.setItem("spectreasy-project-path", snapshot.project.projectPath);
     setBackend(snapshot.backend);
     if (!initial && snapshot.project.projectPath) {
       setSettings((current) => ({
@@ -813,7 +838,7 @@ export default function CockpitApp() {
   }
 
   async function confirmMapping() {
-    const mapping = await persistControlMapping(project.mapping);
+    const mapping = await persistControlMapping(project.mapping, project.projectPath);
     if (mapping.success) {
       setProject((current) => ({ ...current, mappingDirty: false }));
       setMappingTab("gating");
@@ -828,7 +853,8 @@ export default function CockpitApp() {
       : await selectProjectFolder();
     if (!response.cancelled && !response.success) setToast(response.message);
     if (response.success) {
-      await refreshProject(true);
+      if (response.projectPath) window.sessionStorage.setItem("spectreasy-project-path", response.projectPath);
+      await refreshProject(true, response.projectPath);
     }
   }
 
@@ -846,7 +872,7 @@ export default function CockpitApp() {
   }
 
   async function createMapping() {
-    const response = await createControlMapping();
+    const response = await createControlMapping(project.projectPath);
     setToast(response.message);
     if (response.success) await refreshProject();
   }
@@ -913,6 +939,7 @@ export default function CockpitApp() {
         onFiles={() => setFilesOpen(true)}
         onCreateProject={() => void chooseProject("create")}
         onOpenProject={() => void chooseProject("open")}
+        onGuide={() => setGuideOpen(true)}
         onSettings={toggleSettings}
         onTerminal={() => setTerminalOpen((value) => !value)}
         executionLogs={executionLogs}
@@ -991,12 +1018,14 @@ export default function CockpitApp() {
       {filesOpen && (
         <ProjectFilesDialog
           projectName={project.projectName}
+          projectPath={project.projectPath}
           onClose={() => setFilesOpen(false)}
           onChanged={async () => {
             await refreshProject(false);
           }}
         />
       )}
+      {guideOpen && <GuideDialog onClose={() => setGuideOpen(false)} />}
       {project.projectPath && project.missingInputDirs.length > 0 && initializationDismissedFor !== project.projectPath && (
         <ProjectInitializationDialog
           projectName={project.projectName}

@@ -136,7 +136,7 @@ test_that("cockpit removes a stale project link when its global AF profile is go
     expect_false(file.exists(config))
 })
 
-test_that("cockpit workflow cleanup tolerates an unavailable previous directory and returns logs", {
+test_that("cockpit workflows resolve project paths without changing the R working directory", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
     skip_if_not(file.exists(api_path))
@@ -145,21 +145,34 @@ test_that("cockpit workflow cleanup tolerates an unavailable previous directory 
     source(api_path, local = api_env)
     root <- tempfile("cockpit_workflow_project_")
     dir.create(root)
+    launch_dir <- tempfile("cockpit_launch_dir_")
+    dir.create(launch_dir)
+    old_wd <- setwd(launch_dir)
+    on.exit(setwd(old_wd), add = TRUE)
+    old_project_option <- getOption("spectreasy.project_dir", NULL)
 
-    expect_false(api_env$gui_restore_working_directory(NULL))
-    expect_false(api_env$gui_restore_working_directory(file.path(root, "missing")))
+    expect_identical(
+        api_env$gui_workflow_resolve_path(file.path("spectreasy_outputs", "unmix_samples"), root),
+        normalizePath(file.path(root, "spectreasy_outputs", "unmix_samples"), mustWork = FALSE)
+    )
+    absolute <- normalizePath(file.path(root, "absolute.csv"), mustWork = FALSE)
+    expect_identical(api_env$gui_workflow_resolve_path(absolute, launch_dir), absolute)
+    expect_identical(api_env$gui_workflow_file_or_null("", root), NULL)
     run <- suppressWarnings(api_env$gui_workflow_run(
         list(projectPath = root),
         "test",
         {
             cat("workflow output\n")
             warning("workflow warning")
-            42
+            getwd()
         }
     ))
 
     expect_true(run$success)
-    expect_identical(run$result, 42)
+    expect_identical(run$result, normalizePath(launch_dir, mustWork = TRUE))
+    expect_identical(getwd(), normalizePath(launch_dir, mustWork = TRUE))
+    expect_identical(run$project_path, normalizePath(root, mustWork = TRUE))
+    expect_identical(getOption("spectreasy.project_dir", NULL), old_project_option)
     expect_true(any(grepl("workflow output", run$logs, fixed = TRUE)))
     expect_true(any(grepl("Warning: workflow warning", run$logs, fixed = TRUE)))
 })

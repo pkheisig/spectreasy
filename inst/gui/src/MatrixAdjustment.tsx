@@ -5,6 +5,13 @@ import ResidualPlot from './ResidualPlot';
 import { resolveApiBase } from './apiBase';
 
 const API_BASE = resolveApiBase();
+const currentProjectPath = () => window.sessionStorage.getItem('spectreasy-project-path') || '';
+const projectUrl = (path: string) => {
+    const separator = path.includes('?') ? '&' : '?';
+    const projectPath = currentProjectPath();
+    return `${API_BASE}${path}${projectPath ? `${separator}project_path=${encodeURIComponent(projectPath)}` : ''}`;
+};
+const projectBody = <T extends Record<string, unknown>>(body: T) => ({ ...body, projectPath: currentProjectPath(), project_path: currentProjectPath() });
 
 interface MatrixRow {
     Marker: string;
@@ -314,14 +321,14 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     }, []);
 
     const fetchMatrices = async () => {
-        const res = await axios.get(`${API_BASE}/matrices`);
+        const res = await axios.get(projectUrl('/matrices'));
         const list = Array.isArray(res.data) ? res.data : [];
         setMatrices(list);
         return list;
     };
 
     const fetchSamples = async () => {
-        const res = await axios.get(`${API_BASE}/samples`);
+        const res = await axios.get(projectUrl('/samples'));
         const list = Array.isArray(res.data) ? res.data : [];
         setSampleFiles(list);
         return list;
@@ -336,7 +343,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     };
 
     const fetchUserGuiState = async () => {
-        const result = await axios.get(`${API_BASE}/gui_state?module=matrix_tuner`).catch(() => null);
+        const result = await axios.get(projectUrl('/gui_state?module=matrix_tuner')).catch(() => null);
         if (result?.data?.config) {
             applyConfig(result.data.config);
         }
@@ -347,7 +354,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         const q = sampleName && sampleName.length > 0
             ? `?sample_name=${encodeURIComponent(sampleName)}`
             : '';
-        const resData = await axios.get(`${API_BASE}/data${q}`);
+        const resData = await axios.get(projectUrl(`/data${q}`));
         if (resData.data.error) {
             setRawData([]);
             setUnmixedData([]);
@@ -368,7 +375,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         setLoading(true);
         setErrorMessage('');
         try {
-            const resMatrix = await axios.get(`${API_BASE}/load_matrix?filename=${encodeURIComponent(filename)}`);
+            const resMatrix = await axios.get(projectUrl(`/load_matrix?filename=${encodeURIComponent(filename)}`));
             if (resMatrix.data?.error) throw new Error(asScalarString(resMatrix.data.error));
             const matrixData = Array.isArray(resMatrix.data) ? resMatrix.data as MatrixRow[] : [];
             if (matrixData.length === 0) {
@@ -431,13 +438,13 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             useType = filename ? 'unmixing' : 'reference';
         }
         try {
-            const res = await axios.post(`${API_BASE}/unmix`, {
+            const res = await axios.post(`${API_BASE}/unmix`, projectBody({
                 matrix_json: M_obj,
                 raw_data_json: currentRaw,
                 type: useType,
                 matrix_filename: typeof filename === 'string' ? filename : currentFile,
                 method: unmixingMethodRef.current
-            });
+            }));
             if (Array.isArray(res.data)) {
                 setUnmixedData(res.data as DataRow[]);
                 return true;
@@ -493,11 +500,11 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             ? currentFile.replace(/\.csv$/i, '_adjusted.csv')
             : `${currentFile}_adjusted.csv`;
         try {
-            const result = await axios.post(`${API_BASE}/save_matrix`, {
+            const result = await axios.post(`${API_BASE}/save_matrix`, projectBody({
                 filename: newName,
                 source_filename: currentFile,
                 matrix_json: matrix
-            });
+            }));
             if (result.data?.error) throw new Error(asScalarString(result.data.error));
             setSaveStatus('saved');
             await fetchMatrices();
@@ -531,10 +538,10 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     useEffect(() => {
         if (!guiStateLoaded) return;
         const timer = window.setTimeout(() => {
-            void axios.post(`${API_BASE}/gui_state`, {
+            void axios.post(`${API_BASE}/gui_state`, projectBody({
                 module: 'matrix_tuner',
                 config_json: buildConfig()
-            }).catch(() => null);
+            })).catch(() => null);
         }, 500);
         return () => window.clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps

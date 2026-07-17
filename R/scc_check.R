@@ -376,6 +376,7 @@
 #'   scatter plots to reuse in HTML output.
 #' @param report_run_settings Additional workflow settings recorded in HTML.
 #' @param report_artifact_paths Additional input/output paths recorded in HTML.
+#' @param project_path Project directory recorded in generated report metadata.
 #' @param ... Additional arguments forwarded to [build_reference_matrix()].
 #' @return Invisibly returns a list with `M`, `qc_summary`, `qc_plot_dir`,
 #'   `qc_metrics_dir`, `af_bank_info`, and `unmixing_method`.
@@ -413,6 +414,7 @@ qc_controls <- function(
     report_plots = list(),
     report_run_settings = list(),
     report_artifact_paths = list(),
+    project_path = getwd(),
     ...
 ) {
     output_file_missing <- missing(output_file)
@@ -571,7 +573,8 @@ qc_controls <- function(
                 ),
                 report_run_settings
             ),
-            plot_dir = collector_plot_dir
+            plot_dir = collector_plot_dir,
+            project_path = project_path
         )
         if (!isTRUE(save_qc_pngs)) report_data <- .report_embed_plot_manifest(report_data)
         return(render_qc_html_report(report_data, output_file, overwrite = overwrite))

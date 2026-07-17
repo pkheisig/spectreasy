@@ -56,7 +56,8 @@
         autospectral_n_candidates = 1000L,
         autospectral_n_spectral = 200L,
         autospectral_min_events = 10L,
-        autospectral_refine = FALSE
+        autospectral_refine = FALSE,
+        project_path = getwd()
         # Additional build_reference_matrix() arguments can be passed here.
     )
 
@@ -88,7 +89,8 @@
         overwrite = "version",
         report_plots = list(),
         report_run_settings = list(),
-        report_artifact_paths = list()
+        report_artifact_paths = list(),
+        project_path = getwd()
         # Additional build_reference_matrix() arguments can be passed here.
     )
 
@@ -126,7 +128,8 @@
         chunk_size = 50000L,
         seed = NULL,
         return_type = c("list", "flowSet", "SingleCellExperiment"),
-        verbose = TRUE
+        verbose = TRUE,
+        project_path = getwd()
     )
 
     # Spectreasy is the default unmixing method. It builds on the AutoSpectral
@@ -183,7 +186,8 @@
         report_per_sample = FALSE,
         overwrite = "version",
         report_run_settings = list(),
-        report_artifact_paths = list()
+        report_artifact_paths = list(),
+        project_path = getwd()
     )
 
     # Lower-level reusable HTML report workflow. Most users can call

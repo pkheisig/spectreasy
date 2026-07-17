@@ -80,8 +80,57 @@ matrix_filename_contains_matrix <- function(filename) {
     isTRUE(grepl("matrix", normalized, fixed = TRUE))
 }
 
-list_matrix_csv_files <- function() {
-    matrix_dir <- get_matrix_dir()
+gui_request_project_root <- function(project_path = "", fallback = TRUE) {
+    value <- if (is.null(project_path) || !length(project_path)) "" else trimws(as.character(project_path[1]))
+    if (!nzchar(value) && isTRUE(fallback)) value <- get_matrix_dir()
+    if (!nzchar(value)) stop("A project folder is required for this request.", call. = FALSE)
+    if (!dir.exists(value)) stop("Project folder not found: ", value, call. = FALSE)
+    normalizePath(value, mustWork = TRUE)
+}
+
+gui_project_value <- function(body, fallback = TRUE) {
+    value <- gui_workflow_value(body, "projectPath", gui_workflow_value(body, "project_path", ""))
+    gui_request_project_root(value, fallback = fallback)
+}
+
+.gui_project_gate_sessions <- new.env(parent = emptyenv())
+
+gui_reset_project_gate_session <- function(project_path) {
+    key <- gui_request_project_root(project_path)
+    if (exists(key, envir = .gui_project_gate_sessions, inherits = FALSE)) {
+        rm(list = key, envir = .gui_project_gate_sessions)
+    }
+    invisible(NULL)
+}
+
+gui_with_project_context <- function(project_path, expr) {
+    root <- gui_request_project_root(project_path)
+    keys <- c(
+        "spectreasy.project_dir", "spectreasy.matrix_dir", "spectreasy.samples_dir",
+        "spectreasy.gating_scc_dir", "spectreasy.gating_control_file", "spectreasy.gating_gate_file",
+        "spectreasy.gating_payload_cache", "spectreasy.gating_spectrum_cache",
+        "spectreasy.gating_detector_cache", "spectreasy.gating_state_cache", "spectreasy.project_selected"
+    )
+    previous <- options()[keys]
+    session_key <- normalizePath(root, mustWork = FALSE)
+    session <- if (exists(session_key, envir = .gui_project_gate_sessions, inherits = FALSE)) {
+        get(session_key, envir = .gui_project_gate_sessions, inherits = FALSE)
+    } else list()
+    gui_set_project_context(root, reset_gate_cache = FALSE)
+    for (key in names(session)) options(stats::setNames(list(session[[key]]), key))
+    on.exit({
+        current <- options()[c(
+            "spectreasy.gating_payload_cache", "spectreasy.gating_spectrum_cache",
+            "spectreasy.gating_detector_cache", "spectreasy.gating_state_cache"
+        )]
+        assign(session_key, current, envir = .gui_project_gate_sessions)
+        options(previous)
+    }, add = TRUE)
+    force(expr)
+}
+
+list_matrix_csv_files <- function(matrix_dir = get_matrix_dir()) {
+    matrix_dir <- normalizePath(matrix_dir, mustWork = FALSE)
     if (!dir.exists(matrix_dir)) {
         return(character(0))
     }
@@ -98,7 +147,7 @@ list_matrix_csv_files <- function() {
     sort(files)
 }
 
-matrix_path <- function(filename) {
+matrix_path <- function(filename, matrix_dir = get_matrix_dir()) {
     if (is.null(filename) || length(filename) == 0 || is.na(filename[1])) {
         stop("Invalid matrix filename")
     }
@@ -109,7 +158,7 @@ matrix_path <- function(filename) {
     if (!isTRUE(nzchar(rel)) || any(parts %in% c("", ".", ".."))) {
         stop("Invalid matrix filename")
     }
-    file.path(get_matrix_dir(), do.call(file.path, as.list(parts)))
+    file.path(normalizePath(matrix_dir, mustWork = FALSE), do.call(file.path, as.list(parts)))
 }
 
 read_matrix_csv <- function(path) {
@@ -182,7 +231,14 @@ normalize_gui_module <- function(module) {
     module
 }
 
-user_gui_config_path <- function(module) {
+user_gui_config_path <- function(module, project_path = "") {
+    project_path <- if (is.null(project_path) || !length(project_path)) "" else trimws(as.character(project_path[1]))
+    if (nzchar(project_path)) {
+        root <- gui_request_project_root(project_path)
+        directory <- file.path(root, ".spectreasy", "gui")
+        dir.create(directory, recursive = TRUE, showWarnings = FALSE)
+        return(file.path(directory, paste0(normalize_gui_module(module), ".json")))
+    }
     file.path(get_user_gui_config_dir(), paste0(normalize_gui_module(module), ".json"))
 }
 
@@ -1298,8 +1354,8 @@ function() {
 #* Load persistent GUI state for one GUI module
 #* @get /gui_state
 #* @param module
-function(module = "matrix_tuner") {
-    path <- user_gui_config_path(module)
+function(module = "matrix_tuner", project_path = "") {
+    path <- user_gui_config_path(module, project_path)
     if (!file.exists(path)) {
         return(list(module = normalize_gui_module(module), path = path, config = list()))
     }
@@ -1313,47 +1369,50 @@ function(req) {
     body <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
     module <- if (!is.null(body$module)) body$module else "matrix_tuner"
     cfg <- if (!is.null(body$config_json)) body$config_json else list()
-    path <- user_gui_config_path(module)
+    project_path <- if (!is.null(body$projectPath)) body$projectPath else if (!is.null(body$project_path)) body$project_path else ""
+    path <- user_gui_config_path(module, project_path)
     jsonlite::write_json(cfg, path, auto_unbox = TRUE, pretty = TRUE, null = "null")
     list(success = TRUE, module = normalize_gui_module(module), path = path)
 }
 
 #* List SCC control files for manual gating
 #* @get /gate_files
-function() {
-    df <- gate_read_mapping()
-    first <- df$filename[df$file_exists][1]
-    meta <- if (!is.na(first)) gate_fcs_metadata(file.path(get_gate_scc_dir(), first)) else list()
-    list(files = df, metadata = meta, gate_file = get_gate_file())
+function(project_path = "") {
+    gui_with_project_context(project_path, {
+        df <- gate_read_mapping()
+        first <- df$filename[df$file_exists][1]
+        meta <- if (!is.na(first)) gate_fcs_metadata(file.path(get_gate_scc_dir(), first)) else list()
+        list(files = df, metadata = meta, gate_file = get_gate_file())
+    })
 }
 
 #* Read the saved control mapping without synthesizing placeholder rows
 #* @get /control_mapping
-function() {
-    path <- get_gate_control_file()
+function(project_path = "") {
+    root <- gui_request_project_root(project_path)
+    path <- file.path(root, "fcs_mapping.csv")
     if (!file.exists(path)) return(list(rows = data.frame(), exists = FALSE, path = path))
-    rows <- tryCatch(
-        utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE),
-        error = function(e) NULL
-    )
+    rows <- tryCatch(utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE), error = function(e) NULL)
     if (is.null(rows)) return(list(rows = data.frame(), exists = TRUE, path = path, error = "The existing fcs_mapping.csv could not be read."))
-    rows <- gui_annotate_active_af_mapping(rows)
+    rows <- gui_annotate_active_af_mapping(rows, root)
     list(rows = rows, exists = TRUE, path = path)
 }
 
 #* Create fcs_mapping.csv from the active project's SCC folder
 #* @post /control_mapping/create
 function(req) {
+    body <- gui_workflow_body(req)
     tryCatch({
         cytometer <- getOption("spectreasy.panel_cytometer", "auto")
         if (is.null(cytometer) || length(cytometer) == 0L || is.na(cytometer[1]) || !nzchar(trimws(as.character(cytometer[1])))) cytometer <- "auto"
+        root <- gui_project_value(body)
         rows <- spectreasy::create_control_file(
-            input_folder = get_gate_scc_dir(),
+            input_folder = file.path(root, "scc"),
             cytometer = cytometer,
             unknown_fluor_policy = "by_channel",
-            output_file = get_gate_control_file()
+            output_file = file.path(root, "fcs_mapping.csv")
         )
-        list(success = TRUE, path = get_gate_control_file(), rows = rows)
+        list(success = TRUE, path = file.path(root, "fcs_mapping.csv"), rows = rows)
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
 
@@ -1386,7 +1445,8 @@ function(req) {
             stringsAsFactors = FALSE
         )
     }))
-    path <- get_gate_control_file()
+    root <- gui_project_value(body)
+    path <- file.path(root, "fcs_mapping.csv")
     dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
     utils::write.csv(mapping, path, row.names = FALSE, quote = TRUE)
     list(success = TRUE, path = path, rows = nrow(mapping))
@@ -1396,14 +1456,15 @@ function(req) {
 #* @get /gate_events
 #* @param filename
 #* @param max_points
-function(filename, max_points = 3000) {
-    gate_payload_for_file(filename = filename, max_points = max_points)
+function(filename, max_points = 3000, project_path = "") {
+    gui_with_project_context(project_path, gate_payload_for_file(filename = filename, max_points = max_points))
 }
 
 #* Preload all downsampled SCC control payloads
 #* @get /gate_preload
 #* @param max_points
-function(max_points = 3000) {
+function(max_points = 3000, project_path = "") {
+    gui_with_project_context(project_path, {
     df <- gate_read_mapping()
     payloads <- lapply(df$filename, function(filename) {
         tryCatch(gate_payload_for_file(filename = filename, max_points = max_points), error = function(e) {
@@ -1411,12 +1472,14 @@ function(max_points = 3000) {
         })
     })
     list(payloads = payloads, max_points = as.integer(max_points))
+    })
 }
 
 #* Preload all SCC controls in a compact float32 representation
 #* @get /gate_preload_compact
 #* @param max_points
-function(max_points = 3000) {
+function(max_points = 3000, project_path = "") {
+    gui_with_project_context(project_path, {
     df <- gate_read_mapping()
     payloads <- lapply(df$filename, function(filename) {
         tryCatch({
@@ -1433,6 +1496,7 @@ function(max_points = 3000) {
         })
     })
     list(payloads = payloads, max_points = as.integer(max_points))
+    })
 }
 
 #* Auto-generate the required histogram gates for all non-AF controls
@@ -1440,7 +1504,7 @@ function(max_points = 3000) {
 function(req) {
     tryCatch({
         body <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
-        result <- gate_autogenerate_histograms(body$gates)
+        result <- gui_with_project_context(gui_project_value(body), gate_autogenerate_histograms(body$gates))
         list(
             success = TRUE,
             gates = result$gates,
@@ -1458,9 +1522,9 @@ function(req) {
 #* @get /gate_spectrum
 #* @param filename
 #* @param dark
-function(filename, dark = "false") {
+function(filename, dark = "false", project_path = "") {
     tryCatch(
-        list(spectrum = gate_spectrum_for_file(filename = filename)),
+        list(spectrum = gui_with_project_context(project_path, gate_spectrum_for_file(filename = filename))),
         error = function(e) list(error = conditionMessage(e), spectrum = NULL)
     )
 }
@@ -1473,12 +1537,12 @@ function(req) {
         filenames <- unlist(body$filenames, use.names = FALSE)
         filenames <- as.character(filenames[nzchar(as.character(filenames))])
         gates <- body$gates
-        spectra <- stats::setNames(lapply(filenames, function(filename) {
+        spectra <- gui_with_project_context(gui_project_value(body), stats::setNames(lapply(filenames, function(filename) {
             gate_spectrum_for_file(
                 filename = filename,
                 gates = gates
             )
-        }), filenames)
+        }), filenames))
         list(success = TRUE, spectra = spectra)
     }, error = function(e) {
         list(success = FALSE, error = conditionMessage(e), spectra = list())
@@ -1487,16 +1551,19 @@ function(req) {
 
 #* List gate CSV files
 #* @get /gate_configs
-function() {
-    dir.create(dirname(get_gate_file()), recursive = TRUE, showWarnings = FALSE)
-    files <- list.files(dirname(get_gate_file()), pattern = "\\.csv$", full.names = FALSE, ignore.case = TRUE)
-    list(configs = sort(files), config_dir = dirname(get_gate_file()), active = basename(get_gate_file()))
+function(project_path = "") {
+    gui_with_project_context(project_path, {
+        dir.create(dirname(get_gate_file()), recursive = TRUE, showWarnings = FALSE)
+        files <- list.files(dirname(get_gate_file()), pattern = "\\.csv$", full.names = FALSE, ignore.case = TRUE)
+        list(configs = sort(files), config_dir = dirname(get_gate_file()), active = basename(get_gate_file()))
+    })
 }
 
 #* Load gate CSV
 #* @get /gate_config
 #* @param filename
-function(filename = "") {
+function(filename = "", project_path = "") {
+    gui_with_project_context(project_path, {
     path <- if (is.null(filename) || !nzchar(trimws(as.character(filename)[1]))) {
         get_gate_file()
     } else {
@@ -1507,13 +1574,14 @@ function(filename = "") {
     }
     rows <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
     list(path = path, rows = rows)
+    })
 }
 
 #* Save gate CSV
 #* @post /gate_config
 function(req) {
     body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
-    written <- gate_write_config_csv(body$rows, get_gate_file())
+    written <- gui_with_project_context(gui_project_value(body), gate_write_config_csv(body$rows, get_gate_file()))
     list(success = TRUE, path = written$path, rows = written$rows)
 }
 
@@ -1521,10 +1589,11 @@ function(req) {
 #* @post /gate_config_save_dialog
 function(req) {
     body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
+    root <- gui_project_value(body)
     if (!gate_has_system_file_picker()) {
         return(list(success = FALSE, cancelled = FALSE, fallback = TRUE, message = "No backend system file picker is available."))
     }
-    path <- gate_pick_csv_file(mode = "save")
+    path <- gui_with_project_context(root, gate_pick_csv_file(mode = "save"))
     if (identical(path, "CANCEL")) {
         return(list(success = FALSE, cancelled = TRUE, fallback = FALSE, message = "Save cancelled."))
     }
@@ -1532,17 +1601,16 @@ function(req) {
         return(list(success = FALSE, cancelled = FALSE, fallback = TRUE, message = "System file picker failed. Falling back to browser picker."))
     }
     written <- gate_write_config_csv(body$rows, path)
-    set_gate_file(written$path)
     list(success = TRUE, cancelled = FALSE, path = written$path, rows = written$rows)
 }
 
 #* Load gate CSV with a system file picker
 #* @get /gate_config_load_dialog
-function() {
+function(project_path = "") {
     if (!gate_has_system_file_picker()) {
         return(list(success = FALSE, cancelled = FALSE, fallback = TRUE, message = "No backend system file picker is available."))
     }
-    path <- gate_pick_csv_file(mode = "open")
+    path <- gui_with_project_context(project_path, gate_pick_csv_file(mode = "open"))
     if (identical(path, "CANCEL")) {
         return(list(success = FALSE, cancelled = TRUE, fallback = FALSE, message = "Load cancelled."))
     }
@@ -1553,25 +1621,26 @@ function() {
         return(list(success = FALSE, cancelled = FALSE, fallback = FALSE, message = paste("File does not exist:", path)))
     }
     rows <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
-    set_gate_file(path)
     list(success = TRUE, cancelled = FALSE, path = path, rows = rows)
 }
 
 #* Load in-memory gate cache
 #* @get /gate_cache
-function() {
+function(project_path = "") {
+    gui_with_project_context(project_path, {
     cache <- getOption("spectreasy.gating_state_cache")
     if (is.null(cache)) {
         return(list(gates = list(), pointSize = 1.5, maxPoints = 50000, histogramBins = 100, histogramTransform = "asinh", viewSettings = list(), eventCountVersion = 2))
     }
     cache
+    })
 }
 
 #* Save in-memory gate cache
 #* @post /gate_cache
 function(req) {
     body <- jsonlite::fromJSON(req$postBody, simplifyVector = FALSE)
-    options(spectreasy.gating_state_cache = list(
+    gui_with_project_context(gui_project_value(body), options(spectreasy.gating_state_cache = list(
         gates = body$gates,
         pointSize = body$pointSize,
         maxPoints = body$maxPoints,
@@ -1579,7 +1648,7 @@ function(req) {
         histogramTransform = body$histogramTransform,
         viewSettings = body$viewSettings,
         eventCountVersion = body$eventCountVersion
-    ))
+    )))
     list(success = TRUE)
 }
 
@@ -1677,9 +1746,10 @@ function(req) {
 
 #* List saved AF profiles
 #* @get /af_profiles
-function() {
+function(project_path = "") {
+    root <- gui_request_project_root(project_path)
     profiles <- tryCatch(spectreasy::list_af_profiles(), error = function(e) data.frame())
-    if (nrow(profiles) > 0L) profiles$active <- profiles$name == gui_read_active_af_profile()
+    if (nrow(profiles) > 0L) profiles$active <- profiles$name == gui_read_active_af_profile(root)
     list(profiles = profiles)
 }
 
@@ -1730,9 +1800,10 @@ gui_pick_af_source_file <- function(initial_dir = file.path(get_matrix_dir(), "s
 
 #* Open the native FCS picker for standalone AF extraction
 #* @post /af_profiles/select-source
-function() {
+function(req) {
+    body <- gui_workflow_body(req)
     tryCatch({
-        selected <- gui_pick_af_source_file()
+        selected <- gui_pick_af_source_file(file.path(gui_project_value(body), "scc"))
         if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
         if (!grepl("\\.fcs$", selected, ignore.case = TRUE)) return(list(success = FALSE, cancelled = FALSE, error = "Select an FCS file."))
         list(success = TRUE, cancelled = FALSE, path = selected)
@@ -1743,15 +1814,12 @@ function() {
 #* @post /af_profiles/activate
 function(req) {
     body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
+    root <- gui_project_value(body)
     name <- if (!is.null(body$profile_name)) trimws(as.character(body$profile_name)[1]) else ""
     if (!nzchar(name)) return(list(success = FALSE, error = "A profile name is required."))
     tryCatch({
-        active <- gui_write_active_af_profile(name)
-        options(
-            spectreasy.gating_payload_cache = list(),
-            spectreasy.gating_spectrum_cache = list(),
-            spectreasy.gating_detector_cache = list()
-        )
+        active <- gui_write_active_af_profile(name, root)
+        gui_reset_project_gate_session(root)
         list(success = TRUE, profile_name = active)
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
@@ -1760,15 +1828,12 @@ function(req) {
 #* @post /af_profiles/deactivate
 function(req) {
     body <- jsonlite::fromJSON(req$postBody, simplifyVector = TRUE)
+    root <- gui_project_value(body)
     name <- if (!is.null(body$profile_name)) trimws(as.character(body$profile_name)[1]) else ""
     if (!nzchar(name)) return(list(success = FALSE, error = "A profile name is required."))
     tryCatch({
-        removed <- gui_unlink_active_af_profile(name)
-        options(
-            spectreasy.gating_payload_cache = list(),
-            spectreasy.gating_spectrum_cache = list(),
-            spectreasy.gating_detector_cache = list()
-        )
+        removed <- gui_unlink_active_af_profile(name, root)
+        gui_reset_project_gate_session(root)
         list(success = TRUE, profile_name = removed)
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
@@ -1776,14 +1841,15 @@ function(req) {
 #* Delete a saved AF profile
 #* @delete /af_profiles/delete
 #* @param name Profile name
-function(name = "") {
+function(name = "", project_path = "") {
     if (is.null(name) || !nzchar(trimws(as.character(name)[1]))) {
         return(list(success = FALSE, error = "A profile name is required."))
     }
     tryCatch({
         spectreasy::delete_af_profile(as.character(name)[1])
-        if (identical(gui_read_active_af_profile(), as.character(name)[1])) {
-            unlink(gui_active_af_config_path(), force = TRUE)
+        root <- gui_request_project_root(project_path)
+        if (identical(gui_read_active_af_profile(root), as.character(name)[1])) {
+            unlink(gui_active_af_config_path(root), force = TRUE)
         }
         list(success = TRUE, name = as.character(name)[1])
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
@@ -1804,8 +1870,9 @@ function(req) {
         return(list(success = FALSE, error = "Matrix, profile, and output names are required."))
     }
     tryCatch({
-        matrix_file <- matrix_path(matrix_filename)
-        output_file <- matrix_path(output_filename)
+        root <- gui_project_value(body)
+        matrix_file <- matrix_path(matrix_filename, root)
+        output_file <- matrix_path(output_filename, root)
         if (!file.exists(matrix_file)) stop("Matrix file not found: ", matrix_filename, call. = FALSE)
         matrix_data <- read_matrix_csv(matrix_file)
         profile <- spectreasy::load_af_profile(profile_name, show_plot = FALSE)
@@ -1818,20 +1885,21 @@ function(req) {
 
 #* List available matrices
 #* @get /matrices
-function() {
-    files <- list_matrix_csv_files()
+function(project_path = "") {
+    root <- gui_request_project_root(project_path)
+    files <- list_matrix_csv_files(root)
     if (length(files) == 0) {
         return(character(0))
     }
-    paths <- file.path(get_matrix_dir(), files)
+    paths <- file.path(root, files)
     keep <- vapply(paths, is_probably_matrix_csv, logical(1))
     return(as.character(files[keep]))
 }
 
 #* List available sample files
 #* @get /samples
-function() {
-    samples_dir <- get_samples_dir()
+function(project_path = "") {
+    samples_dir <- file.path(gui_request_project_root(project_path), "samples")
     if (!dir.exists(samples_dir)) return(character(0))
     files <- list.files(samples_dir, pattern = "\\.fcs$", ignore.case = TRUE)
     return(as.character(sort(files)))
@@ -1875,8 +1943,8 @@ function(req) {
 #* Load a specific matrix
 #* @get /load_matrix
 #* @param filename
-function(filename) {
-    path <- matrix_path(filename)
+function(filename, project_path = "") {
+    path <- matrix_path(filename, gui_request_project_root(project_path))
     if (!file.exists(path)) {
         return(list(error = paste("File not found:", path)))
     }
@@ -1893,13 +1961,14 @@ function(filename) {
 #* @post /save_matrix
 function(req) {
     body <- jsonlite::fromJSON(req$postBody)
+    root <- gui_project_value(body)
     filename <- body$filename
     source_filename <- body$source_filename
     matrix_data <- body$matrix_json
     df <- as.data.frame(matrix_data, check.names = FALSE)
-    path <- matrix_path(filename)
+    path <- matrix_path(filename, root)
     source_path <- if (!is.null(source_filename) && nzchar(trimws(as.character(source_filename)[1]))) {
-        matrix_path(source_filename)
+        matrix_path(source_filename, root)
     } else {
         ""
     }
@@ -1929,12 +1998,12 @@ function(res) {
 #* Import a matrix from an external path
 #* @post /import_matrix
 #* @param path Absolute path to the CSV file
-function(path) {
+function(path, project_path = "") {
     if (!file.exists(path)) {
         return(list(error = paste("File not found:", path)))
     }
     filename <- basename(path)
-    dest <- file.path(get_matrix_dir(), filename)
+    dest <- file.path(gui_request_project_root(project_path), filename)
     file.copy(path, dest, overwrite = TRUE)
     return(list(success = TRUE, filename = filename))
 }
@@ -1949,8 +2018,8 @@ function(res) {
 #* @post /import_matrix_content
 #* @param filename The filename
 #* @param content The CSV content as text
-function(filename, content) {
-    dest <- matrix_path(filename)
+function(filename, content, project_path = "") {
+    dest <- matrix_path(filename, gui_request_project_root(project_path))
     dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
     writeLines(content, dest)
     return(list(success = TRUE, filename = filename))
@@ -1959,9 +2028,9 @@ function(filename, content) {
 #* Get unmixed data for a subset of cells from a sample
 #* @get /data
 #* @param sample_name The name of the sample to load
-function(sample_name = "") {
+function(sample_name = "", project_path = "") {
     # If no sample provided, take the first one in samples/
-    samples_dir <- get_samples_dir()
+    samples_dir <- file.path(gui_request_project_root(project_path), "samples")
     files <- sort(list.files(samples_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE))
     if (length(files) == 0) {
         return(list(error = paste0("No FCS files found in samples directory: ", samples_dir)))
@@ -2031,7 +2100,7 @@ function(res) {
 #* @param matrix_json The matrix (M or W)
 #* @param raw_data_json The raw data
 #* @param type "reference" (M) or "unmixing" (W)
-function(matrix_json, raw_data_json, type = "reference", matrix_filename = "", method = "") {
+function(matrix_json, raw_data_json, type = "reference", matrix_filename = "", method = "", project_path = "") {
     # matrix_json format: {MarkerName: {det1: val, det2: val, ...}, ...}
     markers <- names(matrix_json)
     detectors <- names(matrix_json[[1]])
@@ -2052,7 +2121,7 @@ function(matrix_json, raw_data_json, type = "reference", matrix_filename = "", m
         mat_df <- as.data.frame(mat, check.names = FALSE)
         mat_df$Marker <- rownames(mat)
         mat_df <- mat_df[, c("Marker", colnames(mat)), drop = FALSE]
-        mat_df <- merge_hidden_af_rows(mat_df, source_paths = matrix_path(matrix_filename))
+        mat_df <- merge_hidden_af_rows(mat_df, source_paths = matrix_path(matrix_filename, gui_request_project_root(project_path)))
         markers <- as.character(mat_df[[1]])
         mat <- as.matrix(mat_df[, -1, drop = FALSE])
         storage.mode(mat) <- "numeric"
@@ -2171,25 +2240,23 @@ gui_workflow_root <- function(body) {
     normalizePath(root, mustWork = TRUE)
 }
 
-gui_restore_working_directory <- function(path) {
-    if (is.null(path) || length(path) != 1L || is.na(path) || !nzchar(path) || !dir.exists(path)) {
-        return(invisible(FALSE))
+gui_workflow_resolve_path <- function(path, root, allow_empty = FALSE) {
+    if (is.null(path) || length(path) == 0L || is.na(path[1])) {
+        if (isTRUE(allow_empty)) return("")
+        stop("Project-relative path is missing.", call. = FALSE)
     }
-    tryCatch(
-        {
-            setwd(path)
-            invisible(TRUE)
-        },
-        error = function(e) invisible(FALSE)
-    )
+    path <- trimws(as.character(path[1]))
+    if (!nzchar(path)) {
+        if (isTRUE(allow_empty)) return("")
+        stop("Project-relative path is empty.", call. = FALSE)
+    }
+    expanded <- path.expand(path)
+    candidate <- if (grepl("^(/|[A-Za-z]:[/\\\\])", expanded)) expanded else file.path(root, expanded)
+    normalizePath(candidate, mustWork = FALSE)
 }
 
 gui_workflow_run <- function(body, action, expr) {
     root <- gui_workflow_root(body)
-    gui_set_project_context(root)
-    old_wd <- getwd()
-    on.exit(gui_restore_working_directory(old_wd), add = TRUE)
-    setwd(root)
     messages <- character()
     warnings <- character()
     tryCatch(
@@ -2230,11 +2297,11 @@ gui_workflow_run <- function(body, action, expr) {
     )
 }
 
-gui_workflow_file_or_null <- function(path, root = getwd()) {
+gui_workflow_file_or_null <- function(path, root) {
     if (is.null(path) || length(path) == 0 || is.na(path[1])) return(NULL)
     path <- trimws(as.character(path[1]))
     if (!nzchar(path)) return(NULL)
-    candidate <- if (grepl("^(/|[A-Za-z]:[/\\\\])", path)) path else file.path(root, path)
+    candidate <- gui_workflow_resolve_path(path, root)
     if (!file.exists(candidate)) return(NULL)
     normalizePath(candidate, mustWork = TRUE)
 }
@@ -2422,11 +2489,11 @@ gui_ensure_project_input_dirs <- function(project_path) {
     invisible(paths)
 }
 
-gui_project_file_location <- function(kind, filename = NULL) {
+gui_project_file_location <- function(kind, filename = NULL, project_path = "") {
     kind <- tolower(trimws(as.character(kind)[1]))
     folder <- switch(kind, controls = "scc", samples = "samples", NULL)
     if (is.null(folder)) stop("File kind must be 'controls' or 'samples'.", call. = FALSE)
-    root <- normalizePath(get_matrix_dir(), mustWork = TRUE)
+    root <- gui_request_project_root(project_path)
     directory <- file.path(root, folder)
     if (is.null(filename)) return(list(kind = kind, folder = folder, directory = directory))
     candidate <- gsub("\\\\", "/", trimws(as.character(filename)[1]))
@@ -2440,8 +2507,8 @@ gui_project_file_location <- function(kind, filename = NULL) {
     list(kind = kind, folder = folder, directory = directory, filename = safe_name, path = file.path(directory, safe_name))
 }
 
-gui_project_file_rows <- function(kind) {
-    location <- gui_project_file_location(kind)
+gui_project_file_rows <- function(kind, project_path = "") {
+    location <- gui_project_file_location(kind, project_path = project_path)
     if (!dir.exists(location$directory)) return(data.frame())
     files <- list.files(location$directory, pattern = "\\.fcs$", ignore.case = TRUE, full.names = TRUE)
     if (!length(files)) return(data.frame())
@@ -2513,20 +2580,26 @@ gui_natural_sort_key <- function(x) {
     }, character(1))
 }
 
-gui_set_project_context <- function(project_path) {
+gui_set_project_context <- function(project_path, reset_gate_cache = TRUE) {
     if (!dir.exists(project_path)) stop("Project folder not found: ", project_path, call. = FALSE)
     project_path <- normalizePath(project_path, mustWork = TRUE)
-    options(
+    project_options <- list(
         spectreasy.project_dir = project_path,
         spectreasy.matrix_dir = project_path,
         spectreasy.samples_dir = file.path(project_path, "samples"),
         spectreasy.gating_scc_dir = file.path(project_path, "scc"),
         spectreasy.gating_control_file = file.path(project_path, "fcs_mapping.csv"),
-        spectreasy.gating_gate_file = file.path(project_path, "ssc_gate_config.csv"),
-        spectreasy.gating_payload_cache = list(),
-        spectreasy.gating_spectrum_cache = list(),
-        spectreasy.gating_detector_cache = list()
+        spectreasy.gating_gate_file = file.path(project_path, "ssc_gate_config.csv")
     )
+    if (isTRUE(reset_gate_cache)) {
+        project_options <- c(project_options, list(
+            spectreasy.gating_payload_cache = list(),
+            spectreasy.gating_spectrum_cache = list(),
+            spectreasy.gating_detector_cache = list(),
+            spectreasy.gating_state_cache = NULL
+        ))
+    }
+    options(project_options)
     options(spectreasy.project_selected = TRUE)
     project_path
 }
@@ -2837,7 +2910,7 @@ function(req) {
     body <- gui_workflow_body(req)
     project_path <- gui_workflow_path(body, "projectPath", "", allow_empty = FALSE)
     tryCatch({
-        project_path <- gui_set_project_context(project_path)
+        project_path <- gui_request_project_root(project_path, fallback = FALSE)
         list(success = TRUE, project = gui_project_scan(project_path))
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
@@ -2860,7 +2933,7 @@ function(req) {
     tryCatch({
         selected <- gui_pick_project_directory(get_matrix_dir(), allow_create = FALSE)
         if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
-        selected <- gui_set_project_context(selected)
+        selected <- gui_request_project_root(selected, fallback = FALSE)
         list(success = TRUE, cancelled = FALSE, project = gui_project_scan(selected))
     }, error = function(e) list(success = FALSE, cancelled = FALSE, error = conditionMessage(e)))
 }
@@ -2871,7 +2944,7 @@ function(req) {
     tryCatch({
         selected <- gui_pick_project_directory(get_matrix_dir(), allow_create = TRUE)
         if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
-        selected <- gui_set_project_context(selected)
+        selected <- gui_request_project_root(selected, fallback = FALSE)
         list(success = TRUE, cancelled = FALSE, project = gui_project_scan(selected))
     }, error = function(e) list(success = FALSE, cancelled = FALSE, error = conditionMessage(e)))
 }
@@ -2879,9 +2952,10 @@ function(req) {
 #* List FCS files in the active project's controls or samples folder
 #* @get /project/files
 #* @param kind Either controls or samples
-function(kind = "controls") {
+#* @param project_path Active cockpit project directory
+function(kind = "controls", project_path = "") {
     tryCatch(
-        list(success = TRUE, files = gui_project_file_rows(kind)),
+        list(success = TRUE, files = gui_project_file_rows(kind, project_path)),
         error = function(e) list(success = FALSE, error = conditionMessage(e), files = data.frame())
     )
 }
@@ -2894,7 +2968,8 @@ function(req) {
         gui_project_upload_discard_stale()
         location <- gui_project_file_location(
             gui_workflow_value(body, "kind", ""),
-            gui_workflow_value(body, "filename", "")
+            gui_workflow_value(body, "filename", ""),
+            gui_project_value(body)
         )
         if (!dir.exists(location$directory)) {
             stop("Create the project's scc and samples folders before adding files.", call. = FALSE)
@@ -2961,7 +3036,7 @@ function(req) {
         if (file.exists(session$location$path)) stop("The destination file now exists; the upload was not overwritten.", call. = FALSE)
         if (!file.rename(session$temporary, session$location$path)) stop("Could not save uploaded file.", call. = FALSE)
         rm(list = upload_id, envir = .gui_project_uploads)
-        rows <- gui_project_file_rows(session$location$kind)
+        rows <- gui_project_file_rows(session$location$kind, dirname(session$location$directory))
         row <- rows[rows$name == session$location$filename, , drop = FALSE]
         list(success = TRUE, file = row)
     }, error = function(e) {
@@ -2983,9 +3058,10 @@ function(req) {
 #* @delete /project/files
 #* @param kind Either controls or samples
 #* @param filename FCS filename inside that folder
-function(kind = "", filename = "") {
+#* @param project_path Active cockpit project directory
+function(kind = "", filename = "", project_path = "") {
     tryCatch({
-        location <- gui_project_file_location(kind, filename)
+        location <- gui_project_file_location(kind, filename, project_path)
         if (!file.exists(location$path) || dir.exists(location$path)) stop("Project file not found.", call. = FALSE)
         removed <- unlink(location$path, force = TRUE)
         if (!identical(removed, 0L)) stop("Could not delete project file.", call. = FALSE)
@@ -2996,9 +3072,10 @@ function(kind = "", filename = "") {
 #* Delete all FCS files from one active project input folder
 #* @delete /project/files/all
 #* @param kind Either controls or samples
-function(kind = "") {
+#* @param project_path Active cockpit project directory
+function(kind = "", project_path = "") {
     tryCatch({
-        location <- gui_project_file_location(kind)
+        location <- gui_project_file_location(kind, project_path = project_path)
         if (!dir.exists(location$directory)) {
             return(list(success = TRUE, deleted = 0L))
         }
@@ -3022,8 +3099,8 @@ function(res) {
 function(req) {
     body <- gui_workflow_body(req)
     root <- gui_workflow_root(body)
-    scc_dir <- gui_workflow_value(body, "scc_dir", "scc")
-    control_file <- gui_workflow_value(body, "control_file", "fcs_mapping.csv")
+    scc_dir <- gui_workflow_resolve_path(gui_workflow_value(body, "scc_dir", "scc"), root)
+    control_file <- gui_workflow_resolve_path(gui_workflow_value(body, "control_file", "fcs_mapping.csv"), root)
     active_af_profile <- gui_read_active_af_profile(root)
     if (nzchar(active_af_profile)) {
         control_file <- gui_filtered_control_file(root)
@@ -3031,7 +3108,7 @@ function(req) {
             on.exit(unlink(control_file, force = TRUE), add = TRUE)
         }
     }
-    output_dir <- gui_workflow_value(body, "output_dir", "spectreasy_outputs")
+    output_dir <- gui_workflow_resolve_path(gui_workflow_value(body, "output_dir", "spectreasy_outputs"), root)
     method <- gui_workflow_value(body, "method", get_unmixing_method())
     cytometer <- gui_workflow_value(body, "cytometer", "auto")
     gate_file <- gui_workflow_file_or_null(
@@ -3085,7 +3162,8 @@ function(req) {
             autospectral_n_candidates = gui_workflow_number(body, "autospectral_n_candidates", 1000, integer = TRUE, minimum = 1),
             autospectral_n_spectral = gui_workflow_number(body, "autospectral_n_spectral", 200, integer = TRUE, minimum = 1),
             autospectral_min_events = gui_workflow_number(body, "autospectral_min_events", 10, integer = TRUE, minimum = 1),
-            autospectral_refine = gui_workflow_bool(body, "autospectral_refine", FALSE)
+            autospectral_refine = gui_workflow_bool(body, "autospectral_refine", FALSE),
+            project_path = root
         ),
         if (nzchar(active_af_profile)) list(af_profile = active_af_profile) else list(),
         gui_method_optional_args(method, body)
@@ -3119,10 +3197,11 @@ function(res) {
 #* @post /workflow/sample
 function(req) {
     body <- gui_workflow_body(req)
-    sample_dir <- gui_workflow_value(body, "sample_dir", "samples")
-    matrix_file <- gui_workflow_value(body, "matrix_file", file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv"))
-    noise_file <- gui_workflow_file_or_null(gui_workflow_value(body, "detector_noise_file", ""), root = gui_workflow_root(body))
-    output_dir <- gui_workflow_value(body, "output_dir", "spectreasy_outputs")
+    root <- gui_workflow_root(body)
+    sample_dir <- gui_workflow_resolve_path(gui_workflow_value(body, "sample_dir", "samples"), root)
+    matrix_file <- gui_workflow_resolve_path(gui_workflow_value(body, "matrix_file", file.path("spectreasy_outputs", "unmix_controls", "scc_reference_matrix.csv")), root)
+    noise_file <- gui_workflow_file_or_null(gui_workflow_value(body, "detector_noise_file", ""), root = root)
+    output_dir <- gui_workflow_resolve_path(gui_workflow_value(body, "output_dir", "spectreasy_outputs"), root)
     method <- gui_workflow_value(body, "method", get_unmixing_method())
     sample_args <- c(
         list(
@@ -3136,7 +3215,7 @@ function(req) {
             spectral_variant_min_abundance = gui_workflow_number(body, "spectral_variant_min_abundance", 1, minimum = 0),
             spectral_variant_positive_fraction = gui_workflow_number(body, "spectral_variant_positive_fraction", 0.02, minimum = 0, maximum = 1),
             spectral_variant_min_improvement = gui_workflow_number(body, "spectral_variant_min_improvement", 0.01, minimum = 0),
-            spectral_variant_library_file = gui_workflow_file_or_null(gui_workflow_value(body, "spectral_variant_library_file", ""), root = gui_workflow_root(body)),
+            spectral_variant_library_file = gui_workflow_file_or_null(gui_workflow_value(body, "spectral_variant_library_file", ""), root = root),
             estimate_af = gui_workflow_bool(body, "estimate_af", FALSE),
             output_dir = output_dir,
             write_fcs = gui_workflow_bool(body, "write_fcs", TRUE),
@@ -3148,7 +3227,8 @@ function(req) {
             chunk_size = gui_workflow_number(body, "chunk_size", 50000, integer = TRUE, minimum = 1),
             seed = gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1),
             return_type = gui_workflow_value(body, "return_type", "list"),
-            verbose = FALSE
+            verbose = FALSE,
+            project_path = root
         ),
         gui_method_optional_args(method, body)
     )
@@ -3297,7 +3377,8 @@ gui_default_af_profile_name <- function(fcs_file, existing_names = character()) 
 #* @post /workflow/af
 function(req) {
     body <- gui_workflow_body(req)
-    fcs_file <- gui_workflow_value(body, "fcs_file", file.path("scc", "unstained_cells.fcs"))
+    root <- gui_workflow_root(body)
+    fcs_file <- gui_workflow_resolve_path(gui_workflow_value(body, "fcs_file", file.path("scc", "unstained_cells.fcs")), root)
     bands <- gui_workflow_number(body, "af_n_bands", 100, integer = TRUE, minimum = 1)
     run <- gui_workflow_run(
         body,

@@ -91,6 +91,48 @@ test_that("cockpit API keeps all critical route families registered", {
     expect_false("/workflow/synthetic" %in% paths)
 })
 
+test_that("cockpit workflows use explicit project paths and never mutate the working directory", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    skip_if_not(file.exists(api_path))
+
+    source_text <- paste(readLines(api_path, warn = FALSE), collapse = "\n")
+    expect_false(grepl("setwd(", source_text, fixed = TRUE))
+    expect_match(source_text, "gui_workflow_resolve_path(gui_workflow_value(body, \"scc_dir\"", fixed = TRUE)
+    expect_match(source_text, "gui_workflow_resolve_path(gui_workflow_value(body, \"sample_dir\"", fixed = TRUE)
+    expect_match(source_text, "gui_workflow_resolve_path(gui_workflow_value(body, \"fcs_file\"", fixed = TRUE)
+    expect_match(source_text, "gui_workflow_resolve_path(gui_workflow_value(body, \"output_dir\"", fixed = TRUE)
+})
+
+test_that("cockpit requests keep project identity scoped to the request", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+    project_a <- tempfile("cockpit_project_a_")
+    project_b <- tempfile("cockpit_project_b_")
+    dir.create(file.path(project_a, "scc"), recursive = TRUE)
+    dir.create(file.path(project_b, "scc"), recursive = TRUE)
+    file.create(file.path(project_a, "scc", "A.fcs"))
+    file.create(file.path(project_b, "scc", "B.fcs"))
+    on.exit(unlink(c(project_a, project_b), recursive = TRUE, force = TRUE), add = TRUE)
+
+    old_options <- options(spectreasy.project_dir = project_a, spectreasy.matrix_dir = project_a)
+    on.exit(options(old_options), add = TRUE)
+    expect_identical(api_env$gui_project_file_rows("controls", project_a)$name, "A.fcs")
+    expect_identical(api_env$gui_project_file_rows("controls", project_b)$name, "B.fcs")
+
+    observed <- api_env$gui_with_project_context(project_b, getOption("spectreasy.project_dir"))
+    expect_identical(observed, normalizePath(project_b, mustWork = TRUE))
+    expect_identical(getOption("spectreasy.project_dir"), project_a)
+    api_env$gui_with_project_context(project_a, options(spectreasy.gating_state_cache = list(project = "A")))
+    api_env$gui_with_project_context(project_b, options(spectreasy.gating_state_cache = list(project = "B")))
+    expect_identical(api_env$gui_with_project_context(project_a, getOption("spectreasy.gating_state_cache"))$project, "A")
+    expect_identical(api_env$gui_with_project_context(project_b, getOption("spectreasy.gating_state_cache"))$project, "B")
+})
+
 test_that("cockpit project files reject traversal and non-FCS input", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")

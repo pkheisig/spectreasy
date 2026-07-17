@@ -6,6 +6,9 @@ import './PanelBuilder.css';
 import { resolveApiBase } from './apiBase';
 
 const API_BASE = resolveApiBase();
+const panelProjectPath = () => window.sessionStorage.getItem('spectreasy-project-path') || '';
+const panelProjectUrl = (path: string) => `${API_BASE}${path}${panelProjectPath() ? `${path.includes('?') ? '&' : '?'}project_path=${encodeURIComponent(panelProjectPath())}` : ''}`;
+const panelProjectBody = <T extends Record<string, unknown>>(body: T) => ({ ...body, projectPath: panelProjectPath() });
 
 const unboxGuiState = (value: unknown): unknown => {
     if (Array.isArray(value)) {
@@ -609,7 +612,7 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
     useEffect(() => {
         if (!guiStateLoaded) return;
         const timer = window.setTimeout(() => {
-            void axios.post(`${API_BASE}/gui_state`, {
+            void axios.post(`${API_BASE}/gui_state`, panelProjectBody({
                 module: 'panel_builder',
                 config_json: {
                     cytometer: getCytometerName(cytometer),
@@ -621,7 +624,7 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
                     sidebarWidth,
                     sidebarCollapsed
                 }
-            }).catch(() => null);
+            })).catch(() => null);
         }, 500);
         return () => window.clearTimeout(timer);
     }, [cytometer, configuration, theme, slots, markers, tab, sidebarWidth, sidebarCollapsed, guiStateLoaded, embedded]);
@@ -715,11 +718,11 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
 
     const fetchPanel = async (nextCytometer: string, nextConfiguration: string, nextSelected: string[]) => {
         setError('');
-        const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, {
+        const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, panelProjectBody({
             cytometer: nextCytometer,
             configuration: nextConfiguration,
             fluorophores: nextSelected,
-        });
+        }));
         if (res.data?.error) throw new Error(String(res.data.error));
         const nextPayload = res.data as PanelPayload;
         setPayload(nextPayload);
@@ -731,7 +734,7 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
     useEffect(() => {
         const boot = async () => {
             try {
-                const stateRes = await axios.get(`${API_BASE}/gui_state?module=panel_builder`).catch(() => null);
+                const stateRes = await axios.get(panelProjectUrl('/gui_state?module=panel_builder')).catch(() => null);
                 const saved = unboxGuiState(stateRes?.data?.config || {}) as Record<string, unknown>;
                 const defaults = bootDefaultsRef.current;
                 const savedCytometer = typeof saved.cytometer === 'string' ? getCytometerName(saved.cytometer) : defaults.cytometer;
@@ -747,11 +750,11 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
                 setSlots(savedSlots);
                 slotsRef.current = savedSlots;
                 setMarkers(savedMarkers);
-                const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, {
+                const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, panelProjectBody({
                     cytometer: savedCytometer,
                     configuration: savedConfiguration,
                     fluorophores: savedSlots.filter(Boolean),
-                });
+                }));
                 if (res.data?.error) throw new Error(String(res.data.error));
                 const initial = res.data as PanelPayload;
                 setPayload(initial);
@@ -939,12 +942,12 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
         setError('');
         setExporting(true);
         try {
-            const res = await axios.post(`${API_BASE}/export_spectral_panel_overview`, {
+            const res = await axios.post(`${API_BASE}/export_spectral_panel_overview`, panelProjectBody({
                 cytometer,
                 configuration,
                 fluorophores: selectedRows.map(row => row.fluor),
                 markers: selectedRows.map(row => row.marker),
-            });
+            }));
             if (res.data?.error) throw new Error(String(res.data.error));
             const out = res.data as PanelExportResponse;
             downloadBlob(out.filename || `spectreasy_${cytometer}_${configuration}_panel_overview.pdf`, base64ToBlob(out.content_base64, out.content_type || 'application/pdf'));

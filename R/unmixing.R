@@ -832,6 +832,7 @@ as.data.frame.spectreasy_unmixed_results <- function(x, row.names = NULL, option
 #'   `altExp(x, "detector_residuals")` when available.
 #' @param verbose Logical; if `TRUE`, print progress messages while unmixing
 #'   each sample.
+#' @param project_path Project directory recorded in generated report metadata.
 #' @return Either a named list with one element per sample, a `flowSet`, or a
 #'   `SingleCellExperiment` depending on `return_type`. For `return_type = "list"`,
 #'   the result has class `spectreasy_unmixed_results`; list elements contain
@@ -901,7 +902,8 @@ unmix_samples <- function(sample_dir = "samples",
                           chunk_size = 50000L,
                           seed = NULL,
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
-                          verbose = TRUE) {
+                          verbose = TRUE,
+                          project_path = getwd()) {
     spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     unmixing_matrix_file_missing <- missing(unmixing_matrix_file)
     return_type <- .match_arg_ci(
@@ -1229,7 +1231,8 @@ unmix_samples <- function(sample_dir = "samples",
                 plot_n_events = plot_n_events,
                 chunk_size = chunk_size,
                 seed = seed
-            )
+            ),
+            project_path = project_path
         )
         attr(results, "qc_report_file") <- report_res$output_file
         attr(results, "qc_samples_dir") <- qc_samples_dir

@@ -69,6 +69,27 @@ test_that("sample HTML report follows PDF plot order and writes an NxN companion
     expect_match(html, "reportUrl.searchParams.set('path',companionPath)", fixed = TRUE)
 })
 
+test_that("HTML report metadata uses its explicit project path", {
+    project <- tempfile("active_report_project_")
+    launch_dir <- tempfile("report_launch_dir_")
+    dir.create(project)
+    dir.create(launch_dir)
+    old_options <- options(spectreasy.project_dir = project)
+    old_wd <- setwd(launch_dir)
+    on.exit(options(old_options), add = TRUE)
+    on.exit(setwd(old_wd), add = TRUE)
+
+    M <- matrix(1, nrow = 1, dimnames = list("FITC" = "FITC", "B1-A" = "B1-A"))
+    report <- collect_control_report_data(
+        M,
+        scc_dir = tempfile("missing_scc_"),
+        control_file = tempfile(fileext = ".csv"),
+        project_path = project
+    )
+    expect_identical(report$project_path, normalizePath(project, mustWork = TRUE))
+    expect_false(identical(report$project_path, normalizePath(launch_dir, mustWork = TRUE)))
+})
+
 test_that("sample detector residual table includes every available detector", {
     M <- rbind(FITC = c(1, 0.2, 0.05), PE = c(0.1, 1, 0.2))
     colnames(M) <- c("B1-A", "YG1-A", "R1-A")

@@ -826,7 +826,19 @@ function hasViewSettings(value) {
 }
 
 function useApi(path, options = {}) {
-  return fetch(`${API_BASE}${path}`, withGatingApiToken(options, API_TOKEN)).then((res) => {
+  const projectPath = window.sessionStorage.getItem('spectreasy-project-path') || ''
+  const requestOptions = { ...options }
+  let requestPath = path
+  if (projectPath && String(requestOptions.method || 'GET').toUpperCase() === 'GET') {
+    requestPath += `${requestPath.includes('?') ? '&' : '?'}project_path=${encodeURIComponent(projectPath)}`
+  } else if (projectPath && requestOptions.body != null) {
+    try {
+      requestOptions.body = JSON.stringify({ ...JSON.parse(String(requestOptions.body)), projectPath })
+    } catch {
+      // Non-JSON uploads do not use project-scoped gating endpoints.
+    }
+  }
+  return fetch(`${API_BASE}${requestPath}`, withGatingApiToken(requestOptions, API_TOKEN)).then((res) => {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
     return res.json()
   })

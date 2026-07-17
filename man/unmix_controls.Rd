@@ -35,6 +35,7 @@ unmix_controls(
   autospectral_n_spectral = 200L,
   autospectral_min_events = 10L,
   autospectral_refine = FALSE,
+  project_path = getwd(),
   ...
 )
 }
@@ -147,6 +148,8 @@ AutoSpectral-style SCC selector.}
 \item{autospectral_refine}{Logical; when `unmixing_method = "AutoSpectral"`, refine the
 fixed-size k-means AF bank with native AutoSpectral-style unstained residual
 modulation. `TRUE` is rejected for all other unmixing methods.}
+
+\item{project_path}{Project directory recorded in generated report metadata.}
 
 \item{...}{Additional arguments forwarded to [build_reference_matrix()].}
 }

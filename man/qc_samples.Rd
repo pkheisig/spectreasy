@@ -29,7 +29,8 @@ qc_samples(
   report_per_sample = FALSE,
   overwrite = c("version", "overwrite", "error"),
   report_run_settings = list(),
-  report_artifact_paths = list()
+  report_artifact_paths = list(),
+  project_path = getwd()
 )
 }
 \arguments{
@@ -108,6 +109,8 @@ per sample and HTML output provides a sample selector. Default is `FALSE`.}
 \item{report_run_settings}{Additional workflow settings recorded in HTML.}
 
 \item{report_artifact_paths}{Additional input/output paths recorded in HTML.}
+
+\item{project_path}{Project directory recorded in generated report metadata.}
 }
 \value{
 Invisibly returns a list with `output_file`, `qc_plot_dir`, and

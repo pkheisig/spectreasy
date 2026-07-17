@@ -131,18 +131,18 @@ export const initialBackendStatus: BackendStatus = {
   packageReady: false,
 }
 
-export async function loadProjectSnapshot(): Promise<{ project: ProjectState; backend: BackendStatus; savedSettings?: Partial<WorkflowSettings> }> {
+export async function loadProjectSnapshot(requestedProjectPath = ''): Promise<{ project: ProjectState; backend: BackendStatus; savedSettings?: Partial<WorkflowSettings> }> {
   try {
     // Establish connectivity from the lightweight health check first. Artifact
     // endpoints are independent: one unavailable artifact must not make a
     // running R session appear offline.
     const statusResponse = await client.get('/status', { timeout: 5000 })
     const [projectResponse, matricesResponse, samplesResponse, mappingResponse, guiStateResponse] = await Promise.all([
-      client.get('/project/status', { timeout: 10000 }).catch(() => null),
-      client.get('/matrices', { timeout: 10000 }).catch(() => null),
-      client.get('/samples', { timeout: 10000 }).catch(() => null),
-      client.get('/control_mapping', { timeout: 10000 }).catch(() => null),
-      client.get('/gui_state', { params: { module: 'spectreasy_cockpit' }, timeout: 5000 }).catch(() => null),
+      client.get('/project/status', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
+      client.get('/matrices', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
+      client.get('/samples', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
+      client.get('/control_mapping', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
+      client.get('/gui_state', { params: { module: 'spectreasy_cockpit', project_path: requestedProjectPath }, timeout: 5000 }).catch(() => null),
     ])
     const status = statusResponse.data as Record<string, unknown>
     const matrices = Array.isArray(matricesResponse?.data) ? matricesResponse.data : []
@@ -169,7 +169,7 @@ export async function loadProjectSnapshot(): Promise<{ project: ProjectState; ba
       apiPort: API_BASE.split(':').pop() ?? '8000',
       packageReady: statusOk,
     }
-    const projectPath = projectResponse
+    const projectPath: string = projectResponse
       ? scalarValue(projectResponse.data?.project_path, '')
       : scalarValue(status.matrix_dir, '')
     const reportedProjectName = scalarValue(status.project_name, '').trim()
@@ -253,18 +253,18 @@ export function downloadBase64File(filename: string, contentBase64: string, cont
   URL.revokeObjectURL(href)
 }
 
-export async function listMatrixFiles(): Promise<string[]> {
+export async function listMatrixFiles(projectPath = ''): Promise<string[]> {
   try {
-    const response = await client.get('/matrices')
+    const response = await client.get('/matrices', { params: { project_path: projectPath } })
     return Array.isArray(response.data) ? response.data.map((filename) => String(filename)) : []
   } catch {
     return []
   }
 }
 
-export async function listSampleFiles(): Promise<string[]> {
+export async function listSampleFiles(projectPath = ''): Promise<string[]> {
   try {
-    const response = await client.get('/samples')
+    const response = await client.get('/samples', { params: { project_path: projectPath } })
     return Array.isArray(response.data) ? response.data.map((filename: unknown) => String(filename)) : []
   } catch {
     return []
@@ -295,9 +295,9 @@ function blobAsBase64(blob: Blob, label: string): Promise<string> {
   })
 }
 
-export async function listProjectFiles(kind: ProjectFileKind): Promise<{ success: boolean; files: ProjectFileEntry[]; message?: string }> {
+export async function listProjectFiles(kind: ProjectFileKind, projectPath: string): Promise<{ success: boolean; files: ProjectFileEntry[]; message?: string }> {
   try {
-    const response = await client.get('/project/files', { params: { kind }, timeout: 10000 })
+    const response = await client.get('/project/files', { params: { kind, project_path: projectPath }, timeout: 10000 })
     const success = scalarValue(response.data?.success, 'false') === 'true'
     const files = rowsFromBackend(response.data?.files).map((row) => ({
       name: scalarValue(row.name),
@@ -312,7 +312,7 @@ export async function listProjectFiles(kind: ProjectFileKind): Promise<{ success
   }
 }
 
-export async function uploadProjectFile(kind: ProjectFileKind, file: File): Promise<{ success: boolean; message: string }> {
+export async function uploadProjectFile(kind: ProjectFileKind, file: File, projectPath: string): Promise<{ success: boolean; message: string }> {
   if (!/\.fcs$/i.test(file.name)) return { success: false, message: `${file.name} is not an FCS file.` }
   let uploadId = ''
   try {
@@ -320,6 +320,7 @@ export async function uploadProjectFile(kind: ProjectFileKind, file: File): Prom
       kind,
       filename: file.name,
       size: file.size,
+      projectPath,
     }, { timeout: 30000 })
     const started = scalarValue(start.data?.success, 'false') === 'true'
     uploadId = scalarValue(start.data?.upload_id)
@@ -352,9 +353,9 @@ export async function uploadProjectFile(kind: ProjectFileKind, file: File): Prom
   }
 }
 
-export async function deleteProjectFile(kind: ProjectFileKind, filename: string): Promise<{ success: boolean; message: string }> {
+export async function deleteProjectFile(kind: ProjectFileKind, filename: string, projectPath: string): Promise<{ success: boolean; message: string }> {
   try {
-    const response = await client.delete('/project/files', { params: { kind, filename }, timeout: 10000 })
+    const response = await client.delete('/project/files', { params: { kind, filename, project_path: projectPath }, timeout: 10000 })
     const success = scalarValue(response.data?.success, 'false') === 'true'
     return {
       success,
@@ -367,9 +368,9 @@ export async function deleteProjectFile(kind: ProjectFileKind, filename: string)
   }
 }
 
-export async function deleteAllProjectFiles(kind: ProjectFileKind): Promise<{ success: boolean; deleted: number; message: string }> {
+export async function deleteAllProjectFiles(kind: ProjectFileKind, projectPath: string): Promise<{ success: boolean; deleted: number; message: string }> {
   try {
-    const response = await client.delete('/project/files/all', { params: { kind }, timeout: 30000 })
+    const response = await client.delete('/project/files/all', { params: { kind, project_path: projectPath }, timeout: 30000 })
     const success = scalarValue(response.data?.success, 'false') === 'true'
     const deleted = Number(scalarValue(response.data?.deleted, '0')) || 0
     return {
@@ -415,9 +416,9 @@ export async function importMatrixContent(filename: string, content: string): Pr
 export type AfProfileSummary = { name: string; bands: number; detectors: number; created: string; path: string; active: boolean }
 export type AfProfileData = { name: string; detectors: string[]; spectra: Array<{ name: string; values: number[] }> }
 
-export async function listAfProfiles(): Promise<AfProfileSummary[]> {
+export async function listAfProfiles(projectPath = ''): Promise<AfProfileSummary[]> {
   try {
-    const response = await client.get('/af_profiles')
+    const response = await client.get('/af_profiles', { params: { project_path: projectPath } })
     return rowsFromBackend(response.data?.profiles).map((row) => ({
       name: String(row.name ?? ''),
       bands: Number(row.bands ?? 0),
@@ -446,9 +447,9 @@ export async function loadAfProfileData(name: string): Promise<AfProfileData | n
   }
 }
 
-export async function selectAfSourceFile(): Promise<{ success: boolean; cancelled: boolean; path?: string; message: string }> {
+export async function selectAfSourceFile(projectPath = ''): Promise<{ success: boolean; cancelled: boolean; path?: string; message: string }> {
   try {
-    const response = await client.post('/af_profiles/select-source', {}, { timeout: 0 })
+    const response = await client.post('/af_profiles/select-source', { projectPath }, { timeout: 0 })
     const cancelled = scalarValue(response.data?.cancelled, 'false') === 'true'
     if (cancelled) return { success: false, cancelled: true, message: 'File selection cancelled.' }
     if (response.data?.error) return { success: false, cancelled: false, message: scalarValue(response.data.error) }
@@ -538,9 +539,9 @@ export async function exportProjectReportPdf(path: string, projectPath = ''): Pr
   }
 }
 
-export async function deleteAfProfile(name: string): Promise<boolean> {
+export async function deleteAfProfile(name: string, projectPath = ''): Promise<boolean> {
   try {
-    const response = await client.delete('/af_profiles/delete', { params: { name } })
+    const response = await client.delete('/af_profiles/delete', { params: { name, project_path: projectPath } })
     return scalarValue(response.data?.success, 'false') === 'true'
   } catch {
     return false
@@ -556,9 +557,9 @@ export async function applyAfProfile(matrixFilename: string, profileName: string
   }
 }
 
-export async function activateAfProfile(profileName: string): Promise<{ success: boolean; message: string }> {
+export async function activateAfProfile(profileName: string, projectPath: string): Promise<{ success: boolean; message: string }> {
   try {
-    const response = await client.post('/af_profiles/activate', { profile_name: profileName, use_as_unstained: true })
+    const response = await client.post('/af_profiles/activate', { profile_name: profileName, use_as_unstained: true, projectPath })
     const success = scalarValue(response.data?.success, 'false') === 'true'
     return { success, message: success ? `${profileName} is linked to this dataset.` : scalarValue(response.data?.error, `Could not link ${profileName}.`) }
   } catch {
@@ -566,9 +567,9 @@ export async function activateAfProfile(profileName: string): Promise<{ success:
   }
 }
 
-export async function deactivateAfProfile(profileName: string): Promise<boolean> {
+export async function deactivateAfProfile(profileName: string, projectPath: string): Promise<boolean> {
   try {
-    const response = await client.post('/af_profiles/deactivate', { profile_name: profileName })
+    const response = await client.post('/af_profiles/deactivate', { profile_name: profileName, projectPath })
     return scalarValue(response.data?.success, 'false') === 'true'
   } catch {
     return false
@@ -579,6 +580,7 @@ export async function persistGuiState(project: ProjectState, settings?: Workflow
   try {
     await client.post('/gui_state', {
       module: 'spectreasy_cockpit',
+      projectPath: project.projectPath,
       config_json: {
         projectPath: project.projectPath,
         projectName: project.projectName,
@@ -593,9 +595,9 @@ export async function persistGuiState(project: ProjectState, settings?: Workflow
   }
 }
 
-export async function persistControlMapping(mapping: ProjectState['mapping']): Promise<{ success: boolean; message: string }> {
+export async function persistControlMapping(mapping: ProjectState['mapping'], projectPath: string): Promise<{ success: boolean; message: string }> {
   try {
-    const response = await client.post('/control_mapping', { rows: mapping })
+    const response = await client.post('/control_mapping', { rows: mapping, projectPath })
     const success = scalarValue(response.data?.success, 'false') === 'true'
     const error = scalarValue(response.data?.error, '')
     return success ? { success: true, message: 'Control mapping saved to the project CSV.' } : { success: false, message: error || 'The R backend rejected the control mapping.' }
@@ -604,9 +606,9 @@ export async function persistControlMapping(mapping: ProjectState['mapping']): P
   }
 }
 
-export async function createControlMapping(): Promise<{ success: boolean; message: string }> {
+export async function createControlMapping(projectPath: string): Promise<{ success: boolean; message: string }> {
   try {
-    const response = await client.post('/control_mapping/create', {})
+    const response = await client.post('/control_mapping/create', { projectPath })
     const success = scalarValue(response.data?.success, 'false') === 'true'
     return success
       ? { success: true, message: 'Created fcs_mapping.csv from the SCC folder.' }
@@ -628,7 +630,7 @@ export async function setProjectContext(projectPath: string): Promise<{ success:
   }
 }
 
-async function pickProjectFolder(endpoint: '/project/select' | '/project/create'): Promise<{ success: boolean; cancelled: boolean; message: string }> {
+async function pickProjectFolder(endpoint: '/project/select' | '/project/create'): Promise<{ success: boolean; cancelled: boolean; message: string; projectPath?: string }> {
   try {
     // Native file dialogs intentionally wait for the user. They must not inherit
     // the short timeout used by ordinary API calls.
@@ -638,7 +640,7 @@ async function pickProjectFolder(endpoint: '/project/select' | '/project/create'
     if (response.data?.success === false || response.data?.error) {
       return { success: false, cancelled: false, message: scalarValue(response.data?.error, 'The project folder could not be opened.') }
     }
-    return { success: true, cancelled: false, message: '' }
+    return { success: true, cancelled: false, message: '', projectPath: scalarValue(response.data?.project?.project_path) }
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 403) {
       return {

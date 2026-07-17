@@ -34,7 +34,8 @@ unmix_samples(
   chunk_size = 50000L,
   seed = NULL,
   return_type = c("list", "flowSet", "SingleCellExperiment"),
-  verbose = TRUE
+  verbose = TRUE,
+  project_path = getwd()
 )
 }
 \arguments{
@@ -159,6 +160,8 @@ unmixed values are returned in assay `"unmixed"`, with detector residuals in
 
 \item{verbose}{Logical; if `TRUE`, print progress messages while unmixing
 each sample.}
+
+\item{project_path}{Project directory recorded in generated report metadata.}
 }
 \value{
 Either a named list with one element per sample, a `flowSet`, or a
