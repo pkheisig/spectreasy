@@ -66,6 +66,7 @@ export type ProjectState = {
     reports: number
     qcMetrics: number
     spectralVariants: number
+    afProfiles: number
     gates: number
   }
 }

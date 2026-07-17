@@ -942,7 +942,10 @@ function ConfigurableAfWorkspace({
 
   const removeProfile = async (name: string) => {
     const removed = await deleteAfProfile(name, projectPath);
-    if (removed) await refreshProfiles();
+    if (removed) {
+      await refreshProfiles();
+      onRefresh();
+    }
   };
 
   const linkProfile = async (name: string) => {
@@ -990,7 +993,10 @@ function ConfigurableAfWorkspace({
 
   const extractProfile = async () => {
     const saved = await onRun("af", "Extract AF profile");
-    if (saved) await refreshProfiles();
+    if (saved) {
+      await refreshProfiles();
+      onRefresh();
+    }
   };
 
   const chartWidth = Math.max(760, (preview?.detectors.length ?? 0) * 22 + 92);

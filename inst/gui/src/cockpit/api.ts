@@ -141,12 +141,13 @@ export async function loadProjectSnapshot(requestedProjectPath = ''): Promise<{ 
     // endpoints are independent: one unavailable artifact must not make a
     // running R session appear offline.
     const statusResponse = await client.get('/status', { timeout: 5000 })
-    const [projectResponse, matricesResponse, samplesResponse, mappingResponse, guiStateResponse] = await Promise.all([
+    const [projectResponse, matricesResponse, samplesResponse, mappingResponse, guiStateResponse, afProfilesResponse] = await Promise.all([
       client.get('/project/status', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
       client.get('/matrices', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
       client.get('/samples', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
       client.get('/control_mapping', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
       client.get('/gui_state', { params: { module: 'spectreasy_cockpit', project_path: requestedProjectPath }, timeout: 5000 }).catch(() => null),
+      client.get('/af_profiles', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
     ])
     const status = statusResponse.data as Record<string, unknown>
     const matrices = Array.isArray(matricesResponse?.data) ? matricesResponse.data : []
@@ -167,6 +168,7 @@ export async function loadProjectSnapshot(requestedProjectPath = ''): Promise<{ 
       gates: scanCount('gates'),
       qcMetrics: scanCount('qc_metrics', 'qcMetrics'),
       spectralVariants: scanCount('spectral_variants', 'spectralVariants'),
+      afProfiles: rowsFromBackend(afProfilesResponse?.data?.profiles).length,
     }
     const backend: BackendStatus = {
       connected: statusOk,
