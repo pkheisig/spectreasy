@@ -295,7 +295,6 @@
         af_n_bands = 100,
         af_max_cells = 50000,
         seed = NULL,
-        metadata = NULL,
         show_plot = TRUE,
         verbose = TRUE
     )

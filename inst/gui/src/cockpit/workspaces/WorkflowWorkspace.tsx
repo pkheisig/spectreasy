@@ -7,7 +7,6 @@ import {
   CircleCheckBig,
   FlaskConical,
   FolderOpen,
-  Info,
   Layers3,
   Pencil,
   Play,
@@ -48,10 +47,6 @@ import { JobStrip } from "../components/JobStrip";
 import { QcReportPanel } from "../components/ControlReportPanel";
 import { ResetSettingsButton, SettingsCardSummary } from "../components/SettingsCardSummary";
 import { defaultWorkflowSettings } from "../types";
-import { OverviewWorkspace } from "./OverviewWorkspace";
-import { BenchmarkWorkspace } from "./BenchmarkWorkspace";
-import { AfProfileInfoDialog } from "../components/AfProfileInfoDialog";
-import { AfSimilarityHeatmap } from "../components/AfSimilarityHeatmap";
 
 export type WorkflowWorkspaceProps = {
   project: ProjectState;
@@ -928,7 +923,6 @@ function ConfigurableAfWorkspace({
     Array<{ name: string; bands: number; detectors: number; created: string; active: boolean }>
   >([]);
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof loadAfProfileData>>>(null);
-  const [infoProfile, setInfoProfile] = useState<Awaited<ReturnType<typeof loadAfProfileData>>>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: "link" | "unlink" | "delete" | "overwrite"; name: string } | null>(null);
   const [renameAction, setRenameAction] = useState<{ original: string; value: string; error: string } | null>(null);
   const refreshGeneration = useRef(0);
@@ -1113,16 +1107,6 @@ function ConfigurableAfWorkspace({
               <span>Overwrite saved profile</span>
             </label>
           </div>
-          <details className="af-profile-information">
-            <summary>Profile information</summary>
-            <div className="af-form af-metadata-form">
-              <label>Cytometer<input value={settings.metadata.cytometer} onChange={(event) => onSettingsChange({ metadata: { ...settings.metadata, cytometer: event.target.value } })} /></label>
-              <label>Acquisition date<input type="date" value={settings.metadata.acquisitionDate} onChange={(event) => onSettingsChange({ metadata: { ...settings.metadata, acquisitionDate: event.target.value } })} /></label>
-              <label>Tissue<input value={settings.metadata.tissue} onChange={(event) => onSettingsChange({ metadata: { ...settings.metadata, tissue: event.target.value } })} /></label>
-              <label>Sample type<input value={settings.metadata.sampleType} onChange={(event) => onSettingsChange({ metadata: { ...settings.metadata, sampleType: event.target.value } })} /></label>
-              <label className="af-preprocessing-field">Preprocessing<textarea value={settings.metadata.preprocessing} onChange={(event) => onSettingsChange({ metadata: { ...settings.metadata, preprocessing: event.target.value } })} /></label>
-            </div>
-          </details>
           <button
             className="button button-primary large-button"
             onClick={extractProfile}
@@ -1157,12 +1141,6 @@ function ConfigurableAfWorkspace({
                       onClick={() => setConfirmAction({ type: profile.active ? "unlink" : "link", name: profile.name })}
                     >
                       <Layers3 size={14} /> {profile.active ? "Unlink from dataset" : "Link to dataset"}
-                    </button>
-                    <button
-                      className="text-action"
-                      onClick={() => void loadAfProfileData(profile.name).then(setInfoProfile)}
-                    >
-                      <Info size={14} /> Info
                     </button>
                     <button
                       className="text-action"
@@ -1229,9 +1207,7 @@ function ConfigurableAfWorkspace({
             </svg>
           </div>
         </section>}
-        {preview && <AfSimilarityHeatmap primaryName={preview.name} profileNames={profiles.map((profile) => profile.name)} />}
       </div>
-      {infoProfile && <AfProfileInfoDialog profile={infoProfile} onClose={() => setInfoProfile(null)} />}
       {confirmAction && createPortal(<div className="cockpit-confirm-overlay" role="presentation" onMouseDown={() => setConfirmAction(null)}>
         <div className="cockpit-confirm" role="dialog" aria-modal="true" aria-labelledby="af-confirm-title" onMouseDown={(event) => event.stopPropagation()}>
           <h2 id="af-confirm-title">{confirmAction.type === "link" ? "Link this AF profile?" : confirmAction.type === "unlink" ? "Unlink this AF profile?" : confirmAction.type === "overwrite" ? "Overwrite this AF profile?" : "Delete this AF profile?"}</h2>
@@ -2176,26 +2152,8 @@ export function WorkflowWorkspace(
   return (
     <div className="workspace-content">
       <JobStrip job={job} />
-      {activeSection === "overview" && (
-        <OverviewWorkspace
-          project={props.project}
-          job={props.job}
-          settings={props.settings}
-          onControls={(tab) => {
-            props.setMappingTab(tab)
-            props.onSectionChange('controls')
-          }}
-          onSamples={() => props.onSectionChange('samples')}
-        />
-      )}
       {activeSection === "controls" && <ControlsWorkspace {...props} />}
       {activeSection === "samples" && <SamplesWorkspace {...props} />}
-      {activeSection === "benchmark" && (
-        <BenchmarkWorkspace
-          projectPath={props.project.projectPath}
-          onOpenReport={(path, stage) => props.onOpenApplet(stage === 'controls' ? 'control-qc-report' : 'sample-qc-report', path)}
-        />
-      )}
       {activeSection === "af" && (
         <ConfigurableAfWorkspace
           projectPath={props.project.projectPath}

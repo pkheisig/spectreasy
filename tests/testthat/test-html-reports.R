@@ -37,10 +37,7 @@ test_that("sample HTML report follows PDF plot order and writes an NxN companion
     expect_false(grepl("Input status", html, fixed = TRUE))
     expect_match(html, "<small>NxN rows per page</small><strong>2</strong>", fixed = TRUE)
     expect_match(html, "<small>NxN events per sample</small><strong>20</strong>", fixed = TRUE)
-    expect_identical(
-        names(spectreasy:::.report_sections(report$report_data)),
-        c("spectra", "af", "af_usage", "similarity", "nps", "nxn")
-    )
+    expect_identical(names(spectreasy:::.report_sections(report$report_data)), c("spectra", "similarity", "nps", "nxn"))
     expect_match(html, "Reference spectra", fixed = TRUE)
     expect_match(html, "Fluorophore similarity", fixed = TRUE)
     expect_match(html, "Negative population spread", fixed = TRUE)
@@ -132,10 +129,7 @@ test_that("sample report renders only PDF-equivalent plots and no raw metric tab
     expect_match(sections[["residual"]][2], "data:image/png;base64,", fixed = TRUE)
     expect_match(sections[["nps"]][2], "data:image/png;base64,", fixed = TRUE)
     expect_match(sections[["reconstruction"]][2], "data:image/png;base64,", fixed = TRUE)
-    expect_identical(
-        names(sections),
-        c("spectra", "af_usage", "similarity", "nps", "nxn", "residual", "reconstruction")
-    )
+    expect_identical(names(sections), c("spectra", "similarity", "nps", "nxn", "residual", "reconstruction"))
     expect_false(grepl("<figcaption", paste(vapply(sections, `[[`, character(1), 2), collapse = ""), fixed = TRUE))
     expect_identical(names(changed_settings), c("Threads", "Seed"))
     expect_identical(unname(unlist(changed_settings)), c("4", "1"))
@@ -236,7 +230,7 @@ test_that("control HTML groups each PDF control page once without duplicate plot
         plot_dir = tempfile("control_report_plots_")
     )
     sections <- spectreasy:::.report_sections(report_data)
-    expect_identical(names(sections), c("gating", "spectra", "similarity", "nxn"))
+    expect_identical(names(sections), c("spectra", "similarity", "nxn", "gating"))
     expect_equal(length(strsplit(sections[["spectra"]][2], "<img", fixed = TRUE)[[1]]) - 1L, 2L)
     expect_length(report_data$plot_manifest$controls, 1)
     expect_length(report_data$plot_manifest$controls[[1]]$paths, 3)

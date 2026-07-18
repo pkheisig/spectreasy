@@ -1388,30 +1388,6 @@ qc_samples <- function(results,
         draw_report_spectra_page(spectra_plot)
     }
 
-    if (nrow(M_af) > 0) {
-        .spectreasy_console_step("AF bank spectra")
-        af_plot <- .style_af_bank_plot(
-            plot_spectra(M_af, pd = pd, output_file = NULL),
-            rownames(M_af)
-        )
-        .save_qc_report_png(af_plot, retained_qc_plot_dir, "af_bank.png")
-        draw_report_spectra_page(af_plot)
-    }
-
-    af_band_usage <- .normalize_af_band_usage(attr(results, "af_band_usage"))
-    af_band_usage_status <- attr(results, "af_band_usage_status") %||% if (nrow(af_band_usage)) "available" else "unavailable"
-    if (.report_has_rows(af_band_usage) && !is.null(qc_metrics_dir)) {
-        .write_qc_report_csv(af_band_usage, file.path(qc_metrics_dir, "af_band_usage_by_sample.csv"))
-    }
-    if (identical(af_band_usage_status, "available")) {
-        .spectreasy_console_step("AF-band usage")
-        af_usage_pages <- .build_af_band_usage_pages(af_band_usage)
-        for (i in seq_along(af_usage_pages)) {
-            .save_qc_report_png(af_usage_pages[[i]], retained_qc_plot_dir, sprintf("af_band_usage_%02d.png", i))
-            draw_report_plot_page(af_usage_pages[[i]], width_ratio = 1.15)
-        }
-    }
-
     if (nrow(M_no_af) > 1) {
         .spectreasy_console_step("Similarity matrix")
         sim_mat <- calculate_similarity_matrix(M_no_af)

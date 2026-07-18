@@ -169,7 +169,7 @@ test_that("qc_samples has stable pages and no recommendation page", {
     expect_true(file.exists(pdf_out))
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 5)
+    expect_equal(info$pages, 4)
 
     page_text <- pdftools::pdf_text(pdf_out)
     expect_true(grepl("Reference Spectra Overlay", page_text[[1]], fixed = TRUE))
@@ -205,7 +205,7 @@ test_that("qc_samples skips negative population spread for NNLS", {
     spectreasy::qc_samples(results = results, M = M, output_file = pdf_out, unmixing_method = "NNLS")
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 4)
+    expect_equal(info$pages, 3)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_false(grepl("Negative Population Spread", txt, fixed = TRUE))
@@ -241,7 +241,7 @@ test_that("qc_samples can include NxN pages for all samples", {
     )
 
     info <- pdftools::pdf_info(pdf_out)
-    expect_equal(info$pages, 6)
+    expect_equal(info$pages, 5)
 
     txt <- paste(pdftools::pdf_text(pdf_out), collapse = "\n")
     expect_true(grepl("Sample NxN Scatter Matrix: SampleA", txt, fixed = TRUE))
@@ -528,15 +528,8 @@ test_that("Plumber gui_api load_matrix and save_matrix filter and merge AF rows"
     expect_true(file.exists(api_file))
     
     pr <- plumber::plumb(api_file)
-    endpoints <- unname(unlist(pr$endpoints, recursive = FALSE))
-    route_fn <- function(path, verb) {
-        matches <- which(vapply(endpoints, function(endpoint) {
-            identical(endpoint$path, path) && verb %in% endpoint$verbs
-        }, logical(1)))
-        endpoints[[matches[1]]]$getFunc()
-    }
-    load_matrix_fn <- route_fn("/load_matrix", "GET")
-    save_matrix_fn <- route_fn("/save_matrix", "POST")
+    load_matrix_fn <- pr$routes$load_matrix$getFunc()
+    save_matrix_fn <- pr$routes$save_matrix$getFunc()
     
     tmp_matrix_dir <- tempfile("matrix_dir_")
     dir.create(tmp_matrix_dir)
@@ -592,7 +585,7 @@ test_that("Plumber gui_api load_matrix and save_matrix filter and merge AF rows"
     expect_true(all(c("FITC", "PE", "AF", "AF_2") %in% adjusted_df$Marker))
     expect_equal(adjusted_df[adjusted_df$Marker == "AF", "R1-A"], 1)
 
-    unmix_fn <- route_fn("/unmix", "POST")
+    unmix_fn <- pr$routes$unmix[[2]]$getFunc()
     matrix_json <- list(
         FITC = as.list(loaded_df[loaded_df$Marker == "FITC", setdiff(colnames(loaded_df), "Marker"), drop = FALSE]),
         PE = as.list(loaded_df[loaded_df$Marker == "PE", setdiff(colnames(loaded_df), "Marker"), drop = FALSE])

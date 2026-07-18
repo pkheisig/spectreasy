@@ -1,5 +1,5 @@
 import { useState, useEffect, useId, useRef } from 'react';
-import { Check, ChevronDown, Settings, Save, RefreshCw, Sun, Moon, Info, Undo2, Redo2, LoaderCircle } from 'lucide-react';
+import { Check, ChevronDown, Settings, Save, RefreshCw, Sun, Moon, Info } from 'lucide-react';
 import axios from 'axios';
 import ResidualPlot from './ResidualPlot';
 import { resolveApiBase } from './apiBase';
@@ -288,9 +288,6 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     const [sampleFiles, setSampleFiles] = useState<string[]>([]);
     const [currentSample, setCurrentSample] = useState('');
     const [matrix, setMatrix] = useState<MatrixRow[]>([]);
-    const [matrixHistory, setMatrixHistory] = useState<MatrixRow[][]>([]);
-    const [historyIndex, setHistoryIndex] = useState(-1);
-    const [savedHistoryIndex, setSavedHistoryIndex] = useState(-1);
     const [loading, setLoading] = useState(true);
     const [detectors, setDetectors] = useState<string[]>([]);
     const [detectorLabels, setDetectorLabels] = useState<string[]>([]);
@@ -298,8 +295,6 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     const [rawData, setRawData] = useState<DataRow[]>([]);
     const [isUnmixingMatrix, setIsUnmixingMatrix] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-    const [saveModalOpen, setSaveModalOpen] = useState(false);
-    const [saveModalError, setSaveModalError] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
     const [guiStateLoaded, setGuiStateLoaded] = useState(false);
     const [unmixingMethod, setUnmixingMethod] = useState<UnmixingMethod>('AutoSpectral');
@@ -386,11 +381,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             if (matrixData.length === 0) {
                 throw new Error(`Matrix ${filename} contains no rows.`);
             }
-            const loadedSnapshot = matrixData.map(row => ({ ...row }));
-            setMatrix(loadedSnapshot);
-            setMatrixHistory([loadedSnapshot]);
-            setHistoryIndex(0);
-            setSavedHistoryIndex(0);
+            setMatrix(matrixData);
             setIsUnmixingMatrix(isUnmixingFilename(filename));
             const detNames = Object.keys(matrixData[0]).filter(k => k !== 'Marker');
             setDetectors(detNames);
@@ -400,9 +391,6 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             setCurrentFile(filename);
         } catch (error) {
             setMatrix([]);
-            setMatrixHistory([]);
-            setHistoryIndex(-1);
-            setSavedHistoryIndex(-1);
             setDetectors([]);
             setDetectorLabels([]);
             setUnmixedData([]);
@@ -500,47 +488,29 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             }
             return row;
         });
-        const snapshot = newMatrix.map(row => ({ ...row }));
-        setMatrix(snapshot);
-        setMatrixHistory(current => [...current.slice(0, historyIndex + 1), snapshot]);
-        setHistoryIndex(current => current + 1);
+        setMatrix(newMatrix);
         runUnmix(newMatrix, rawData, isUnmixingMatrix);
     };
 
-    const restoreHistory = (nextIndex: number) => {
-        const snapshot = matrixHistory[nextIndex];
-        if (!snapshot) return;
-        const restored = snapshot.map(row => ({ ...row }));
-        setHistoryIndex(nextIndex);
-        setMatrix(restored);
-        void runUnmix(restored, rawData, isUnmixingMatrix);
-    };
-
-    const undoMatrix = () => {
-        if (historyIndex > 0) restoreHistory(historyIndex - 1);
-    };
-
-    const redoMatrix = () => {
-        if (historyIndex >= 0 && historyIndex < matrixHistory.length - 1) restoreHistory(historyIndex + 1);
-    };
-
     const saveMatrix = async () => {
-        if (!currentFile || matrix.length === 0 || historyIndex === savedHistoryIndex) return;
+        if (!currentFile || matrix.length === 0) return;
         setSaveStatus('saving');
-        setSaveModalError('');
+        setErrorMessage('');
+        const newName = /\.csv$/i.test(currentFile)
+            ? currentFile.replace(/\.csv$/i, '_adjusted.csv')
+            : `${currentFile}_adjusted.csv`;
         try {
             const result = await axios.post(`${API_BASE}/save_matrix`, projectBody({
-                filename: currentFile,
+                filename: newName,
+                source_filename: currentFile,
                 matrix_json: matrix
             }));
             if (result.data?.error) throw new Error(asScalarString(result.data.error));
-            setSavedHistoryIndex(historyIndex);
             setSaveStatus('saved');
-            setSaveModalOpen(false);
             await fetchMatrices();
             window.setTimeout(() => setSaveStatus('idle'), 2000);
         } catch (error) {
-            setSaveModalError(error instanceof Error ? error.message : 'The matrix could not be saved.');
+            setErrorMessage(error instanceof Error ? error.message : 'The adjusted matrix could not be saved.');
             setSaveStatus('idle');
         }
     };
@@ -623,8 +593,6 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     const residualAdjustmentText = canAdjustResiduals
         ? 'Drag on plots to adjust crosstalk'
         : 'Load raw detector FCS to adjust crosstalk';
-    const isDirty = historyIndex !== savedHistoryIndex;
-    const unsavedEditCount = isDirty ? Math.max(1, Math.abs(historyIndex - savedHistoryIndex)) : 0;
 
     // iOS 26 Glassy Theme
     const glassyTheme = renderedTheme === 'dark' ? {
@@ -782,24 +750,17 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                     <button aria-label="Plot settings" title="Plot settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(open => !open)} style={{ ...glassButton, width: 38, height: 38, display: 'grid', placeItems: 'center', color: settingsOpen ? g.accent : g.textDim, cursor: 'pointer', background: settingsOpen ? g.glassHighlight : g.glassBg }}>
                         <Settings size={18} />
                     </button>
-                    <button aria-label="Undo matrix edit" title="Undo" disabled={historyIndex <= 0 || saveStatus === 'saving'} onClick={undoMatrix} style={{ ...glassButton, width: 38, height: 38, display: 'grid', placeItems: 'center', color: historyIndex > 0 ? g.textDim : g.textMuted, cursor: historyIndex > 0 ? 'pointer' : 'not-allowed', opacity: historyIndex > 0 ? 1 : 0.45 }}>
-                        <Undo2 size={17} />
-                    </button>
-                    <button aria-label="Redo matrix edit" title="Redo" disabled={historyIndex < 0 || historyIndex >= matrixHistory.length - 1 || saveStatus === 'saving'} onClick={redoMatrix} style={{ ...glassButton, width: 38, height: 38, display: 'grid', placeItems: 'center', color: historyIndex >= 0 && historyIndex < matrixHistory.length - 1 ? g.textDim : g.textMuted, cursor: historyIndex >= 0 && historyIndex < matrixHistory.length - 1 ? 'pointer' : 'not-allowed', opacity: historyIndex >= 0 && historyIndex < matrixHistory.length - 1 ? 1 : 0.45 }}>
-                        <Redo2 size={17} />
-                    </button>
-                    <button aria-label={saveStatus === 'saving' ? 'Saving matrix' : saveStatus === 'saved' ? 'Matrix saved' : 'Save matrix'} title={saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : 'Save matrix'} disabled={saveStatus === 'saving' || !isDirty || !currentFile || matrix.length === 0} onClick={() => { setSaveModalError(''); setSaveModalOpen(true); }} style={{
+                    <button aria-label={saveStatus === 'saving' ? 'Saving adjusted matrix' : saveStatus === 'saved' ? 'Adjusted matrix saved' : 'Save adjusted matrix'} title={saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : 'Save adjusted matrix'} disabled={saveStatus === 'saving'} onClick={saveMatrix} style={{
                         background: g.accent,
                         border: `1px solid ${g.accent}`,
                         borderRadius: 7,
                         width: 38,
                         height: 38,
                         color: 'white',
-                        cursor: isDirty ? 'pointer' : 'not-allowed',
+                        cursor: 'pointer',
                         display: 'grid',
                         placeItems: 'center',
-                        boxShadow: 'none',
-                        opacity: isDirty ? 1 : 0.45
+                        boxShadow: 'none'
                     }}>
                         <Save size={17} />
                     </button>
@@ -844,25 +805,6 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                     </div>
                 </div>
             </header>
-            {saveModalOpen && (
-                <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(8, 12, 11, 0.56)', backdropFilter: 'blur(3px)' }}>
-                    <div role="dialog" aria-modal="true" aria-labelledby="save-matrix-title" style={{ width: 'min(430px, 100%)', padding: 22, color: g.text, border: `1px solid ${g.glassBorder}`, borderRadius: 10, background: g.glassBg, boxShadow: '0 24px 70px rgba(0,0,0,.28)' }}>
-                        <h2 id="save-matrix-title" style={{ margin: 0, fontSize: 19 }}>Save matrix changes?</h2>
-                        <dl style={{ margin: '18px 0', display: 'grid', gap: 10 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 10 }}><dt style={{ color: g.textMuted }}>Matrix</dt><dd style={{ margin: 0, overflowWrap: 'anywhere', fontWeight: 700 }}>{currentFile}</dd></div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 10 }}><dt style={{ color: g.textMuted }}>Unsaved edits</dt><dd style={{ margin: 0, fontWeight: 700 }}>{unsavedEditCount}</dd></div>
-                        </dl>
-                        <p style={{ margin: '0 0 18px', color: g.textMuted, fontSize: 12, lineHeight: 1.5 }}>This will replace the selected matrix file with the current values.</p>
-                        {saveModalError && <p role="alert" style={{ margin: '0 0 14px', padding: 9, color: '#d97662', border: '1px solid rgba(217,118,98,.45)', borderRadius: 6 }}>{saveModalError}</p>}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                            <button type="button" disabled={saveStatus === 'saving'} onClick={() => setSaveModalOpen(false)} style={{ ...glassButton, minWidth: 84, height: 34, color: g.text, cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer' }}>Cancel</button>
-                            <button type="button" disabled={saveStatus === 'saving'} onClick={() => void saveMatrix()} style={{ ...glassButton, minWidth: 112, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, color: 'white', borderColor: g.accent, background: g.accent, cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer' }}>
-                                {saveStatus === 'saving' ? <><LoaderCircle className="spin" size={15} />Saving…</> : <><Save size={15} />Save matrix</>}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
             {errorMessage && (
                 <div role="alert" style={{ margin: '12px 18px 0', padding: '10px 12px', color: g.accent, border: `1px solid ${g.accent}`, borderRadius: 7, background: g.glassBg }}>
                     {errorMessage}

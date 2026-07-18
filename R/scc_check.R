@@ -167,41 +167,6 @@
     invisible(NULL)
 }
 
-.draw_scc_variation_gallery <- function(variation, pd = NULL) {
-    fluorophores <- names(variation$data)
-    if (!length(fluorophores)) return(invisible(NULL))
-    pages <- split(fluorophores, ceiling(seq_along(fluorophores) / 2L))
-    explanation <- paste0(
-        "Filled band: 10th-90th percentile of normalized SCC positive-event spectra. ",
-        "Line: final reference spectrum used for unmixing."
-    )
-    for (page in pages) {
-        grid::grid.newpage()
-        grid::grid.text(
-            "SCC spectral variation",
-            x = 0.04, y = 0.97, just = c("left", "top"),
-            gp = grid::gpar(fontsize = 15, fontface = "bold")
-        )
-        grid::grid.text(
-            explanation,
-            x = 0.04, y = 0.925, just = c("left", "top"),
-            gp = grid::gpar(fontsize = 9, col = "grey30")
-        )
-        for (index in seq_along(page)) {
-            plot <- .plot_scc_variation_band(variation, page[[index]], pd = pd)
-            grob <- ggplot2::ggplotGrob(plot)
-            viewport <- grid::viewport(
-                x = if (index == 1L) 0.255 else 0.745,
-                y = 0.46,
-                width = 0.47,
-                height = 0.80
-            )
-            grid::grid.draw(grid::editGrob(grob, vp = viewport))
-        }
-    }
-    invisible(NULL)
-}
-
 .draw_scc_report_sample_page <- function(row, report_plot_dir) {
     sample_id <- row$sample[[1]]
     fluor <- row$fluorophore[[1]]
@@ -622,24 +587,6 @@ qc_controls <- function(
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
 
-    if (nrow(qc_summary) > 0) {
-        for (i in seq_len(nrow(qc_summary))) {
-            .draw_scc_report_sample_page(qc_summary[i, , drop = FALSE], report_plot_dir = report_plot_dir)
-        }
-    }
-
-    scc_variation <- .collect_scc_variation_data(M_report)
-    if (!is.null(qc_metrics_dir)) {
-        .write_qc_report_csv(
-            scc_variation$metadata,
-            file.path(qc_metrics_dir, "scc_spectral_variation_status.csv")
-        )
-    }
-    if (isTRUE(save_qc_pngs) && !is.null(report_plot_dir)) {
-        .save_scc_variation_plots(scc_variation, file.path(report_plot_dir, "scc_variation"), pd = pd)
-    }
-    .draw_scc_variation_gallery(scc_variation, pd = pd)
-
     if (is.null(af_bank_info)) {
         af_bank_info <- attr(M_built, "af_bank_info")
     }
@@ -784,6 +731,12 @@ qc_controls <- function(
         }
         for (p_scatter in scatter_pages) {
             .draw_report_ggplot_page(p_scatter, square = TRUE)
+        }
+    }
+
+    if (nrow(qc_summary) > 0) {
+        for (i in seq_len(nrow(qc_summary))) {
+            .draw_scc_report_sample_page(qc_summary[i, , drop = FALSE], report_plot_dir = report_plot_dir)
         }
     }
 

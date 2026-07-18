@@ -1,11 +1,9 @@
 export type SectionId =
-  | 'overview'
   | 'controls'
   | 'samples'
   | 'matrix'
   | 'panel'
   | 'af'
-  | 'benchmark'
   | 'settings'
 
 export type CockpitAppletId =
@@ -18,32 +16,6 @@ export type CockpitAppletId =
 export type ArtifactStatus = 'current' | 'stale' | 'user' | 'missing' | 'unknown'
 export type JobState = 'idle' | 'running' | 'complete' | 'failed'
 export type StepState = 'complete' | 'ready' | 'warning' | 'blocked' | 'stale' | 'idle'
-
-export type BenchmarkRunState = 'not_run' | 'queued' | 'running' | 'complete' | 'failed' | 'stale'
-export type BenchmarkStatus = { state: BenchmarkRunState; message: string; updatedAt?: string }
-export type BenchmarkControlOutputs = { matrixFile: string; detectorNoiseFile: string; variantLibraryFile: string; reportFile: string; outputDir: string }
-export type BenchmarkSampleOutputs = { reportFile: string; outputDir: string }
-export type BenchmarkSettingValue = string | number | boolean
-export type BenchmarkEntry = {
-  entryId: string
-  label: string
-  enabled: boolean
-  method: string
-  controlSettings: Record<string, BenchmarkSettingValue>
-  sampleSettings: Record<string, BenchmarkSettingValue>
-  controlStatus: BenchmarkStatus
-  sampleStatus: BenchmarkStatus
-  controlOutputs: BenchmarkControlOutputs
-  sampleOutputs: BenchmarkSampleOutputs
-}
-export type BenchmarkProject = {
-  schemaVersion: number
-  benchmarkId: string
-  name: string
-  createdAt: string
-  updatedAt: string
-  entries: BenchmarkEntry[]
-}
 
 export type Artifact = {
   id: string
@@ -84,13 +56,6 @@ export type ProjectState = {
   mapping: MappingRow[]
   mappingDirty: boolean
   gatesDirty: boolean
-  mappingExists: boolean
-  matrixState: 'missing' | 'current' | 'stale'
-  matrixFile: string
-  unmixedSampleCount: number
-  sampleOutputState: 'missing' | 'current' | 'stale'
-  latestControlReport?: { path: string; updated: string; updatedEpoch: number }
-  latestSampleReport?: { path: string; updated: string; updatedEpoch: number }
   missingInputDirs: string[]
   controlInputDir: string
   sampleInputDir: string
@@ -223,14 +188,6 @@ export type SampleSettings = {
   returnType: 'list' | 'flowSet' | 'SingleCellExperiment'
 }
 
-export type AfProfileMetadataInput = {
-  cytometer: string
-  acquisitionDate: string
-  tissue: string
-  sampleType: string
-  preprocessing: string
-}
-
 export type AfSettings = {
   fcsFile: string
   saveName: string
@@ -238,7 +195,6 @@ export type AfSettings = {
   afNBands: number
   afMaxCells: number
   seed: number
-  metadata: AfProfileMetadataInput
 }
 
 export type AppearanceSettings = {
@@ -356,13 +312,6 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       afNBands: 100,
       afMaxCells: 50000,
       seed: 1,
-      metadata: {
-        cytometer: 'auto',
-        acquisitionDate: '',
-        tissue: '',
-        sampleType: '',
-        preprocessing: '',
-      },
     },
     appearance: {
       theme: 'light',

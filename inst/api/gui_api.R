@@ -1783,41 +1783,16 @@ function(name = "") {
     name <- trimws(as.character(name)[1])
     if (!nzchar(name)) return(list(error = "A profile name is required."))
     tryCatch({
-        profile_object <- spectreasy::load_af_profile(name, show_plot = FALSE)
-        profile <- profile_object$profile
+        profile <- spectreasy::load_af_profile(name, show_plot = FALSE)$profile
         list(
             name = name,
             detectors = colnames(profile),
             spectra = lapply(seq_len(nrow(profile)), function(index) list(
                 name = rownames(profile)[index],
                 values = as.numeric(profile[index, , drop = TRUE])
-            )),
-            metadata = profile_object$metadata,
-            schema_version = profile_object$schema_version
+            ))
         )
     }, error = function(e) list(error = conditionMessage(e)))
-}
-
-#* Return direct AF-band cosine similarity for one or two profiles
-#* @get /af_profiles/similarity
-#* @param primary_name Primary profile name
-#* @param compare_name Optional comparison profile name
-function(primary_name = "", compare_name = "") {
-    primary_name <- trimws(as.character(primary_name)[1])
-    compare_name <- trimws(as.character(compare_name)[1])
-    if (!nzchar(primary_name)) return(list(success = FALSE, message = "A primary profile name is required."))
-    tryCatch({
-        primary <- spectreasy::load_af_profile(primary_name, show_plot = FALSE)
-        comparison <- if (nzchar(compare_name)) spectreasy::load_af_profile(compare_name, show_plot = FALSE) else NULL
-        similarity <- spectreasy:::.af_profile_similarity(primary, comparison)
-        list(
-            success = TRUE,
-            labels = similarity$labels,
-            profile_membership = similarity$profile_membership,
-            similarity = lapply(seq_len(nrow(similarity$similarity)), function(index) as.numeric(similarity$similarity[index, , drop = TRUE])),
-            detectors = similarity$detectors
-        )
-    }, error = function(e) list(success = FALSE, message = conditionMessage(e)))
 }
 
 gui_pick_af_source_file <- function(initial_dir = gui_project_input_path(get_matrix_dir(), "controls")) {
@@ -2534,49 +2509,6 @@ gui_project_scan <- function(root) {
     gates <- count_matches("gate.*\\.csv$")
     qc_metrics <- count_matches("metric.*\\.csv$")
     spectral_variants <- count_matches("variant.*\\.(rds|csv)$")
-    mapping_file <- file.path(root, "fcs_mapping.csv")
-    gate_files <- files[grepl("gate.*\\.csv$", relative, ignore.case = TRUE, perl = TRUE)]
-    matrix_files <- files[grepl("(^|/)scc_reference_matrix\\.csv$", relative, ignore.case = TRUE, perl = TRUE)]
-    matrix_file <- if (length(matrix_files)) matrix_files[[which.max(file.info(matrix_files)$mtime)]] else ""
-    upstream_files <- c(control_files, if (file.exists(mapping_file)) mapping_file else character(), gate_files)
-    upstream_files <- upstream_files[file.exists(upstream_files)]
-    matrix_state <- if (!nzchar(matrix_file)) {
-        "missing"
-    } else if (length(upstream_files) && max(file.info(upstream_files)$mtime, na.rm = TRUE) > file.info(matrix_file)$mtime) {
-        "stale"
-    } else {
-        "current"
-    }
-    sample_output_root <- file.path(root, "spectreasy_outputs", "unmix_samples")
-    unmixed_dirs <- if (dir.exists(sample_output_root)) {
-        list.dirs(sample_output_root, recursive = FALSE, full.names = TRUE)
-    } else character()
-    unmixed_dirs <- unmixed_dirs[grepl("^unmixed_fcs(?:_[^/]+)?$", basename(unmixed_dirs), ignore.case = TRUE, perl = TRUE)]
-    latest_unmixed_dir <- if (length(unmixed_dirs)) unmixed_dirs[[which.max(file.info(unmixed_dirs)$mtime)]] else ""
-    unmixed_sample_files <- if (nzchar(latest_unmixed_dir)) {
-        list.files(latest_unmixed_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-    } else character()
-    sample_output_state <- if (!length(unmixed_sample_files)) {
-        "missing"
-    } else if (nzchar(matrix_file) && file.info(matrix_file)$mtime > max(file.info(unmixed_sample_files)$mtime, na.rm = TRUE)) {
-        "stale"
-    } else {
-        "current"
-    }
-    latest_report <- function(pattern) {
-        candidates <- files[grepl(pattern, relative, ignore.case = TRUE, perl = TRUE)]
-        if (!length(candidates)) return(NULL)
-        info <- file.info(candidates)
-        path <- candidates[[which.max(info$mtime)]]
-        modified <- file.info(path)$mtime
-        list(
-            path = gui_project_relative_path(path, root),
-            updated = format(modified, "%Y-%m-%d %H:%M:%S %Z"),
-            updated_epoch = as.numeric(modified)
-        )
-    }
-    latest_control_report <- latest_report("(^|/)(?:control.*qc.*report|qc_controls.*report).*\\.(html?|pdf)$")
-    latest_sample_report <- latest_report("(^|/)(?:sample.*qc.*report|qc_samples.*report).*\\.(html?|pdf)$")
     summary <- if (length(files) == 0) {
         "empty project"
     } else if (matrices > 0 && reports > 0 && samples > 0) {
@@ -2602,13 +2534,6 @@ gui_project_scan <- function(root) {
             qc_metrics = qc_metrics,
             spectral_variants = spectral_variants
         ),
-        mapping_exists = file.exists(mapping_file),
-        matrix_state = matrix_state,
-        matrix_file = if (nzchar(matrix_file)) gui_project_relative_path(matrix_file, root) else "",
-        unmixed_sample_count = length(unmixed_sample_files),
-        sample_output_state = sample_output_state,
-        latest_control_report = latest_control_report,
-        latest_sample_report = latest_sample_report,
         summary = summary,
         recommended_next_action = if (matrices == 0) "Review controls and build a reference matrix" else if (samples > 0) "Run sample unmixing" else "Import samples"
     )
@@ -3267,82 +3192,6 @@ function(res) {
     return("")
 }
 
-#* List project benchmark configurations
-#* @get /benchmarks
-#* @param project_path Active cockpit project directory
-function(project_path = "") {
-    tryCatch({
-        root <- gui_request_project_root(project_path)
-        list(success = TRUE, benchmarks = spectreasy:::list_benchmark_configs(root))
-    }, error = function(e) list(success = FALSE, error = conditionMessage(e), benchmarks = list()))
-}
-
-#* Load one project benchmark configuration
-#* @get /benchmarks/config
-#* @param benchmark_id Benchmark ID
-#* @param project_path Active cockpit project directory
-function(benchmark_id = "", project_path = "") {
-    tryCatch({
-        root <- gui_request_project_root(project_path)
-        list(success = TRUE, benchmark = spectreasy:::load_benchmark_config(benchmark_id, root))
-    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
-}
-
-#* Create a project benchmark configuration
-#* @post /benchmarks/create
-function(req) {
-    body <- gui_workflow_body(req)
-    tryCatch({
-        root <- gui_workflow_root(body)
-        config <- spectreasy:::.new_benchmark_config(gui_workflow_value(body, "name", "Method comparison"))
-        config$entries <- list(
-            spectreasy:::.normalize_benchmark_entry(list(label = "Entry 1", method = "AutoSpectral"), 1L),
-            spectreasy:::.normalize_benchmark_entry(list(label = "Entry 2", method = "Spectreasy"), 2L)
-        )
-        spectreasy:::save_benchmark_config(config, root)
-        list(success = TRUE, benchmark = spectreasy:::load_benchmark_config(config$benchmark_id, root))
-    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
-}
-
-#* Save a project benchmark configuration
-#* @post /benchmarks/save
-function(req) {
-    body <- gui_workflow_body(req)
-    tryCatch({
-        root <- gui_workflow_root(body)
-        config <- body$benchmark
-        spectreasy:::save_benchmark_config(config, root)
-        id <- if (!is.null(config$benchmark_id)) config$benchmark_id else config$benchmarkId
-        list(success = TRUE, benchmark = spectreasy:::load_benchmark_config(id, root))
-    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
-}
-
-#* Run enabled control benchmark entries sequentially
-#* @post /benchmarks/run-controls
-function(req) {
-    body <- gui_workflow_body(req)
-    tryCatch(
-        spectreasy:::run_benchmark_controls(
-            gui_workflow_value(body, "benchmark_id", ""),
-            gui_workflow_root(body)
-        ),
-        error = function(e) list(success = FALSE, message = conditionMessage(e), entries = list(), logs = conditionMessage(e))
-    )
-}
-
-#* Run enabled sample benchmark entries sequentially
-#* @post /benchmarks/run-samples
-function(req) {
-    body <- gui_workflow_body(req)
-    tryCatch(
-        spectreasy:::run_benchmark_samples(
-            gui_workflow_value(body, "benchmark_id", ""),
-            gui_workflow_root(body)
-        ),
-        error = function(e) list(success = FALSE, message = conditionMessage(e), entries = list(), logs = conditionMessage(e))
-    )
-}
-
 #* Run the complete control-stage workflow through Spectreasy R
 #* @post /workflow/control
 function(req) {
@@ -3631,8 +3480,6 @@ function(req) {
     root <- gui_workflow_root(body)
     fcs_file <- gui_workflow_resolve_path(gui_workflow_value(body, "fcs_file", file.path(gui_project_layout(root)$control_input_dir, "unstained_cells.fcs")), root)
     bands <- gui_workflow_number(body, "af_n_bands", 100, integer = TRUE, minimum = 1)
-    metadata <- body$metadata
-    if (is.null(metadata) || !is.list(metadata)) metadata <- list()
     run <- gui_workflow_run(
         body,
         "af",
@@ -3641,13 +3488,6 @@ function(req) {
             af_n_bands = bands,
             af_max_cells = gui_workflow_number(body, "af_max_cells", 50000, integer = TRUE, minimum = 1),
             seed = gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1),
-            metadata = list(
-                cytometer = metadata$cytometer,
-                acquisition_date = if (!is.null(metadata$acquisition_date)) metadata$acquisition_date else metadata$acquisitionDate,
-                tissue = metadata$tissue,
-                sample_type = if (!is.null(metadata$sample_type)) metadata$sample_type else metadata$sampleType,
-                preprocessing = metadata$preprocessing
-            ),
             show_plot = FALSE,
             verbose = FALSE
         )

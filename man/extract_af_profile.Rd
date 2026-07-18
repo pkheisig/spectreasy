@@ -9,7 +9,6 @@ extract_af_profile(
   af_n_bands = 100,
   af_max_cells = 50000,
   seed = NULL,
-  metadata = NULL,
   show_plot = TRUE,
   verbose = TRUE
 )
@@ -24,10 +23,6 @@ extraction stops with an error instead of returning a smaller bank.}
 \item{af_max_cells}{Maximum number of scatter-gated AF events used.}
 
 \item{seed}{Optional integer seed for deterministic subsampling/clustering.}
-
-\item{metadata}{Optional named list containing scalar character values for
-\code{cytometer}, \code{acquisition_date}, \code{tissue}, \code{sample_type}, and
-\code{preprocessing}.}
 
 \item{show_plot}{Logical; print the AF spectra plot after extraction.}
 
