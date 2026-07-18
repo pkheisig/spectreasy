@@ -46,15 +46,15 @@ test_that("project picker routes distinguish opening from creating", {
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
     skip_if_not(file.exists(api_path))
 
-    collect_endpoints <- function(node) {
-        if (inherits(node, "PlumberEndpoint")) return(list(node))
-        if (!is.list(node)) return(list())
-        unlist(lapply(seq_along(node), function(index) collect_endpoints(node[[index]])), recursive = FALSE)
+    endpoints <- unname(unlist(plumber::plumb(api_path)$endpoints, recursive = FALSE))
+    by_path <- function(path, verb) {
+        matches <- which(vapply(endpoints, function(endpoint) {
+            identical(endpoint$path, path) && verb %in% endpoint$verbs
+        }, logical(1)))
+        endpoints[[matches[1]]]
     }
-    endpoints <- collect_endpoints(plumber::plumb(api_path)$routes)
-    by_path <- function(path) endpoints[[which(vapply(endpoints, function(endpoint) identical(endpoint$path, path), logical(1)))[1]]]
-    select_route <- by_path("/project/select")$getFunc()
-    create_route <- by_path("/project/create")$getFunc()
+    select_route <- by_path("/project/select", "POST")$getFunc()
+    create_route <- by_path("/project/create", "POST")$getFunc()
     select_body <- paste(deparse(body(select_route)), collapse = "\n")
     create_body <- paste(deparse(body(create_route)), collapse = "\n")
     expect_match(select_body, "allow_create = FALSE", fixed = TRUE)

@@ -49,8 +49,21 @@ test_that("matrix utility helpers cover key coercion and lookup branches", {
     expect_equal(primary$ssc, "SSC-A")
 
     primary_alt <- spectreasy:::.get_primary_scatter_channels(c("FS-H", "Side Scatter-A"))
+    primary_spectral <- spectreasy:::.get_primary_scatter_channels(c("FSC-A", "BSSC-A", "VSSC-A"))
+    testthat::expect_equal(primary_spectral$ssc, "BSSC-A")
+    expect_equal(
+        spectreasy:::.get_scatter_channels(c("FSC-A", "BSSC-A", "VSSC-H", "V1-A")),
+        c("FSC-A", "BSSC-A", "VSSC-H")
+    )
     expect_equal(primary_alt$fsc, "FS-H")
     expect_equal(primary_alt$ssc, "Side Scatter-A")
+
+    vendor_data <- cbind("V1-A" = c(10, 20), "Metadata-A" = c(2e9, 3e9))
+    expect_true(spectreasy:::.validate_reference_raw_data(vendor_data, "vendor", detector_names = "V1-A"))
+    expect_false(spectreasy:::.validate_reference_raw_data(vendor_data, "vendor", detector_names = "Metadata-A"))
+    invalid_scatter <- cbind("V1-A" = c(10, 20), "FSC-A" = c(Inf, 300), "BSSC-A" = c(100, 200))
+    expect_false(spectreasy:::.validate_reference_raw_data(invalid_scatter, "scatter", detector_names = "V1-A"))
+    expect_false(spectreasy:::.validate_reference_raw_data(matrix(numeric(), nrow = 0L, ncol = 1L), "empty"))
 
     out <- data.frame(FITC = 1:3)
     full_data <- matrix(1:12, nrow = 3)
@@ -226,15 +239,18 @@ test_that("adjust_matrix internal helpers validate packaged assets and dev-mode 
     )
 
     dir.create(file.path(tmp_gui_path, "node_modules"), recursive = TRUE, showWarnings = FALSE)
+    dev_port <- httpuv::randomPort()
     frontend_dev <- spectreasy:::.resolve_gui_frontend(
         gui_path = tmp_gui_path,
         dist_path = paths$dist_path,
         port = 9000,
         dev_mode = TRUE,
-        npm_bin = "npm"
+        npm_bin = "npm",
+        dev_frontend_port = dev_port
     )
     expect_equal(frontend_dev$mode, "dev")
-    expect_equal(frontend_dev$frontend_url, "http://127.0.0.1:5174")
+    expect_equal(frontend_dev$frontend_url, paste0("http://127.0.0.1:", dev_port))
+    expect_equal(frontend_dev$frontend_port, dev_port)
     expect_equal(frontend_dev$npm_bin, "npm")
 })
 
@@ -263,36 +279,42 @@ test_that("spectreasy_gui opens the R working directory as the initial project",
     expect_true(launch_args$initial_project_selected)
 })
 
-test_that("adjust_matrix dev-server helper starts npm with API base and restores working directory", {
+test_that("adjust_matrix dev-server helper manages only its own ready process", {
     tmp_gui_path <- tempfile("spectreasy_gui_dev_server_")
     dir.create(tmp_gui_path, recursive = TRUE, showWarnings = FALSE)
-
-    fake_npm <- tempfile("fake_npm_")
-    fake_npm_log <- tempfile("fake_npm_log_")
-    writeLines(
-        c(
-            "#!/bin/sh",
-            "{",
-            "  printf 'pwd=%s\\n' \"$PWD\"",
-            "  printf 'args=%s\\n' \"$*\"",
-            "  printf 'api=%s\\n' \"$VITE_API_BASE\"",
-            paste0("} > ", shQuote(fake_npm_log))
-        ),
-        fake_npm
+    calls <- list()
+    process <- list(
+        is_alive = function() TRUE,
+        kill_tree = function() invisible(TRUE),
+        read_all_output_lines = function() character()
     )
-    Sys.chmod(fake_npm, "0755")
+    spawn <- function(gui_path, api_port, frontend_port, npm_bin) {
+        calls$spawn <<- list(gui_path, api_port, frontend_port, npm_bin)
+        process
+    }
+    wait_until_ready <- function(started_process, frontend_port) {
+        calls$ready <<- list(started_process, frontend_port)
+        invisible(TRUE)
+    }
 
-    old_wd <- getwd()
-    on.exit({
-        setwd(old_wd)
-    }, add = TRUE)
+    started <- spectreasy:::.start_gui_dev_server(
+        tmp_gui_path,
+        api_port = 8123,
+        frontend_port = 5190,
+        npm_bin = "npm",
+        spawn = spawn,
+        wait_until_ready = wait_until_ready
+    )
+    expect_identical(started, process)
+    expect_equal(calls$spawn, list(tmp_gui_path, 8123, 5190, "npm"))
+    expect_identical(calls$ready, list(process, 5190))
+})
 
-    expect_null(spectreasy:::.start_gui_dev_server(tmp_gui_path, port = 8123, npm_bin = fake_npm))
-    expect_equal(getwd(), old_wd)
-    expect_true(file.exists(fake_npm_log))
-
-    log_lines <- readLines(fake_npm_log, warn = FALSE)
-    expect_equal(normalizePath(sub("^pwd=", "", log_lines[1])), normalizePath(tmp_gui_path))
-    expect_equal(log_lines[2], "args=run dev")
-    expect_equal(log_lines[3], "api=http://127.0.0.1:8123")
+test_that("GUI dev port selection falls forward without taking an occupied port", {
+    testthat::local_mocked_bindings(
+        .gui_port_is_available = function(port) identical(as.integer(port), 5176L),
+        .package = "spectreasy"
+    )
+    expect_identical(spectreasy:::.resolve_gui_dev_port(), 5176L)
+    expect_error(spectreasy:::.resolve_gui_dev_port(5174), "already in use")
 })

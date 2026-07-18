@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { emptyProject } from './projectState'
 import { resolveApiBase, resolveApiToken } from '../apiBase'
-import type { Artifact, BackendStatus, PanelPayload, ProjectState, Report, WorkflowSettings } from './types'
+import type { Artifact, BackendStatus, BenchmarkEntry, BenchmarkProject, BenchmarkRunState, PanelPayload, ProjectState, Report, WorkflowSettings } from './types'
 
 const API_BASE = resolveApiBase()
 
@@ -52,6 +52,18 @@ function stringsFromBackend(value: unknown): string[] {
   if (Array.isArray(value)) return value.map((item) => scalarValue(item)).filter(Boolean)
   const scalar = scalarValue(value)
   return scalar ? [scalar] : []
+}
+
+function normalizeLatestReport(value: unknown): ProjectState['latestControlReport'] {
+  if (!value || typeof value !== 'object') return undefined
+  const report = value as Record<string, unknown>
+  const path = scalarValue(report.path)
+  if (!path) return undefined
+  return {
+    path,
+    updated: scalarValue(report.updated),
+    updatedEpoch: Number(scalarValue(report.updated_epoch ?? report.updatedEpoch, '0')) || 0,
+  }
 }
 
 function normalizeMappingRows(value: unknown): ProjectState['mapping'] {
@@ -230,11 +242,144 @@ export async function loadProjectSnapshot(requestedProjectPath = ''): Promise<{ 
       missingInputDirs: stringsFromBackend(projectResponse?.data?.missing_input_dirs),
       controlInputDir,
       sampleInputDir,
+      mappingExists: scalarValue(projectResponse?.data?.mapping_exists, 'false') === 'true',
+      matrixState: ['current', 'stale'].includes(scalarValue(projectResponse?.data?.matrix_state))
+        ? scalarValue(projectResponse?.data?.matrix_state) as 'current' | 'stale'
+        : 'missing',
+      matrixFile: scalarValue(projectResponse?.data?.matrix_file),
+      unmixedSampleCount: Number(scalarValue(projectResponse?.data?.unmixed_sample_count, '0')) || 0,
+      sampleOutputState: ['current', 'stale'].includes(scalarValue(projectResponse?.data?.sample_output_state))
+        ? scalarValue(projectResponse?.data?.sample_output_state) as 'current' | 'stale'
+        : 'missing',
+      latestControlReport: normalizeLatestReport(projectResponse?.data?.latest_control_report),
+      latestSampleReport: normalizeLatestReport(projectResponse?.data?.latest_sample_report),
       scan: { ...emptyProject.scan, ...backendScan, matrices: matrices.length, samples: samples.length },
     }
     return { project, backend, savedSettings }
   } catch {
     return { project: structuredClone(emptyProject), backend: initialBackendStatus }
+  }
+}
+
+function normalizeBenchmarkEntry(value: unknown, index: number): BenchmarkEntry {
+  const row = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
+  const status = (candidate: unknown) => {
+    const item = (candidate && typeof candidate === 'object' ? candidate : {}) as Record<string, unknown>
+    return {
+      state: scalarValue(item.state, 'not_run') as BenchmarkRunState,
+      message: scalarValue(item.message),
+      updatedAt: scalarValue(item.updated_at ?? item.updatedAt) || undefined,
+    }
+  }
+  const controlOutputs = (row.control_outputs ?? row.controlOutputs ?? {}) as Record<string, unknown>
+  const sampleOutputs = (row.sample_outputs ?? row.sampleOutputs ?? {}) as Record<string, unknown>
+  return {
+    entryId: scalarValue(row.entry_id ?? row.entryId, `entry-${index + 1}`),
+    label: scalarValue(row.label, `Entry ${index + 1}`),
+    enabled: row.enabled !== false,
+    method: scalarValue(row.method, 'Spectreasy'),
+    controlSettings: (row.control_settings ?? row.controlSettings ?? {}) as BenchmarkEntry['controlSettings'],
+    sampleSettings: (row.sample_settings ?? row.sampleSettings ?? {}) as BenchmarkEntry['sampleSettings'],
+    controlStatus: status(row.control_status ?? row.controlStatus),
+    sampleStatus: status(row.sample_status ?? row.sampleStatus),
+    controlOutputs: {
+      matrixFile: scalarValue(controlOutputs.matrix_file ?? controlOutputs.matrixFile),
+      detectorNoiseFile: scalarValue(controlOutputs.detector_noise_file ?? controlOutputs.detectorNoiseFile),
+      variantLibraryFile: scalarValue(controlOutputs.variant_library_file ?? controlOutputs.variantLibraryFile),
+      reportFile: scalarValue(controlOutputs.report_file ?? controlOutputs.reportFile),
+      outputDir: scalarValue(controlOutputs.output_dir ?? controlOutputs.outputDir),
+    },
+    sampleOutputs: {
+      reportFile: scalarValue(sampleOutputs.report_file ?? sampleOutputs.reportFile),
+      outputDir: scalarValue(sampleOutputs.output_dir ?? sampleOutputs.outputDir),
+    },
+  }
+}
+
+function normalizeBenchmarkProject(value: unknown): BenchmarkProject | null {
+  if (!value || typeof value !== 'object') return null
+  const row = value as Record<string, unknown>
+  const benchmarkId = scalarValue(row.benchmark_id ?? row.benchmarkId)
+  if (!benchmarkId) return null
+  const entries = Array.isArray(row.entries) ? row.entries : []
+  return {
+    schemaVersion: Number(scalarValue(row.schema_version ?? row.schemaVersion, '1')) || 1,
+    benchmarkId,
+    name: scalarValue(row.name, 'Method comparison'),
+    createdAt: scalarValue(row.created_at ?? row.createdAt),
+    updatedAt: scalarValue(row.updated_at ?? row.updatedAt),
+    entries: entries.map(normalizeBenchmarkEntry),
+  }
+}
+
+function benchmarkForBackend(benchmark: BenchmarkProject) {
+  return {
+    schema_version: benchmark.schemaVersion,
+    benchmark_id: benchmark.benchmarkId,
+    name: benchmark.name,
+    created_at: benchmark.createdAt,
+    updated_at: benchmark.updatedAt,
+    entries: benchmark.entries.map((entry) => ({
+      entry_id: entry.entryId,
+      label: entry.label,
+      enabled: entry.enabled,
+      method: entry.method,
+      control_settings: entry.controlSettings,
+      sample_settings: entry.sampleSettings,
+      control_status: { state: entry.controlStatus.state, message: entry.controlStatus.message, updated_at: entry.controlStatus.updatedAt ?? null },
+      sample_status: { state: entry.sampleStatus.state, message: entry.sampleStatus.message, updated_at: entry.sampleStatus.updatedAt ?? null },
+      control_outputs: {
+        matrix_file: entry.controlOutputs.matrixFile,
+        detector_noise_file: entry.controlOutputs.detectorNoiseFile,
+        variant_library_file: entry.controlOutputs.variantLibraryFile,
+        report_file: entry.controlOutputs.reportFile,
+        output_dir: entry.controlOutputs.outputDir,
+      },
+      sample_outputs: { report_file: entry.sampleOutputs.reportFile, output_dir: entry.sampleOutputs.outputDir },
+    })),
+  }
+}
+
+export async function listBenchmarks(projectPath: string): Promise<BenchmarkProject[]> {
+  try {
+    const response = await client.get('/benchmarks', { params: { project_path: projectPath }, timeout: 10000 })
+    const values = Array.isArray(response.data?.benchmarks) ? response.data.benchmarks : []
+    return values.map((item: unknown) => normalizeBenchmarkProject(item)).filter((item: BenchmarkProject | null): item is BenchmarkProject => item !== null)
+  } catch { return [] }
+}
+
+export async function loadBenchmark(benchmarkId: string, projectPath: string): Promise<BenchmarkProject | null> {
+  try {
+    const response = await client.get('/benchmarks/config', { params: { benchmark_id: benchmarkId, project_path: projectPath }, timeout: 10000 })
+    return normalizeBenchmarkProject(response.data?.benchmark)
+  } catch { return null }
+}
+
+export async function createBenchmark(name: string, projectPath: string): Promise<BenchmarkProject | null> {
+  try {
+    const response = await client.post('/benchmarks/create', { name, projectPath }, { timeout: 10000 })
+    return normalizeBenchmarkProject(response.data?.benchmark)
+  } catch { return null }
+}
+
+export async function saveBenchmark(benchmark: BenchmarkProject, projectPath: string): Promise<BenchmarkProject | null> {
+  try {
+    const response = await client.post('/benchmarks/save', { benchmark: benchmarkForBackend(benchmark), projectPath }, { timeout: 30000 })
+    return normalizeBenchmarkProject(response.data?.benchmark)
+  } catch { return null }
+}
+
+export async function runBenchmarkStage(stage: 'controls' | 'samples', benchmarkId: string, projectPath: string): Promise<{ success: boolean; message: string; logs: string[]; benchmark?: BenchmarkProject }> {
+  try {
+    const response = await client.post(`/benchmarks/run-${stage}`, { benchmark_id: benchmarkId, projectPath }, { timeout: 24 * 60 * 60 * 1000 })
+    return {
+      success: response.data?.success === true,
+      message: scalarValue(response.data?.message, 'Benchmark queue finished.'),
+      logs: stringsFromBackend(response.data?.logs),
+      benchmark: normalizeBenchmarkProject(response.data?.benchmark) ?? undefined,
+    }
+  } catch {
+    return { success: false, message: 'The benchmark queue did not complete.', logs: [] }
   }
 }
 
@@ -472,7 +617,12 @@ export async function importMatrixContent(filename: string, content: string): Pr
 }
 
 export type AfProfileSummary = { name: string; bands: number; detectors: number; created: string; path: string; active: boolean }
-export type AfProfileData = { name: string; detectors: string[]; spectra: Array<{ name: string; values: number[] }> }
+export type AfProfileMetadata = {
+  cytometer?: string; acquisitionDate?: string; tissue?: string; sampleType?: string; preprocessing?: string;
+  sourceFcs?: string; createdAt?: string; bandCount?: number; spectreasyVersion?: string;
+}
+export type AfProfileData = { name: string; detectors: string[]; spectra: Array<{ name: string; values: number[] }>; metadata: AfProfileMetadata }
+export type AfProfileSimilarityPayload = { success: boolean; message?: string; labels: string[]; profileMembership: string[]; similarity: number[][]; detectors: string[] }
 
 export async function listAfProfiles(projectPath = ''): Promise<AfProfileSummary[]> {
   try {
@@ -499,9 +649,39 @@ export async function loadAfProfileData(name: string): Promise<AfProfileData | n
       name: String(row.name ?? ''),
       values: Array.isArray(row.values) ? row.values.map(Number) : [],
     })).filter((row) => row.name && row.values.length === detectors.length)
-    return { name: String(response.data?.name ?? name), detectors, spectra }
+    const metadata = (response.data?.metadata && typeof response.data.metadata === 'object' ? response.data.metadata : {}) as Record<string, unknown>
+    return {
+      name: String(response.data?.name ?? name), detectors, spectra,
+      metadata: {
+        cytometer: scalarValue(metadata.cytometer) || undefined,
+        acquisitionDate: scalarValue(metadata.acquisition_date ?? metadata.acquisitionDate) || undefined,
+        tissue: scalarValue(metadata.tissue) || undefined,
+        sampleType: scalarValue(metadata.sample_type ?? metadata.sampleType) || undefined,
+        preprocessing: scalarValue(metadata.preprocessing) || undefined,
+        sourceFcs: scalarValue(metadata.source_fcs ?? metadata.sourceFcs) || undefined,
+        createdAt: scalarValue(metadata.created_at ?? metadata.createdAt) || undefined,
+        bandCount: Number(scalarValue(metadata.band_count ?? metadata.bandCount, '0')) || undefined,
+        spectreasyVersion: scalarValue(metadata.spectreasy_version ?? metadata.spectreasyVersion) || undefined,
+      },
+    }
   } catch {
     return null
+  }
+}
+
+export async function loadAfProfileSimilarity(primaryName: string, compareName = ''): Promise<AfProfileSimilarityPayload> {
+  try {
+    const response = await client.get('/af_profiles/similarity', { params: { primary_name: primaryName, compare_name: compareName }, timeout: 10000 })
+    return {
+      success: response.data?.success === true,
+      message: scalarValue(response.data?.message) || undefined,
+      labels: stringsFromBackend(response.data?.labels),
+      profileMembership: stringsFromBackend(response.data?.profile_membership),
+      similarity: Array.isArray(response.data?.similarity) ? response.data.similarity.map((row: unknown) => Array.isArray(row) ? row.map(Number) : []) : [],
+      detectors: stringsFromBackend(response.data?.detectors),
+    }
+  } catch {
+    return { success: false, message: 'AF profile similarity could not be loaded.', labels: [], profileMembership: [], similarity: [], detectors: [] }
   }
 }
 
@@ -541,9 +721,17 @@ export async function loadProjectReports(projectPath = '', outputRoot = 'spectre
   }).filter((report) => report.path.length > 0)
 }
 
-export function projectFileUrl(path: string, projectPath = ''): string {
-  const params = new URLSearchParams({ path, project_path: projectPath, token: resolveApiToken() })
-  return `${API_BASE}/project/file?${params.toString()}`
+async function loadProjectReportBlob(path: string, projectPath = ''): Promise<Blob> {
+  const response = await client.get('/project/file', {
+    params: { path, project_path: projectPath },
+    responseType: 'blob',
+    timeout: 120000,
+  })
+  return response.data as Blob
+}
+
+export async function loadProjectReportObjectUrl(path: string, projectPath = ''): Promise<string> {
+  return URL.createObjectURL(await loadProjectReportBlob(path, projectPath))
 }
 
 export async function initializeProject(projectPath: string): Promise<{ success: boolean; created: string[]; message: string }> {
@@ -574,8 +762,7 @@ function downloadBlob(filename: string, blob: Blob) {
 
 export async function downloadProjectReport(path: string, projectPath = ''): Promise<boolean> {
   try {
-    const response = await client.get('/project/file', { params: { path, project_path: projectPath }, responseType: 'blob', timeout: 120000 })
-    downloadBlob(path.split('/').pop() || 'spectreasy_qc_report.html', response.data as Blob)
+    downloadBlob(path.split('/').pop() || 'spectreasy_qc_report.html', await loadProjectReportBlob(path, projectPath))
     return true
   } catch {
     return false

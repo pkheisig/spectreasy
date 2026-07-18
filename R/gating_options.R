@@ -17,6 +17,8 @@ gating_options <- function(histogram_pct_beads = 0.98,
                            histogram_direction_beads = "right",
                            histogram_pct_cells = 0.35,
                            histogram_direction_cells = "right") {
+    histogram_pct_beads <- .normalize_unit_interval(histogram_pct_beads, "histogram_pct_beads")
+    histogram_pct_cells <- .normalize_unit_interval(histogram_pct_cells, "histogram_pct_cells")
     histogram_direction_beads <- .match_arg_ci(
         histogram_direction_beads, c("right", "both", "left"), "histogram_direction_beads"
     )
@@ -109,7 +111,7 @@ get_sorted_detectors <- function(pd) {
     # 1. Identify spectral detectors
     # Common patterns: FL[0-9]+-A, [A-Z][0-9]+-A, etc.
     # Exclude FSC, SSC, Time
-    exclude_patterns <- "^FSC|^SSC|^Time|^Event|^ID"
+    exclude_patterns <- "^FSC|^[A-Z]*SSC|^Time|^Event|^ID|^LightLoss|^Img"
     matches <- grep(exclude_patterns, pd$name, ignore.case = TRUE, invert = TRUE)
 
     # Further filter for Area channels if they exist, otherwise use all

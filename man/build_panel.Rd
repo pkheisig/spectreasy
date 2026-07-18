@@ -4,7 +4,12 @@
 \alias{build_panel}
 \title{Launch Spectral Panel Builder}
 \usage{
-build_panel(port = 8000, open_browser = TRUE, dev_mode = FALSE)
+build_panel(
+  port = 8000,
+  open_browser = TRUE,
+  dev_mode = FALSE,
+  dev_frontend_port = NULL
+)
 }
 \arguments{
 \item{port}{API port (default: 8000).}
@@ -12,6 +17,9 @@ build_panel(port = 8000, open_browser = TRUE, dev_mode = FALSE)
 \item{open_browser}{Logical. Open browser automatically?}
 
 \item{dev_mode}{Logical. Use the Vite dev server instead of bundled assets.}
+
+\item{dev_frontend_port}{Optional Vite frontend port used only with
+`dev_mode = TRUE`. When `NULL`, the first free port from 5174 onward is used.}
 }
 \value{
 Invisibly returns NULL. This function blocks while the API is running.

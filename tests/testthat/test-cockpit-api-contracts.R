@@ -1,7 +1,20 @@
+cockpit_api_path <- function() {
+    namespace_path <- tryCatch(
+        getNamespaceInfo(asNamespace("spectreasy"), "path"),
+        error = function(e) ""
+    )
+    candidates <- c(
+        file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R"),
+        system.file("api", "gui_api.R", package = "spectreasy"),
+        if (nzchar(namespace_path)) file.path(namespace_path, "api", "gui_api.R") else ""
+    )
+    candidates <- candidates[nzchar(candidates) & file.exists(candidates)]
+    if (!length(candidates)) testthat::skip("The installed cockpit API source is unavailable.")
+    candidates[[1]]
+}
+
 load_cockpit_api_env <- function() {
-    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
-    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
-    testthat::skip_if_not(file.exists(api_path))
+    api_path <- cockpit_api_path()
     api_env <- new.env(parent = globalenv())
     source(api_path, local = api_env)
     api_env
@@ -32,4 +45,18 @@ test_that("cockpit workflow project roots and session tokens fail closed", {
     expect_true(api_env$gui_api_token_value_allowed("active-token"))
     expect_false(api_env$gui_api_token_value_allowed("stale-token"))
     expect_false(api_env$gui_api_token_value_allowed(""))
+})
+
+test_that("cockpit shutdown is scoped to its recorded httpuv server", {
+    api_path <- cockpit_api_path()
+    source_text <- paste(readLines(api_path, warn = FALSE), collapse = "\n")
+    expect_false(grepl("stopAllServers", source_text, fixed = TRUE))
+    expect_match(source_text, "httpuv::stopServer(server)", fixed = TRUE)
+})
+
+test_that("cockpit gating uses shared alternate scatter channel aliases", {
+    api_env <- load_cockpit_api_env()
+    channels <- c("FSC-A", "BSSC-A", "VSSC-H", "V1-A")
+    expect_identical(api_env$gate_pick_channel(channels, "SSC", "A"), "BSSC-A")
+    expect_setequal(api_env$gate_scatter_channels(channels), c("FSC-A", "BSSC-A", "VSSC-H"))
 })

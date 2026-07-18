@@ -9,6 +9,25 @@ test_that("gating_options returns named list", {
     ) %in% names(opts)))
     expect_equal(opts$histogram_pct_beads, 0.9)
     expect_equal(opts$histogram_pct_cells, 0.3)
+    expect_error(spectreasy::gating_options(histogram_pct_beads = NA_real_), "finite numeric")
+    expect_error(spectreasy::gating_options(histogram_pct_cells = -0.1), "must be in")
+    expect_error(spectreasy::gating_options(histogram_pct_cells = 1.1), "must be in")
+})
+
+test_that("reference gating fractions reject missing and impossible values", {
+    missing_input <- tempfile("missing_scc_")
+    expect_error(
+        spectreasy::build_reference_matrix(input_folder = missing_input, outlier_percentile = NA_real_),
+        "outlier_percentile must be one finite numeric value"
+    )
+    expect_error(
+        spectreasy::build_reference_matrix(input_folder = missing_input, gate_contour_beads = 1),
+        "gate_contour_beads must be in"
+    )
+    expect_error(
+        spectreasy::build_reference_matrix(input_folder = missing_input, bead_gate_scale = -1),
+        "bead_gate_scale must be one finite number greater than 0"
+    )
 })
 
 test_that("obsolete scatter-intensity gating is absent from the public and internal API", {
@@ -35,9 +54,25 @@ test_that("SCC background cleanup is method-driven without overlapping booleans"
     expect_false("clean_scc_with_unstained" %in% names(formals(spectreasy::unmix_controls)))
     expect_false("clean_scc_with_unstained" %in% names(formals(spectreasy::build_reference_matrix)))
     expect_false("autospectral_scc_cleanup" %in% names(formals(spectreasy::build_reference_matrix)))
-    expect_identical(formals(spectreasy::build_reference_matrix)$unmixing_method, "Spectreasy")
+    expect_identical(formals(spectreasy::build_reference_matrix)$unmixing_method, "AutoSpectral")
     expect_true("scc_background_method" %in% names(formals(spectreasy::unmix_controls)))
     expect_true("scc_background_method" %in% names(formals(spectreasy::build_reference_matrix)))
+})
+
+test_that("all workflow-facing unmixing defaults use AutoSpectral", {
+    expect_identical(formals(spectreasy::calc_residuals)$method, "AutoSpectral")
+    expect_identical(formals(spectreasy::build_reference_matrix)$unmixing_method, "AutoSpectral")
+    expect_identical(formals(spectreasy::unmix_controls)$unmixing_method, "AutoSpectral")
+    expect_identical(formals(spectreasy::unmix_samples)$unmixing_method, "AutoSpectral")
+    expect_identical(formals(spectreasy::adjust_matrix)$unmixing_method, "AutoSpectral")
+})
+
+test_that("documented diagnostic helpers are exported", {
+    expect_true(all(c(
+        "calculate_similarity_matrix",
+        "plot_similarity_matrix",
+        "plot_sample_rms_residuals"
+    ) %in% getNamespaceExports("spectreasy")))
 })
 
 test_that("derive_unmixing_matrix returns finite matrix with expected dims", {
@@ -298,11 +333,11 @@ test_that("rwls_max_iter is exposed through the unmixing APIs", {
     expect_true("estimate_af" %in% names(formals(spectreasy::unmix_samples)))
     expect_true("unmixing_method" %in% names(formals(spectreasy::adjust_matrix)))
     expect_false(formals(spectreasy::unmix_samples)$estimate_af)
-    expect_equal(formals(spectreasy::calc_residuals)$method, "Spectreasy")
+    expect_equal(formals(spectreasy::calc_residuals)$method, "AutoSpectral")
     expect_equal(formals(spectreasy::unmix_controls)$unmixing_method, "AutoSpectral")
     expect_equal(formals(spectreasy::unmix_samples)$unmixing_method, "AutoSpectral")
     expect_equal(formals(spectreasy::unmix_samples)$plot_n_events, 10000L)
-    expect_equal(formals(spectreasy::adjust_matrix)$unmixing_method, "Spectreasy")
+    expect_equal(formals(spectreasy::adjust_matrix)$unmixing_method, "AutoSpectral")
 })
 
 test_that("unmix_controls validates n_threads", {

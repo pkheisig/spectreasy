@@ -10,7 +10,8 @@ gate_controls(
   gate_file = "ssc_gate_config.csv",
   port = 8000,
   open_browser = TRUE,
-  dev_mode = FALSE
+  dev_mode = FALSE,
+  dev_frontend_port = NULL
 )
 }
 \arguments{
@@ -26,6 +27,9 @@ working directory. Defaults to `"ssc_gate_config.csv"`.}
 \item{open_browser}{Logical. Open browser automatically?}
 
 \item{dev_mode}{Logical. Use the Vite dev server instead of bundled assets.}
+
+\item{dev_frontend_port}{Optional Vite frontend port used only with
+`dev_mode = TRUE`. When `NULL`, the first free port from 5174 onward is used.}
 }
 \value{
 Invisibly returns the normalized gate CSV path. The function blocks

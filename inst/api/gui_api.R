@@ -88,182 +88,6 @@ gui_request_project_root <- function(project_path = "", fallback = TRUE) {
     normalizePath(value, mustWork = TRUE)
 }
 
-gui_project_layout_config_path <- function(project_path) {
-    file.path(gui_request_project_root(project_path), ".spectreasy", "project.json")
-}
-
-gui_project_input_marker_name <- function() ".spectreasy-input-role.json"
-
-gui_normalize_project_input_dir <- function(value, root, label = "input directory") {
-    value <- gsub("\\\\", "/", trimws(as.character(value)[1]))
-    value <- sub("/+$", "", value)
-    if (!nzchar(value)) stop(label, " cannot be empty.", call. = FALSE)
-    if (grepl("^(/|[A-Za-z]:[/\\\\])", value)) {
-        stop(label, " must be a path inside the active project.", call. = FALSE)
-    }
-    parts <- strsplit(value, "/", fixed = TRUE)[[1]]
-    if (any(parts %in% c("", ".", ".."))) {
-        stop(label, " contains an invalid path component.", call. = FALSE)
-    }
-    if (identical(parts[[1]], ".spectreasy")) {
-        stop(label, " cannot be stored inside the .spectreasy configuration directory.", call. = FALSE)
-    }
-    candidate <- normalizePath(file.path(root, do.call(file.path, as.list(parts))), mustWork = FALSE)
-    root <- normalizePath(root, mustWork = TRUE)
-    if (!startsWith(candidate, paste0(root, .Platform$file.sep))) {
-        stop(label, " must remain inside the active project.", call. = FALSE)
-    }
-    paste(parts, collapse = "/")
-}
-
-gui_write_project_layout <- function(root, layout) {
-    root <- gui_request_project_root(root)
-    control_dir <- gui_normalize_project_input_dir(layout$control_input_dir, root, "Control input directory")
-    sample_dir <- gui_normalize_project_input_dir(layout$sample_input_dir, root, "Sample input directory")
-    if (identical(control_dir, sample_dir)) {
-        stop("Control and sample input directories must be different.", call. = FALSE)
-    }
-    path <- gui_project_layout_config_path(root)
-    dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-    payload <- list(
-        version = 1L,
-        control_input_dir = control_dir,
-        sample_input_dir = sample_dir,
-        updated = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z")
-    )
-    temporary <- tempfile("project_layout_", tmpdir = dirname(path), fileext = ".json")
-    jsonlite::write_json(payload, temporary, auto_unbox = TRUE, pretty = TRUE)
-    if (!file.rename(temporary, path)) {
-        if (!file.copy(temporary, path, overwrite = TRUE)) stop("Could not save the project input-directory configuration.", call. = FALSE)
-        unlink(temporary, force = TRUE)
-    }
-    payload
-}
-
-gui_write_project_input_marker <- function(directory, role) {
-    if (!dir.exists(directory)) return(invisible(FALSE))
-    marker <- file.path(directory, gui_project_input_marker_name())
-    jsonlite::write_json(
-        list(role = role, version = 1L),
-        marker,
-        auto_unbox = TRUE,
-        pretty = TRUE
-    )
-    invisible(TRUE)
-}
-
-gui_discover_project_input_markers <- function(root) {
-    root <- gui_request_project_root(root)
-    markers <- list.files(
-        root,
-        pattern = paste0("^", gsub("\\.", "\\\\.", gui_project_input_marker_name()), "$"),
-        recursive = TRUE,
-        full.names = TRUE,
-        all.files = TRUE,
-        include.dirs = FALSE
-    )
-    result <- list(controls = character(), samples = character())
-    for (marker in markers) {
-        value <- tryCatch(jsonlite::fromJSON(marker, simplifyVector = TRUE), error = function(e) NULL)
-        role <- if (is.null(value$role)) "" else trimws(as.character(value$role)[1])
-        if (!role %in% names(result)) next
-        relative <- gui_project_relative_path(dirname(marker), root)
-        relative <- tryCatch(gui_normalize_project_input_dir(relative, root), error = function(e) "")
-        if (nzchar(relative)) result[[role]] <- unique(c(result[[role]], relative))
-    }
-    result
-}
-
-gui_project_layout <- function(root, reconcile = TRUE, ensure_markers = TRUE) {
-    root <- gui_request_project_root(root)
-    path <- gui_project_layout_config_path(root)
-    stored <- if (file.exists(path)) {
-        tryCatch(jsonlite::fromJSON(path, simplifyVector = TRUE), error = function(e) list())
-    } else list()
-    layout <- list(
-        control_input_dir = tryCatch(
-            gui_normalize_project_input_dir(if (is.null(stored$control_input_dir)) "scc" else stored$control_input_dir, root),
-            error = function(e) "scc"
-        ),
-        sample_input_dir = tryCatch(
-            gui_normalize_project_input_dir(if (is.null(stored$sample_input_dir)) "samples" else stored$sample_input_dir, root),
-            error = function(e) "samples"
-        )
-    )
-    changed <- !file.exists(path)
-    if (isTRUE(reconcile)) {
-        discovered <- gui_discover_project_input_markers(root)
-        role_fields <- c(controls = "control_input_dir", samples = "sample_input_dir")
-        for (role in names(role_fields)) {
-            field <- role_fields[[role]]
-            configured_path <- file.path(root, layout[[field]])
-            candidates <- discovered[[role]]
-            if (!dir.exists(configured_path) && length(candidates) == 1L) {
-                layout[[field]] <- candidates[[1]]
-                changed <- TRUE
-            }
-        }
-    }
-    if (identical(layout$control_input_dir, layout$sample_input_dir)) {
-        layout$sample_input_dir <- "samples"
-        changed <- TRUE
-    }
-    if (isTRUE(ensure_markers)) {
-        gui_write_project_input_marker(file.path(root, layout$control_input_dir), "controls")
-        gui_write_project_input_marker(file.path(root, layout$sample_input_dir), "samples")
-    }
-    if (changed) gui_write_project_layout(root, layout)
-    layout
-}
-
-gui_project_input_path <- function(root, role) {
-    root <- gui_request_project_root(root)
-    layout <- gui_project_layout(root)
-    field <- switch(
-        tolower(trimws(as.character(role)[1])),
-        controls = "control_input_dir",
-        control = "control_input_dir",
-        samples = "sample_input_dir",
-        sample = "sample_input_dir",
-        stop("Input-directory role must be controls or samples.", call. = FALSE)
-    )
-    normalizePath(file.path(root, layout[[field]]), mustWork = FALSE)
-}
-
-gui_update_project_input_dir <- function(root, role, value) {
-    root <- gui_request_project_root(root)
-    role <- tolower(trimws(as.character(role)[1]))
-    field <- switch(role, controls = "control_input_dir", samples = "sample_input_dir", NULL)
-    if (is.null(field)) stop("Input-directory role must be controls or samples.", call. = FALSE)
-    layout <- gui_project_layout(root)
-    next_value <- gui_normalize_project_input_dir(value, root, paste(if (role == "controls") "Control" else "Sample", "input directory"))
-    other_field <- if (field == "control_input_dir") "sample_input_dir" else "control_input_dir"
-    if (identical(next_value, layout[[other_field]])) {
-        stop("Control and sample input directories must be different.", call. = FALSE)
-    }
-    previous_value <- layout[[field]]
-    previous_path <- file.path(root, previous_value)
-    next_path <- file.path(root, next_value)
-    if (!identical(previous_value, next_value)) {
-        if (dir.exists(previous_path) && dir.exists(next_path)) {
-            stop("The requested input directory already exists. Remove it or choose a different name before renaming.", call. = FALSE)
-        }
-        if (dir.exists(previous_path)) {
-            dir.create(dirname(next_path), recursive = TRUE, showWarnings = FALSE)
-            if (!file.rename(previous_path, next_path)) {
-                stop("Could not rename the input directory. Check filesystem permissions and try again.", call. = FALSE)
-            }
-        } else if (!dir.exists(next_path) && !dir.create(next_path, recursive = TRUE, showWarnings = FALSE)) {
-            stop("Could not create the requested input directory.", call. = FALSE)
-        }
-    }
-    layout[[field]] <- next_value
-    layout <- gui_write_project_layout(root, layout)
-    gui_write_project_input_marker(next_path, role)
-    gui_set_project_context(root, reset_gate_cache = role == "controls")
-    layout
-}
-
 # Delegate the API surface to the package-level resolver so the launcher,
 # cockpit, gating applets, and workflows share one layout implementation.
 gui_project_layout_config_path <- function(project_path) spectreasy:::.spectreasy_project_layout_path(gui_request_project_root(project_path))
@@ -714,10 +538,14 @@ gate_safe_basename <- function(x) {
 }
 
 gate_read_fcs <- function(path) {
-    flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE)
+    spectreasy:::.spectreasy_read_fcs(path, label = "GUI FCS file")
 }
 
 gate_pick_channel <- function(col_names, prefix, suffix) {
+    scatter_type <- switch(toupper(as.character(prefix)[1]), FSC = "fsc", SSC = "ssc", NULL)
+    if (!is.null(scatter_type)) {
+        return(spectreasy:::.get_scatter_channel(col_names, scatter_type, suffix))
+    }
     normalized <- toupper(col_names)
     exact <- grep(paste0("^", prefix, "[0-9]*-", suffix, "$"), normalized, value = TRUE)
     if (length(exact) > 0) return(exact[1])
@@ -895,8 +723,7 @@ gate_compute_extent <- function(v) {
 }
 
 gate_scatter_channels <- function(col_names) {
-    hits <- grep("^(FSC|SSC).*-(A|H|W)$", col_names, value = TRUE, ignore.case = TRUE)
-    unique(hits)
+    spectreasy:::.get_scatter_channels(col_names)
 }
 
 gate_point_in_polygon <- function(x, y, poly) {
@@ -1853,11 +1680,11 @@ function(req) {
 function(req) {
     options(spectreasy.gui_shutdown_requested = TRUE)
     server <- getOption("spectreasy.gui_server", NULL)
+    options(spectreasy.gui_server = NULL)
     later::later(function() {
         if (!is.null(server)) {
             try(httpuv::stopServer(server), silent = TRUE)
         }
-        try(httpuv::stopAllServers(), silent = TRUE)
     }, delay = 0.1)
     list(success = TRUE, message = "Gate config saved. Manual gating GUI is shutting down.")
 }
@@ -1956,16 +1783,41 @@ function(name = "") {
     name <- trimws(as.character(name)[1])
     if (!nzchar(name)) return(list(error = "A profile name is required."))
     tryCatch({
-        profile <- spectreasy::load_af_profile(name, show_plot = FALSE)$profile
+        profile_object <- spectreasy::load_af_profile(name, show_plot = FALSE)
+        profile <- profile_object$profile
         list(
             name = name,
             detectors = colnames(profile),
             spectra = lapply(seq_len(nrow(profile)), function(index) list(
                 name = rownames(profile)[index],
                 values = as.numeric(profile[index, , drop = TRUE])
-            ))
+            )),
+            metadata = profile_object$metadata,
+            schema_version = profile_object$schema_version
         )
     }, error = function(e) list(error = conditionMessage(e)))
+}
+
+#* Return direct AF-band cosine similarity for one or two profiles
+#* @get /af_profiles/similarity
+#* @param primary_name Primary profile name
+#* @param compare_name Optional comparison profile name
+function(primary_name = "", compare_name = "") {
+    primary_name <- trimws(as.character(primary_name)[1])
+    compare_name <- trimws(as.character(compare_name)[1])
+    if (!nzchar(primary_name)) return(list(success = FALSE, message = "A primary profile name is required."))
+    tryCatch({
+        primary <- spectreasy::load_af_profile(primary_name, show_plot = FALSE)
+        comparison <- if (nzchar(compare_name)) spectreasy::load_af_profile(compare_name, show_plot = FALSE) else NULL
+        similarity <- spectreasy:::.af_profile_similarity(primary, comparison)
+        list(
+            success = TRUE,
+            labels = similarity$labels,
+            profile_membership = similarity$profile_membership,
+            similarity = lapply(seq_len(nrow(similarity$similarity)), function(index) as.numeric(similarity$similarity[index, , drop = TRUE])),
+            detectors = similarity$detectors
+        )
+    }, error = function(e) list(success = FALSE, message = conditionMessage(e)))
 }
 
 gui_pick_af_source_file <- function(initial_dir = gui_project_input_path(get_matrix_dir(), "controls")) {
@@ -2186,25 +2038,37 @@ function(req) {
     matrix_data <- body$matrix_json
     df <- as.data.frame(matrix_data, check.names = FALSE)
     path <- matrix_path(filename, root)
-    source_path <- if (!is.null(source_filename) && nzchar(trimws(as.character(source_filename)[1]))) {
-        matrix_path(source_filename, root)
+    source_path <- if (!is.null(source_filename) && length(source_filename) &&
+        !is.na(source_filename[1]) && nzchar(trimws(as.character(source_filename[1])))) {
+        matrix_path(as.character(source_filename[1]), root)
     } else {
-        ""
+        character()
     }
-    if (nzchar(source_path) && identical(
-        normalizePath(path, mustWork = FALSE),
-        normalizePath(source_path, mustWork = FALSE)
-    )) {
-        stop("Adjusted matrix filename must differ from the source matrix filename.", call. = FALSE)
+    if (nrow(df) < 1L || ncol(df) < 2L) stop("Matrix must contain at least one row and one detector column.", call. = FALSE)
+    if (!"Marker" %in% colnames(df)) stop("Matrix must contain a Marker column.", call. = FALSE)
+    markers <- trimws(as.character(df$Marker))
+    if (any(is.na(markers) | !nzchar(markers)) || anyDuplicated(markers)) stop("Matrix row names must be non-empty and unique.", call. = FALSE)
+    detector_names <- setdiff(colnames(df), "Marker")
+    if (any(!nzchar(trimws(detector_names))) || anyDuplicated(detector_names)) stop("Matrix detector names must be non-empty and unique.", call. = FALSE)
+    numeric_columns <- lapply(df[detector_names], function(values) suppressWarnings(as.numeric(values)))
+    if (any(vapply(seq_along(numeric_columns), function(index) any(is.na(numeric_columns[[index]]) & !is.na(df[[detector_names[index]]])), logical(1)))) {
+        stop("Matrix detector values must be numeric.", call. = FALSE)
     }
-    source_paths <- c(
-        path,
-        if (nzchar(source_path)) source_path else character()
-    )
-    df <- merge_hidden_af_rows(df, source_paths = source_paths)
+    df[detector_names] <- numeric_columns
+    df$Marker <- markers
+    df <- merge_hidden_af_rows(df, source_paths = c(path, source_path))
 
     dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-    utils::write.csv(df, path, row.names = FALSE, quote = TRUE)
+    temporary <- tempfile("matrix_save_", tmpdir = dirname(path), fileext = ".csv")
+    on.exit(unlink(temporary, force = TRUE), add = TRUE)
+    utils::write.csv(df, temporary, row.names = FALSE, quote = TRUE)
+    verified <- read_matrix_csv(temporary)
+    if (!identical(dim(verified), dim(df)) || !identical(colnames(verified), colnames(df))) {
+        stop("Temporary matrix verification failed; the original file was not replaced.", call. = FALSE)
+    }
+    if (!file.rename(temporary, path)) {
+        stop("Could not atomically replace the selected matrix file.", call. = FALSE)
+    }
     return(list(success = TRUE, path = path))
 }
 
@@ -2276,7 +2140,7 @@ function(sample_name = "", project_path = "") {
         }
     }
 
-    ff <- flowCore::read.FCS(sample_path, transformation = FALSE, truncate_max_range = FALSE)
+    ff <- gate_read_fcs(sample_path)
     raw_data <- flowCore::exprs(ff)
 
     # Subsample for speed - smaller for fast interactive updates
@@ -2670,6 +2534,49 @@ gui_project_scan <- function(root) {
     gates <- count_matches("gate.*\\.csv$")
     qc_metrics <- count_matches("metric.*\\.csv$")
     spectral_variants <- count_matches("variant.*\\.(rds|csv)$")
+    mapping_file <- file.path(root, "fcs_mapping.csv")
+    gate_files <- files[grepl("gate.*\\.csv$", relative, ignore.case = TRUE, perl = TRUE)]
+    matrix_files <- files[grepl("(^|/)scc_reference_matrix\\.csv$", relative, ignore.case = TRUE, perl = TRUE)]
+    matrix_file <- if (length(matrix_files)) matrix_files[[which.max(file.info(matrix_files)$mtime)]] else ""
+    upstream_files <- c(control_files, if (file.exists(mapping_file)) mapping_file else character(), gate_files)
+    upstream_files <- upstream_files[file.exists(upstream_files)]
+    matrix_state <- if (!nzchar(matrix_file)) {
+        "missing"
+    } else if (length(upstream_files) && max(file.info(upstream_files)$mtime, na.rm = TRUE) > file.info(matrix_file)$mtime) {
+        "stale"
+    } else {
+        "current"
+    }
+    sample_output_root <- file.path(root, "spectreasy_outputs", "unmix_samples")
+    unmixed_dirs <- if (dir.exists(sample_output_root)) {
+        list.dirs(sample_output_root, recursive = FALSE, full.names = TRUE)
+    } else character()
+    unmixed_dirs <- unmixed_dirs[grepl("^unmixed_fcs(?:_[^/]+)?$", basename(unmixed_dirs), ignore.case = TRUE, perl = TRUE)]
+    latest_unmixed_dir <- if (length(unmixed_dirs)) unmixed_dirs[[which.max(file.info(unmixed_dirs)$mtime)]] else ""
+    unmixed_sample_files <- if (nzchar(latest_unmixed_dir)) {
+        list.files(latest_unmixed_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
+    } else character()
+    sample_output_state <- if (!length(unmixed_sample_files)) {
+        "missing"
+    } else if (nzchar(matrix_file) && file.info(matrix_file)$mtime > max(file.info(unmixed_sample_files)$mtime, na.rm = TRUE)) {
+        "stale"
+    } else {
+        "current"
+    }
+    latest_report <- function(pattern) {
+        candidates <- files[grepl(pattern, relative, ignore.case = TRUE, perl = TRUE)]
+        if (!length(candidates)) return(NULL)
+        info <- file.info(candidates)
+        path <- candidates[[which.max(info$mtime)]]
+        modified <- file.info(path)$mtime
+        list(
+            path = gui_project_relative_path(path, root),
+            updated = format(modified, "%Y-%m-%d %H:%M:%S %Z"),
+            updated_epoch = as.numeric(modified)
+        )
+    }
+    latest_control_report <- latest_report("(^|/)(?:control.*qc.*report|qc_controls.*report).*\\.(html?|pdf)$")
+    latest_sample_report <- latest_report("(^|/)(?:sample.*qc.*report|qc_samples.*report).*\\.(html?|pdf)$")
     summary <- if (length(files) == 0) {
         "empty project"
     } else if (matrices > 0 && reports > 0 && samples > 0) {
@@ -2695,6 +2602,13 @@ gui_project_scan <- function(root) {
             qc_metrics = qc_metrics,
             spectral_variants = spectral_variants
         ),
+        mapping_exists = file.exists(mapping_file),
+        matrix_state = matrix_state,
+        matrix_file = if (nzchar(matrix_file)) gui_project_relative_path(matrix_file, root) else "",
+        unmixed_sample_count = length(unmixed_sample_files),
+        sample_output_state = sample_output_state,
+        latest_control_report = latest_control_report,
+        latest_sample_report = latest_sample_report,
         summary = summary,
         recommended_next_action = if (matrices == 0) "Review controls and build a reference matrix" else if (samples > 0) "Run sample unmixing" else "Import samples"
     )
@@ -3107,9 +3021,8 @@ function(project_path = "", output_root = "", report_type = "") {
 #* @get /project/file
 #* @param path Relative path inside the active project
 #* @param project_path Active cockpit project directory
-#* @param token Active cockpit session token
-function(path = "", project_path = "", token = "", req, res) {
-    if (!gui_api_token_value_allowed(token) && !gui_api_token_allowed(req)) {
+function(path = "", project_path = "", req, res) {
+    if (!gui_api_token_allowed(req)) {
         res$status <- 403
         return(list(error = "This project artifact belongs to a different or inactive Spectreasy session."))
     }
@@ -3354,6 +3267,82 @@ function(res) {
     return("")
 }
 
+#* List project benchmark configurations
+#* @get /benchmarks
+#* @param project_path Active cockpit project directory
+function(project_path = "") {
+    tryCatch({
+        root <- gui_request_project_root(project_path)
+        list(success = TRUE, benchmarks = spectreasy:::list_benchmark_configs(root))
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e), benchmarks = list()))
+}
+
+#* Load one project benchmark configuration
+#* @get /benchmarks/config
+#* @param benchmark_id Benchmark ID
+#* @param project_path Active cockpit project directory
+function(benchmark_id = "", project_path = "") {
+    tryCatch({
+        root <- gui_request_project_root(project_path)
+        list(success = TRUE, benchmark = spectreasy:::load_benchmark_config(benchmark_id, root))
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Create a project benchmark configuration
+#* @post /benchmarks/create
+function(req) {
+    body <- gui_workflow_body(req)
+    tryCatch({
+        root <- gui_workflow_root(body)
+        config <- spectreasy:::.new_benchmark_config(gui_workflow_value(body, "name", "Method comparison"))
+        config$entries <- list(
+            spectreasy:::.normalize_benchmark_entry(list(label = "Entry 1", method = "AutoSpectral"), 1L),
+            spectreasy:::.normalize_benchmark_entry(list(label = "Entry 2", method = "Spectreasy"), 2L)
+        )
+        spectreasy:::save_benchmark_config(config, root)
+        list(success = TRUE, benchmark = spectreasy:::load_benchmark_config(config$benchmark_id, root))
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Save a project benchmark configuration
+#* @post /benchmarks/save
+function(req) {
+    body <- gui_workflow_body(req)
+    tryCatch({
+        root <- gui_workflow_root(body)
+        config <- body$benchmark
+        spectreasy:::save_benchmark_config(config, root)
+        id <- if (!is.null(config$benchmark_id)) config$benchmark_id else config$benchmarkId
+        list(success = TRUE, benchmark = spectreasy:::load_benchmark_config(id, root))
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Run enabled control benchmark entries sequentially
+#* @post /benchmarks/run-controls
+function(req) {
+    body <- gui_workflow_body(req)
+    tryCatch(
+        spectreasy:::run_benchmark_controls(
+            gui_workflow_value(body, "benchmark_id", ""),
+            gui_workflow_root(body)
+        ),
+        error = function(e) list(success = FALSE, message = conditionMessage(e), entries = list(), logs = conditionMessage(e))
+    )
+}
+
+#* Run enabled sample benchmark entries sequentially
+#* @post /benchmarks/run-samples
+function(req) {
+    body <- gui_workflow_body(req)
+    tryCatch(
+        spectreasy:::run_benchmark_samples(
+            gui_workflow_value(body, "benchmark_id", ""),
+            gui_workflow_root(body)
+        ),
+        error = function(e) list(success = FALSE, message = conditionMessage(e), entries = list(), logs = conditionMessage(e))
+    )
+}
+
 #* Run the complete control-stage workflow through Spectreasy R
 #* @post /workflow/control
 function(req) {
@@ -3524,7 +3513,7 @@ function(req) {
     raw_methods <- body$methods
     methods <- unique(as.character(unlist(raw_methods, recursive = TRUE, use.names = FALSE)))
     methods <- methods[nzchar(methods)]
-    if (length(methods) == 0) methods <- c("Spectreasy", "OLS", "WLS", "NNLS")
+    if (length(methods) == 0) methods <- c("AutoSpectral", "Spectreasy", "OLS", "WLS", "NNLS")
     matrix_input <- gui_workflow_value(body, "matrix_file", "")
     sample_dir_input <- gui_workflow_value(body, "sample_dir", gui_project_layout(root)$sample_input_dir)
     matrix_file <- gui_workflow_file_or_null(matrix_input, root = root)
@@ -3541,7 +3530,7 @@ function(req) {
     marker_names <- as.character(matrix_df[[1]])
     matrix_values <- as.matrix(matrix_df[, -1, drop = FALSE])
     rownames(matrix_values) <- marker_names
-    sample_frame <- flowCore::read.FCS(sample_files[1], transformation = FALSE, truncate_max_range = FALSE)
+    sample_frame <- gate_read_fcs(sample_files[1])
     events <- flowCore::exprs(sample_frame)
     if (nrow(events) > 2000) {
         set.seed(gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1))
@@ -3642,6 +3631,8 @@ function(req) {
     root <- gui_workflow_root(body)
     fcs_file <- gui_workflow_resolve_path(gui_workflow_value(body, "fcs_file", file.path(gui_project_layout(root)$control_input_dir, "unstained_cells.fcs")), root)
     bands <- gui_workflow_number(body, "af_n_bands", 100, integer = TRUE, minimum = 1)
+    metadata <- body$metadata
+    if (is.null(metadata) || !is.list(metadata)) metadata <- list()
     run <- gui_workflow_run(
         body,
         "af",
@@ -3650,6 +3641,13 @@ function(req) {
             af_n_bands = bands,
             af_max_cells = gui_workflow_number(body, "af_max_cells", 50000, integer = TRUE, minimum = 1),
             seed = gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1),
+            metadata = list(
+                cytometer = metadata$cytometer,
+                acquisition_date = if (!is.null(metadata$acquisition_date)) metadata$acquisition_date else metadata$acquisitionDate,
+                tissue = metadata$tissue,
+                sample_type = if (!is.null(metadata$sample_type)) metadata$sample_type else metadata$sampleType,
+                preprocessing = metadata$preprocessing
+            ),
             show_plot = FALSE,
             verbose = FALSE
         )

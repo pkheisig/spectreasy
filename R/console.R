@@ -59,14 +59,37 @@
 }
 
 .spectreasy_read_fcs <- function(path, label = "FCS file") {
-    tryCatch(
-        flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE),
-        error = function(e) {
+    tryCatch({
+        first_error <- NULL
+        ff <- tryCatch(
+            flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE),
+            error = function(e) {
+                first_error <<- e
+                NULL
+            }
+        )
+        if (!is.null(ff)) return(ff)
+
+        # Some vendor FCS files contain empty TEXT keyword names. flowCore can
+        # read these standards-tolerant files when empty keyword values are not
+        # retained, so retry before reporting the original parse failure.
+        tryCatch(
+            flowCore::read.FCS(
+                path,
+                transformation = FALSE,
+                truncate_max_range = FALSE,
+                emptyValue = FALSE
+            ),
+            error = function(e) {
+                if (!is.null(first_error)) stop(first_error)
+                stop(e)
+            }
+        )
+    }, error = function(e) {
             stop(
                 "Could not read ", label, ": ", path,
                 ". Reason: ", conditionMessage(e),
                 call. = FALSE
             )
-        }
-    )
+    })
 }

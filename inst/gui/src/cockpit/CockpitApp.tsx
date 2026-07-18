@@ -322,7 +322,7 @@ export default function CockpitApp() {
     structuredClone(emptyProject),
   );
   const [backend, setBackend] = useState<BackendStatus>(initialBackendStatus);
-  const [activeSection, setActiveSection] = useState<SectionId>("controls");
+  const [activeSection, setActiveSection] = useState<SectionId>("overview");
   const [activeApplet, setActiveApplet] = useState<CockpitAppletId | null>(null);
   const [selectedReportPath, setSelectedReportPath] = useState("");
   const [gatingInitialized, setGatingInitialized] = useState(false);
@@ -444,6 +444,10 @@ export default function CockpitApp() {
           af: {
             ...current.af,
             ...savedAf,
+            metadata: {
+              ...current.af.metadata,
+              ...(savedAf.metadata ?? {}),
+            },
             fcsFile: afFiles.includes(requestedAfFile) ? requestedAfFile : (afFiles[0] ?? ""),
           },
           appearance: {
@@ -638,6 +642,7 @@ export default function CockpitApp() {
     setSettings((current) => ({
       ...current,
       control: { ...current.control, cytometer },
+      af: { ...current.af, metadata: { ...current.af.metadata, cytometer } },
     }));
     setProject((current) => ({
       ...current,
@@ -813,6 +818,13 @@ export default function CockpitApp() {
               af_n_bands: af.afNBands,
               af_max_cells: af.afMaxCells,
               seed: af.seed,
+              metadata: {
+                cytometer: af.metadata.cytometer,
+                acquisition_date: af.metadata.acquisitionDate,
+                tissue: af.metadata.tissue,
+                sample_type: af.metadata.sampleType,
+                preprocessing: af.metadata.preprocessing,
+              },
             };
     appendExecutionLogs([
       { kind: "command", text: cockpitExecutionCode(action, payload as Record<string, unknown>) },
@@ -899,6 +911,7 @@ export default function CockpitApp() {
       if (response.success) {
         if (response.projectPath) window.sessionStorage.setItem("spectreasy-project-path", response.projectPath);
         await refreshProject(true, response.projectPath);
+        setActiveSection("overview");
       }
     } finally {
       setProjectLoading(false);
@@ -956,11 +969,13 @@ export default function CockpitApp() {
   const activeTitle = useMemo(
     () =>
       ({
+        overview: "Overview",
         controls: "Controls",
         samples: "Samples",
         matrix: "Matrix review",
         panel: "Panel builder",
         af: "AF library",
+        benchmark: "Benchmark",
         settings: "Settings & logs",
       })[activeSection],
     [activeSection],

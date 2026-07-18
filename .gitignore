@@ -3,6 +3,7 @@ unmixing.qmd
 # Local agent/python session artifacts
 .codex_tmp/
 .spectreasy-sandbox/
+.spectreasy/
 .py_sessions/
 **/.py_sessions/
 .py_session/

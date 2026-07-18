@@ -138,6 +138,29 @@
     x
 }
 
+.normalize_unit_interval <- function(x,
+                                     arg_name,
+                                     lower_inclusive = TRUE,
+                                     upper_inclusive = TRUE) {
+    if (!is.numeric(x) || length(x) != 1L || is.na(x) || !is.finite(x)) {
+        stop(arg_name, " must be one finite numeric value between 0 and 1.", call. = FALSE)
+    }
+    lower_ok <- if (isTRUE(lower_inclusive)) x >= 0 else x > 0
+    upper_ok <- if (isTRUE(upper_inclusive)) x <= 1 else x < 1
+    if (!lower_ok || !upper_ok) {
+        bounds <- paste0(if (isTRUE(lower_inclusive)) "[" else "(", "0, 1", if (isTRUE(upper_inclusive)) "]" else ")")
+        stop(arg_name, " must be in ", bounds, ".", call. = FALSE)
+    }
+    as.numeric(x)
+}
+
+.normalize_positive_number <- function(x, arg_name) {
+    if (!is.numeric(x) || length(x) != 1L || is.na(x) || !is.finite(x) || x <= 0) {
+        stop(arg_name, " must be one finite number greater than 0.", call. = FALSE)
+    }
+    as.numeric(x)
+}
+
 .match_arg_ci <- function(x, choices, arg_name) {
     if (length(x) == 0L || is.null(x) || is.na(x[1]) || !is.character(x)) {
         stop(arg_name, " must be one of: ", paste(choices, collapse = ", "), ".", call. = FALSE)
@@ -604,36 +627,6 @@
         "File",
         .get_passthrough_parameter_names(col_names)
     ))
-}
-
-.get_primary_scatter_channels <- function(col_names) {
-    pick_primary <- function(prefix, aliases = character()) {
-        normalized <- toupper(gsub("[^A-Z0-9]", "", col_names))
-        prefixes <- toupper(gsub("[^A-Z0-9]", "", c(prefix, aliases)))
-        is_match <- Reduce(`|`, lapply(prefixes, function(x) startsWith(normalized, x)))
-
-        exact <- col_names[toupper(col_names) == paste0(prefix, "-A")]
-        if (length(exact) > 0) {
-            return(exact[[1]])
-        }
-
-        area <- col_names[is_match & grepl("-A$", col_names, ignore.case = TRUE)]
-        if (length(area) > 0) {
-            return(area[[1]])
-        }
-
-        any_match <- col_names[is_match]
-        if (length(any_match) > 0) {
-            return(any_match[[1]])
-        }
-
-        NA_character_
-    }
-
-    list(
-        fsc = pick_primary("FSC", aliases = c("FS", "Forward Scatter")),
-        ssc = pick_primary("SSC", aliases = c("SS", "Side Scatter"))
-    )
 }
 
 .resolve_control_file_path <- function(control_file = "fcs_mapping.csv") {

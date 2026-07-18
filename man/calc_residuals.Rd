@@ -8,7 +8,7 @@ calc_residuals(
   flow_frame,
   M,
   file_name = NULL,
-  method = "Spectreasy",
+  method = "AutoSpectral",
   return_residuals = FALSE,
   background_noise = .default_wls_background_noise(),
   wls_signal_scale = .default_wls_signal_scale(),
@@ -30,8 +30,8 @@ calc_residuals(
 
 \item{file_name}{Optional file name to add to output}
 
-\item{method}{Unmixing method: `"Spectreasy"` (default), `"WLS"`, `"RWLS"`,
-`"OLS"`, `"NNLS"`, or `"AutoSpectral"`. `AutoSpectral` assigns the best AF
+\item{method}{Unmixing method: `"AutoSpectral"` (default), `"Spectreasy"`,
+`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`. `AutoSpectral` assigns the best AF
 spectrum per event with the AutoSpectral fluorophore-leakage score, refits
 marker + selected-AF rows with OLS, and applies spectral-variant
 optimization when a variant library is supplied. `Spectreasy` uses the same

@@ -1,7 +1,7 @@
 import {
+  ChartNoAxesCombined,
   ChevronRight,
   FolderCog,
-  Wrench,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
@@ -25,18 +25,20 @@ const groups: NavigationGroup[] = [
     title: 'Workflow',
     icon: FolderCog,
     items: [
+      { id: 'overview', title: 'Overview', detail: 'Project progress' },
       { id: 'controls', title: 'Controls', detail: 'Map, gate, build reference' },
       { id: 'samples', title: 'Samples', detail: 'Unmix sample files' },
+      { id: 'matrix', title: 'Matrix', detail: 'Inspect residual crosstalk' },
+      { id: 'panel', title: 'Panel Builder', detail: 'Explore fluorophores' },
+      { id: 'af', title: 'AF Profiles', detail: 'Extract and manage AF' },
     ],
   },
   {
-    id: 'tools',
-    title: 'Other tools',
-    icon: Wrench,
+    id: 'benchmark',
+    title: 'Benchmark',
+    icon: ChartNoAxesCombined,
     items: [
-      { id: 'af', title: 'AF profiles', detail: 'Extract and manage AF' },
-      { id: 'panel', title: 'Panel builder', detail: 'Explore fluorophores' },
-      { id: 'matrix', title: 'Adjust matrix', detail: 'Inspect residual crosstalk' },
+      { id: 'benchmark', title: 'Benchmark', detail: 'Compare configurations' },
     ],
   },
 ]
@@ -50,7 +52,7 @@ function loadOpenGroups(): Record<string, boolean> {
     if (!parsed || typeof parsed !== 'object') return {}
     return Object.fromEntries(
       Object.entries(parsed)
-        .filter(([key, value]) => (key === 'workflow' || key === 'tools') && typeof value === 'boolean'),
+        .filter(([key, value]) => (key === 'workflow' || key === 'benchmark') && typeof value === 'boolean'),
     ) as Record<string, boolean>
   } catch {
     return {}

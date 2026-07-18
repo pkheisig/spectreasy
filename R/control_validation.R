@@ -220,7 +220,7 @@
         actual_name <- scc_files[[file_idx]]
         path <- file.path(scc_dir, actual_name)
         ff <- tryCatch(
-            suppressWarnings(flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE)),
+            suppressWarnings(.spectreasy_read_fcs(path)),
             error = function(e) NULL
         )
         if (is.null(ff)) {

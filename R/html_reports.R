@@ -395,6 +395,12 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
     reference_file <- .report_plot_file(spectra,file.path(plot_dir,"reference_spectra.png"))
     af_file <- .report_plot_file(af_plot,file.path(plot_dir,"af_bank.png"))
     similarity_file <- .report_plot_file(similarity_plot,file.path(plot_dir,"spectral_similarity.png"))
+    scc_variation <- .collect_scc_variation_data(M)
+    scc_variation_files <- .save_scc_variation_plots(
+        scc_variation,
+        file.path(plot_dir, "scc_variation"),
+        pd = pd
+    )
     scatter_pages <- list()
     if (!is.null(unmixed_list) && sum(!af_rows) > 1L) {
         sample_to_marker <- NULL
@@ -427,17 +433,17 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
     } else character()
     if (length(scatter_files)) names(scatter_files) <- "Controls"
     control_panels <- .report_control_panels(report_plot_dir, qc_summary)
-    plot_files <- .report_existing_paths(c(reference_file, af_file, similarity_file, scatter_files, unlist(lapply(control_panels, `[[`, "paths"), use.names = FALSE)))
+    plot_files <- .report_existing_paths(c(reference_file, af_file, scc_variation_files, similarity_file, scatter_files, unlist(lapply(control_panels, `[[`, "paths"), use.names = FALSE)))
     control_paths <- if (nrow(mapping)) file.path(scc_dir,mapping$filename) else character()
     source_paths <- unique(c(matrix_source, tryCatch(.resolve_control_file_path(control_file),error=function(e) control_file), control_paths, artifact_paths$gate_file))
     artifacts <- .report_artifacts(c(source_paths, unlist(artifact_paths,recursive=TRUE,use.names=FALSE), plot_files))
     out <- list(
         report_type="Control QC", project_path=normalizePath(project_path,mustWork=FALSE), created_at=Sys.time(), version=as.character(utils::packageVersion("spectreasy")),
         unmixing_method=method, cytometer=cytometer, matrix=M, matrix_source=matrix_source, matrix_preview=.report_matrix_preview(M), peak_detectors=.report_peak_detectors(M),
-        detector_metadata=pd, detector_noise=attr(M,"detector_noise"), af_bank_info=af_info, spectral_variant_metadata=attr(M,"spectral_variant_library"),
+        detector_metadata=pd, detector_noise=attr(M,"detector_noise"), af_bank_info=af_info, spectral_variant_metadata=attr(M,"spectral_variant_library"), scc_variation_metadata=scc_variation$metadata,
         mapping=mapping, qc_summary=as.data.frame(qc_summary %||% attr(M,"qc_summary") %||% data.frame(),stringsAsFactors=FALSE), gating_summary=as.data.frame(qc_summary %||% data.frame(),stringsAsFactors=FALSE),
         control_files=control_paths, warnings=unique(as.character(warnings)), similarity=similarity, nps=NULL, detector_rms=NULL, reconstruction_error=NULL,
-        plots=plot_files, plot_manifest=list(af=af_file, reference=reference_file, similarity=similarity_file, nxn=scatter_files, controls=control_panels), artifacts=artifacts, source_fingerprint=.report_source_fingerprint(source_paths), run_settings=run_settings,
+        plots=plot_files, plot_manifest=list(af=af_file, reference=reference_file, scc_variation=scc_variation_files, similarity=similarity_file, nxn=scatter_files, controls=control_panels), artifacts=artifacts, source_fingerprint=.report_source_fingerprint(source_paths), run_settings=run_settings,
         counts=list(controls=if(nrow(mapping)) nrow(mapping) else length(control_paths), markers=sum(!af_rows), detectors=ncol(M), af_bands=sum(af_rows)),
         input_status=if(isTRUE(attr(M,"adjusted"))) "Adjusted" else if(isTRUE(attr(M,"synthetic"))) "Synthetic" else "Measured"
     )
@@ -526,7 +532,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     if (is.null(results)) stop("No unmixed results provided for the sample HTML report.",call.=FALSE)
     if (is.null(M)) stop("No reference matrix provided for the sample HTML report.",call.=FALSE)
     M <- .as_reference_matrix(M,"M")
-    method <- .normalize_unmix_method(unmixing_method %||% attr(results,"method") %||% "Spectreasy")
+    method <- .normalize_unmix_method(unmixing_method %||% attr(results,"method") %||% "AutoSpectral")
     sample_nxn_transform <- .match_arg_ci(sample_nxn_transform, c("none", "asinh"), "sample_nxn_transform")
     report_results <- if(is.data.frame(results)) .cap_qc_report_results_df(results,max_events_per_sample) else .cap_qc_report_results_list(results,max_events_per_sample)
     results_df <- .normalize_qc_report_results_df(report_results)
@@ -547,6 +553,8 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     }
     detector_rms <- if(!is.null(res_list)) tryCatch(.compute_qc_report_detector_rms(res_list,M=M,pd=pd,unmixing_method=method),error=function(e) NULL) else NULL
     reconstruction <- if(!is.null(res_list)) tryCatch(.compute_qc_report_sample_rms(res_list,M=M,unmixing_method=method),error=function(e) NULL) else NULL
+    af_band_usage <- .normalize_af_band_usage(attr(results, "af_band_usage"))
+    af_band_usage_status <- attr(results, "af_band_usage_status") %||% if (nrow(af_band_usage)) "available" else "unavailable"
     qc_metrics_dir <- .prepare_qc_report_metrics_dir(qc_metrics_dir)
     if (!is.null(qc_metrics_dir)) {
         if (any(!af_rows)) {
@@ -588,10 +596,23 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
                 file.path(qc_metrics_dir, "detector_reconstruction_error.csv")
             )
         }
+        if (.report_has_rows(af_band_usage)) {
+            .write_qc_report_csv(
+                af_band_usage,
+                file.path(qc_metrics_dir, "af_band_usage_by_sample.csv")
+            )
+        }
     }
     plot_dir <- plot_dir %||% tempfile("spectreasy_sample_html_plots_")
     dir.create(plot_dir,recursive=TRUE,showWarnings=FALSE)
     reference_file <- if(any(!af_rows)) .report_plot_file(plot_spectra(M[!af_rows,,drop=FALSE],pd=pd,output_file=NULL),file.path(plot_dir,"reference_spectra.png")) else NULL
+    af_file <- if(any(af_rows)) .report_plot_file(
+        .style_af_bank_plot(plot_spectra(M[af_rows,,drop=FALSE],pd=pd,output_file=NULL), rownames(M)[af_rows]),
+        file.path(plot_dir,"af_bank.png")
+    ) else NULL
+    af_usage_files <- if (identical(af_band_usage_status, "available")) {
+        .save_af_band_usage_plots(af_band_usage, file.path(plot_dir, "af_usage"))
+    } else character()
     similarity_files <- character()
     if(!is.null(similarity)) {
         similarity_pages <- .build_qc_report_matrix_pages(
@@ -644,7 +665,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
             .report_plot_file(reconstruction_pages[[i]],file.path(plot_dir,sprintf("detector_reconstruction_%02d.png",i)))
         }, character(1))
     }
-    plot_files <- .report_existing_paths(c(reference_file, similarity_files, nps_files, nxn_files, detector_rms_file, reconstruction_files))
+    plot_files <- .report_existing_paths(c(reference_file, af_file, af_usage_files, similarity_files, nps_files, nxn_files, detector_rms_file, reconstruction_files))
     fcs_paths <- if(!is.null(output_dir) && dir.exists(output_dir)) list.files(output_dir,pattern="\\.fcs$",full.names=TRUE,ignore.case=TRUE) else character()
     metric_paths <- if(!is.null(qc_metrics_dir) && dir.exists(qc_metrics_dir)) list.files(qc_metrics_dir,pattern="\\.csv$",full.names=TRUE,ignore.case=TRUE) else character()
     source_paths <- unique(c(matrix_source,detector_noise_file,spectral_variant_library_file,unlist(artifact_paths,recursive=TRUE,use.names=FALSE)))
@@ -660,8 +681,8 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     out <- list(report_type="Sample QC",project_path=normalizePath(project_path,mustWork=FALSE),created_at=Sys.time(),version=as.character(utils::packageVersion("spectreasy")),unmixing_method=method,
         matrix=M,matrix_source=matrix_source,matrix_preview=.report_matrix_preview(M),peak_detectors=.report_peak_detectors(M),detector_metadata=pd %||% attr(M,"detector_pd"),detector_noise_file=detector_noise_file,
         residual_metadata=list(metric=if(.uses_wls_residual_metric(method)) "wls_weighted_rms" else "raw_rms"),af_metadata=attr(results,"blind_af_info") %||% attr(M,"blind_af_info"),spectral_variant_metadata=attr(results,"spectral_variant_library"),spectral_variant_library_file=spectral_variant_library_file,
-        samples=sample_table,markers=markers,detectors=colnames(M),warnings=unique(as.character(warnings)),nps=nps,nps_note=if(identical(method,"NNLS")) "Skipped for NNLS because constrained outputs are non-negative by construction." else NULL,
-        similarity=similarity,spread=spread,detector_rms=detector_rms,reconstruction_error=reconstruction,nxn_interactive=nxn_interactive,plots=unique(plot_files),plot_manifest=list(reference=reference_file,similarity=similarity_files,nps=nps_files,nxn=nxn_files,detector_rms=detector_rms_file,reconstruction=reconstruction_files),artifacts=.report_artifacts(c(source_paths,fcs_paths,metric_paths,plot_files)),source_fingerprint=.report_source_fingerprint(source_paths),run_settings=c(list(report_per_sample=isTRUE(report_per_sample)),run_settings),
+        samples=sample_table,markers=markers,detectors=colnames(M),warnings=unique(as.character(warnings)),nps=nps,nps_note=if(identical(method,"NNLS")) "Skipped for NNLS because constrained outputs are non-negative by construction." else NULL, af_band_usage=af_band_usage, af_band_usage_status=af_band_usage_status,
+        similarity=similarity,spread=spread,detector_rms=detector_rms,reconstruction_error=reconstruction,nxn_interactive=nxn_interactive,plots=unique(plot_files),plot_manifest=list(reference=reference_file,af=af_file,af_usage=af_usage_files,similarity=similarity_files,nps=nps_files,nxn=nxn_files,detector_rms=detector_rms_file,reconstruction=reconstruction_files),artifacts=.report_artifacts(c(source_paths,fcs_paths,metric_paths,plot_files)),source_fingerprint=.report_source_fingerprint(source_paths),run_settings=c(list(report_per_sample=isTRUE(report_per_sample)),run_settings),
         counts=list(samples=length(samples),markers=sum(!af_rows),detectors=ncol(M),af_bands=sum(af_rows)),input_status=if(isTRUE(attr(M,"adjusted"))) "Adjusted" else if(isTRUE(attr(M,"synthetic"))) "Synthetic" else "Measured")
     class(out) <- c("spectreasy_sample_report_data","spectreasy_report_data","list")
     out
@@ -699,7 +720,7 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
         names(embedded) <- names(paths)
         embedded
     }
-    fields <- intersect(c("af", "reference", "similarity", "nps", "nxn", "detector_rms", "reconstruction"), names(manifest))
+    fields <- intersect(c("af", "reference", "scc_variation", "similarity", "nps", "nxn", "detector_rms", "reconstruction", "af_usage"), names(manifest))
     if (inherits(report_data, "spectreasy_control_report_data")) {
         fields <- setdiff(fields, "nxn")
     }
@@ -911,10 +932,19 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
             if (length(.report_existing_paths(manifest$reference))) "Reference spectra overlay" else NULL
         )
         sections <- Filter(Negate(is.null), list(
-            spectra=if (length(spectra_paths)) c("Spectra",.report_plots_html(spectra_paths, titles = spectra_titles)) else NULL,
+            gating=if (length(manifest$controls)) c("Gating",.report_control_panels_html(manifest$controls)) else NULL,
+            scc_variation=if (length(.report_existing_paths(manifest$scc_variation))) c(
+                "SCC spectral variation",
+                paste0(
+                    "<p class=\"note\">Filled band: 10th\u201390th percentile of normalized SCC positive-event spectra. Line: final reference spectrum used for unmixing.</p>",
+                    "<div class=\"control-plot-grid\">",
+                    .report_plots_html(manifest$scc_variation, titles = names(manifest$scc_variation)),
+                    "</div>"
+                )
+            ) else NULL,
+            spectra=if (length(spectra_paths)) c("Reference spectra",.report_plots_html(spectra_paths, titles = spectra_titles)) else NULL,
             similarity=if (length(.report_existing_paths(manifest$similarity))) c("Fluorophore similarity",.report_plots_html(manifest$similarity, titles = "Fluorophore spectral similarity")) else NULL,
-            nxn=if (length(.report_existing_paths(manifest$nxn))) c("Control NxN scatter matrix",.report_nxn_link_html(companions, report_type = "control")) else NULL,
-            gating=if (length(manifest$controls)) c("Gating",.report_control_panels_html(manifest$controls)) else NULL
+            nxn=if (length(.report_existing_paths(manifest$nxn))) c("Control NxN scatter matrix",.report_nxn_link_html(companions, report_type = "control")) else NULL
         ))
         sections
     } else {
@@ -922,6 +952,11 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
         companions <- nxn_companion_files %||% x$nxn_companion_files
         sections <- Filter(Negate(is.null), list(
             spectra=if (length(.report_existing_paths(manifest$reference))) c("Reference spectra",.report_plots_html(manifest$reference, titles = "Reference spectra overlay")) else NULL,
+            af=if (length(.report_existing_paths(manifest$af))) c("AF bank spectra",.report_plots_html(manifest$af, titles = "AF bank spectra")) else NULL,
+            af_usage=if (length(.report_existing_paths(manifest$af_usage)) || !identical(x$af_band_usage_status, "available")) c(
+                "AF-band usage by sample",
+                if (length(.report_existing_paths(manifest$af_usage))) .report_plots_html(manifest$af_usage, titles = "AF-band usage by sample") else "<p class=\"note\">AF-band usage is not available for this method or run.</p>"
+            ) else NULL,
             similarity=if (length(.report_existing_paths(manifest$similarity))) c("Fluorophore similarity",.report_plots_html(manifest$similarity, titles = "Fluorophore spectral similarity")) else NULL,
             nps=if (!is.null(x$nps_note) || length(.report_existing_paths(manifest$nps))) c("Negative population spread", if (!is.null(x$nps_note)) paste0("<p class=\"note\">", .report_html_escape(x$nps_note), "</p>") else .report_plots_html(manifest$nps, titles = "Negative population spread")) else NULL,
             nxn=if (length(.report_existing_paths(manifest$nxn))) c("Sample NxN scatter matrices",.report_nxn_link_html(companions, report_type = "sample")) else NULL,

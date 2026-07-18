@@ -42,6 +42,7 @@ Suggests:
     openssl,
     pdftools,
     plumber,
+    processx,
     rmarkdown,
     S4Vectors,
     SingleCellExperiment,

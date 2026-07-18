@@ -664,7 +664,7 @@
     read_error <- ""
 
     tryCatch({
-        ff <- suppressWarnings(flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE))
+        ff <- suppressWarnings(.spectreasy_read_fcs(path))
         pd <- flowCore::pData(flowCore::parameters(ff))
         channel_alias_map <- .merge_control_file_alias_map(channel_alias_map, .build_channel_alias_map_from_pd(pd))
         fl_pd <- get_sorted_detectors(pd)

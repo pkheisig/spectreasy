@@ -689,28 +689,42 @@ test_that("adjust_matrix starts packaged GUI on localhost", {
 
     tmp_matrix_dir <- tempfile("spectreasy_gui_matrix_")
     dir.create(tmp_matrix_dir, recursive = TRUE, showWarnings = FALSE)
-    port <- sample(18000:18999, 1)
+    port <- httpuv::randomPort()
 
-    job <- parallel::mcparallel({
-        spectreasy::adjust_matrix(
-            matrix_dir = tmp_matrix_dir,
-            open_browser = FALSE,
-            dev_mode = FALSE,
-            port = port,
-            unmixing_method = "AutoSpectral"
-        )
-    })
+    expression <- paste0(
+        "library(spectreasy); ",
+        "spectreasy::adjust_matrix(matrix_dir = ", deparse(tmp_matrix_dir),
+        ", open_browser = FALSE, dev_mode = FALSE, port = ", port,
+        ", unmixing_method = 'AutoSpectral')"
+    )
+    child_env <- Sys.getenv()
+    job <- processx::process$new(
+        file.path(R.home("bin"), "Rscript"),
+        c("-e", expression),
+        env = child_env,
+        stdout = "|",
+        stderr = "2>&1",
+        cleanup = TRUE,
+        cleanup_tree = TRUE
+    )
 
     on.exit({
-        tools::pskill(job$pid)
+        if (isTRUE(job$is_alive())) job$kill_tree()
         Sys.sleep(0.5)
     }, add = TRUE)
 
-    Sys.sleep(2)
-    resp <- tryCatch(
-        readLines(sprintf("http://127.0.0.1:%s/status", port), warn = FALSE),
-        error = function(e) character()
-    )
+    resp <- character()
+    deadline <- Sys.time() + 15
+    while (length(resp) == 0L && Sys.time() < deadline && isTRUE(job$is_alive())) {
+        Sys.sleep(0.2)
+        resp <- tryCatch(
+            suppressWarnings(readLines(sprintf("http://127.0.0.1:%s/status", port), warn = FALSE)),
+            error = function(e) character()
+        )
+    }
+    if (!length(resp) && !isTRUE(job$is_alive())) {
+        testthat::fail(paste(c("GUI child exited before readiness:", job$read_all_output_lines()), collapse = "\n"))
+    }
 
     expect_true(length(resp) > 0)
     expect_true(any(grepl("ok", resp, fixed = TRUE)))

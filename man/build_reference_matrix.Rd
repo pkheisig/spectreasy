@@ -28,7 +28,7 @@ build_reference_matrix(
   gate_contour_beads = 0.95,
   gate_contour_cells = 0.9,
   subsample_n = 5000,
-  unmixing_method = "Spectreasy",
+  unmixing_method = "AutoSpectral",
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 2L,
   autospectral_n_candidates = 1000L,
@@ -99,8 +99,8 @@ For example, `0.08` excludes events below 8\% of the per-file high FSC scale.}
 
 \item{subsample_n}{Maximum number of events used for GMM fitting per file.}
 
-\item{unmixing_method}{SCC processing method. `"Spectreasy"` and
-`"AutoSpectral"` first apply the saved positive histogram gate or the same
+\item{unmixing_method}{SCC processing method. `"AutoSpectral"` (default) and
+`"Spectreasy"` first apply the saved positive histogram gate or the same
 automatic histogram fallback used by legacy methods, then enable spectral
 SCC selection, resolved-negative background subtraction, and
 spectral-variant learning. Legacy methods stop after calculating the

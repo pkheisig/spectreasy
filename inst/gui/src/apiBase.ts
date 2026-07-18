@@ -1,3 +1,12 @@
+function locationToken(): string {
+  if (typeof window === 'undefined') return ''
+  const queryToken = new URLSearchParams(window.location.search).get('token')?.trim()
+  if (queryToken) return queryToken
+  return new URLSearchParams(window.location.hash.replace(/^#/, '')).get('token')?.trim() ?? ''
+}
+
+const sessionApiToken = locationToken()
+
 export function resolveApiBase(): string {
   if (typeof window !== 'undefined') {
     const queryBase = new URLSearchParams(window.location.search).get('api')?.trim()
@@ -14,8 +23,19 @@ export function resolveApiBase(): string {
 }
 
 export function resolveApiToken(): string {
-  if (typeof window === 'undefined') return ''
-  return new URLSearchParams(window.location.search).get('token')?.trim() ?? ''
+  return sessionApiToken
+}
+
+export function removeApiTokenFromLocation(): void {
+  if (typeof window === 'undefined' || !sessionApiToken) return
+  const query = new URLSearchParams(window.location.search)
+  query.delete('token')
+  const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  fragment.delete('token')
+  const nextQuery = query.toString()
+  const nextFragment = fragment.toString()
+  const cleanUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${nextFragment ? `#${nextFragment}` : ''}`
+  window.history.replaceState(window.history.state, '', cleanUrl)
 }
 
 export async function probeLocalBackend(timeoutMs = 1800): Promise<boolean> {

@@ -34,12 +34,12 @@
 }
 
 .is_af_profile_object <- function(x) {
-    inherits(x, "spectreasy_af_profile") || (is.list(x) && "profile" %in% names(x))
+    inherits(x, "spectreasy_af_profile") || (is.list(x) && any(c("profile", "spectra") %in% names(x)))
 }
 
 .coerce_af_profile_matrix <- function(x, arg_name = "x") {
     if (.is_af_profile_object(x)) {
-        x <- x$profile
+        x <- x$profile %||% x$spectra
     }
     M <- .as_reference_matrix(x, arg_name = arg_name)
     af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
@@ -47,6 +47,64 @@
         stop(arg_name, " does not contain AF rows named 'AF', 'AF_2', 'AF_3', ...", call. = FALSE)
     }
     M[af_rows, , drop = FALSE]
+}
+
+.normalize_af_profile_metadata <- function(metadata = NULL,
+                                           profile = NULL,
+                                           source = NULL,
+                                           extraction = NULL,
+                                           created = Sys.time()) {
+    if (!is.null(metadata) && !is.list(metadata)) {
+        stop("metadata must be NULL or a named list.", call. = FALSE)
+    }
+    metadata <- metadata %||% list()
+    scalar <- function(name) {
+        value <- metadata[[name]]
+        if (is.null(value)) return(NA_character_)
+        if (!is.character(value) || length(value) != 1L) {
+            stop("metadata ", name, " must be a single character string.", call. = FALSE)
+        }
+        if (is.na(value)) return(NA_character_)
+        value <- trimws(value)
+        if (nzchar(value)) value else NA_character_
+    }
+    acquisition_date <- scalar("acquisition_date")
+    if (!is.na(acquisition_date)) {
+        parsed <- suppressWarnings(as.Date(acquisition_date, format = "%Y-%m-%d"))
+        if (is.na(parsed) || format(parsed, "%Y-%m-%d") != acquisition_date) {
+            stop("metadata acquisition_date must use YYYY-MM-DD format.", call. = FALSE)
+        }
+    }
+    source_fcs <- scalar("source_fcs")
+    if (is.na(source_fcs)) {
+        extraction_file <- extraction$fcs_file %||% source
+        if (!is.null(extraction_file) && length(extraction_file) && !is.na(extraction_file[1])) {
+            source_fcs <- basename(as.character(extraction_file)[1])
+        }
+    }
+    created_at <- metadata$created_at
+    if (is.null(created_at)) {
+        created_at <- if (is.null(created) || length(created) == 0L || is.na(created[1])) {
+            NA_character_
+        } else {
+            format(as.POSIXct(created[1]), "%Y-%m-%d %H:%M:%S %Z")
+        }
+    } else {
+        created_at <- as.character(created_at)[1]
+    }
+    version <- metadata$spectreasy_version
+    if (is.null(version)) version <- as.character(utils::packageVersion("spectreasy"))
+    list(
+        cytometer = scalar("cytometer"),
+        acquisition_date = acquisition_date,
+        tissue = scalar("tissue"),
+        sample_type = scalar("sample_type"),
+        preprocessing = scalar("preprocessing"),
+        source_fcs = source_fcs,
+        created_at = created_at,
+        band_count = if (is.null(profile)) as.integer(metadata$band_count %||% NA_integer_) else as.integer(nrow(profile)),
+        spectreasy_version = as.character(version)[1]
+    )
 }
 
 .build_af_profile_plot <- function(profile, pd = NULL) {
@@ -60,14 +118,20 @@
                                    extraction = NULL,
                                    raw_median = NULL,
                                    scc_background = NULL,
+                                   metadata = NULL,
                                    created = Sys.time()) {
     profile <- .coerce_af_profile_matrix(profile, arg_name = "profile")
     if (is.null(plot)) {
         plot <- .build_af_profile_plot(profile)
     }
+    metadata <- .normalize_af_profile_metadata(metadata, profile, source, extraction, created)
     out <- list(
+        schema_version = 1L,
         name = name,
         profile = profile,
+        spectra = profile,
+        detectors = colnames(profile),
+        metadata = metadata,
         plot = plot,
         source = source,
         extraction = extraction,
@@ -103,6 +167,9 @@ af_profile_dir <- function(create = TRUE) {
 #'   extraction stops with an error instead of returning a smaller bank.
 #' @param af_max_cells Maximum number of scatter-gated AF events used.
 #' @param seed Optional integer seed for deterministic subsampling/clustering.
+#' @param metadata Optional named list containing scalar character values for
+#'   `cytometer`, `acquisition_date`, `tissue`, `sample_type`, and
+#'   `preprocessing`.
 #' @param show_plot Logical; print the AF spectra plot after extraction.
 #' @param verbose Logical; print progress updates while extracting.
 #'
@@ -113,8 +180,10 @@ extract_af_profile <- function(fcs_file,
                                af_n_bands = 100,
                                af_max_cells = 50000,
                                seed = NULL,
+                               metadata = NULL,
                                show_plot = TRUE,
                                verbose = TRUE) {
+    profile_metadata <- metadata
     if (!is.character(fcs_file) || length(fcs_file) != 1L || is.na(fcs_file) || !nzchar(fcs_file)) {
         stop("fcs_file must be a single path to an FCS file.", call. = FALSE)
     }
@@ -136,9 +205,9 @@ extract_af_profile <- function(fcs_file,
     if (isTRUE(verbose)) {
         .spectreasy_console_step("Detect detectors")
     }
-    metadata <- .prepare_reference_detector_info(fcs_file)
+    detector_metadata <- .prepare_reference_detector_info(fcs_file)
     if (isTRUE(verbose)) {
-        .spectreasy_console_field("Detectors", paste0(length(metadata$detector_names), " spectral channel(s)"))
+        .spectreasy_console_field("Detectors", paste0(length(detector_metadata$detector_names), " spectral channel(s)"))
         .spectreasy_console_step("Scatter gate")
     }
     config <- list(
@@ -153,7 +222,7 @@ extract_af_profile <- function(fcs_file,
     )
     gated <- .extract_reference_af_gated_events(
         fcs_file = fcs_file,
-        detector_names = metadata$detector_names,
+        detector_names = detector_metadata$detector_names,
         config = config
     )
     if (is.null(gated) || is.null(gated$events) || nrow(gated$events) == 0) {
@@ -165,7 +234,7 @@ extract_af_profile <- function(fcs_file,
     }
     af_profiles <- withCallingHandlers(
         .extract_reference_af_profiles(
-            detector_names = metadata$detector_names,
+            detector_names = detector_metadata$detector_names,
             n_bands = af_args$af_n_bands,
             max_cells = af_args$af_max_cells,
             af_events = gated$events
@@ -183,7 +252,7 @@ extract_af_profile <- function(fcs_file,
     if (isTRUE(verbose)) {
         .spectreasy_console_step("Spectra plot")
     }
-    p <- .build_af_profile_plot(af_profiles$signatures, pd = metadata$pd_meta)
+    p <- .build_af_profile_plot(af_profiles$signatures, pd = detector_metadata$pd_meta)
     background_idx <- .reference_even_indices(nrow(gated$events), af_args$af_max_cells)
     profile_background <- .scc_background_from_gated_af_list(
         af_gated_list = list(list(
@@ -191,7 +260,7 @@ extract_af_profile <- function(fcs_file,
             scatter = gated$scatter[background_idx, , drop = FALSE],
             scatter_names = gated$scatter_names
         )),
-        detector_names = metadata$detector_names
+        detector_names = detector_metadata$detector_names
     )
     out <- .new_af_profile_object(
         profile = af_profiles$signatures,
@@ -204,7 +273,8 @@ extract_af_profile <- function(fcs_file,
             selection = af_profiles$selection
         ),
         raw_median = af_profiles$raw_median,
-        scc_background = profile_background
+        scc_background = profile_background,
+        metadata = profile_metadata
     )
     if (isTRUE(show_plot)) {
         print(out$plot)
@@ -249,6 +319,8 @@ save_af_profile <- function(name, x, overwrite = FALSE) {
     extraction <- if (.is_af_profile_object(x) && "extraction" %in% names(x)) x$extraction else NULL
     raw_median <- if (.is_af_profile_object(x) && "raw_median" %in% names(x)) x$raw_median else NULL
     scc_background <- if (.is_af_profile_object(x) && "scc_background" %in% names(x)) x$scc_background else NULL
+    metadata <- if (.is_af_profile_object(x) && "metadata" %in% names(x)) x$metadata else NULL
+    created <- if (.is_af_profile_object(x) && !is.null(x$created)) x$created else Sys.time()
 
     out <- .new_af_profile_object(
         name = name,
@@ -257,7 +329,9 @@ save_af_profile <- function(name, x, overwrite = FALSE) {
         source = source,
         extraction = extraction,
         raw_median = raw_median,
-        scc_background = scc_background
+        scc_background = scc_background,
+        metadata = metadata,
+        created = created
     )
     saveRDS(out, file = file_path, version = 3)
     .spectreasy_console_header("save AF profile")
@@ -281,21 +355,72 @@ load_af_profile <- function(name, show_plot = FALSE) {
     if (!file.exists(file_path)) {
         stop("AF profile not found: ", name, call. = FALSE)
     }
-    out <- readRDS(file_path)
+    stored <- readRDS(file_path)
+    if (is.matrix(stored) || is.data.frame(stored)) stored <- list(profile = stored)
+    profile <- stored$profile %||% stored$spectra
+    if (is.null(profile)) stop("AF profile file does not contain spectra: ", name, call. = FALSE)
+    legacy_metadata <- stored$metadata
+    if (is.null(legacy_metadata)) {
+        legacy_metadata <- list(
+            cytometer = NA_character_,
+            acquisition_date = NA_character_,
+            tissue = NA_character_,
+            sample_type = NA_character_,
+            preprocessing = NA_character_,
+            created_at = if (!is.null(stored$created)) {
+                format(as.POSIXct(stored$created), "%Y-%m-%d %H:%M:%S %Z")
+            } else {
+                NA_character_
+            },
+            band_count = nrow(profile),
+            spectreasy_version = stored$spectreasy_version %||% NA_character_
+        )
+    }
     out <- .new_af_profile_object(
-        name = if (!is.null(out$name)) out$name else .validate_af_profile_name(name),
-        profile = out$profile,
-        plot = if (inherits(out$plot, "ggplot")) out$plot else NULL,
-        source = out$source,
-        extraction = out$extraction,
-        raw_median = out$raw_median,
-        scc_background = out$scc_background,
-        created = if (!is.null(out$created)) out$created else Sys.time()
+        name = if (!is.null(stored$name)) stored$name else .validate_af_profile_name(name),
+        profile = profile,
+        plot = if (inherits(stored$plot, "ggplot")) stored$plot else NULL,
+        source = stored$source,
+        extraction = stored$extraction,
+        raw_median = stored$raw_median,
+        scc_background = stored$scc_background,
+        metadata = legacy_metadata,
+        created = if (!is.null(stored$created)) stored$created else as.POSIXct(NA)
     )
     if (isTRUE(show_plot)) {
         print(out$plot)
     }
     out
+}
+
+.af_profile_similarity <- function(primary, comparison = NULL) {
+    primary_name <- primary$name %||% "Profile"
+    primary_matrix <- .coerce_af_profile_matrix(primary, "primary")
+    matrices <- list(primary_matrix)
+    memberships <- rep(primary_name, nrow(primary_matrix))
+    labels <- paste(primary_name, rownames(primary_matrix), sep = " \u00b7 ")
+    if (!is.null(comparison)) {
+        comparison_name <- comparison$name %||% "Comparison"
+        comparison_matrix <- .coerce_af_profile_matrix(comparison, "comparison")
+        if (!setequal(colnames(primary_matrix), colnames(comparison_matrix))) {
+            stop("Profiles use different detector sets.", call. = FALSE)
+        }
+        comparison_matrix <- comparison_matrix[, colnames(primary_matrix), drop = FALSE]
+        matrices[[2]] <- comparison_matrix
+        memberships <- c(memberships, rep(comparison_name, nrow(comparison_matrix)))
+        labels <- c(labels, paste(comparison_name, rownames(comparison_matrix), sep = " \u00b7 "))
+    }
+    spectra <- do.call(rbind, matrices)
+    norms <- sqrt(rowSums(spectra^2))
+    denominator <- outer(norms, norms)
+    similarity <- tcrossprod(spectra)
+    valid <- is.finite(denominator) & denominator > 0
+    similarity[valid] <- similarity[valid] / denominator[valid]
+    similarity[!valid] <- 0
+    similarity[] <- pmax(0, pmin(1, similarity))
+    diag(similarity) <- 1
+    dimnames(similarity) <- list(labels, labels)
+    list(labels = labels, profile_membership = memberships, similarity = similarity, detectors = colnames(primary_matrix))
 }
 
 #' List saved AF profiles
@@ -317,10 +442,13 @@ list_af_profiles <- function() {
     files <- list.files(dir_path, pattern = "\\.rds$", full.names = TRUE)
     rows <- lapply(files, function(path) {
         obj <- tryCatch(readRDS(path), error = function(e) NULL)
-        if (is.null(obj) || is.null(obj$profile)) {
+        if (is.null(obj)) {
             return(NULL)
         }
-        profile <- .coerce_af_profile_matrix(obj$profile, arg_name = basename(path))
+        if (is.matrix(obj) || is.data.frame(obj)) obj <- list(profile = obj)
+        stored_profile <- obj$profile %||% obj$spectra
+        if (is.null(stored_profile)) return(NULL)
+        profile <- .coerce_af_profile_matrix(stored_profile, arg_name = basename(path))
         data.frame(
             name = if (!is.null(obj$name) && nzchar(obj$name)) obj$name else tools::file_path_sans_ext(basename(path)),
             bands = nrow(profile),
@@ -361,7 +489,7 @@ rename_af_profile <- function(name, new_name) {
     target <- .af_profile_file(new_name, create_dir = TRUE)
     if (file.exists(target)) stop("AF profile already exists: ", new_name, call. = FALSE)
 
-    profile <- readRDS(source)
+    profile <- load_af_profile(name, show_plot = FALSE)
     profile$name <- new_name
     temporary <- tempfile("af_profile_rename_", tmpdir = dirname(target), fileext = ".rds")
     on.exit(unlink(temporary, force = TRUE), add = TRUE)

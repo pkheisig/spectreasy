@@ -132,7 +132,61 @@
     list(scc_dir = scc_dir, control_file = control_file, gate_file = gate_file)
 }
 
-.resolve_gui_frontend <- function(gui_path, dist_path, port, dev_mode = FALSE, npm_bin = Sys.which("npm")) {
+.normalize_gui_port <- function(port, arg_name = "port") {
+    value <- suppressWarnings(as.integer(port))
+    if (length(port) != 1L || is.na(value) || value < 1L || value > 65535L || !identical(as.numeric(port), as.numeric(value))) {
+        stop(arg_name, " must be one integer between 1 and 65535.", call. = FALSE)
+    }
+    value
+}
+
+.gui_tcp_port_open <- function(port, host = "127.0.0.1") {
+    connection <- tryCatch(
+        suppressWarnings(socketConnection(
+            host = host,
+            port = .normalize_gui_port(port),
+            open = "r+b",
+            blocking = TRUE,
+            timeout = 0.2
+        )),
+        error = function(e) NULL
+    )
+    if (is.null(connection)) return(FALSE)
+    close(connection)
+    TRUE
+}
+
+.gui_port_is_available <- function(port) {
+    if (.gui_tcp_port_open(port)) return(FALSE)
+    socket <- tryCatch(serverSocket(.normalize_gui_port(port)), error = function(e) NULL)
+    if (is.null(socket)) return(FALSE)
+    close(socket)
+    TRUE
+}
+
+.resolve_gui_dev_port <- function(dev_frontend_port = NULL, preferred = 5174L) {
+    if (!is.null(dev_frontend_port)) {
+        port <- .normalize_gui_port(dev_frontend_port, "dev_frontend_port")
+        if (!.gui_port_is_available(port)) {
+            stop("The requested Vite frontend port is already in use: ", port, call. = FALSE)
+        }
+        return(port)
+    }
+
+    candidates <- seq.int(.normalize_gui_port(preferred), min(65535L, preferred + 100L))
+    available <- candidates[vapply(candidates, .gui_port_is_available, logical(1))]
+    if (length(available) == 0L) {
+        stop("Could not find an available Vite frontend port between ", preferred, " and ", max(candidates), ".", call. = FALSE)
+    }
+    available[[1]]
+}
+
+.resolve_gui_frontend <- function(gui_path,
+                                  dist_path,
+                                  port,
+                                  dev_mode = FALSE,
+                                  npm_bin = Sys.which("npm"),
+                                  dev_frontend_port = NULL) {
     frontend_url <- paste0("http://127.0.0.1:", port)
 
     if (isTRUE(dev_mode)) {
@@ -153,7 +207,13 @@
             )
         }
 
-        return(list(frontend_url = "http://127.0.0.1:5174", npm_bin = npm_bin, mode = "dev"))
+        frontend_port <- .resolve_gui_dev_port(dev_frontend_port)
+        return(list(
+            frontend_url = paste0("http://127.0.0.1:", frontend_port),
+            frontend_port = frontend_port,
+            npm_bin = npm_bin,
+            mode = "dev"
+        ))
     }
 
     if (!dir.exists(dist_path) || !file.exists(file.path(dist_path, "index.html"))) {
@@ -167,22 +227,68 @@
     list(frontend_url = frontend_url, npm_bin = npm_bin, mode = "bundled")
 }
 
-.start_gui_dev_server <- function(gui_path, port, npm_bin) {
-    .spectreasy_console_field("Frontend", "starting npm dev server")
-    old_wd <- getwd()
-    on.exit(setwd(old_wd), add = TRUE)
-    setwd(gui_path)
-    system2(
+.spawn_gui_dev_process <- function(gui_path, api_port, frontend_port, npm_bin) {
+    if (!requireNamespace("processx", quietly = TRUE)) {
+        stop(
+            "Developer mode requires package 'processx' to manage the Vite server safely.",
+            call. = FALSE
+        )
+    }
+    child_env <- Sys.getenv()
+    child_env[["VITE_API_BASE"]] <- paste0("http://127.0.0.1:", api_port)
+    processx::process$new(
         npm_bin,
-        args = c("run", "dev"),
-        env = paste0("VITE_API_BASE=http://127.0.0.1:", port),
-        wait = FALSE,
-        stdout = FALSE,
-        stderr = FALSE
+        c(
+            "run", "dev", "--",
+            "--host", "127.0.0.1",
+            "--port", as.character(frontend_port),
+            "--strictPort"
+        ),
+        wd = gui_path,
+        env = child_env,
+        stdout = "|",
+        stderr = "2>&1",
+        cleanup = TRUE,
+        cleanup_tree = TRUE
     )
-    Sys.sleep(2)
+}
 
-    invisible(NULL)
+.wait_for_gui_frontend <- function(process, frontend_port, timeout = 15) {
+    deadline <- Sys.time() + timeout
+    repeat {
+        if (!isTRUE(process$is_alive())) {
+            output <- paste(process$read_all_output_lines(), collapse = "\n")
+            stop(
+                "The Vite frontend stopped before becoming ready.",
+                if (nzchar(output)) paste0("\n", output) else "",
+                call. = FALSE
+            )
+        }
+        if (.gui_tcp_port_open(frontend_port)) return(invisible(TRUE))
+        if (Sys.time() >= deadline) {
+            process$kill_tree()
+            stop("Timed out waiting for the Vite frontend on port ", frontend_port, ".", call. = FALSE)
+        }
+        Sys.sleep(0.1)
+    }
+}
+
+.start_gui_dev_server <- function(gui_path,
+                                  api_port,
+                                  frontend_port,
+                                  npm_bin,
+                                  spawn = .spawn_gui_dev_process,
+                                  wait_until_ready = .wait_for_gui_frontend) {
+    .spectreasy_console_field("Frontend", paste0("starting npm dev server on port ", frontend_port))
+    process <- spawn(gui_path, api_port, frontend_port, npm_bin)
+    tryCatch(
+        wait_until_ready(process, frontend_port),
+        error = function(e) {
+            if (isTRUE(process$is_alive())) process$kill_tree()
+            stop(conditionMessage(e), call. = FALSE)
+        }
+    )
+    process
 }
 
 .spectreasy_gui_mode_label <- function(mode) {
@@ -256,7 +362,8 @@
                                    port = 8000,
                                    open_browser = TRUE,
                                    dev_mode = FALSE,
-                                   unmixing_method = "Spectreasy",
+                                   dev_frontend_port = NULL,
+                                   unmixing_method = "AutoSpectral",
                                    mode = "tuner",
                                    panel_cytometer = NULL,
                                    gating_scc_dir = NULL,
@@ -333,16 +440,22 @@
             gui_path = paths$gui_path,
             dist_path = paths$dist_path,
             port = port,
-            dev_mode = dev_mode
+            dev_mode = dev_mode,
+            dev_frontend_port = dev_frontend_port
         )
     }
 
+    dev_server <- NULL
     if (identical(frontend$mode, "dev")) {
-        .start_gui_dev_server(
+        dev_server <- .start_gui_dev_server(
             gui_path = paths$gui_path,
-            port = port,
+            api_port = port,
+            frontend_port = frontend$frontend_port,
             npm_bin = frontend$npm_bin
         )
+        on.exit({
+            if (isTRUE(dev_server$is_alive())) dev_server$kill_tree()
+        }, add = TRUE)
     }
     api_token <- .gui_session_token()
     options(
@@ -355,13 +468,13 @@
         query_separator,
         "mode=", utils::URLencode(mode, reserved = TRUE),
         "&api=", utils::URLencode(paste0("http://127.0.0.1:", port), reserved = TRUE),
-        "&token=", utils::URLencode(api_token, reserved = TRUE)
+        "#token=", utils::URLencode(api_token, reserved = TRUE)
     )
 
     .message_spectreasy_gui_startup(
         mode = mode,
         port = port,
-        frontend_url = sub("&token=[^&]*", "", frontend_url),
+        frontend_url = sub("#token=[^&]*", "", frontend_url),
         asset_mode = if (identical(frontend$mode, "dev")) "Vite dev server" else if (identical(frontend$mode, "hosted")) "GitHub Pages cockpit" else "bundled package assets",
         gate_file = if (identical(mode, "control-gating")) gate_paths$gate_file else NULL
     )
@@ -410,8 +523,10 @@
 #' @param dev_mode Logical. If `FALSE` (default), serves bundled GUI assets from the
 #'   installed package and requires no Node.js/npm on user machines. If `TRUE`, starts
 #'   the Vite dev server (`npm run dev`) from the packaged GUI source folder.
+#' @param dev_frontend_port Optional Vite frontend port used only with
+#'   `dev_mode = TRUE`. When `NULL`, the first free port from 5174 onward is used.
 #' @param unmixing_method Method used by the preview unmixing backend. Defaults
-#'   to `"Spectreasy"` and accepts the same values as [unmix_samples()].
+#'   to `"AutoSpectral"` and accepts the same values as [unmix_samples()].
 #' @return Invisibly returns NULL. This function blocks while the API is running.
 #' @export
 #' @examples
@@ -425,13 +540,15 @@ adjust_matrix <- function(matrix_dir = NULL,
                           port = 8000,
                           open_browser = TRUE,
                           dev_mode = FALSE,
-                          unmixing_method = "Spectreasy") {
+                          dev_frontend_port = NULL,
+                          unmixing_method = "AutoSpectral") {
     .launch_spectreasy_gui(
         matrix_dir = matrix_dir,
         samples_dir = samples_dir,
         port = port,
         open_browser = open_browser,
         dev_mode = dev_mode,
+        dev_frontend_port = dev_frontend_port,
         unmixing_method = unmixing_method,
         mode = "tuner"
     )

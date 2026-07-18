@@ -3,8 +3,8 @@ import { Download, ExternalLink, FileDown, LoaderCircle } from 'lucide-react'
 import {
   downloadProjectReport,
   exportProjectReportPdf,
+  loadProjectReportObjectUrl,
   loadProjectReports,
-  projectFileUrl,
 } from '../api'
 import type { Report } from '../types'
 
@@ -38,6 +38,7 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot, i
   const [exporting, setExporting] = useState(false)
   const [message, setMessage] = useState('')
   const [selectedReportPath, setSelectedReportPath] = useState(initialReportPath)
+  const [reportObject, setReportObject] = useState({ key: '', url: '' })
   const reportsForKind = useMemo(() => {
     const type = kind === 'control' ? 'Control QC' : 'Sample QC'
     return reports
@@ -48,6 +49,8 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot, i
     () => reportsForKind.find((candidate) => candidate.path === selectedReportPath) ?? reportsForKind[0] ?? null,
     [reportsForKind, selectedReportPath],
   )
+  const reportObjectKey = report?.path ? `${projectPath}\n${report.path}` : ''
+  const reportObjectUrl = reportObject.key === reportObjectKey ? reportObject.url : ''
 
   useEffect(() => {
     let active = true
@@ -73,6 +76,23 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot, i
     }
   }, [initialReportPath, kind, outputRoot, projectPath, requestKey])
 
+  useEffect(() => {
+    let active = true
+    let objectUrl = ''
+    if (!report?.path) return () => { active = false }
+    void loadProjectReportObjectUrl(report.path, projectPath).then((nextUrl) => {
+      objectUrl = nextUrl
+      if (active) setReportObject({ key: `${projectPath}\n${report.path}`, url: nextUrl })
+      else URL.revokeObjectURL(nextUrl)
+    }).catch(() => {
+      if (active) setMessage(`Could not load the ${report.format} report.`)
+    })
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [projectPath, report?.format, report?.path])
+
   const reportLabel = (path: string) => path.replace(/\\/g, '/').split('/').slice(-2).join('/')
 
   const download = async () => {
@@ -90,9 +110,22 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot, i
     if (!success) setMessage('Could not export the existing HTML report as PDF.')
   }
 
-  const openInNewTab = () => {
+  const openInNewTab = async () => {
     if (!report?.path) return
-    window.open(projectFileUrl(report.path, projectPath), '_blank', 'noopener,noreferrer')
+    const popup = window.open('about:blank', '_blank')
+    if (!popup) {
+      setMessage('The browser blocked the new report tab.')
+      return
+    }
+    popup.opener = null
+    try {
+      const objectUrl = await loadProjectReportObjectUrl(report.path, projectPath)
+      popup.location.replace(objectUrl)
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000)
+    } catch {
+      popup.close()
+      setMessage(`Could not open the ${report.format} report.`)
+    }
   }
 
   return (
@@ -100,7 +133,7 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot, i
       <header className="qc-report-toolbar">
         <strong>{report ? reportLabel(report.path) : `${kind === 'control' ? 'Controls' : 'Samples'} QC reports`}</strong>
         {report && <div className="qc-report-actions">
-          <button type="button" onClick={openInNewTab}>
+          <button type="button" onClick={() => void openInNewTab()}>
             <ExternalLink size={15} /> Open in new tab
           </button>
           <button type="button" onClick={() => void download()}>
@@ -120,13 +153,15 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot, i
           <strong>Could not load the QC report</strong>
           <span>The local R backend did not return the report list.</span>
         </div>
-      ) : reportsForKind.length && report?.path ? (
+      ) : reportsForKind.length && report?.path && reportObjectUrl ? (
         <iframe
           className="qc-report-frame"
-          src={projectFileUrl(report.path, projectPath)}
+          src={reportObjectUrl}
           title={`${kind} QC report`}
           {...(report.format === 'HTML' ? { sandbox: 'allow-scripts' } : {})}
         />
+      ) : reportsForKind.length && report?.path ? (
+        <div className="qc-report-empty"><LoaderCircle className="is-spinning" size={22} /><span>Loading report…</span></div>
       ) : (
         <div className="qc-report-empty">
           <strong>No QC report yet</strong>

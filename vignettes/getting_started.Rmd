@@ -117,7 +117,7 @@ ctrl <- unmix_controls(
   control_file = control_file,
   cytometer = "Aurora",
   output_dir = file.path(project_dir, "spectreasy_outputs"),
-  unmixing_method = "Spectreasy",
+  unmixing_method = "AutoSpectral",
   gating_mode = "automatic",
   unmix_scatter_panel_size_mm = 30,
   save_qc_png = TRUE,
@@ -153,7 +153,7 @@ unmix_controls(
   auto_create_mapping = TRUE,
   cytometer = "Aurora",
   auto_unknown_fluor_policy = "by_channel",
-  unmixing_method = "Spectreasy",
+  unmixing_method = "AutoSpectral",
   unmix_scatter_panel_size_mm = 30,
   save_qc_png = TRUE
 )
@@ -195,6 +195,15 @@ y
 
 The same `unmix_controls()` call then continues and writes the control-stage
 outputs to `spectreasy_outputs/unmix_controls/`.
+
+With the default `gating_mode = "interactive"`, the browser gating app opens
+before spectra are extracted. It lets you review the broad FSC/SSC population,
+singlets, and positive or negative events for each control. The resulting gate
+CSV can be reused for later non-interactive runs.
+
+```{r interactive-gating-figure, echo = FALSE, eval = TRUE, out.width = "70%", fig.align = "center"}
+knitr::include_graphics("../man/figures/vignette_gating.png")
+```
 
 ```{r, echo = FALSE}
 list.files(file.path(project_dir, "spectreasy_outputs", "unmix_controls"), recursive = TRUE)
@@ -269,7 +278,7 @@ unmixed <- unmix_samples(
 
 For the example dataset, this writes:
 
-- `spectreasy_outputs/unmix_samples/unmixed_fcs/sample_Spectreasy-100AF.fcs`
+- `spectreasy_outputs/unmix_samples/unmixed_fcs/sample_AutoSpectral-100AF.fcs`
 
 and returns a named list with one element per sample.
 
@@ -285,7 +294,13 @@ knitr::kable(utils::head(sample_results[, preview_cols, drop = FALSE]))
 ```
 
 ```{r, echo = FALSE}
-file.exists(file.path(project_dir, "spectreasy_outputs", "unmix_samples", "sample_Spectreasy-100AF.fcs"))
+file.exists(file.path(
+  project_dir,
+  "spectreasy_outputs",
+  "unmix_samples",
+  "unmixed_fcs",
+  "sample_AutoSpectral-100AF.fcs"
+))
 ```
 
 ## 6. Generate quality control reports (optional)
@@ -350,7 +365,7 @@ ctrl_multi_af <- unmix_controls(
   control_file = "fcs_mapping.csv",
   cytometer = "Aurora",
   output_dir = "spectreasy_outputs_multi_af",
-  unmixing_method = "Spectreasy",
+  unmixing_method = "AutoSpectral",
   af_n_bands = 100,
   seed = 1
 )
@@ -363,7 +378,7 @@ Then unmix samples with the control-stage matrix. AF settings stay in
 unmixed_multi_af <- unmix_samples(
   sample_dir = "samples",
   unmixing_matrix_file = ctrl_multi_af$reference_matrix_file,
-  unmixing_method = "Spectreasy",
+  unmixing_method = "AutoSpectral",
   output_dir = "spectreasy_outputs_multi_af"
 )
 ```
@@ -383,6 +398,7 @@ ctrl_noninteractive <- unmix_controls(
   cytometer = "Aurora",
   output_dir = file.path(project_dir, "spectreasy_outputs_noninteractive"),
   unmixing_method = "WLS",
+  gating_mode = "automatic",
   seed = 1
 )
 

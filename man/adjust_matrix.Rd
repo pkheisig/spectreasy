@@ -10,7 +10,8 @@ adjust_matrix(
   port = 8000,
   open_browser = TRUE,
   dev_mode = FALSE,
-  unmixing_method = "Spectreasy"
+  dev_frontend_port = NULL,
+  unmixing_method = "AutoSpectral"
 )
 }
 \arguments{
@@ -33,8 +34,11 @@ directory when it exists, then falls back to
 installed package and requires no Node.js/npm on user machines. If `TRUE`, starts
 the Vite dev server (`npm run dev`) from the packaged GUI source folder.}
 
+\item{dev_frontend_port}{Optional Vite frontend port used only with
+`dev_mode = TRUE`. When `NULL`, the first free port from 5174 onward is used.}
+
 \item{unmixing_method}{Method used by the preview unmixing backend. Defaults
-to `"Spectreasy"` and accepts the same values as [unmix_samples()].}
+to `"AutoSpectral"` and accepts the same values as [unmix_samples()].}
 }
 \value{
 Invisibly returns NULL. This function blocks while the API is running.

@@ -344,6 +344,19 @@ testthat::test_that("cytometer auto detection recognizes detector naming convent
     testthat::expect_true(spectreasy:::.infer_cytometer_from_pd(discover_pd) %in% c("discover_s8", "discover_a8"))
 })
 
+testthat::test_that("detector metadata tolerates non-spectral area channels without trailing numbers", {
+    pd <- data.frame(
+        name = c("LightLoss (Violet)-A", "Auxiliary-A", "V1 (420)-A", "FSC-A"),
+        desc = c("LightLoss (Violet)-A", "Auxiliary-A", "V1 (420)-A", "FSC-A"),
+        stringsAsFactors = FALSE
+    )
+
+    sorted <- spectreasy::get_sorted_detectors(pd)
+    testthat::expect_false("LightLoss (Violet)-A" %in% sorted$names)
+    testthat::expect_true("Auxiliary-A" %in% sorted$names)
+    testthat::expect_true("V1 (420)-A" %in% sorted$names)
+})
+
 testthat::test_that("custom fluorophore overrides accept common filename forms", {
     testthat::skip_if_not_installed("spectreasy")
 

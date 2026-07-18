@@ -1342,7 +1342,7 @@
                                                config,
                                                sample_type = "cells") {
     ff_af <- tryCatch(
-        flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
+        .spectreasy_read_fcs(fcs_file),
         error = function(e) NULL
     )
     if (is.null(ff_af)) {
@@ -1353,7 +1353,7 @@
     pd_af <- flowCore::pData(flowCore::parameters(ff_af))
     raw_af <- flowCore::exprs(ff_af)
     sn <- tools::file_path_sans_ext(basename(fcs_file))
-    if (!.validate_reference_raw_data(raw_af, sn)) {
+    if (!.validate_reference_raw_data(raw_af, sn, detector_names = detector_names)) {
         return(NULL)
     }
 
@@ -1519,81 +1519,6 @@
         scc_background = scc_background,
         af_events = af_events
     )
-}
-
-# Validates raw FCS data for corruption or extreme values.
-# Ensures the dataset contains no infinite values, fewer than 10% NA values, and no extreme
-# values exceeding 1e9 which indicate file corruption.
-# Returns TRUE if valid, otherwise FALSE.
-.validate_reference_raw_data <- function(raw_data, sn) {
-    if (any(is.infinite(raw_data))) {
-        .spectreasy_console_step("Skip SCC", paste0(sn, " has infinite values"))
-        return(FALSE)
-    }
-    na_prop <- sum(is.na(raw_data)) / length(raw_data)
-    if (na_prop > 0.1) {
-        .spectreasy_console_step("Skip SCC", paste0(sn, " has too many NAs (", round(na_prop * 100, 1), "%)"))
-        return(FALSE)
-    }
-    max_val <- max(raw_data, na.rm = TRUE)
-    if (max_val > 1e9) {
-        .spectreasy_console_step("Skip SCC", paste0(sn, " has extreme values (max > 1e9)"))
-        return(FALSE)
-    }
-    TRUE
-}
-
-.validate_reference_detector_consistency <- function(fcs_files, detector_names) {
-    if (length(fcs_files) == 0 || length(detector_names) == 0) {
-        return(invisible(TRUE))
-    }
-
-    mismatches <- character()
-    for (fcs_file in fcs_files) {
-        ff <- tryCatch(
-            flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
-            error = function(e) {
-                stop("Could not read FCS file while checking detector consistency: ", fcs_file, call. = FALSE)
-            }
-        )
-        pd <- flowCore::pData(flowCore::parameters(ff))
-        current_detectors <- tryCatch(
-            get_sorted_detectors(pd)$names,
-            error = function(e) character()
-        )
-        if (length(current_detectors) == 0) {
-            current_detectors <- intersect(detector_names, colnames(flowCore::exprs(ff)))
-        }
-        missing <- setdiff(detector_names, current_detectors)
-        extra <- setdiff(current_detectors, detector_names)
-        if (length(missing) > 0 || length(extra) > 0) {
-            mismatches <- c(
-                mismatches,
-                paste0(
-                    basename(fcs_file),
-                    if (length(missing) > 0) paste0(" is missing: ", paste(missing, collapse = ", ")) else "",
-                    if (length(missing) > 0 && length(extra) > 0) "; " else "",
-                    if (length(extra) > 0) paste0("has extra detectors: ", paste(extra, collapse = ", ")) else ""
-                )
-            )
-        }
-    }
-
-    if (length(mismatches) > 0) {
-        stop(
-            paste(
-                c(
-                    "Detector set mismatch across SCC/AF files.",
-                    "All files used to build a reference matrix must contain the detectors found in the first SCC file.",
-                    paste0(" - ", mismatches)
-                ),
-                collapse = "\n"
-            ),
-            call. = FALSE
-        )
-    }
-
-    invisible(TRUE)
 }
 
 .active_reference_control_rows <- function(control_df, fcs_files_all) {
@@ -2585,7 +2510,7 @@
         fcs_file <- unname(fcs_files[[key]])
 
         ff <- tryCatch(
-            flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
+            .spectreasy_read_fcs(fcs_file),
             error = function(e) NULL
         )
         if (is.null(ff)) {
@@ -2675,7 +2600,7 @@
         )
 
         ff <- tryCatch(
-            flowCore::read.FCS(fcs_file, transformation = FALSE, truncate_max_range = FALSE),
+            .spectreasy_read_fcs(fcs_file),
             error = function(e) NULL
         )
         if (is.null(ff)) {
@@ -3415,7 +3340,7 @@
     pd <- flowCore::pData(flowCore::parameters(ff))
     raw_data <- flowCore::exprs(ff)
 
-    if (!.validate_reference_raw_data(raw_data, sn)) {
+    if (!.validate_reference_raw_data(raw_data, sn, detector_names = metadata$detector_names)) {
         return(NULL)
     }
 
@@ -3822,8 +3747,8 @@
 #' @param gate_contour_beads Contour probability for bead gating ellipse/hull.
 #' @param gate_contour_cells Contour probability for cell gating ellipse/hull.
 #' @param subsample_n Maximum number of events used for GMM fitting per file.
-#' @param unmixing_method SCC processing method. `"Spectreasy"` and
-#'   `"AutoSpectral"` first apply the saved positive histogram gate or the same
+#' @param unmixing_method SCC processing method. `"AutoSpectral"` (default) and
+#'   `"Spectreasy"` first apply the saved positive histogram gate or the same
 #'   automatic histogram fallback used by legacy methods, then enable spectral
 #'   SCC selection, resolved-negative background subtraction, and
 #'   spectral-variant learning. Legacy methods stop after calculating the
@@ -3885,7 +3810,7 @@ build_reference_matrix <- function(
   gate_contour_beads = 0.95,
   gate_contour_cells = 0.90,
   subsample_n = 5000,
-  unmixing_method = "Spectreasy",
+  unmixing_method = "AutoSpectral",
   scc_background_method = c("scatter_knn", "none"),
   scc_background_k = 2L,
   autospectral_n_candidates = 1000L,
@@ -3904,6 +3829,24 @@ build_reference_matrix <- function(
     histogram_direction_cells <- .match_arg_ci(
         histogram_direction_cells, c("right", "both", "left"), "histogram_direction_cells"
     )
+    histogram_pct_beads <- .normalize_unit_interval(histogram_pct_beads, "histogram_pct_beads")
+    histogram_pct_cells <- .normalize_unit_interval(histogram_pct_cells, "histogram_pct_cells")
+    outlier_percentile <- .normalize_unit_interval(
+        outlier_percentile, "outlier_percentile", upper_inclusive = FALSE
+    )
+    debris_percentile <- .normalize_unit_interval(debris_percentile, "debris_percentile")
+    min_cluster_proportion <- .normalize_unit_interval(
+        min_cluster_proportion, "min_cluster_proportion", lower_inclusive = FALSE
+    )
+    gate_contour_beads <- .normalize_unit_interval(
+        gate_contour_beads, "gate_contour_beads", lower_inclusive = FALSE, upper_inclusive = FALSE
+    )
+    gate_contour_cells <- .normalize_unit_interval(
+        gate_contour_cells, "gate_contour_cells", lower_inclusive = FALSE, upper_inclusive = FALSE
+    )
+    bead_gate_scale <- .normalize_positive_number(bead_gate_scale, "bead_gate_scale")
+    max_clusters <- .normalize_positive_integer(max_clusters, "max_clusters")
+    subsample_n <- .normalize_positive_integer(subsample_n, "subsample_n")
     use_autospectral <- .is_autospectral_style_method(unmixing_method)
     refine <- .validate_reference_refine_arg(refine)
     if (isTRUE(refine) && !identical(unmixing_method, "AutoSpectral")) {

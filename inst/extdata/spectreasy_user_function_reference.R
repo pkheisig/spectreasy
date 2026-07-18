@@ -132,7 +132,7 @@
         project_path = getwd()
     )
 
-    # Spectreasy is the default unmixing method. It builds on the AutoSpectral
+    # Spectreasy remains available as an explicit alternative. It builds on the AutoSpectral
     # approach with AF-band assignment and spectral variants, then reweights
     # each marker between an AF-aware fit and a marker-only OLS anchor.
     # Lower spectreasy_weight_quantile values increase the marker blend weights;
@@ -265,13 +265,15 @@
         port = 8000,
         open_browser = TRUE,
         dev_mode = FALSE,
-        unmixing_method = "Spectreasy"
+        dev_frontend_port = NULL,
+        unmixing_method = "AutoSpectral"
     )
 
     build_panel(
         port = 8000,
         open_browser = TRUE,
-        dev_mode = FALSE
+        dev_mode = FALSE,
+        dev_frontend_port = NULL
     )
 
     gate_controls(
@@ -280,7 +282,8 @@
         gate_file = "ssc_gate_config.csv",
         port = 8000,
         open_browser = TRUE,
-        dev_mode = FALSE
+        dev_mode = FALSE,
+        dev_frontend_port = NULL
     )
 
     # -------------------------------------------------------------------------
@@ -292,6 +295,7 @@
         af_n_bands = 100,
         af_max_cells = 50000,
         seed = NULL,
+        metadata = NULL,
         show_plot = TRUE,
         verbose = TRUE
     )
@@ -446,6 +450,26 @@
         nps_results = nps,
         output_file = NULL,
         width = 200
+    )
+
+    similarity_matrix <- calculate_similarity_matrix(
+        M = M
+    )
+
+    similarity_plot <- plot_similarity_matrix(
+        similarity_matrix = similarity_matrix,
+        output_file = NULL,
+        width = 180,
+        height = 160
+    )
+
+    sample_rms_plot <- plot_sample_rms_residuals(
+        results = unmixed,
+        M = M,
+        output_file = NULL,
+        width = 225,
+        height = 125,
+        unmixing_method = NULL
     )
 
 

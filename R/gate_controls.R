@@ -11,6 +11,8 @@
 #' @param port API port. Defaults to `8000`.
 #' @param open_browser Logical. Open browser automatically?
 #' @param dev_mode Logical. Use the Vite dev server instead of bundled assets.
+#' @param dev_frontend_port Optional Vite frontend port used only with
+#'   `dev_mode = TRUE`. When `NULL`, the first free port from 5174 onward is used.
 #' @return Invisibly returns the normalized gate CSV path. The function blocks
 #'   while the GUI is running.
 #' @export
@@ -23,7 +25,8 @@ gate_controls <- function(scc_dir = "scc",
                           gate_file = "ssc_gate_config.csv",
                           port = 8000,
                           open_browser = TRUE,
-                          dev_mode = FALSE) {
+                          dev_mode = FALSE,
+                          dev_frontend_port = NULL) {
     paths <- .normalize_gate_controls_paths(
         scc_dir = scc_dir,
         control_file = control_file,
@@ -35,6 +38,7 @@ gate_controls <- function(scc_dir = "scc",
         port = port,
         open_browser = open_browser,
         dev_mode = dev_mode,
+        dev_frontend_port = dev_frontend_port,
         mode = "control-gating",
         gating_scc_dir = paths$scc_dir,
         gating_control_file = paths$control_file,

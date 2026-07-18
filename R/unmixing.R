@@ -1046,6 +1046,8 @@ unmix_samples <- function(sample_dir = "samples",
     }
 
     results <- list()
+    af_usage_rows <- list()
+    af_band_names <- rownames(M)[grepl("^AF($|_)", rownames(M), ignore.case = TRUE)]
     fluorophore_source_all <- rownames(M)
     output_marker_map <- .resolve_output_marker_map(
         fluorophore_source_all,
@@ -1091,6 +1093,8 @@ unmix_samples <- function(sample_dir = "samples",
         variant_infos <- list()
         spectreasy_decoder_weights <- NULL
         fluorophores_to_keep <- character()
+        af_assignment_counts <- integer(length(af_band_names))
+        af_assignment_eligible <- 0L
 
         for (chunk_i in seq_along(chunk_indices)) {
             event_idx <- chunk_indices[[chunk_i]]
@@ -1113,6 +1117,17 @@ unmix_samples <- function(sample_dir = "samples",
                 calc_args$spectreasy_weight_quantile <- spectreasy_weight_quantile
             }
             res_chunk <- do.call(calc_residuals, calc_args)
+
+            if (length(af_band_names) > 0L && "AF Index" %in% colnames(res_chunk$data)) {
+                af_index <- suppressWarnings(as.integer(res_chunk$data[["AF Index"]]))
+                valid_af_index <- is.finite(af_index) & af_index >= 1L & af_index <= length(af_band_names)
+                af_assignment_eligible <- af_assignment_eligible + sum(valid_af_index)
+                if (any(valid_af_index)) {
+                    af_assignment_counts <- af_assignment_counts + tabulate(
+                        af_index[valid_af_index], nbins = length(af_band_names)
+                    )
+                }
+            }
 
             if (isTRUE(write_fcs)) {
                 write_data <- .aggregate_af_columns_for_output(
@@ -1179,6 +1194,14 @@ unmix_samples <- function(sample_dir = "samples",
             variant_infos = variant_infos,
             spectreasy_decoder_weights = spectreasy_decoder_weights
         )
+        if (length(af_band_names) > 0L) {
+            af_usage_rows[[sn]] <- .af_band_usage_rows(
+                sample = sn,
+                af_bands = af_band_names,
+                assignment_counts = af_assignment_counts,
+                eligible_events = af_assignment_eligible
+            )
+        }
         rm(ff, data_chunks, residual_chunks, variant_infos)
         gc(verbose = FALSE)
     }
@@ -1188,6 +1211,16 @@ unmix_samples <- function(sample_dir = "samples",
     attr(results, "reference_matrix") <- M
     attr(results, "spectral_variant_library") <- spectral_variant_library_resolved
     attr(results, "blind_af_info") <- attr(M, "blind_af_info")
+    af_band_usage <- if (length(af_usage_rows)) do.call(rbind, af_usage_rows) else .empty_af_band_usage()
+    rownames(af_band_usage) <- NULL
+    attr(results, "af_band_usage") <- af_band_usage
+    attr(results, "af_band_usage_status") <- if (!.is_autospectral_style_method(method) || length(af_band_names) <= 1L) {
+        "unsupported_method_or_single_band"
+    } else if (!nrow(af_band_usage) || all(af_band_usage$eligible_events <= 0L)) {
+        "no_eligible_events"
+    } else {
+        "available"
+    }
     attr(results, "qc_report_file") <- NULL
     attr(results, "qc_samples_dir") <- NULL
     attr(results, "qc_metrics_dir") <- NULL

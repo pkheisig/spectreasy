@@ -223,7 +223,7 @@ supported_cytometers <- function(include_auto = FALSE) {
 
     det_key <- toupper(gsub("-A$", "", detector, ignore.case = TRUE))
     channel <- suppressWarnings(as.integer(regmatches(det_key, regexpr("[0-9]+$", det_key, perl = TRUE))))
-    if (!is.finite(channel)) return(NA_integer_)
+    if (length(channel) == 0L || !is.finite(channel)) return(NA_integer_)
     laser_label <- .detector_laser_excitation_label(cytometer, "", detector)
     start <- if (grepl("^320", laser_label)) 350L else if (grepl("^355|^UV", laser_label, ignore.case = TRUE)) 370L else if (grepl("^405|Violet", laser_label, ignore.case = TRUE)) 420L else if (grepl("^488|Blue", laser_label, ignore.case = TRUE)) 500L else if (grepl("^561|Yellow", laser_label, ignore.case = TRUE)) 570L else if (grepl("^637|640|Red", laser_label, ignore.case = TRUE)) 660L else if (grepl("^781|808|IR", laser_label, ignore.case = TRUE)) 810L else 400L
     as.integer(start + (channel - 1L) * 15L)
@@ -345,7 +345,7 @@ supported_cytometers <- function(include_auto = FALSE) {
     if (length(files) == 0) return(id)
     for (path in files) {
         inferred <- tryCatch({
-            ff <- suppressWarnings(flowCore::read.FCS(path, transformation = FALSE, truncate_max_range = FALSE))
+            ff <- suppressWarnings(.spectreasy_read_fcs(path))
             pd <- flowCore::pData(flowCore::parameters(ff))
             .infer_cytometer_from_pd(pd)
         }, error = function(e) "auto")

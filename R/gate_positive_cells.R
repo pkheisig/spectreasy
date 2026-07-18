@@ -21,12 +21,27 @@
 gate_positive_cells <- function(mat,
                                 histogram_pct = 0.98,
                                 histogram_direction = "right") {
+    if ((!is.matrix(mat) && !is.data.frame(mat)) || nrow(mat) < 2L || ncol(mat) == 0L) {
+        stop("mat must contain at least two events and one detector.", call. = FALSE)
+    }
+    if (!all(vapply(as.data.frame(mat), is.numeric, logical(1)))) {
+        stop("mat must contain only numeric detector columns.", call. = FALSE)
+    }
+    histogram_pct <- .normalize_unit_interval(histogram_pct, "histogram_pct")
     histogram_direction <- .match_arg_ci(
         histogram_direction, c("right", "both", "left"), "histogram_direction"
     )
     # Identify peak channel by variance
-    peak_channel <- which.max(apply(mat, 2, var))
+    detector_variance <- apply(mat, 2, stats::var, na.rm = TRUE)
+    if (!any(is.finite(detector_variance))) {
+        stop("mat does not contain a detector with finite variance.", call. = FALSE)
+    }
+    detector_variance[!is.finite(detector_variance)] <- -Inf
+    peak_channel <- which.max(detector_variance)
     peak_vals <- mat[, peak_channel]
+    if (!any(is.finite(peak_vals))) {
+        stop("mat does not contain finite values in the selected peak detector.", call. = FALSE)
+    }
     vals_log <- log10(pmax(peak_vals, 1))
 
     # Calculate gate thresholds based on direction

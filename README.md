@@ -170,7 +170,7 @@ unmixed <- unmix_samples(
 
 For the example dataset, this writes:
 
-- `spectreasy_outputs/unmix_samples/unmixed_fcs/sample_Spectreasy-100AF.fcs`
+- `spectreasy_outputs/unmix_samples/unmixed_fcs/sample_AutoSpectral-100AF.fcs`
 
 and returns a named list with one element per sample.
 

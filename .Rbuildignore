@@ -14,6 +14,7 @@
 ^\.git$
 ^\.codex_tmp$
 ^\.spectreasy-sandbox$
+^\.spectreasy$
 ^\.vscode$
 ^\.idea$
 ^.*\.Rproj$
@@ -40,6 +41,10 @@
 ^scc$
 ^scc_unmixed$
 ^spectreasy_outputs$
+^figure_spectra$
+^reports$
+^reconstructed_aurora_table\.csv$
+^ssc_gate_config\.csv$
 ^tests/testthat/spectreasy_outputs$
 ^workflow-checks$
 ^gating_and_spectrum_plots$
