@@ -3,7 +3,7 @@
 
 ```{r}
 
-    devtools::install_github("pkheisig/spectreasy", ref = "dev")
+    devtools::install_github("pkheisig/spectreasy", ref = "master")
 
     library(spectreasy)
 
@@ -20,7 +20,7 @@
         unmixing_method = "AutoSpectral",
         save_report = TRUE
     )
-        
+
 
 
 ```
@@ -58,6 +58,6 @@
 
 adjust_matrix()
 
-build_spectral_panel()
+build_panel()
 
 ```

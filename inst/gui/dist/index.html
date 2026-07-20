@@ -5,20 +5,21 @@
     <link id="spectreasy-favicon" rel="icon" type="image/svg+xml" href="/favicon-light.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spectreasy · Spectral Analysis</title>
-    <script type="module" crossorigin src="/assets/index-B3dD3T3m.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CSM25Mhs.css">
+    <script type="module" crossorigin src="/assets/index-C-hKxGBf.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Cq0u4SJf.css">
   </head>
   <body>
     <div id="root"></div>
     <script>
       (() => {
         const favicon = document.getElementById('spectreasy-favicon')
+        const faviconBase = new URL('.', favicon.href)
         const preferredDark = window.matchMedia('(prefers-color-scheme: dark)')
         const updateFavicon = () => {
           const storedTheme = localStorage.getItem('spectreasy-theme') || localStorage.getItem('spectreasy_theme')
           const renderedDark = document.body.classList.contains('dark') || document.documentElement.dataset.theme === 'dark'
           const dark = renderedDark || (storedTheme ? storedTheme === 'dark' : preferredDark.matches)
-          favicon.href = dark ? '/favicon-dark.svg' : '/favicon-light.svg'
+          favicon.href = new URL(dark ? 'favicon-dark.svg' : 'favicon-light.svg', faviconBase).href
         }
         window.addEventListener('DOMContentLoaded', () => {
           updateFavicon()

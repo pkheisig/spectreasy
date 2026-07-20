@@ -39,7 +39,7 @@
 - `universal.negative` can now point to a specific negative FCS file for SCC subtraction.
 - Removed legacy spectral spread matrix helpers and unused spread-score QC outputs.
 - Added AF basis-band extraction via `af_n_bands`/`af_max_cells` in `build_reference_matrix()`.
-- `unmix_controls()`, `unmix_samples()`, and `calc_residuals()` now default to `unmixing_method = "Spectreasy"` / `method = "Spectreasy"`.
+- `unmix_controls()`, `unmix_samples()`, and `calc_residuals()` now default to `unmixing_method = "AutoSpectral"` / `method = "AutoSpectral"`.
 - `af_n_bands` now defaults to a broad fixed bank of 100 AF signatures.
 - `af_n_bands` is now an exact contract: requested bands are never silently
   discarded, and impossible requests fail rather than returning a smaller bank.

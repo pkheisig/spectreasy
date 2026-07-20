@@ -45,6 +45,7 @@ jobs:
           set -euo pipefail
           npm ci
           npm run lint
+          npm test
           npm run build
 
       - uses: r-lib/actions/setup-r-dependencies@v2

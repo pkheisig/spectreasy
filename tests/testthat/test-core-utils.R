@@ -871,6 +871,41 @@ test_that("unmix_samples supports SingleCellExperiment input and output", {
     expect_setequal(rownames(residual_alt), c("B1-A", "YG1-A"))
 })
 
+test_that("downsampled SingleCellExperiment output preserves source cell identities", {
+    skip_if_not_installed("SingleCellExperiment")
+    skip_if_not_installed("SummarizedExperiment")
+
+    M <- diag(2)
+    rownames(M) <- c("FITC", "PE")
+    colnames(M) <- c("B1-A", "YG1-A")
+    assay_mat <- matrix(
+        seq_len(20),
+        nrow = 2,
+        dimnames = list(colnames(M), paste0("original_cell_", seq_len(10)))
+    )
+    toy_sce <- SingleCellExperiment::SingleCellExperiment(
+        assays = list(counts = assay_mat),
+        colData = S4Vectors::DataFrame(sample_id = rep("sampleA", 10))
+    )
+
+    unmixed_sce <- spectreasy::unmix_samples(
+        sample_dir = toy_sce,
+        M = M,
+        unmixing_method = "OLS",
+        write_fcs = FALSE,
+        save_report = FALSE,
+        plot_n_events = 3L,
+        seed = 7L,
+        return_type = "SingleCellExperiment",
+        verbose = FALSE
+    )
+
+    source_ids <- sub("^sampleA__", "", colnames(unmixed_sce))
+    expect_length(source_ids, 3L)
+    expect_true(all(source_ids %in% colnames(toy_sce)))
+    expect_false(any(grepl("^sampleA_[0-9]+$", colnames(unmixed_sce))))
+})
+
 test_that("SingleCellExperiment sample basenames remain unique", {
     skip_if_not_installed("SingleCellExperiment")
     skip_if_not_installed("SummarizedExperiment")
@@ -919,11 +954,11 @@ test_that(".compute_reference_spectrum computes detector spectrum", {
     colnames(final_gated_data) <- detector_names
     gated_data <- matrix(rnorm(200, mean = 200, sd = 10), ncol = 2)
     colnames(gated_data) <- detector_names
-    
+
     peak_vals <- gated_data[, 1]
     vals_log <- log10(pmax(peak_vals, 1))
     row_info <- data.frame(universal.negative = "FALSE", stringsAsFactors = FALSE)
-    
+
     res <- spectreasy:::.compute_reference_spectrum(
         final_gated_data = final_gated_data,
         gated_data = gated_data,
@@ -932,7 +967,7 @@ test_that(".compute_reference_spectrum computes detector spectrum", {
         detector_names = detector_names,
         row_info = row_info
     )
-    
+
     expect_type(res, "double")
     expect_equal(length(res), 2)
     expect_equal(names(res), detector_names)
@@ -1594,7 +1629,7 @@ test_that("histogram gating cutoff detection extends right gate leftwards", {
         stats::rnorm(100, 2.0, 0.2), # negative peak
         pmin(stats::rnorm(1000, 5.35, 0.15), 5.4) # positive peak, truncated at 5.4
     )
-    
+
     gate_right <- spectreasy:::.compute_reference_histogram_gate(
         peak_vals = 10^vals_log,
         sample_type = "cells",
@@ -1603,14 +1638,14 @@ test_that("histogram gating cutoff detection extends right gate leftwards", {
         histogram_pct_cells = 0.35,
         histogram_direction_cells = "right"
     )
-    
+
     # Without the cutoff fix, a right-gate would start near the peak (~5.35).
     # With the fix, it should extend to the left trough (around 3.0 - 4.5).
     expect_lt(log10(gate_right$gate_min), 4.8)
-    
+
     # 2. Test gate_positive_cells utility function
     mat <- matrix(pmin(stats::rnorm(1000, 5.35, 0.15), 5.4), ncol = 1)
-    
+
     idx_right <- gate_positive_cells(mat, histogram_pct = 0.35, histogram_direction = "right")
     # If the cutoff fix kicked in, it should behave like "both", which sets lower_q = 0.5 - pct/2 = 0.325.
     # Since the distribution is truncated on the right, upper_q (0.675) lands on the maximum value (5.4).
@@ -1675,13 +1710,13 @@ test_that("derive_unmixing_matrix WLS honors detector noise", {
     ), nrow = 2, byrow = TRUE)
     rownames(M) <- c("FITC", "PE")
     colnames(M) <- c("B1-A", "YG1-A", "R1-A")
-    
+
     expect_silent(
         W_wls <- spectreasy::derive_unmixing_matrix(M, method = "WLS")
     )
-    
+
     expect_equal(dim(W_wls), dim(M))
-    
+
     M_no_attr <- M
     expect_equal(spectreasy::derive_unmixing_matrix(M_no_attr, method = "WLS"), W_wls)
 

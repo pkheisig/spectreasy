@@ -187,10 +187,16 @@ test_that("cockpit workflows resolve project paths without changing the R workin
 
     expect_identical(
         api_env$gui_workflow_resolve_path(file.path("spectreasy_outputs", "unmix_samples"), root),
-        normalizePath(file.path(root, "spectreasy_outputs", "unmix_samples"), mustWork = FALSE)
+        file.path(normalizePath(root, mustWork = TRUE), "spectreasy_outputs", "unmix_samples")
     )
     absolute <- normalizePath(file.path(root, "absolute.csv"), mustWork = FALSE)
-    expect_identical(api_env$gui_workflow_resolve_path(absolute, launch_dir), absolute)
+    expect_identical(
+        api_env$gui_workflow_resolve_path(absolute, root),
+        file.path(normalizePath(root, mustWork = TRUE), "absolute.csv")
+    )
+    outside <- normalizePath(file.path(launch_dir, "outside.csv"), mustWork = FALSE)
+    expect_error(api_env$gui_workflow_resolve_path(outside, root), "outside the active project")
+    expect_error(api_env$gui_workflow_resolve_path("../outside.csv", root), "outside the active project")
     expect_identical(api_env$gui_workflow_file_or_null("", root), NULL)
     run <- suppressWarnings(api_env$gui_workflow_run(
         list(projectPath = root),

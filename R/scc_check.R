@@ -11,7 +11,6 @@
     dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
     list(plot_dir = plot_dir, cleanup_dir = plot_dir, retained_qc_plot_dir = NULL)
 }
-
 .read_report_png <- function(path) {
     if (!file.exists(path)) {
         return(NULL)
@@ -440,121 +439,43 @@ qc_controls <- function(
     }
 
     qc_metrics_dir <- .prepare_qc_report_metrics_dir(qc_metrics_dir)
-    collector_plot_dir <- NULL
-
-    can_reuse_reference <- !is.null(M) && (
-        identical(output_spec$format, "html") ||
-            (!is.null(qc_summary) && !is.null(report_plot_dir))
+    reference <- .prepare_control_report_reference(
+        M = M,
+        output_format = output_spec$format,
+        qc_summary = qc_summary,
+        report_plot_dir = report_plot_dir,
+        cleanup_report_plot_dir = cleanup_report_plot_dir,
+        qc_plot_dir = qc_plot_dir,
+        save_qc_pngs = save_qc_pngs,
+        scc_dir = scc_dir,
+        control_file = control_file,
+        cytometer = cytometer,
+        seed = seed,
+        extra_args = extra_args
     )
-    if (isTRUE(can_reuse_reference)) {
-        M_built <- .as_reference_matrix(M, "M")
-        if (is.null(report_plot_dir) && identical(output_spec$format, "html")) {
-            report_plot_dir <- tempfile("spectreasy_control_html_gates_")
-            dir.create(report_plot_dir, recursive = TRUE, showWarnings = FALSE)
-        } else {
-            report_plot_dir <- normalizePath(report_plot_dir, mustWork = FALSE)
-            if (!dir.exists(report_plot_dir)) {
-                stop("report_plot_dir not found: ", report_plot_dir, call. = FALSE)
-            }
-        }
-        if (isTRUE(cleanup_report_plot_dir)) {
-            on.exit(unlink(report_plot_dir, recursive = TRUE, force = TRUE), add = TRUE)
-        }
-    } else {
-        plot_dir_info <- .prepare_scc_report_plot_dir(qc_plot_dir = qc_plot_dir, save_qc_pngs = save_qc_pngs)
-        collector_plot_dir <- plot_dir_info$plot_dir
-        if (!is.null(plot_dir_info$cleanup_dir)) {
-            on.exit(unlink(plot_dir_info$cleanup_dir, recursive = TRUE, force = TRUE), add = TRUE)
-        }
-
-        control_resolved <- .resolve_control_file_path(control_file)
-        control_input <- if (file.exists(control_resolved)) control_resolved else NULL
-
-        build_args <- c(
-            list(
-                input_folder = scc_dir,
-                output_folder = plot_dir_info$plot_dir,
-                save_qc_plots = TRUE,
-                control_df = control_input,
-                cytometer = cytometer,
-                seed = seed
-            ),
-            extra_args
-        )
-        M_built <- do.call(build_reference_matrix, build_args)
-        if (is.null(M_built) || nrow(M_built) == 0) {
-            stop("No valid spectra found while generating the SCC report.")
-        }
-
-        report_plot_dir <- attr(M_built, "qc_plot_dir")
-        if (is.null(report_plot_dir) || !dir.exists(report_plot_dir)) {
-            report_plot_dir <- plot_dir_info$plot_dir
-        }
-        af_bank_info <- attr(M_built, "af_bank_info")
+    M_built <- reference$M
+    report_plot_dir <- reference$report_plot_dir
+    collector_plot_dir <- reference$collector_plot_dir
+    if (length(reference$cleanup_dirs)) {
+        on.exit(unlink(reference$cleanup_dirs, recursive = TRUE, force = TRUE), add = TRUE)
     }
+    if (is.null(af_bank_info)) af_bank_info <- reference$af_bank_info
 
-    if (is.null(qc_summary)) {
-        qc_summary <- attr(M_built, "qc_summary")
-    }
-    if (is.null(qc_summary)) {
-        qc_summary <- data.frame()
-    } else {
-        qc_summary <- as.data.frame(qc_summary, stringsAsFactors = FALSE)
-        qc_summary <- qc_summary[order(qc_summary$fluorophore, qc_summary$sample), , drop = FALSE]
-    }
+    qc_summary <- .normalize_control_report_summary(qc_summary, M_built)
 
     retained_qc_plot_dir <- if (isTRUE(save_qc_pngs)) report_plot_dir else NULL
 
-    M_report <- NULL
-    if (!is.null(M)) {
-        M_report <- .as_reference_matrix(M, "M")
-    } else if (!is.null(unmixing_matrix_file)) {
-        if (file.exists(unmixing_matrix_file)) {
-            .stop_if_static_unmixing_matrix_path(unmixing_matrix_file, arg_name = "unmixing_matrix_file")
-            M_report <- .read_unmixing_matrix_csv(unmixing_matrix_file)
-            M_report <- .as_reference_matrix(M_report, "M")
-        }
-    }
+    M_report <- .resolve_control_report_matrix(M, unmixing_matrix_file, M_built)
 
-    if (is.null(M_report)) {
-        M_report <- M_built
-    }
-
-    if (is.null(pd)) {
-        pd_attr <- attr(M_report, "detector_pd")
-        if (is.data.frame(pd_attr)) {
-            pd <- pd_attr
-        } else if (identical(output_spec$format, "html") && !dir.exists(scc_dir)) {
-            pd <- NULL
-        } else if (!dir.exists(scc_dir)) {
-            .spectreasy_stop_missing_directory(scc_dir, label = "scc_dir")
-        } else {
-            fcs_files <- list.files(scc_dir, pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
-            if (length(fcs_files) == 0) {
-                if (!identical(output_spec$format, "html")) {
-                    .spectreasy_stop_empty_fcs_directory(scc_dir, label = "scc_dir")
-                }
-            } else {
-                ff_meta <- .spectreasy_read_fcs(fcs_files[1], label = "SCC FCS file")
-                pd <- flowCore::pData(flowCore::parameters(ff_meta))
-            }
-        }
-    }
+    pd <- .resolve_control_report_pd(pd, M_report, output_spec$format, scc_dir)
 
     if (identical(output_spec$format, "html")) {
-        if (is.null(collector_plot_dir)) {
-            collector_plot_info <- .prepare_scc_report_plot_dir(qc_plot_dir = qc_plot_dir, save_qc_pngs = save_qc_pngs)
-            collector_plot_dir <- collector_plot_info$plot_dir
-            if (!is.null(collector_plot_info$cleanup_dir)) {
-                on.exit(unlink(collector_plot_info$cleanup_dir, recursive = TRUE, force = TRUE), add = TRUE)
-            }
-        }
-        report_data <- collect_control_report_data(
+        return(.qc_controls_html(
             M = M_report,
             scc_dir = scc_dir,
             control_file = control_file,
             cytometer = cytometer,
-            unmixing_method = unmixing_method,
+            method = unmixing_method,
             unmixed_list = unmixed_list,
             qc_summary = qc_summary,
             report_plot_dir = report_plot_dir,
@@ -562,22 +483,18 @@ qc_controls <- function(
             af_bank_info = af_bank_info,
             matrix_source = unmixing_matrix_file,
             artifact_paths = report_artifact_paths,
-            plots = report_plots,
-            run_settings = c(
-                list(
-                    unmix_scatter_max_points = unmix_scatter_max_points,
-                    unmix_scatter_axis_limit = unmix_scatter_axis_limit,
-                    seed = seed,
-                    save_qc_pngs = save_qc_pngs,
-                    report_format = "html"
-                ),
-                report_run_settings
-            ),
-            plot_dir = collector_plot_dir,
+            report_plots = report_plots,
+            run_settings = report_run_settings,
+            collector_plot_dir = collector_plot_dir,
+            qc_plot_dir = qc_plot_dir,
+            save_qc_pngs = save_qc_pngs,
+            seed = seed,
+            unmix_scatter_max_points = unmix_scatter_max_points,
+            unmix_scatter_axis_limit = unmix_scatter_axis_limit,
+            output_file = output_file,
+            overwrite = overwrite,
             project_path = project_path
-        )
-        if (!isTRUE(save_qc_pngs)) report_data <- .report_embed_plot_manifest(report_data)
-        return(render_qc_html_report(report_data, output_file, overwrite = overwrite))
+        ))
     }
 
     if (!requireNamespace("png", quietly = TRUE)) {

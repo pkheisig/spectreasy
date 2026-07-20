@@ -325,6 +325,28 @@ testthat::test_that("Aurora spectra keep Cytek detector labels", {
     testthat::expect_false(any(grepl("^405nm", labels)))
 })
 
+testthat::test_that("partial detector metadata never drops matrix channels", {
+    M <- matrix(
+        c(1, 0.3, 0.2, 1),
+        nrow = 2,
+        byrow = TRUE,
+        dimnames = list(c("FITC", "PE"), c("B1-A", "YG1-A"))
+    )
+    partial_pd <- data.frame(
+        name = "B1-A",
+        desc = "Blue detector",
+        stringsAsFactors = FALSE
+    )
+
+    spectra <- spectreasy::plot_spectra(M, pd = partial_pd, output_file = NULL, annotate_peaks = "never")
+    spectra_data <- ggplot2::ggplot_build(spectra)$data[[1]]
+    testthat::expect_equal(length(unique(spectra_data$x)), 2L)
+
+    matrix_plot <- spectreasy::plot_unmixing_matrix(M, pd = partial_pd)
+    testthat::expect_false(anyNA(matrix_plot$data$Detector))
+    testthat::expect_setequal(as.character(unique(matrix_plot$data$Detector)), c("Blue detector", "YG1-A"))
+})
+
 testthat::test_that("cytometer auto detection recognizes detector naming conventions", {
     xenith_pd <- data.frame(
         name = c("FL07-A", "FL08-A", "FL37-A", "FL36-A", "FSC51-A", "SSC52-A", "Time"),

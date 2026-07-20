@@ -41,6 +41,23 @@ test_that("cockpit project initialization is explicit and file helpers are safe"
     expect_error(api_env$gui_validate_fcs_upload(invalid_fcs), "valid FCS header")
 })
 
+test_that("project scans do not initialize or mutate an untouched folder", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+    project <- tempfile("cockpit_read_only_scan_")
+    dir.create(project)
+    on.exit(unlink(project, recursive = TRUE, force = TRUE), add = TRUE)
+
+    api_env$gui_project_scan(project)
+    expect_false(file.exists(file.path(project, ".spectreasy", "project.json")))
+    expect_false(dir.exists(file.path(project, "scc")))
+    expect_false(dir.exists(file.path(project, "samples")))
+})
+
 test_that("project picker routes distinguish opening from creating", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")

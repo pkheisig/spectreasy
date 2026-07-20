@@ -1,9 +1,9 @@
 #' Derive Unmixing Matrix from Reference Matrix
-#' 
+#'
 #' Calculates a static unmixing matrix from a reference spectral matrix (M).
 #' The output matrix (W) has the same dimensions as M (Markers x Detectors).
 #' To unmix data manually: Unmixed_Data = Raw_Data %*% t(W)
-#' 
+#'
 #' @param M Reference matrix (Markers x Detectors)
 #' @param method Unmixing method ("OLS", "WLS", "RWLS", "NNLS",
 #'   "AutoSpectral", or "Spectreasy"). Static `"AutoSpectral"` and
@@ -120,33 +120,37 @@ plot_unmixing_matrix <- function(W, pd = NULL) {
     long <- as.data.frame(W)
     long$Marker <- rownames(W)
     long <- tidyr::pivot_longer(long, cols = -Marker, names_to = "Detector", values_to = "Coefficient")
-    
+
     # Sort and label detectors
     det_names <- colnames(W)
     if (!is.null(pd)) {
         det_info <- get_sorted_detectors(pd)
         common <- intersect(det_info$names, det_names)
-        levels_sorted <- common
-        labels_sorted <- det_info$labels[match(common, det_info$names)]
+        unmatched <- setdiff(det_names, common)
+        levels_sorted <- c(common, unmatched)
+        labels_sorted <- c(
+            det_info$labels[match(common, det_info$names)],
+            unmatched
+        )
     } else {
         nums <- as.numeric(gsub("[^0-9]", "", det_names))
         levels_sorted <- det_names[order(nums)]
         labels_sorted <- levels_sorted
     }
-    
+
     long$Detector <- factor(long$Detector, levels = levels_sorted, labels = labels_sorted)
-    
+
     # Cap values for color scale to avoid outliers dominating
     cap_val <- quantile(abs(long$Coefficient), 0.95, na.rm=TRUE)
     if (is.na(cap_val) || cap_val == 0) cap_val <- 1
     long$Color_Val <- pmin(pmax(long$Coefficient, -cap_val), cap_val)
-    
+
     p <- ggplot2::ggplot(long, ggplot2::aes(Detector, Marker, fill = Color_Val)) +
         ggplot2::geom_tile() +
         ggplot2::scale_fill_gradient2(low = "blue", mid = "white", high = "red", name = "Coefficient") +
         # Text color based on value
-        ggplot2::geom_text(ggplot2::aes(label = round(Coefficient, 3), 
-                                       color = abs(Color_Val) > cap_val/2), 
+        ggplot2::geom_text(ggplot2::aes(label = round(Coefficient, 3),
+                                       color = abs(Color_Val) > cap_val/2),
                            size = 1.5, show.legend = FALSE, angle = 90) +
         ggplot2::scale_color_manual(values = c("TRUE" = "white", "FALSE" = "black")) +
         ggplot2::labs(title = "Unmixing Matrix Coefficients",
@@ -156,6 +160,6 @@ plot_unmixing_matrix <- function(W, pd = NULL) {
             axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, size = 5),
             plot.subtitle = ggplot2::element_text(size = 10.6, lineheight = 1.1)
         )
-    
+
     return(p)
 }

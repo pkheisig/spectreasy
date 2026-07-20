@@ -65,6 +65,29 @@ test_that("unmixing validates event data and scalar options before numeric kerne
     )
 })
 
+test_that("chunked spectral-variant diagnostics aggregate by event", {
+    infos <- list(
+        list(
+            changed_events = 10L,
+            changed_fraction = 1,
+            event_count = 10L,
+            selected = as.list(paste0("variant_", seq_len(10)))
+        ),
+        list(
+            changed_events = 0L,
+            changed_fraction = 0,
+            event_count = 1L,
+            selected = list(NULL)
+        )
+    )
+
+    merged <- spectreasy:::.merge_unmix_variant_info(infos)
+    expect_identical(merged$changed_events, 10L)
+    expect_equal(merged$changed_fraction, 10 / 11)
+    expect_identical(merged$event_count, 11L)
+    expect_length(merged$selected, 11L)
+})
+
 test_that("detector sorting supports parameter data without descriptions", {
     pd <- data.frame(name = c("FSC-A", "V2-A", "V1-A", "Time"), stringsAsFactors = FALSE)
     sorted <- spectreasy::get_sorted_detectors(pd)

@@ -125,7 +125,7 @@
 }
 
 #' Plot Spectral Overlays
-#' 
+#'
 #' @param ref_matrix Reference matrix (Markers x Detectors)
 #' @param pd Optional pData for descriptive labels
 #' @param output_file Optional path to save the plot. Set `NULL` to return the plot without writing a file.
@@ -165,13 +165,13 @@ plot_spectra <- function(ref_matrix,
         pd_attr <- attr(ref_matrix, "detector_pd")
         if (is.data.frame(pd_attr)) pd <- pd_attr
     }
-    
+
     # 1. Get Sorted Detectors and Labels
     if (!is.null(pd)) {
         det_info <- get_sorted_detectors(pd)
         # Filter ref_matrix to match
         common <- intersect(det_info$names, detectors)
-        
+
         if (length(common) == 0) {
             warning("No matching detectors found between reference matrix and provided metadata. Ignoring metadata.")
             .spectreasy_console_field("Ref cols", paste(utils::head(detectors, 5), collapse = ", "))
@@ -184,10 +184,16 @@ plot_spectra <- function(ref_matrix,
             detectors <- colnames(ref_matrix)
             labels <- detectors
         } else {
-            ref_matrix <- ref_matrix[, common, drop = FALSE]
-            detectors <- common
-            # Get labels only for common
-            labels <- det_info$labels[match(common, det_info$names)]
+            unmatched <- setdiff(detectors, common)
+            detector_order <- c(common, unmatched)
+            ref_matrix <- ref_matrix[, detector_order, drop = FALSE]
+            detectors <- detector_order
+            # Descriptive metadata is optional: retain every unmatched signal
+            # channel with its original detector name rather than dropping it.
+            labels <- c(
+                det_info$labels[match(common, det_info$names)],
+                unmatched
+            )
         }
     } else {
         detector_info <- .reference_plot_detector_metadata(detectors)
@@ -224,7 +230,7 @@ plot_spectra <- function(ref_matrix,
         Detector = rep(detectors, each = nrow(ref_matrix)),
         Intensity = as.vector(ref_matrix)
     )
-    
+
     long$Detector <- factor(long$Detector, levels = detectors, labels = labels)
     fluor_levels <- .natural_reference_row_levels(rownames(ref_matrix))
     long$Fluorophore <- factor(long$Fluorophore, levels = fluor_levels)

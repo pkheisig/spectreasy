@@ -1,15 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Menu,
-  Moon,
-  FolderOpen,
-  CircleHelp,
-  Files as FilesIcon,
-  LoaderCircle,
-  Settings,
-  Sun,
-  TerminalSquare,
-} from "lucide-react";
+import { LoaderCircle, Menu } from "lucide-react";
 import {
   attemptWorkflowAction,
   createControlMapping,
@@ -26,10 +16,16 @@ import {
   updateProjectInputDirectory,
 } from "./api";
 import { emptyProject } from "./projectState";
+import { createRefreshSequence, mergeProjectRefresh } from "./projectRefresh";
+import { cytometerLabels, normalizeCockpitCytometer } from "./cytometerConfig";
+import {
+  cockpitExecutionCode,
+  createWorkflowPayload,
+  normalizeCockpitOutputRoot,
+} from "./workflowExecution";
 import { WorkflowRail } from "./components/WorkflowRail";
-import { GuiSelect } from "./components/GuiSelect";
 import { CockpitApplet } from "./components/CockpitApplet";
-import { TerminalPanel } from "./components/TerminalPanel";
+import { TopBar } from "./components/CockpitTopBar";
 import { ProjectFilesDialog } from "./components/ProjectFilesDialog";
 import { ProjectInitializationDialog } from "./components/ProjectInitializationDialog";
 import { GuideDialog } from "./components/GuideDialog";
@@ -51,271 +47,6 @@ import "./cockpit.css";
 
 const emptyJob: Job = { label: "", state: "idle", progress: 0, subtask: "" };
 
-const cytometerOptions = [
-  ["auto", "Auto"],
-  ["aurora", "Cytek Aurora"],
-  ["northern_lights", "Cytek Northern Lights"],
-  ["id7000", "Sony ID7000"],
-  ["discover_s8", "BD FACSDiscover S8"],
-  ["discover_a8", "BD FACSDiscover A8"],
-  ["a5se", "BD FACSymphony A5 SE"],
-  ["opteon", "Agilent NovoCyte Opteon"],
-  ["mosaic", "Beckman Coulter CytoFLEX Mosaic"],
-  ["xenith", "Thermo Fisher Attune Xenith"],
-] as const;
-
-const cytometerLabels = Object.fromEntries(cytometerOptions) as Record<string, string>;
-
-function rValue(value: unknown): string {
-  if (value == null) return "NULL";
-  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-  if (typeof value === "number") return String(value);
-  return JSON.stringify(String(value));
-}
-
-function cockpitExecutionCode(action: "control" | "sample" | "af", payload: Record<string, unknown>): string {
-  const projectPath = rValue(payload.projectPath);
-  const argumentAliases: Record<string, string> = {
-    method: "unmixing_method",
-    matrix_file: "unmixing_matrix_file",
-  };
-  const functionName = action === "control"
-    ? "unmix_controls"
-    : action === "sample"
-      ? "unmix_samples"
-      : "extract_af_profile";
-  const excluded = new Set(["projectPath", "save_name", "save_overwrite"]);
-  const pathArguments = new Set(
-    action === "control"
-      ? ["scc_dir", "control_file", "output_dir", "manual_gate_file"]
-      : action === "sample"
-        ? ["sample_dir", "matrix_file", "detector_noise_file", "output_dir", "spectral_variant_library_file"]
-        : ["fcs_file"],
-  );
-  const argumentValue = (key: string, value: unknown): string => {
-    if (!pathArguments.has(key) || typeof value !== "string") return rValue(value);
-    const path = value.trim();
-    if (!path) return "NULL";
-    if (/^(?:\/|[A-Za-z]:[\\/])/.test(path)) return rValue(path);
-    return `file.path(project_dir, ${rValue(path)})`;
-  };
-  const args = Object.entries(payload)
-    .filter(([key]) => !excluded.has(key))
-    .map(([key, value]) => `  ${argumentAliases[key] ?? key} = ${argumentValue(key, value)}`)
-    .join(",\n");
-  return `# Cockpit-generated R operation\nproject_dir <- ${projectPath}\n${functionName}(\n${args}\n)`;
-}
-
-function normalizeCockpitCytometer(value: unknown): string {
-  const token = String(value ?? "auto")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_|_$/g, "");
-  const legacyAliases: Record<string, string> = {
-    aurora_5l: "aurora",
-    aurora_4l: "aurora",
-    cytek_aurora: "aurora",
-    discover: "auto",
-    cytek_aurora_discover: "auto",
-    bd_facsdiscover_xenith: "xenith",
-    thermo_fisher_attune_xenith: "xenith",
-  };
-  const normalized = legacyAliases[token] ?? token;
-  return normalized in cytometerLabels ? normalized : "auto";
-}
-
-function normalizeCockpitOutputRoot(value: unknown): string {
-  const output = String(value ?? "spectreasy_outputs").trim().replace(/[\\/]+$/, "");
-  return output.replace(/[\\/](?:unmix_controls|unmix_samples)$/i, "") || "spectreasy_outputs";
-}
-
-type TopBarProps = {
-  project: ProjectState;
-  cytometer: string;
-  method: string;
-  darkMode: boolean;
-  settingsActive: boolean;
-  terminalActive: boolean;
-  backendConnected: boolean;
-  onCytometerChange: (value: string) => void;
-  onMethodChange: (value: string) => void;
-  onToggleTheme: () => void;
-  onFiles: () => void;
-  onCreateProject: () => void;
-  onOpenProject: () => void;
-  onGuide: () => void;
-  onSettings: () => void;
-  onTerminal: () => void;
-  executionLogs: ExecutionLogEntry[];
-};
-
-function TopBar({
-  project,
-  cytometer,
-  method,
-  darkMode,
-  settingsActive,
-  terminalActive,
-  backendConnected,
-  onCytometerChange,
-  onMethodChange,
-  onToggleTheme,
-  onFiles,
-  onCreateProject,
-  onOpenProject,
-  onGuide,
-  onSettings,
-  onTerminal,
-  executionLogs,
-}: TopBarProps) {
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const projectMenuRef = useRef<HTMLDivElement>(null);
-  const logsMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!projectMenuOpen) return;
-    const closeMenu = (event: MouseEvent | KeyboardEvent) => {
-      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
-      if (event instanceof MouseEvent && projectMenuRef.current?.contains(event.target as Node)) return;
-      setProjectMenuOpen(false);
-    };
-    document.addEventListener("mousedown", closeMenu);
-    document.addEventListener("keydown", closeMenu);
-    return () => {
-      document.removeEventListener("mousedown", closeMenu);
-      document.removeEventListener("keydown", closeMenu);
-    };
-  }, [projectMenuOpen]);
-
-  useEffect(() => {
-    if (!terminalActive) return;
-    const closeLogs = (event: MouseEvent | KeyboardEvent) => {
-      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
-      if (event instanceof MouseEvent && logsMenuRef.current?.contains(event.target as Node)) return;
-      onTerminal();
-    };
-    document.addEventListener("mousedown", closeLogs);
-    document.addEventListener("keydown", closeLogs);
-    return () => {
-      document.removeEventListener("mousedown", closeLogs);
-      document.removeEventListener("keydown", closeLogs);
-    };
-  }, [onTerminal, terminalActive]);
-
-  const chooseProjectAction = (action: () => void) => {
-    setProjectMenuOpen(false);
-    action();
-  };
-
-  return (
-    <header className="topbar">
-      <div className="brand-lockup">
-        <div className="brand-mark">
-          <span />
-          <span />
-          <span />
-        </div>
-        <div>
-          <strong>spectreasy</strong>
-        </div>
-      </div>
-      <div className="project-actions">
-        <div className="project-menu-shell" ref={projectMenuRef}>
-          <button
-            className="project-switcher"
-            type="button"
-            aria-expanded={projectMenuOpen}
-            aria-haspopup="menu"
-            onClick={() => setProjectMenuOpen((open) => !open)}
-          >
-            <FolderOpen size={16} />
-            <strong>Project</strong>
-          </button>
-          <div
-            className={`project-action-flyout ${projectMenuOpen ? "is-open" : ""}`}
-            role="menu"
-            aria-hidden={!projectMenuOpen}
-          >
-            <button type="button" role="menuitem" tabIndex={projectMenuOpen ? 0 : -1} onClick={() => chooseProjectAction(onCreateProject)}>
-              Create new project
-            </button>
-            <button type="button" role="menuitem" tabIndex={projectMenuOpen ? 0 : -1} onClick={() => chooseProjectAction(onOpenProject)}>
-              Open project
-            </button>
-          </div>
-        </div>
-        <button className="project-files-button" type="button" onClick={onFiles} disabled={!project.projectPath}>
-          <FilesIcon size={15} />
-          <span>Files</span>
-        </button>
-      </div>
-      <button className="guide-trigger" type="button" onClick={onGuide}>
-        <CircleHelp size={16} />
-        <span>Guide</span>
-      </button>
-      <div className="topbar-spacer" />
-      <label className="context-select cytometer-select">
-        <span className="chip-label">Cytometer</span>
-        <GuiSelect
-          aria-label="Cytometer"
-          className="cytometer-picker"
-          value={cytometer}
-          onChange={(event) => onCytometerChange(event.target.value)}
-        >
-          {cytometerOptions.map(([value, label]) => (
-            <option value={value} key={value}>{label}</option>
-          ))}
-        </GuiSelect>
-      </label>
-      <label className="context-select method-select">
-        <span className="chip-label">Method</span>
-        <GuiSelect
-          aria-label="Method"
-          value={method}
-          onChange={(event) => onMethodChange(event.target.value)}
-        >
-          <option>Spectreasy</option>
-          <option>AutoSpectral</option>
-          <option>OLS</option>
-          <option>WLS</option>
-          <option>RWLS</option>
-          <option>NNLS</option>
-        </GuiSelect>
-      </label>
-      <button
-        className="topbar-icon"
-        onClick={onToggleTheme}
-        aria-label={darkMode ? "Use light mode" : "Use dark mode"}
-        title={darkMode ? "Use light mode" : "Use dark mode"}
-      >
-        {darkMode ? <Sun size={17} /> : <Moon size={17} />}
-      </button>
-      <div className="logs-menu-shell" ref={logsMenuRef}>
-        <button
-          className={`topbar-icon terminal-trigger ${terminalActive ? "is-active" : ""}`}
-          onClick={onTerminal}
-          aria-label={terminalActive ? "Close execution logs" : "Open execution logs"}
-          aria-expanded={terminalActive}
-          title={backendConnected ? "Execution logs" : "Execution logs · R backend offline"}
-        >
-          <TerminalSquare size={18} />
-          <span className={`terminal-status-dot ${backendConnected ? "is-connected" : ""}`} />
-        </button>
-        {terminalActive && <TerminalPanel connected={backendConnected} entries={executionLogs} />}
-      </div>
-      <button
-        className={`topbar-icon ${settingsActive ? "is-active" : ""}`}
-        onClick={onSettings}
-        aria-label={settingsActive ? "Return to workflow" : "Settings"}
-        aria-pressed={settingsActive}
-        title={settingsActive ? "Return to workflow" : "Settings"}
-      >
-        <Settings size={18} />
-      </button>
-    </header>
-  );
-}
 
 export default function CockpitApp() {
   const [project, setProject] = useState<ProjectState>(() =>
@@ -353,6 +84,7 @@ export default function CockpitApp() {
   const [settingsReady, setSettingsReady] = useState(false);
   const [sectionBeforeSettings, setSectionBeforeSettings] =
     useState<SectionId>("controls");
+  const refreshSequence = useRef(createRefreshSequence());
   const darkMode = settings.appearance.theme === "dark";
 
   function appendExecutionLogs(entries: Array<Pick<ExecutionLogEntry, "kind" | "text">>) {
@@ -374,8 +106,10 @@ export default function CockpitApp() {
   }
 
   const refreshProject = useCallback(async (initial = false, requestedProjectPath = "") => {
+    const requestSequence = refreshSequence.current.begin();
     const tabProjectPath = requestedProjectPath || window.sessionStorage.getItem("spectreasy-project-path") || "";
     const snapshot = await loadProjectSnapshot(tabProjectPath);
+    if (!refreshSequence.current.isCurrent(requestSequence)) return;
     if (!snapshot.backend.connected) {
       setBackend((current) => ({
         ...current,
@@ -385,7 +119,7 @@ export default function CockpitApp() {
       }));
       return;
     }
-    setProject(snapshot.project);
+    setProject((current) => mergeProjectRefresh(current, snapshot.project));
     if (snapshot.project.projectPath) window.sessionStorage.setItem("spectreasy-project-path", snapshot.project.projectPath);
     setBackend(snapshot.backend);
     if (!initial && snapshot.project.projectPath) {
@@ -487,12 +221,12 @@ export default function CockpitApp() {
   }, [refreshProject]);
 
   useEffect(() => {
-    if (backend.connected) return;
+    if (!settingsReady || backend.connected) return;
     const timer = window.setInterval(() => {
       void refreshProject(false);
     }, 1500);
     return () => window.clearInterval(timer);
-  }, [backend.connected, refreshProject]);
+  }, [backend.connected, refreshProject, settingsReady]);
 
   useEffect(() => {
     if (!backend.connected || !project.projectPath) return;
@@ -524,9 +258,15 @@ export default function CockpitApp() {
 
   useEffect(() => {
     if (!settingsReady) return;
-    const timer = window.setTimeout(() => void persistGuiState(project, settings), 450);
+    const projectState = {
+      projectPath: project.projectPath,
+      projectName: project.projectName,
+      cytometer: project.cytometer,
+      method: project.method,
+    };
+    const timer = window.setTimeout(() => void persistGuiState(projectState, settings), 450);
     return () => window.clearTimeout(timer);
-  }, [project, settings, settingsReady]);
+  }, [project.cytometer, project.method, project.projectName, project.projectPath, settings, settingsReady]);
 
   useEffect(() => {
     const exitOverlay = (event: KeyboardEvent) => {
@@ -618,7 +358,7 @@ export default function CockpitApp() {
 
   async function updateInputDirectory(role: "controls" | "samples", path: string) {
     const currentPath = role === "controls" ? project.controlInputDir : project.sampleInputDir;
-    if (!settings.projectPath || path.trim() === currentPath) return;
+    if (!settings.projectPath || path.trim() === currentPath) return true;
     const result = await updateProjectInputDirectory(role, path.trim(), settings.projectPath);
     appendExecutionLogs([{ kind: result.success ? "success" : "error", text: result.message }]);
     if (!result.success) {
@@ -627,9 +367,10 @@ export default function CockpitApp() {
         control: role === "controls" ? { ...current.control, sccDir: project.controlInputDir } : current.control,
         sample: role === "samples" ? { ...current.sample, sampleDir: project.sampleInputDir } : current.sample,
       }));
-      return;
+      return false;
     }
     await refreshProject(false);
+    return true;
   }
 
   function changeCytometer(cytometer: string) {
@@ -723,97 +464,7 @@ export default function CockpitApp() {
       subtask: "",
       startedAt: "now",
     });
-    const control = settings.control;
-    const sample = settings.sample;
-    const af = settings.af;
-    const payload =
-      action === "control"
-        ? {
-            projectPath: settings.projectPath,
-            scc_dir: control.sccDir,
-            control_file: control.controlFile,
-            output_dir: normalizeCockpitOutputRoot(control.outputDir),
-            method: control.method,
-            cytometer: control.cytometer,
-            auto_create_mapping: control.autoCreateMapping,
-            auto_unknown_fluor_policy: control.autoUnknownFluorPolicy,
-            manual_gate_file: "ssc_gate_config.csv",
-            gating_mode: "reuse",
-            af_n_bands: control.afNBands,
-            af_max_cells: control.afMaxCells,
-            default_sample_type: control.defaultSampleType,
-            histogram_pct_beads: control.histogramPctBeads,
-            histogram_direction_beads: control.histogramDirectionBeads,
-            histogram_pct_cells: control.histogramPctCells,
-            histogram_direction_cells: control.histogramDirectionCells,
-            outlier_percentile: control.outlierPercentile,
-            debris_percentile: control.debrisPercentile,
-            bead_gate_scale: control.beadGateScale,
-            max_clusters: control.maxClusters,
-            min_cluster_proportion: control.minClusterProportion,
-            gate_contour_beads: control.gateContourBeads,
-            gate_contour_cells: control.gateContourCells,
-            subsample_n: control.subsampleN,
-            unmix_scatter_panel_size_mm: control.unmixScatterPanelSizeMm,
-            rwls_max_iter: control.rwlsMaxIter,
-            n_threads: control.unmixThreads,
-            seed: control.seed,
-            save_qc_png: control.saveQcPlots,
-            save_report: control.saveReport,
-            report_format: control.outputFormat,
-            scc_background_method: control.sccBackgroundMethod,
-            scc_background_k: control.sccBackgroundK,
-            spectral_variant_som_nodes: control.spectralVariantSomNodes,
-            spectral_variant_top_k: control.spectralVariantTopK,
-            spectral_variant_cosine_threshold:
-              control.spectralVariantCosineThreshold,
-            spectral_variant_max_variants: control.spectralVariantMaxVariants,
-            spectral_variant_min_events: control.spectralVariantMinEvents,
-            spectreasy_weight_quantile: control.spectreasyWeightQuantile,
-            autospectral_n_candidates: control.autospectralNCandidates,
-            autospectral_n_spectral: control.autospectralNSpectral,
-            autospectral_min_events: control.autospectralMinEvents,
-            autospectral_refine: control.refine,
-          }
-        : action === "sample"
-          ? {
-              projectPath: settings.projectPath,
-              sample_dir: sample.sampleDir,
-              matrix_file: sample.matrixFile,
-              detector_noise_file: sample.detectorNoiseFile,
-              output_dir: normalizeCockpitOutputRoot(sample.outputDir),
-              method: sample.method,
-              rwls_max_iter: sample.rwlsMaxIter,
-              n_threads: sample.nThreads,
-              spectral_variant_top_k: sample.spectralVariantTopK,
-              spectral_variant_min_abundance:
-                sample.spectralVariantMinAbundance,
-              spectral_variant_positive_fraction:
-                sample.spectralVariantPositiveFraction,
-              spectral_variant_min_improvement:
-                sample.spectralVariantMinImprovement,
-              spectral_variant_library_file: sample.spectralVariantLibraryFile,
-              spectreasy_weight_quantile: sample.spectreasyWeightQuantile,
-              estimate_af: sample.estimateAf,
-              write_fcs: sample.writeFcs,
-              save_report: sample.saveReport,
-              report_format: sample.outputFormat,
-              report_per_sample: sample.reportPerSample,
-              save_qc_plots: sample.saveQcPlots,
-              plot_n_events: sample.plotNEvents,
-              chunk_size: sample.chunkSize,
-              seed: sample.seed,
-              return_type: sample.returnType,
-            }
-          : {
-              projectPath: settings.projectPath,
-              fcs_file: af.fcsFile,
-              save_name: af.saveName,
-              save_overwrite: af.saveOverwrite,
-              af_n_bands: af.afNBands,
-              af_max_cells: af.afMaxCells,
-              seed: af.seed,
-            };
+    const payload = createWorkflowPayload(action, settings);
     appendExecutionLogs([
       { kind: "command", text: cockpitExecutionCode(action, payload as Record<string, unknown>) },
       { kind: "info", text: `${label} started.` },
@@ -843,7 +494,7 @@ export default function CockpitApp() {
       if (action === "control") {
         setActiveSection("controls");
         setMappingTab("qc");
-      } else if (action === "sample" && sample.saveReport) {
+      } else if (action === "sample" && settings.sample.saveReport) {
         setActiveSection("samples");
         setSampleTab("qc");
       }
@@ -890,6 +541,7 @@ export default function CockpitApp() {
 
   async function chooseProject(mode: "create" | "open") {
     if (projectLoading) return;
+    if (project.mappingDirty && !window.confirm("Discard the unsaved control mapping and switch projects?")) return;
     setProjectLoading(true);
     try {
       const response = mode === "create"

@@ -655,7 +655,10 @@ export async function deactivateAfProfile(profileName: string, projectPath: stri
   }
 }
 
-export async function persistGuiState(project: ProjectState, settings?: WorkflowSettings): Promise<boolean> {
+export async function persistGuiState(
+  project: Pick<ProjectState, 'projectPath' | 'projectName' | 'cytometer' | 'method'>,
+  settings?: WorkflowSettings,
+): Promise<boolean> {
   try {
     await client.post('/gui_state', {
       module: 'spectreasy_cockpit',

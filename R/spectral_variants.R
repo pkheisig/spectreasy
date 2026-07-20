@@ -1,7 +1,6 @@
 .spectral_variant_row_mask <- function(M) {
     !grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
 }
-
 .spectral_variant_cosine <- function(A, B) {
     A <- as.matrix(A)
     B <- as.matrix(B)
@@ -324,6 +323,94 @@
     rows
 }
 
+.normalize_spectral_variant_options <- function(top_k, min_abundance, positive_fraction, min_improvement_fraction) {
+    top_k <- max(1L, suppressWarnings(as.integer(top_k[1])))
+    min_abundance <- suppressWarnings(as.numeric(min_abundance[1]))
+    if (!is.finite(min_abundance) || is.na(min_abundance) || min_abundance < 0) min_abundance <- 1
+    positive_fraction <- suppressWarnings(as.numeric(positive_fraction[1]))
+    if (!is.finite(positive_fraction) || is.na(positive_fraction) || positive_fraction < 0) positive_fraction <- 0.02
+    min_improvement_fraction <- suppressWarnings(as.numeric(min_improvement_fraction[1]))
+    if (!is.finite(min_improvement_fraction) || is.na(min_improvement_fraction) || min_improvement_fraction < 0) {
+        min_improvement_fraction <- 0.01
+    }
+    list(
+        top_k = top_k,
+        min_abundance = min_abundance,
+        positive_fraction = positive_fraction,
+        min_improvement_fraction = min_improvement_fraction
+    )
+}
+
+.choose_event_spectral_variants <- function(a_row, residual, M, library, variant_names, options) {
+    fluor_rows <- rownames(M)[.spectral_variant_row_mask(M)]
+    marker_coeffs <- as.numeric(a_row[fluor_rows])
+    names(marker_coeffs) <- fluor_rows
+    finite <- marker_coeffs[is.finite(marker_coeffs)]
+    if (!length(finite)) return(NULL)
+    max_signal <- max(abs(finite))
+    if (!is.finite(max_signal) || max_signal < options$min_abundance) return(NULL)
+    threshold <- max(options$min_abundance, options$positive_fraction * max_signal)
+    eligible <- intersect(
+        names(marker_coeffs)[is.finite(marker_coeffs) & marker_coeffs > threshold],
+        variant_names
+    )
+    if (!length(eligible)) return(NULL)
+
+    working <- residual
+    chosen <- list()
+    for (fluor in eligible) {
+        variants <- library$variants[[fluor]]
+        if (is.null(variants) || nrow(variants) == 0) next
+        coefficient <- as.numeric(a_row[[fluor]])
+        if (!is.finite(coefficient) || coefficient <= threshold) next
+        delta <- sweep(variants, 2, M[fluor, ], "-")
+        candidate_residuals <- matrix(working, nrow = nrow(delta), ncol = ncol(delta), byrow = TRUE) - coefficient * delta
+        improvement <- sum(working^2) - rowSums(candidate_residuals^2)
+        top <- head(order(improvement, decreasing = TRUE), options$top_k)
+        top <- top[
+            is.finite(improvement[top]) &
+                improvement[top] > max(1e-8, options$min_improvement_fraction * sum(working^2))
+        ]
+        if (!length(top)) next
+        best <- top[[which.max(improvement[top])]]
+        chosen[[fluor]] <- variants[best, , drop = FALSE]
+        working <- candidate_residuals[best, ]
+    }
+    if (!length(chosen)) NULL else chosen
+}
+
+.refit_spectral_variant_event <- function(y,
+                                          a_row,
+                                          M,
+                                          chosen,
+                                          base_sse,
+                                          method,
+                                          wls_noise,
+                                          rwls_max_iter,
+                                          n_threads,
+                                          min_improvement_fraction) {
+    event_matrix <- M
+    for (fluor in names(chosen)) event_matrix[fluor, ] <- chosen[[fluor]][1, ]
+    rows <- .spectral_variant_event_rows(a_row, event_matrix)
+    X <- event_matrix[rows, , drop = FALSE]
+    coefficients <- tryCatch(
+        .unmix_with_fixed_reference(
+            Y = y,
+            M = X,
+            method = method,
+            wls_noise = wls_noise,
+            rwls_max_iter = rwls_max_iter,
+            n_threads = n_threads
+        ),
+        error = function(e) NULL
+    )
+    if (is.null(coefficients) || any(!is.finite(coefficients))) return(NULL)
+    fitted <- coefficients %*% X
+    sse <- sum(as.numeric(y - fitted)^2)
+    if (!is.finite(sse) || sse > base_sse * (1 - min_improvement_fraction)) return(NULL)
+    list(coefficients = coefficients[1, ], fitted = fitted[1, ], rows = rows)
+}
+
 .apply_spectral_variant_optimization <- function(Y,
                                                  M,
                                                  A,
@@ -346,16 +433,9 @@
         return(list(A = A, fitted = A %*% M, info = list(enabled = FALSE, changed_events = 0L, reason = "detector_mismatch")))
     }
 
-    top_k <- max(1L, suppressWarnings(as.integer(top_k[1])))
-    min_abundance <- suppressWarnings(as.numeric(min_abundance[1]))
-    if (!is.finite(min_abundance) || is.na(min_abundance) || min_abundance < 0) min_abundance <- 1
-    positive_fraction <- suppressWarnings(as.numeric(positive_fraction[1]))
-    if (!is.finite(positive_fraction) || is.na(positive_fraction) || positive_fraction < 0) positive_fraction <- 0.02
-    min_improvement_fraction <- suppressWarnings(as.numeric(min_improvement_fraction[1]))
-    if (!is.finite(min_improvement_fraction) || is.na(min_improvement_fraction) || min_improvement_fraction < 0) {
-        min_improvement_fraction <- 0.01
-    }
-
+    options <- .normalize_spectral_variant_options(
+        top_k, min_abundance, positive_fraction, min_improvement_fraction
+    )
     fitted <- A %*% M
     residuals <- Y - fitted
     A_out <- A
@@ -370,65 +450,34 @@
 
     for (i in seq_len(nrow(Y))) {
         a_row <- A_out[i, ]
-        marker_coeffs <- as.numeric(a_row[fluor_rows])
-        names(marker_coeffs) <- fluor_rows
-        finite_marker_coeffs <- marker_coeffs[is.finite(marker_coeffs)]
-        if (!length(finite_marker_coeffs)) next
-        max_signal <- max(abs(finite_marker_coeffs))
-        if (!is.finite(max_signal) || max_signal < min_abundance) next
-        threshold <- max(min_abundance, positive_fraction * max_signal)
-        eligible <- names(marker_coeffs)[is.finite(marker_coeffs) & marker_coeffs > threshold]
-        eligible <- intersect(eligible, variant_names)
-        if (!length(eligible)) next
-
-        base_r <- as.numeric(residuals[i, ])
-        base_sse <- sum(base_r^2)
+        base_residual <- as.numeric(residuals[i, ])
+        base_sse <- sum(base_residual^2)
         if (!is.finite(base_sse) || base_sse <= 1e-12) next
-        working_r <- base_r
-        chosen <- list()
-
-        for (fluor in eligible) {
-            vars <- spectral_variant_library$variants[[fluor]]
-            if (is.null(vars) || nrow(vars) == 0) next
-            coeff <- as.numeric(a_row[[fluor]])
-            if (!is.finite(coeff) || coeff <= threshold) next
-            delta <- sweep(vars, 2, M[fluor, ], "-")
-            predicted_sse <- rowSums((matrix(working_r, nrow = nrow(delta), ncol = ncol(delta), byrow = TRUE) - coeff * delta)^2)
-            improvement <- sum(working_r^2) - predicted_sse
-            top <- head(order(improvement, decreasing = TRUE), top_k)
-            top <- top[is.finite(improvement[top]) & improvement[top] > max(1e-8, min_improvement_fraction * sum(working_r^2))]
-            if (!length(top)) next
-            best <- top[[which.max(improvement[top])]]
-            chosen[[fluor]] <- vars[best, , drop = FALSE]
-            working_r <- working_r - coeff * delta[best, ]
-        }
-
-        if (!length(chosen)) next
-        M_event <- M
-        for (fluor in names(chosen)) {
-            M_event[fluor, ] <- chosen[[fluor]][1, ]
-        }
-        rows <- .spectral_variant_event_rows(a_row, M_event)
-        X <- M_event[rows, , drop = FALSE]
-        coeff_new <- tryCatch(
-            .unmix_with_fixed_reference(
-                Y = Y[i, , drop = FALSE],
-                M = X,
-                method = method,
-                wls_noise = wls_noise,
-                rwls_max_iter = rwls_max_iter,
-                n_threads = n_threads
-            ),
-            error = function(e) NULL
+        chosen <- .choose_event_spectral_variants(
+            a_row = a_row,
+            residual = base_residual,
+            M = M,
+            library = spectral_variant_library,
+            variant_names = variant_names,
+            options = options
         )
-        if (is.null(coeff_new) || any(!is.finite(coeff_new))) next
-        fitted_new <- coeff_new %*% X
-        r_new <- as.numeric(Y[i, ] - fitted_new)
-        sse_new <- sum(r_new^2)
-        if (!is.finite(sse_new) || sse_new > base_sse * (1 - min_improvement_fraction)) next
+        if (is.null(chosen)) next
+        refit <- .refit_spectral_variant_event(
+            y = Y[i, , drop = FALSE],
+            a_row = a_row,
+            M = M,
+            chosen = chosen,
+            base_sse = base_sse,
+            method = method,
+            wls_noise = wls_noise,
+            rwls_max_iter = rwls_max_iter,
+            n_threads = n_threads,
+            min_improvement_fraction = options$min_improvement_fraction
+        )
+        if (is.null(refit)) next
         A_out[i, ] <- 0
-        A_out[i, rows] <- coeff_new[1, ]
-        fitted_out[i, ] <- fitted_new[1, ]
+        A_out[i, refit$rows] <- refit$coefficients
+        fitted_out[i, ] <- refit$fitted
         changed[[i]] <- TRUE
         selected[[i]] <- names(chosen)
     }
@@ -440,6 +489,7 @@
             enabled = TRUE,
             changed_events = sum(changed),
             changed_fraction = mean(changed),
+            event_count = length(changed),
             selected = selected
         )
     )
