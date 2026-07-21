@@ -2,7 +2,7 @@
 % Please edit documentation in R/diagnostic_plots.R
 \name{calculate_nps}
 \alias{calculate_nps}
-\title{Calculate Negative Population Spread (NPS)}
+\title{Calculate the negative-tail MAD proxy (historically NPS)}
 \usage{
 calculate_nps(data, markers = NULL)
 }
@@ -15,8 +15,8 @@ calculate_nps(data, markers = NULL)
 A data frame with NPS values (MAD) per marker per file
 }
 \description{
-Quantifies the spreading of negative populations after unmixing. 
-High spread indicates poor unmixing or high spillover noise.
+Quantifies an ungated lower-tail spread proxy after unmixing. Explicitly
+gated negative populations should be preferred when available.
 }
 \examples{
 demo_df <- data.frame(

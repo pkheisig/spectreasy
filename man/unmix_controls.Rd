@@ -20,6 +20,10 @@ unmix_controls(
   n_threads = 1L,
   save_qc_png = FALSE,
   save_report = TRUE,
+  save_ai_qc = save_report,
+  ai_qc_detail = "standard",
+  ai_qc_privacy = "standard",
+  ai_qc_reference = "auto",
   report_format = "html",
   gating_mode = "interactive",
   manual_gate_file = "ssc_gate_config.csv",
@@ -95,6 +99,18 @@ intensity-gate, and spectrum PNGs under `output_dir/unmix_controls`.}
 companion, and supporting QC metrics under
 `output_dir/unmix_controls/qc_controls` after controls are unmixed.
 Defaults to `TRUE`.}
+
+\item{save_ai_qc}{Logical; write local AI-ready QC artifacts. Defaults to
+`save_report` and may be enabled independently of the visual report.}
+
+\item{ai_qc_detail}{AI-QC text/prompt detail: `"compact"`, `"standard"`, or
+`"full"`.}
+
+\item{ai_qc_privacy}{AI-QC privacy mode: `"standard"`, `"strict"`, or
+`"none"`.}
+
+\item{ai_qc_reference}{Reference-profile selection forwarded to
+[load_qc_reference_profile()].}
 
 \item{report_format}{Report format, either `"html"` (default) or `"pdf"`.
 Only the selected format is written. Matching is case-insensitive.}

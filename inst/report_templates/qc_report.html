@@ -71,6 +71,12 @@
     .sample-report-panel { display:none; }
     .sample-report-panel.is-active { display:block; }
     pre { overflow:auto; padding:16px; color:#fff3ec; background:#2c2421; font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .ai-qc-meta,.ai-qc-grades,.ai-qc-links { display:flex; flex-wrap:wrap; gap:10px; margin:16px 0; }
+    .ai-qc-meta span,.ai-qc-grade { padding:10px 12px; border:1px solid var(--line); background:var(--paper); font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .ai-qc-meta strong,.ai-qc-grade strong { display:block; margin-top:4px; font-size:17px; }
+    .ai-qc-grade-good { border-left:4px solid #3f8b67; }.ai-qc-grade-review { border-left:4px solid var(--amber); }.ai-qc-grade-poor { border-left:4px solid var(--red); }.ai-qc-grade-not_graded { border-left:4px solid #7b858e; }
+    .ai-qc-links a,.ai-qc-copy { padding:9px 12px; border:1px solid var(--accent); color:var(--accent-dark); background:rgba(var(--accent-rgb),.08); text-decoration:none; cursor:pointer; font:700 11px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    details { margin:14px 0; padding:12px 14px; border:1px solid var(--line); background:var(--paper); } summary { cursor:pointer; font-weight:700; }
     @media (max-width:850px) { .shell,.shell.sidebar-collapsed{display:block}.sidebar-toggle,.width-control{display:none}aside{position:relative;height:auto;padding:16px}.brand{font-size:18px}nav{margin-top:16px;columns:2}.shell.sidebar-collapsed .brand,.shell.sidebar-collapsed nav{display:block}main{width:100%;padding:22px 14px 50px}header,section{padding:20px}.control-plot-grid{grid-template-columns:1fr}.control-plot-grid .plot-wrap:last-child:nth-child(odd){grid-column:auto} }
     @media print { aside{display:none}.shell{display:block}main{width:100%;padding:0}section{break-inside:avoid;box-shadow:none}header{box-shadow:none} }
   </style>
@@ -86,6 +92,13 @@
   </div>
   <script>
     (function(){
+      document.addEventListener('click',function(event){
+        var button=event.target.closest('.ai-qc-copy'); if(!button)return;
+        var text=button.parentElement.querySelector('pre').textContent;
+        var done=function(){button.textContent='Copied';setTimeout(function(){button.textContent='Copy prompt'},1400)};
+        if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(text).then(done).catch(function(){fallback(text,done)})}else{fallback(text,done)}
+      });
+      function fallback(text,done){var area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy');done()}finally{area.remove()}}
       var shell=document.querySelector('.shell');
       var toggle=document.querySelector('.sidebar-toggle');
       var widthSlider=document.getElementById('report-width');

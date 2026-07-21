@@ -20,7 +20,7 @@
     invisible(NULL)
 }
 
-.sample_pdf_reference_pages <- function(M, pd, qc_metrics_dir, plot_dir, matrix_markers_per_page, state) {
+.sample_pdf_reference_pages <- function(M, pd, qc_metrics_dir, plot_dir, matrix_markers_per_page, state, ai_caption = NULL) {
     keep <- !grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
     fluor <- M[keep, , drop = FALSE]
     af <- M[!keep, , drop = FALSE]
@@ -39,6 +39,7 @@
     .spectreasy_console_step("Spectra overlay")
     if (nrow(fluor) > 0) {
         spectra <- plot_spectra(fluor, pd = pd, output_file = NULL)
+        if (!is.null(ai_caption)) spectra <- spectra + ggplot2::labs(caption = ai_caption)
         .save_qc_report_png(spectra, plot_dir, "spectra_overlay.png")
         .sample_pdf_draw_spectra(state, spectra)
     }
@@ -65,10 +66,10 @@
 
 .sample_pdf_nps_pages <- function(results_df, method, qc_metrics_dir, plot_dir, max_files, state) {
     if (identical(method, "NNLS")) {
-        .spectreasy_console_step("NPS diagnostics", "skipped for NNLS")
+        .spectreasy_console_step("Negative-tail MAD proxy", "skipped for NNLS")
         return(invisible(NULL))
     }
-    .spectreasy_console_step("NPS diagnostics")
+    .spectreasy_console_step("Negative-tail MAD proxy")
     scores <- calculate_nps(results_df)
     scores <- scores[!grepl("^AF($|_)", scores$Marker, ignore.case = TRUE), , drop = FALSE]
     if (nrow(scores) == 0) return(invisible(NULL))
@@ -158,12 +159,24 @@
     state <- new.env(parent = emptyenv())
     state$page_started <- FALSE
 
+    ai_qc <- collect_ai_qc(
+        samples = results, M = M, scope = "sample", privacy = "standard",
+        reference = "none", generated_at = Sys.time()
+    )
+    ai_caption <- .ai_qc_pdf_caption(
+        ai_qc,
+        export_path = file.path(dirname(dirname(dirname(output_file))), "ai_qc")
+    )
+
     file_counts <- .qc_report_file_counts(results)
     if (!is.null(options$max_events_per_sample) &&
         any(as.numeric(file_counts) > as.numeric(options$max_events_per_sample)[1], na.rm = TRUE)) {
         .spectreasy_console_step("Event cap", paste0(as.integer(options$max_events_per_sample[1]), " events per sample"))
     }
-    .sample_pdf_reference_pages(M, pd, metrics_dir, plot_dir, options$matrix_markers_per_page, state)
+    .sample_pdf_reference_pages(
+        M, pd, metrics_dir, plot_dir, options$matrix_markers_per_page, state,
+        ai_caption = ai_caption
+    )
     .sample_pdf_nps_pages(prepared$data, method, metrics_dir, plot_dir, options$overview_files_per_page, state)
     .sample_pdf_scatter_pages(prepared$data, options, plot_dir, state)
     .sample_pdf_residual_pages(

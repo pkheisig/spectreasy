@@ -1,7 +1,8 @@
 import axios from 'axios'
 import { emptyProject } from './projectState'
+import { normalizeAiQcResponse } from './aiQcResponse.ts'
 import { resolveApiBase, resolveApiToken } from '../apiBase'
-import type { Artifact, BackendStatus, PanelPayload, ProjectState, Report, WorkflowSettings } from './types'
+import type { AiQcDetail, AiQcPrivacy, AiQcResponse, AiQcScope, Artifact, BackendStatus, PanelPayload, ProjectState, Report, WorkflowSettings } from './types'
 
 const API_BASE = resolveApiBase()
 
@@ -784,6 +785,34 @@ export async function attemptWorkflowAction(action: string, payload: Record<stri
       outputCount: 0,
       logs: [],
     }
+  }
+}
+
+export { normalizeAiQcResponse }
+
+export async function loadAiQc(projectPath: string, outputRoot: string, detail: AiQcDetail = 'standard'): Promise<AiQcResponse> {
+  try {
+    const response = await client.get('/ai-qc/preview', { params: { project_path: projectPath, output_root: normalizeOutputRoot(outputRoot), detail }, timeout: 30000 })
+    return normalizeAiQcResponse(response.data)
+  } catch {
+    return normalizeAiQcResponse({ status: 'failed', error: 'The local AI-ready QC preview could not be loaded.' })
+  }
+}
+
+export async function generateAiQc(input: { projectPath: string; outputRoot: string; scope: AiQcScope; privacy: AiQcPrivacy; detail: AiQcDetail; reference: string; context: string }): Promise<AiQcResponse> {
+  try {
+    const response = await client.post('/ai-qc/generate', {
+      projectPath: input.projectPath,
+      output_root: normalizeOutputRoot(input.outputRoot),
+      scope: input.scope,
+      privacy: input.privacy,
+      detail: input.detail,
+      reference: input.reference,
+      context: input.context,
+    }, { timeout: 0 })
+    return normalizeAiQcResponse(response.data)
+  } catch {
+    return normalizeAiQcResponse({ status: 'failed', error: 'Local AI-ready QC generation failed. Review the project outputs and retry.' })
   }
 }
 

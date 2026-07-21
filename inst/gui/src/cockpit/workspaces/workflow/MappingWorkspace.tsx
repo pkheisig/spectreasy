@@ -308,6 +308,7 @@ export function MappingWorkspace({
           project={project}
           kind="control"
           onView={onViewReports}
+          onAiQc={() => onOpenApplet("ai-ready-qc")}
         />
       )}
     </>

@@ -12,6 +12,7 @@ const GatingGui = lazy(() => import('../../GatingGui.jsx')) as ComponentType<{
 const PanelBuilder = lazy(() => import('../../PanelBuilder.tsx')) as ComponentType<{ embedded?: boolean; cockpitTheme?: 'light' | 'dark' }>
 const MatrixAdjustment = lazy(() => import('../../MatrixAdjustment.tsx')) as ComponentType<{ embedded?: boolean; cockpitTheme?: 'light' | 'dark' }>
 const QcReportApplet = lazy(() => import('./QcReportApplet.tsx'))
+const AiReadyQcApplet = lazy(() => import('./AiReadyQcApplet.tsx'))
 
 const appletLabels: Record<CockpitAppletId, string> = {
   'control-gating': 'control gating',
@@ -19,6 +20,7 @@ const appletLabels: Record<CockpitAppletId, string> = {
   'matrix-adjustment': 'matrix adjustment',
   'control-qc-report': 'controls QC report',
   'sample-qc-report': 'samples QC report',
+  'ai-ready-qc': 'AI-ready QC',
 }
 
 type CockpitAppletProps = {
@@ -80,6 +82,7 @@ export function CockpitApplet({ applet, theme, projectPath = '', outputRoot = 's
           {applet === 'matrix-adjustment' && <MatrixAdjustment embedded cockpitTheme={theme} />}
           {applet === 'control-qc-report' && <QcReportApplet kind="control" theme={theme} projectPath={projectPath} outputRoot={outputRoot} initialReportPath={reportPath} />}
           {applet === 'sample-qc-report' && <QcReportApplet kind="sample" theme={theme} projectPath={projectPath} outputRoot={outputRoot} initialReportPath={reportPath} />}
+          {applet === 'ai-ready-qc' && <AiReadyQcApplet theme={theme} projectPath={projectPath} outputRoot={outputRoot} />}
         </Suspense>
       </div>
     </div>,

@@ -1,0 +1,5 @@
+You are reviewing deterministic spectral-flow QC measurements exported locally by Spectreasy.
+10. Do not recommend uploading raw FCS events. Spectreasy sends nothing and has no embedded AI model or provider integration.
+Data contract: no raw event-level data is included.
+<<<SPECTREASY_AI_QC_DATA_BEGIN>>>
+<<<SPECTREASY_AI_QC_DATA_END>>>

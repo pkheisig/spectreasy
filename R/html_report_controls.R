@@ -100,5 +100,17 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
         input_status=if(isTRUE(attr(M,"adjusted"))) "Adjusted" else if(isTRUE(attr(M,"synthetic"))) "Synthetic" else "Measured"
     )
     class(out) <- c("spectreasy_control_report_data","spectreasy_report_data","list")
+    out$ai_qc <- collect_ai_qc(
+        control_report_data = out, M = M, scope = "control",
+        privacy = "standard", reference = "none", project_dir = project_path,
+        generated_at = out$created_at
+    )
+    out$ai_qc_summary <- list(
+        status = out$ai_qc$overall_summary$status,
+        grade_counts = out$ai_qc$grade_summary$counts,
+        profile = out$ai_qc$quality_reference$profile,
+        privacy = out$ai_qc$privacy$mode,
+        top_findings = out$ai_qc$overall_summary$top_findings
+    )
     out
 }

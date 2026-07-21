@@ -68,6 +68,11 @@
 #' @param save_report Logical; if `TRUE`, write a sample QC report and
 #'   sample QC metric CSVs from the in-memory unmixing results without rerunning
 #'   unmixing. Defaults to `TRUE`.
+#' @param save_ai_qc Logical; write local AI-ready QC artifacts. Defaults to
+#'   `save_report` and may be enabled independently of the visual report.
+#' @param ai_qc_detail AI-QC text/prompt detail.
+#' @param ai_qc_privacy AI-QC privacy mode.
+#' @param ai_qc_reference Reference-profile selection.
 #' @param report_format Report format, either `"html"` (default) or `"pdf"`.
 #'   Only the selected format is written. Matching is case-insensitive.
 #' @param report_per_sample Logical; if `TRUE`, PDF output writes one report
@@ -155,6 +160,10 @@ unmix_samples <- function(sample_dir = "samples",
                           output_dir = "spectreasy_outputs",
                           write_fcs = TRUE,
                           save_report = TRUE,
+                          save_ai_qc = save_report,
+                          ai_qc_detail = "standard",
+                          ai_qc_privacy = "standard",
+                          ai_qc_reference = "auto",
                           report_format = "html",
                           report_per_sample = FALSE,
                           save_qc_plots = FALSE,
@@ -175,6 +184,9 @@ unmix_samples <- function(sample_dir = "samples",
     report_format <- .match_arg_ci(report_format, c("html", "pdf"), "report_format")
     write_fcs <- .normalize_scalar_logical(write_fcs, "write_fcs")
     save_report <- .normalize_scalar_logical(save_report, "save_report")
+    save_ai_qc <- .normalize_scalar_logical(save_ai_qc, "save_ai_qc")
+    ai_qc_detail <- .match_arg_ci(ai_qc_detail, c("compact", "standard", "full"), "ai_qc_detail")
+    ai_qc_privacy <- .match_arg_ci(ai_qc_privacy, c("standard", "strict", "none"), "ai_qc_privacy")
     report_per_sample <- .normalize_scalar_logical(report_per_sample, "report_per_sample")
     save_qc_plots <- .normalize_scalar_logical(save_qc_plots, "save_qc_plots")
     verbose <- .normalize_scalar_logical(verbose, "verbose")
@@ -348,6 +360,41 @@ unmix_samples <- function(sample_dir = "samples",
             ),
             project_path = project_path
         )
+    }
+
+    if (isTRUE(save_ai_qc)) {
+        has_controls <- !is.null(attr(M, "qc_summary")) || !is.null(attr(M, "spectreasy_control_file"))
+        ai_export <- export_ai_qc(
+            samples = results,
+            controls = if (has_controls) list(M = M) else NULL,
+            M = M,
+            sample_report_data = attr(results, "qc_report_data"),
+            project_dir = project_path,
+            output_dir = file.path(output_dir, "ai_qc"),
+            scope = if (has_controls) "combined" else "sample",
+            detail = ai_qc_detail,
+            privacy = ai_qc_privacy,
+            reference = ai_qc_reference,
+            overwrite = "version"
+        )
+        attr(results, "ai_qc") <- ai_export$object
+        attr(results, "ai_qc_paths") <- ai_export$paths
+        attr(results, "ai_qc_grade_counts") <- ai_export$grade_counts
+        report_file <- attr(results, "qc_report_file")
+        report_data <- attr(results, "qc_report_data")
+        if (!is.null(report_data) && !is.null(report_file) && length(report_file) == 1L && grepl("\\.html$", report_file, ignore.case = TRUE)) {
+            report_data$ai_qc <- ai_export$object
+            report_data$ai_qc_summary <- list(
+                status = ai_export$object$overall_summary$status,
+                grade_counts = ai_export$grade_counts,
+                profile = ai_export$object$quality_reference$profile,
+                privacy = ai_export$object$privacy$mode,
+                top_findings = ai_export$object$overall_summary$top_findings
+            )
+            report_data$ai_qc_artifact_paths <- ai_export$paths
+            refreshed <- render_qc_html_report(report_data, report_file, overwrite = "overwrite")
+            attr(results, "qc_report_data") <- refreshed$report_data
+        }
     }
 
     if (identical(return_type, "flowSet")) {

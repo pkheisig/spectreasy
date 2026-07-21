@@ -217,5 +217,17 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
         similarity=similarity,spread=spread,detector_rms=detector_rms,reconstruction_error=reconstruction,nxn_interactive=nxn_interactive,plots=unique(plot_files),plot_manifest=list(reference=reference_file,similarity=similarity_files,nps=nps_files,nxn=nxn_files,detector_rms=detector_rms_file,reconstruction=reconstruction_files),artifacts=.report_artifacts(c(source_paths,fcs_paths,metric_paths,plot_files)),source_fingerprint=.report_source_fingerprint(source_paths),run_settings=c(list(report_per_sample=isTRUE(report_per_sample)),run_settings),
         counts=list(samples=length(samples),markers=sum(!af_rows),detectors=ncol(M),af_bands=sum(af_rows)),input_status=if(isTRUE(attr(M,"adjusted"))) "Adjusted" else if(isTRUE(attr(M,"synthetic"))) "Synthetic" else "Measured")
     class(out) <- c("spectreasy_sample_report_data","spectreasy_report_data","list")
+    out$ai_qc <- collect_ai_qc(
+        samples = results, sample_report_data = out, M = M,
+        scope = "sample", privacy = "standard", reference = "none",
+        project_dir = project_path, generated_at = out$created_at
+    )
+    out$ai_qc_summary <- list(
+        status = out$ai_qc$overall_summary$status,
+        grade_counts = out$ai_qc$grade_summary$counts,
+        profile = out$ai_qc$quality_reference$profile,
+        privacy = out$ai_qc$privacy$mode,
+        top_findings = out$ai_qc$overall_summary$top_findings
+    )
     out
 }

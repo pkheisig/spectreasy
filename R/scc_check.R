@@ -288,9 +288,9 @@
     )
 }
 
-.draw_af_bank_qc_pages <- function(M, af_bank_info, pd = NULL) {
+.draw_af_bank_qc_pages <- function(M, af_bank_info, pd = NULL, ai_caption = NULL) {
     if (is.null(af_bank_info)) {
-        return(invisible(NULL))
+        return(invisible(FALSE))
     }
     source_count <- af_bank_info$source_count
     if (is.null(source_count)) source_count <- 1
@@ -298,7 +298,7 @@
     if (is.null(derived_bands)) derived_bands <- 1
 
     if (source_count <= 1 && derived_bands <= 1) {
-        return(invisible(NULL))
+        return(invisible(FALSE))
     }
 
     af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
@@ -308,10 +308,12 @@
             plot_spectra(af_matrix, pd = pd, output_file = NULL),
             rownames(af_matrix)
         ) + ggplot2::labs(title = "Autofluorescence Band Spectra Overlay")
+        if (!is.null(ai_caption)) af_plot <- af_plot + ggplot2::labs(caption = ai_caption)
         .draw_report_ggplot_page(af_plot, height_ratio = 0.72)
+        return(invisible(TRUE))
     }
 
-    invisible(NULL)
+    invisible(FALSE)
 }
 
 .scc_reference_overlay_matrix <- function(M) {
@@ -504,10 +506,21 @@ qc_controls <- function(
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
 
+    ai_qc <- collect_ai_qc(
+        controls = list(M = M_report), M = M_report, scope = "control",
+        privacy = "standard", reference = "none", generated_at = Sys.time()
+    )
+    ai_caption <- .ai_qc_pdf_caption(
+        ai_qc,
+        export_path = file.path(dirname(dirname(dirname(output_file))), "ai_qc")
+    )
+
     if (is.null(af_bank_info)) {
         af_bank_info <- attr(M_built, "af_bank_info")
     }
-    .draw_af_bank_qc_pages(M_built, af_bank_info, pd = pd)
+    ai_caption_drawn <- .draw_af_bank_qc_pages(
+        M_built, af_bank_info, pd = pd, ai_caption = ai_caption
+    )
 
     af_rows <- grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
     M_no_af <- M_report[!af_rows, , drop = FALSE]
@@ -532,7 +545,11 @@ qc_controls <- function(
     }
 
     if (nrow(M_reference_overlay) > 0) {
-        .draw_report_ggplot_page(plot_spectra(M_reference_overlay, pd = pd, output_file = NULL), height_ratio = 0.6)
+        reference_plot <- plot_spectra(M_reference_overlay, pd = pd, output_file = NULL)
+        if (!isTRUE(ai_caption_drawn)) {
+            reference_plot <- reference_plot + ggplot2::labs(caption = ai_caption)
+        }
+        .draw_report_ggplot_page(reference_plot, height_ratio = 0.6)
     }
 
     nxn_file <- character()

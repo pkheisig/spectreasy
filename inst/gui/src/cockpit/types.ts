@@ -12,6 +12,45 @@ export type CockpitAppletId =
   | 'matrix-adjustment'
   | 'control-qc-report'
   | 'sample-qc-report'
+  | 'ai-ready-qc'
+
+export type AiQcStatus = 'not_generated' | 'generating' | 'ready' | 'stale' | 'partial' | 'failed'
+export type AiQcScope = 'control' | 'sample' | 'combined'
+export type AiQcPrivacy = 'standard' | 'strict' | 'none'
+export type AiQcDetail = 'compact' | 'standard' | 'full'
+export type AiQcGrade = 'good' | 'review' | 'poor' | 'not_graded'
+
+export type AiQcFinding = {
+  metricId: string
+  entity: string
+  stage: string
+  grade: AiQcGrade
+  explanation: string
+}
+
+export type AiQcResponse = {
+  status: AiQcStatus
+  stale: boolean
+  scope: AiQcScope
+  defaultScope: AiQcScope
+  availableScopes: AiQcScope[]
+  privacyMode: AiQcPrivacy
+  gradeCounts: Record<AiQcGrade, number>
+  findings: AiQcFinding[]
+  artifactPaths: string[]
+  missingSections: string[]
+  warnings: string[]
+  prompt: string
+  promptCharacters: number
+  estimatedTokens: number
+  schemaName: string
+  schemaVersion: string
+  profileName: string
+  profileVersion: string
+  referenceN: number
+  sourceHashes: Array<{ path: string; sha256: string }>
+  error: string
+}
 
 export type ArtifactStatus = 'current' | 'stale' | 'user' | 'missing' | 'unknown'
 export type JobState = 'idle' | 'running' | 'complete' | 'failed'

@@ -1,0 +1,35 @@
+---
+title: "QC metrics and grading"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{QC metrics and grading}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Metric definitions live in `inst/extdata/qc_metric_references.yml`. Each graded
+record contains a stable metric ID, entity and stage, full-precision value,
+units, definition reference, expected direction, availability/missing reason,
+grade, and grade provenance.
+
+The grading hierarchy is conservative:
+
+1. Hard structural validity failures or reviews.
+2. Literature rules only when their assumptions and event reliability hold.
+3. Context-matched reviewed empirical profiles using robust summaries.
+4. Within-run outliers, which can reach Review but never Poor by themselves.
+5. Otherwise Not graded.
+
+Allowed bases are `hard_validation`, `literature_rule`,
+`empirical_reference`, `relative_within_run`, `user_reference`, and
+`not_graded`. WLS/RWLS weighted residuals are never compared with raw residuals
+under a mismatched profile. Matrix conditioning and spectral similarity are
+panel-complexity evidence, not automatic SCC defects. The historical ungated
+lower-tail spread is labeled **Negative-tail MAD proxy**; explicitly gated
+negatives are preferred.
+
+Profiles are `spectreasy_qc_reference_profile` objects discovered from an empty
+built-in location, `.spectreasy/qc_reference_profiles/`, or an explicit path.
+Use `scripts/build_qc_reference_profile.R` to inventory machine-readable runs,
+apply a reviewed manifest, and create a de-identified candidate profile and
+inclusion/exclusion report.

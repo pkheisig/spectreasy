@@ -127,7 +127,7 @@
         gating = "Gating",
         residual = "Residuals",
         reconstruction = "Reconstruction",
-        nps = "NPS",
+        nps = "Negative-tail MAD",
         nxn = "NxN matrix"
     )
     label <- unname(labels[id])
@@ -254,7 +254,7 @@
         sections <- Filter(Negate(is.null), list(
             spectra=if (length(.report_existing_paths(manifest$reference))) c("Reference spectra",.report_plots_html(manifest$reference, titles = "Reference spectra overlay")) else NULL,
             similarity=if (length(.report_existing_paths(manifest$similarity))) c("Fluorophore similarity",.report_plots_html(manifest$similarity, titles = "Fluorophore spectral similarity")) else NULL,
-            nps=if (!is.null(x$nps_note) || length(.report_existing_paths(manifest$nps))) c("Negative population spread", if (!is.null(x$nps_note)) paste0("<p class=\"note\">", .report_html_escape(x$nps_note), "</p>") else .report_plots_html(manifest$nps, titles = "Negative population spread")) else NULL,
+            nps=if (!is.null(x$nps_note) || length(.report_existing_paths(manifest$nps))) c("Negative-tail MAD proxy", if (!is.null(x$nps_note)) paste0("<p class=\"note\">", .report_html_escape(x$nps_note), "</p>") else .report_plots_html(manifest$nps, titles = "Negative-tail MAD proxy")) else NULL,
             nxn=if (length(.report_existing_paths(manifest$nxn))) c("Sample NxN scatter matrices",.report_nxn_link_html(companions, report_type = "sample")) else NULL,
             residual=if (length(.report_existing_paths(manifest$detector_rms))) c("Detector RMS residual",.report_plots_html(manifest$detector_rms, titles = "RMS residual per detector")) else NULL,
             reconstruction=if (length(.report_existing_paths(manifest$reconstruction))) c("Reconstruction error",.report_plots_html(manifest$reconstruction, titles = "Reconstruction error per sample")) else NULL

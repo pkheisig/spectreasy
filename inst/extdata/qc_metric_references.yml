@@ -1,0 +1,230 @@
+schema: spectreasy-qc-metric-registry
+version: 1.0.0
+metrics:
+  QC-STRUCT-SCHEMA:
+    name: Canonical schema validity
+    formula: Required components and enumerations validate against spectreasy-ai-qc 1.0.0.
+    stage: structural_validation
+    assumptions: []
+    grading_method: hard_validation
+    implementation_version: 1.0.0
+    limitations: Does not establish scientific validity.
+  QC-MATRIX-AVAILABILITY:
+    name: Reference-matrix availability
+    formula: Presence of a numeric reference matrix in memory or a compatible machine-readable artifact.
+    stage: reference_matrix
+    assumptions: []
+    grading_method: hard_validation
+    implementation_version: 1.0.0
+    limitations: Availability does not establish matrix quality.
+  QC-MATRIX-RANK:
+    name: Numerical reference-matrix rank
+    formula: Count of singular values above the numerical tolerance.
+    stage: reference_matrix
+    assumptions: Reference rows and detector columns are numeric and aligned.
+    grading_method: hard_validation
+    implementation_version: 1.0.0
+    limitations: Full rank does not imply low noise amplification.
+  QC-MATRIX-CONDITION:
+    name: Reference-matrix condition number
+    formula: Largest singular value divided by the smallest singular value.
+    stage: reference_matrix
+    assumptions: Marker-only reference matrix.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: Panel-complexity evidence; not an automatic SCC defect.
+  QC-MATRIX-MAX-SIMILARITY:
+    name: Maximum marker spectral cosine similarity
+    formula: Maximum upper-triangle cosine similarity among marker rows.
+    stage: reference_matrix
+    assumptions: Non-zero marker spectra.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: Similarity is panel-complexity evidence and requires context.
+  QC-CTRL-EVENTS-TOTAL:
+    name: Total control events
+    formula: Event count before gating.
+    stage: controls
+    assumptions: Control reader completed.
+    grading_method: descriptive
+    implementation_version: 1.0.0
+    limitations: Acquisition size alone does not establish control quality.
+  QC-CTRL-AVAILABILITY:
+    name: Control evidence availability
+    formula: Presence of in-memory or compatible saved machine-readable control QC metadata.
+    stage: controls
+    assumptions: []
+    grading_method: descriptive
+    implementation_version: 1.0.0
+    limitations: Historical reports are not parsed to reconstruct missing measurements.
+  QC-CTRL-EVENTS-SCATTER:
+    name: Scatter-gated control events
+    formula: Event count after scatter gating.
+    stage: controls
+    assumptions: Scatter gate is available.
+    grading_method: descriptive
+    implementation_version: 1.0.0
+    limitations: Fixed selection and acquisition design must be considered.
+  QC-CTRL-EVENTS-FINAL:
+    name: Final control events
+    formula: Events retained for spectral calculation.
+    stage: controls
+    assumptions: Final selection completed.
+    grading_method: hard_validation
+    implementation_version: 1.0.0
+    limitations: Intentional fixed-size selections are not penalized for low percentage retention.
+  QC-CTRL-RETENTION:
+    name: Control final retention
+    formula: 100 times final events divided by total events.
+    stage: controls
+    assumptions: Total and final counts are available.
+    grading_method: descriptive
+    implementation_version: 1.0.0
+    limitations: Not graded when a fixed intentional selection governs the count.
+  QC-CTRL-STAIN-INDEX:
+    name: Robust stain index
+    formula: Difference of positive and negative medians divided by twice the robust negative spread.
+    stage: controls
+    assumptions: Positive and negative populations are available.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: Requires matched control type and acquisition context.
+  QC-CTRL-SATURATION:
+    name: Detector saturation indicator
+    formula: Any control detector value reaches the configured saturation boundary.
+    stage: controls
+    assumptions: Raw control measurements were inspected during processing.
+    grading_method: hard_validation
+    implementation_version: 1.0.0
+    limitations: Boundary depends on instrument scaling.
+  QC-CTRL-SATURATION-FRACTION:
+    name: Saturated-event fraction
+    formula: Fraction of retained control events reaching the configured detector saturation boundary.
+    stage: controls
+    assumptions: Event-level saturation was summarized during control processing.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: Instrument scaling and acquisition settings must match the reference cohort.
+  QC-CTRL-SEPARATION:
+    name: Positive/negative robust separation
+    formula: Machine-readable robust separation summary for explicitly gated positive and negative populations.
+    stage: controls
+    assumptions: Matched gated positive and negative populations are available.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: Not reconstructed from report images or inferred from stain index.
+  QC-CTRL-SPECTRAL-STABILITY:
+    name: Control spectral stability
+    formula: Robust within-control or replicate spectral-shape similarity retained by control processing.
+    stage: controls
+    assumptions: Replicate or event-pool spectral summaries are available.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: Acquisition context and control type must match the reference cohort.
+  QC-CTRL-BACKGROUND-SUBTRACTION:
+    name: Control background-subtraction provenance
+    formula: Recorded background-subtraction method used for the control spectrum.
+    stage: controls
+    assumptions: Control processing retained the selected method.
+    grading_method: descriptive
+    implementation_version: 1.0.0
+    limitations: Method provenance alone does not grade subtraction quality.
+  QC-SAMPLE-EVENTS:
+    name: Sample QC event count
+    formula: Number of retained rows in the QC result summary.
+    stage: samples
+    assumptions: Sampling provenance is retained separately.
+    grading_method: descriptive
+    implementation_version: 1.0.0
+    limitations: May be a deterministic report subsample rather than the full acquisition.
+  QC-SAMPLE-RECONSTRUCTION:
+    name: Normalized sample reconstruction error
+    formula: Median event residual RMS divided by the 99.5th percentile signal peak, times 100.
+    stage: samples
+    assumptions: Residual profile matches the unmixing method.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: WLS/RWLS weighted residuals and raw residuals are not interchangeable.
+  QC-SAMPLE-NEGATIVE-TAIL-MAD:
+    name: Negative-tail MAD proxy
+    formula: MAD of values at or below the within-sample marker 20th percentile.
+    stage: samples
+    assumptions: Explicit gated negatives were unavailable.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: Ungated lower-tail proxy; prefer explicitly gated negatives when available.
+  QC-SAMPLE-NEGATIVE-BIAS:
+    name: Marker-aware negative-bias proxy
+    formula: Median of values at or below the within-sample marker 20th percentile.
+    stage: samples
+    assumptions: Explicit gated negatives were unavailable and the method permits signed values.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: Ungated descriptive proxy; biology and sampling can shift the lower tail.
+  QC-DETECTOR-RMS:
+    name: Detector residual RMS
+    formula: Root mean square detector reconstruction residual using the method-specific residual profile.
+    stage: samples
+    assumptions: Detector residuals were retained.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: No global detector threshold; requires method and detector-schema matching.
+  QC-AF-INDEX-MEDIAN:
+    name: Median AF band index
+    formula: Median event-wise AF Index among retained QC events.
+    stage: samples
+    assumptions: AutoSpectral-style AF assignment was used.
+    grading_method: descriptive
+    implementation_version: 1.0.0
+    limitations: Band labels are run-specific and are not ordered abundance values.
+  QC-AF-AVAILABILITY:
+    name: AF-bank availability
+    formula: Presence of one or more AF rows in the reference matrix.
+    stage: af
+    assumptions: []
+    grading_method: descriptive
+    implementation_version: 1.0.0
+    limitations: AF may be intentionally disabled for a run.
+  QC-AF-EFFECTIVE-RANK:
+    name: AF-bank effective rank
+    formula: Count of AF-bank singular values above the numerical tolerance.
+    stage: af
+    assumptions: AF rows are numeric and detector-aligned.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: Higher rank is not automatically better and requires matched AF configuration.
+  QC-AF-MAX-SIMILARITY:
+    name: Maximum AF-band similarity
+    formula: Maximum upper-triangle cosine similarity among AF-bank rows.
+    stage: af
+    assumptions: At least two non-zero AF bands are available.
+    grading_method: empirical_reference
+    implementation_version: 1.0.0
+    limitations: Similarity is dimensionality evidence, not a standalone defect.
+  QC-PAIR-SLOPE:
+    name: Pairwise robust slope evidence
+    formula: Robust descriptive slope between two marker abundance vectors within a sample.
+    stage: pairwise_findings
+    assumptions: Both markers have sufficient finite observations.
+    grading_method: descriptive
+    implementation_version: 1.0.0
+    limitations: Association may reflect biology, spillover, covariance, or sampling and does not establish causation.
+  QC-PAIR-COVARIANCE:
+    name: Pairwise covariance evidence
+    formula: Covariance between two finite marker abundance vectors within a sample.
+    stage: pairwise_findings
+    assumptions: Both markers have sufficient finite observations.
+    grading_method: descriptive
+    implementation_version: 1.0.0
+    limitations: Covariance is scale-dependent and is not graded without a compatible reviewed cohort.
+  QC-XSTAGE-001:
+    name: Cross-stage descriptive association
+    formula: Deterministic linkage of supporting control, matrix, AF, sample, or detector metric identifiers.
+    stage: cross_stage
+    assumptions: Supporting metric records are present.
+    grading_method: descriptive
+    implementation_version: 1.0.0
+    limitations: Cross-stage association is not a causal claim and must include alternative explanations.
+references:
+  robust_statistics: Hampel et al. Robust Statistics. Wiley, 1986.
+  spectral_unmixing: Spectreasy package implementation and method-specific report calculations.

@@ -6,7 +6,7 @@
 
 - **Control Gating**: Gate reference control files in a browser GUI with gates being automatically transferred into the unmixing function
 - **Reference Background Handling**: Use unstained cell controls for AF extraction and unstained bead controls as bead backgrounds when present
-- **Advanced Unmixing Algorithms**: Spectreasy builds on the `AutoSpectral` idea with per-cell AF matching and spectral variants. In addition, it ajusts AF extraction for each marker, depending on the AF's influence on it.
+- **AutoSpectral Unmixing by Default**: Perform per-cell AF matching and spectral-variant matching with `AutoSpectral` as the default unmixing method
 - **Other Unmixing Algorithms**: OLS, NNLS, WLS and RWLS (robust WLS) are supported
 - **SCC Diagnostics & Visualization**: Generate HTML reports by default to inspect SCC spectra, gating plots, and QC metrics, with PDF available through `report_format = "pdf"`
 - **Browser Tools**: Interactive control gating, spectral panel builder, and manual matrix adjustment modules
@@ -197,6 +197,40 @@ ctrl_pdf <- unmix_controls(report_format = "pdf")
 unmixed_pdf <- unmix_samples(report_format = "pdf")
 ```
 
+### Local AI-ready QC
+
+The same workflow calculations can be exported as a deterministic,
+schema-versioned machine review bundle. Spectreasy sends nothing: it has no
+embedded AI model, provider integration, API key, or upload step. The JSON is
+canonical; text, Markdown, the paste-ready prompt, report summaries, and the
+cockpit view derive from it. No raw event-level matrices are included.
+
+```r
+ai <- export_ai_qc(
+  controls = ctrl,
+  samples = unmixed,
+  M = ctrl$M,
+  scope = "combined",
+  privacy = "standard",
+  detail = "standard",
+  output_dir = "spectreasy_outputs/ai_qc"
+)
+
+cat(readLines(ai$paths[["prompt"]]), sep = "\n")
+```
+
+`unmix_controls()` and `unmix_samples()` set `save_ai_qc = save_report` by
+default; set `save_ai_qc = TRUE, save_report = FALSE` to create the machine
+bundle without a visual report. Standard privacy aliases samples and removes
+absolute paths. Strict privacy also aliases controls and removes
+project/operator/date/free-text metadata. `privacy = "none"` is explicit.
+
+Grades are `good`, `review`, `poor`, or `not_graded`. Every grade records its
+basis and thresholds/profile provenance. There is no global detector RMS, NPS,
+fluorophore, instrument, or method threshold table. AI interpretation is
+advisory and must be checked against the measurements, assumptions, and
+experimental design.
+
 ### Single-Color Control (SCC) Report
 
 The SCC report reviews event selection, peak channels, signal distributions, SCC unmixing scatter, and post-unmixing QC. Cell SCCs are compared to unstained cells; bead SCCs are compared to unstained/negative beads when available, otherwise to low-target bead events from the same control.
@@ -235,11 +269,6 @@ The sections below are for understanding, tuning, or reusing pieces of the workf
 By default, `spectreasy` uses `unmixing_method = "AutoSpectral"`. This method performs per-event AF matching based on minimizing overall marker leakage, as well as per-event SCC spectral variant matching. For more information, visit [AutoSpectral](https://github.com/DrCytometer/AutoSpectral). The SCC event-selection and variant-detection design is inspired by [Spectracle](https://github.com/nlaniewski/spectracle)
 
 For both `Spectreasy` and `AutoSpectral`, SCC processing starts with the positive histogram population selected in the gating GUI. When no saved positive gate is available, the same automatic histogram fallback is applied. Bright-candidate selection, negative-source resolution, scatter-KNN subtraction, and spectral-shape selection then operate only within that positive population.
-
-The extra Spectreasy step is marker reweighting. For markers that are strongly affected by AF shape, the method leans more on the AutoSpectral-style AF-aware fit. For markers that are relatively clean, it leans more on a marker-only OLS anchor. In practice, this is meant to keep the AF correction helpful without letting it overcorrect clean marker channels.
-
-The Spectreasy blend weight for each marker is calculated from how strongly the AF bank projects through the marker decoder, using a soft-saturation scale controlled by `spectreasy_weight_quantile` (default `0.65`).
-
 
 ## Other unmixing methods
 

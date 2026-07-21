@@ -623,8 +623,22 @@
 }
 
 .get_result_metadata_columns <- function(col_names) {
+    col_names <- as.character(col_names)
+    explicit <- c(
+        "File", "Sample", "Sample ID", "Event", "Event ID", "AF Index",
+        "Time", "Time-A", "Width", "Height", "Area", "Offset",
+        "Original", "Original File", "Filename", "File Name", "Batch",
+        "Condition", "Group", "Treatment", "Replicate", "Well", "Plate"
+    )
+    acquisition <- grepl(
+        "^(FSC|SSC)([-_. ]|$)|^(Time|Event)([-_. ]|$)|^(AF)([-_. ]?Index$)",
+        col_names,
+        ignore.case = TRUE
+    )
+    af_rows <- grepl("^AF($|[_ .-])", col_names, ignore.case = TRUE)
     unique(c(
-        "File",
+        intersect(col_names, explicit),
+        col_names[acquisition | af_rows],
         .get_passthrough_parameter_names(col_names)
     ))
 }
