@@ -180,7 +180,6 @@ export function SamplesWorkspace(props: WorkflowWorkspaceProps) {
           project={props.project}
           kind="sample"
           onView={(reportPath) => props.onOpenApplet("sample-qc-report", reportPath)}
-          onAiQc={() => props.onOpenApplet("ai-ready-qc")}
         />
       )}
     </>

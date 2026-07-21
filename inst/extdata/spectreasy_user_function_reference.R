@@ -43,10 +43,6 @@
         n_threads = 1L,
         save_qc_png = FALSE,
         save_report = TRUE,
-        save_ai_qc = TRUE,
-        ai_qc_detail = "standard",
-        ai_qc_privacy = "standard",
-        ai_qc_reference = "auto",
         report_format = "html",
         scc_background_method = c("scatter_knn", "none"),
         scc_background_k = 2L,
@@ -124,10 +120,6 @@
         output_dir = "spectreasy_outputs",
         write_fcs = TRUE,
         save_report = TRUE,
-        save_ai_qc = TRUE,
-        ai_qc_detail = "standard",
-        ai_qc_privacy = "standard",
-        ai_qc_reference = "auto",
         report_format = "html",
         report_per_sample = FALSE,
         save_qc_plots = FALSE,
@@ -257,56 +249,6 @@
         report_data = sample_report_data,
         output_file = "spectreasy_outputs/unmix_samples/qc_samples_report.html",
         overwrite = "version"
-    )
-
-    ai_qc <- collect_ai_qc(
-        controls = ctrl,
-        samples = unmixed,
-        M = ctrl$M,
-        control_report_data = control_report_data,
-        sample_report_data = sample_report_data,
-        project_dir = getwd(),
-        existing_output_dir = "spectreasy_outputs",
-        scope = "combined",
-        privacy = "standard",
-        reference = "auto",
-        generated_at = Sys.time(),
-        context = list()
-    )
-
-    validate_ai_qc(
-        x = ai_qc,
-        error = TRUE
-    )
-
-    ai_prompt <- build_ai_qc_prompt(
-        x = ai_qc,
-        detail = "standard",
-        context = NULL
-    )
-
-    ai_export <- export_ai_qc(
-        x = ai_qc,
-        output_dir = file.path("spectreasy_outputs", "ai_qc"),
-        scope = "combined",
-        detail = "standard",
-        privacy = "standard",
-        reference = "auto",
-        formats = c("json", "txt", "md"),
-        prompt = TRUE,
-        context = NULL,
-        overwrite = "version",
-        generated_at = Sys.time()
-    )
-
-    qc_profiles <- list_qc_reference_profiles(
-        project_dir = getwd()
-    )
-
-    qc_profile <- load_qc_reference_profile(
-        reference = "none",
-        project_dir = getwd(),
-        context = list()
     )
 
     # -------------------------------------------------------------------------

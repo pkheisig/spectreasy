@@ -23,8 +23,7 @@
     "gating_io.R",
     "gating_selection.R",
     "gating_spectrum.R",
-    "workflow_project.R",
-    "ai_qc.R"
+    "workflow_project.R"
 )
 .gui_api_module_dir <- .gui_api_module_directory()
 for (.gui_api_module in .gui_api_modules) {
@@ -1501,10 +1500,6 @@ function(req) {
             n_threads = gui_workflow_number(body, "n_threads", 1, integer = TRUE, minimum = 1),
             save_qc_png = gui_workflow_bool(body, "save_qc_png", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
-            save_ai_qc = gui_workflow_bool(body, "save_ai_qc", gui_workflow_bool(body, "save_report", TRUE)),
-            ai_qc_detail = gui_workflow_value(body, "ai_qc_detail", "standard"),
-            ai_qc_privacy = gui_workflow_value(body, "ai_qc_privacy", "standard"),
-            ai_qc_reference = gui_workflow_value(body, "ai_qc_reference", "auto"),
             report_format = gui_workflow_value(body, "report_format", "html"),
             gating_mode = gui_workflow_value(
                 body,
@@ -1542,9 +1537,7 @@ function(req) {
         spectral_variant_library_file = result$spectral_variant_library_file,
         qc_report_file = result$qc_report_file,
         spectra_file = result$spectra_file,
-        unmixing_scatter_file = result$unmixing_scatter_file,
-        ai_qc_paths = result$ai_qc_paths,
-        ai_qc_grade_counts = result$ai_qc_grade_counts
+        unmixing_scatter_file = result$unmixing_scatter_file
     )
     run
 }
@@ -1583,10 +1576,6 @@ function(req) {
             output_dir = output_dir,
             write_fcs = gui_workflow_bool(body, "write_fcs", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
-            save_ai_qc = gui_workflow_bool(body, "save_ai_qc", gui_workflow_bool(body, "save_report", TRUE)),
-            ai_qc_detail = gui_workflow_value(body, "ai_qc_detail", "standard"),
-            ai_qc_privacy = gui_workflow_value(body, "ai_qc_privacy", "standard"),
-            ai_qc_reference = gui_workflow_value(body, "ai_qc_reference", "auto"),
             report_format = gui_workflow_value(body, "report_format", "html"),
             report_per_sample = gui_workflow_bool(body, "report_per_sample", FALSE),
             save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
@@ -1610,39 +1599,9 @@ function(req) {
         qc_report_file = attr(result, "qc_report_file"),
         qc_samples_dir = attr(result, "qc_samples_dir"),
         qc_metrics_dir = attr(result, "qc_metrics_dir"),
-        output_dir = output_dir,
-        ai_qc_paths = attr(result, "ai_qc_paths"),
-        ai_qc_grade_counts = attr(result, "ai_qc_grade_counts")
+        output_dir = output_dir
     )
     run
-}
-
-#* Inspect AI-ready QC readiness and stale state
-#* @get /ai-qc/readiness
-function(project_path = "", output_root = "spectreasy_outputs") {
-    root <- gui_request_project_root(project_path)
-    gui_ai_qc_readiness(root, output_root = output_root)
-}
-
-#* Preview the canonical AI-ready QC summary and paste-ready prompt
-#* @get /ai-qc/preview
-function(project_path = "", output_root = "spectreasy_outputs", detail = "standard") {
-    root <- gui_request_project_root(project_path)
-    tryCatch(gui_ai_qc_preview(root, output_root = output_root, detail = detail), error = function(e) list(status = "failed", error = conditionMessage(e)))
-}
-
-#* List compatible local AI-ready QC reference profiles
-#* @get /ai-qc/profiles
-function(project_path = "") {
-    root <- gui_request_project_root(project_path)
-    gui_ai_qc_profiles(root)
-}
-
-#* Generate or refresh local AI-ready QC artifacts
-#* @post /ai-qc/generate
-function(req) {
-    body <- gui_workflow_body(req)
-    tryCatch(gui_ai_qc_generate(body), error = function(e) list(status = "failed", error = conditionMessage(e)))
 }
 
 #* CORS preflight for workflow_report

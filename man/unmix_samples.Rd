@@ -26,10 +26,6 @@ unmix_samples(
   output_dir = "spectreasy_outputs",
   write_fcs = TRUE,
   save_report = TRUE,
-  save_ai_qc = save_report,
-  ai_qc_detail = "standard",
-  ai_qc_privacy = "standard",
-  ai_qc_reference = "auto",
   report_format = "html",
   report_per_sample = FALSE,
   save_qc_plots = FALSE,
@@ -130,15 +126,6 @@ Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
 \item{save_report}{Logical; if `TRUE`, write a sample QC report and
 sample QC metric CSVs from the in-memory unmixing results without rerunning
 unmixing. Defaults to `TRUE`.}
-
-\item{save_ai_qc}{Logical; write local AI-ready QC artifacts. Defaults to
-`save_report` and may be enabled independently of the visual report.}
-
-\item{ai_qc_detail}{AI-QC text/prompt detail.}
-
-\item{ai_qc_privacy}{AI-QC privacy mode.}
-
-\item{ai_qc_reference}{Reference-profile selection.}
 
 \item{report_format}{Report format, either `"html"` (default) or `"pdf"`.
 Only the selected format is written. Matching is case-insensitive.}

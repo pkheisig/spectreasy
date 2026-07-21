@@ -52,14 +52,6 @@
 #'   companion, and supporting QC metrics under
 #'   `output_dir/unmix_controls/qc_controls` after controls are unmixed.
 #'   Defaults to `TRUE`.
-#' @param save_ai_qc Logical; write local AI-ready QC artifacts. Defaults to
-#'   `save_report` and may be enabled independently of the visual report.
-#' @param ai_qc_detail AI-QC text/prompt detail: `"compact"`, `"standard"`, or
-#'   `"full"`.
-#' @param ai_qc_privacy AI-QC privacy mode: `"standard"`, `"strict"`, or
-#'   `"none"`.
-#' @param ai_qc_reference Reference-profile selection forwarded to
-#'   [load_qc_reference_profile()].
 #' @param report_format Report format, either `"html"` (default) or `"pdf"`.
 #'   Only the selected format is written. Matching is case-insensitive.
 #' @param gating_mode Control-gating mode. `"interactive"` (default) opens the
@@ -132,10 +124,6 @@ unmix_controls <- function(
     n_threads = 1L,
     save_qc_png = FALSE,
     save_report = TRUE,
-    save_ai_qc = save_report,
-    ai_qc_detail = "standard",
-    ai_qc_privacy = "standard",
-    ai_qc_reference = "auto",
     report_format = "html",
     gating_mode = "interactive",
     manual_gate_file = "ssc_gate_config.csv",
@@ -164,10 +152,6 @@ unmix_controls <- function(
     )
     n_threads <- .normalize_n_threads(n_threads)
     save_qc_png <- .normalize_scalar_logical(save_qc_png, "save_qc_png")
-    save_report <- .normalize_scalar_logical(save_report, "save_report")
-    save_ai_qc <- .normalize_scalar_logical(save_ai_qc, "save_ai_qc")
-    ai_qc_detail <- .match_arg_ci(ai_qc_detail, c("compact", "standard", "full"), "ai_qc_detail")
-    ai_qc_privacy <- .match_arg_ci(ai_qc_privacy, c("standard", "strict", "none"), "ai_qc_privacy")
     auto_unknown_fluor_policy <- .match_arg_ci(
         auto_unknown_fluor_policy,
         c("by_channel", "empty", "filename"),
@@ -397,7 +381,7 @@ unmix_controls <- function(
         ),
         project_path = project_path
     )
-    result <- .unmix_controls_result(
+    .unmix_controls_result(
         M = M,
         W = W,
         unmixed_list = unmixed_list,
@@ -417,36 +401,5 @@ unmix_controls <- function(
         spectral_variant_library_file = spectral_variant_library_file,
         autospectral_refine = autospectral_refine
     )
-    if (isTRUE(save_ai_qc)) {
-        ai_export <- export_ai_qc(
-            controls = result,
-            M = M,
-            control_report_data = result$qc_report_data,
-            project_dir = project_path,
-            output_dir = file.path(dirname(output_dir), "ai_qc"),
-            scope = "control",
-            detail = ai_qc_detail,
-            privacy = ai_qc_privacy,
-            reference = ai_qc_reference,
-            overwrite = "version"
-        )
-        result$ai_qc <- ai_export$object
-        result$ai_qc_paths <- ai_export$paths
-        result$ai_qc_grade_counts <- ai_export$grade_counts
-        if (!is.null(result$qc_report_data) && !is.null(result$qc_report_file) && grepl("\\.html$", result$qc_report_file, ignore.case = TRUE)) {
-            result$qc_report_data$ai_qc <- ai_export$object
-            result$qc_report_data$ai_qc_summary <- list(
-                status = ai_export$object$overall_summary$status,
-                grade_counts = ai_export$grade_counts,
-                profile = ai_export$object$quality_reference$profile,
-                privacy = ai_export$object$privacy$mode,
-                top_findings = ai_export$object$overall_summary$top_findings
-            )
-            result$qc_report_data$ai_qc_artifact_paths <- ai_export$paths
-            refreshed <- render_qc_html_report(result$qc_report_data, result$qc_report_file, overwrite = "overwrite")
-            result$qc_report <- refreshed
-        }
-    }
-    invisible(result)
 
 }

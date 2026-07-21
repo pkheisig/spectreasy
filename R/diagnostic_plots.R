@@ -1,7 +1,7 @@
-#' Calculate the negative-tail MAD proxy (historically NPS)
+#' Calculate Negative Population Spread (NPS)
 #' 
-#' Quantifies an ungated lower-tail spread proxy after unmixing. Explicitly
-#' gated negative populations should be preferred when available.
+#' Quantifies the spreading of negative populations after unmixing. 
+#' High spread indicates poor unmixing or high spillover noise.
 #' 
 #' @param data Unmixed data frame
 #' @param markers Vector of marker names to analyze
@@ -86,9 +86,9 @@ plot_nps <- function(nps_results, output_file = NULL, width = 200) {
     
     p <- p +
         ggplot2::labs(
-            title = "Negative-tail MAD proxy (Unmixing Noise Floor)",
-            subtitle = "Ungated lower-tail proxy; explicitly gated negatives are preferred when available. Lower is better.",
-            y = "Negative-tail MAD proxy",
+            title = "Negative Population Spread (Unmixing Noise Floor)",
+            subtitle = "Lower is better. High spread can worsen separation between pos. and neg. populations.\nCell-based control colors will show higher MAD.\nUse colors with high spread on abundant markers whenever possible.",
+            y = "Spread (MAD)",
             x = "Unmixed Marker"
         ) +
         ggplot2::theme_minimal(base_size = 13.75) +

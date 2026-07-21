@@ -451,11 +451,3 @@ plot_nps(calculate_nps(sample_results), output_file = NULL)
 ```{r}
 sessionInfo()
 ```
-## Local AI-ready QC
-
-Control and sample workflows can write a deterministic, schema-versioned QC
-bundle with `save_ai_qc = TRUE`. This is a local export only: Spectreasy sends
-nothing and has no embedded AI model, provider integration, API key, or upload
-step. Use `privacy = "standard"` for stable sample aliases and path removal, or
-`"strict"` to additionally alias controls and remove project/operator/date/free
-text. AI interpretation remains advisory.
