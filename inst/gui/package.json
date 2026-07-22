@@ -8,7 +8,7 @@
     "sandbox": "node sandbox/server.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "node --test src/*.test.js src/cockpit/*.test.ts",
+    "test": "node --test src/*.test.js src/cockpit/*.test.ts src/analysis/*.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

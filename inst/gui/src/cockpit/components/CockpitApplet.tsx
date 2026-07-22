@@ -18,11 +18,13 @@ const GatingGui = lazy(() => import('../../GatingGui.jsx')) as ComponentType<{
 const PanelBuilder = lazy(() => import('../../PanelBuilder.tsx')) as ComponentType<{ embedded?: boolean; cockpitTheme?: 'light' | 'dark'; projectPath?: string; projectRevision?: string; onRequestExit?: () => void }>
 const MatrixAdjustment = lazy(() => import('../../MatrixAdjustment.tsx')) as ComponentType<{ embedded?: boolean; cockpitTheme?: 'light' | 'dark'; projectPath?: string; projectRevision?: string; initialMatrixFiles?: string[]; initialSampleFiles?: string[]; initialUnmixingMethod?: string; onRequestExit?: () => void }>
 const QcReportApplet = lazy(() => import('./QcReportApplet.tsx'))
+const AnalysisWorkspace = lazy(() => import('../../analysis/AnalysisWorkspace.tsx'))
 
 const appletLabels: Record<CockpitAppletId, string> = {
   'control-gating': 'control gating',
   'panel-builder': 'panel builder',
   'matrix-adjustment': 'matrix adjustment',
+  'sample-analysis': 'sample analysis',
   'control-qc-report': 'controls QC report',
   'sample-qc-report': 'samples QC report',
 }
@@ -31,6 +33,7 @@ const appletLoadingLabels: Record<CockpitAppletId, string> = {
   'control-gating': 'Loading Control Gating',
   'panel-builder': 'Loading Spectral Panel Builder',
   'matrix-adjustment': 'Loading Matrix Adjustment',
+  'sample-analysis': 'Loading Sample Analysis',
   'control-qc-report': 'Loading Controls QC Report',
   'sample-qc-report': 'Loading Samples QC Report',
 }
@@ -121,6 +124,7 @@ export function CockpitApplet({ applet, theme, projectPath = '', project, output
             {applet === 'control-gating' && <GatingGui embedded cockpitTheme={theme} projectPath={projectPath} projectRevision={projectRevision} initialFiles={project?.gatingFiles ?? null} initialMetadata={project?.gatingMetadata ?? {}} onRequestExit={() => onExit('confirmed')} onRequestClose={() => onExit('exit')} />}
             {applet === 'panel-builder' && <PanelBuilder embedded cockpitTheme={theme} projectPath={projectPath} projectRevision={projectRevision} onRequestExit={() => onExit('exit')} />}
             {applet === 'matrix-adjustment' && <MatrixAdjustment embedded cockpitTheme={theme} projectPath={projectPath} projectRevision={projectRevision} initialMatrixFiles={project?.matrixFiles ?? undefined} initialSampleFiles={project?.sampleFiles ?? undefined} initialUnmixingMethod={project?.method} onRequestExit={() => onExit('exit')} />}
+            {applet === 'sample-analysis' && <AnalysisWorkspace cockpitTheme={theme} projectPath={projectPath} onRequestExit={() => onExit('exit')} />}
             {applet === 'control-qc-report' && <QcReportApplet kind="control" theme={theme} projectPath={projectPath} outputRoot={outputRoot} initialReportPath={reportPath} onRequestExit={() => onExit('exit')} />}
             {applet === 'sample-qc-report' && <QcReportApplet kind="sample" theme={theme} projectPath={projectPath} outputRoot={outputRoot} initialReportPath={reportPath} onRequestExit={() => onExit('exit')} />}
           </Suspense>

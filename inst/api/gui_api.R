@@ -9,11 +9,13 @@
     candidates <- c(
         if (length(frame_files)) file.path(dirname(frame_files), "modules") else character(),
         file.path(getwd(), "inst", "api", "modules"),
+        file.path(getwd(), "..", "inst", "api", "modules"),
+        file.path(getwd(), "..", "..", "inst", "api", "modules"),
         system.file("api", "modules", package = "spectreasy")
     )
     candidates <- unique(candidates[nzchar(candidates)])
-    required <- "project_matrix.R"
-    hit <- candidates[file.exists(file.path(candidates, required))]
+    required <- c("project_matrix.R", "analysis_workspace.R")
+    hit <- candidates[vapply(candidates, function(path) all(file.exists(file.path(path, required))), logical(1))]
     if (!length(hit)) stop("Could not locate Spectreasy GUI API modules.", call. = FALSE)
     normalizePath(hit[[1]], mustWork = TRUE)
 }
@@ -24,6 +26,7 @@
     "gating_selection.R",
     "gating_spectrum.R",
     "workflow_project.R",
+    "analysis_workspace.R",
     "ai_qc.R"
 )
 .gui_api_module_dir <- .gui_api_module_directory()
@@ -1657,6 +1660,113 @@ function(req) {
         ai_qc_data_paths = attr(result, "ai_qc_data_paths")
     )
     run
+}
+
+#* Discover project-contained raw, control, and unmixed FCS sources
+#* @get /analysis/sources
+#* @serializer unboxedJSON
+function(project_path = "") {
+    root <- gui_request_project_root(project_path)
+    tryCatch(
+        list(success = TRUE, sources = gui_analysis_source_inventory(root)),
+        error = function(e) list(success = FALSE, error = conditionMessage(e), sources = list())
+    )
+}
+
+#* Load the editable v2 analysis workspace
+#* @get /analysis/workspace
+#* @serializer unboxedJSON
+function(project_path = "") {
+    root <- gui_request_project_root(project_path)
+    tryCatch(
+        list(success = TRUE, workspace = gui_analysis_read_workspace(root)),
+        error = function(e) list(success = FALSE, error = conditionMessage(e))
+    )
+}
+
+#* Persist the editable v2 analysis workspace
+#* @post /analysis/workspace
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch(
+        list(success = TRUE, workspace = gui_analysis_write_workspace(root, body$workspace)),
+        error = function(e) list(success = FALSE, error = conditionMessage(e))
+    )
+}
+
+#* Load a compact population-scoped event payload for one user-configured plot
+#* @get /analysis/events
+#* @serializer unboxedJSON
+function(project_path = "", file = "", population_id = "root", x = "FSC-A", y = "SSC-A", color = "", max_points = 8000, seed = 20260723) {
+    root <- gui_request_project_root(project_path)
+    tryCatch(
+        c(list(success = TRUE), gui_analysis_event_payload(
+            root = root,
+            file = file,
+            population_id = population_id,
+            x = x,
+            y = y,
+            color = color,
+            max_points = gui_workflow_number(list(max_points = max_points), "max_points", 8000L, integer = TRUE, minimum = 100L, maximum = 50000L),
+            seed = gui_workflow_number(list(seed = seed), "seed", 20260723L, integer = TRUE, minimum = 1L)
+        )),
+        error = function(e) list(success = FALSE, error = conditionMessage(e), events = data.frame())
+    )
+}
+
+#* Calculate population summaries or a role-gated staining index
+#* @post /analysis/statistics
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch({
+        mode <- tolower(gui_workflow_value(body, "mode", "population"))
+        result <- if (identical(mode, "staining_index")) {
+            gui_analysis_staining_index(root, gui_workflow_value(body, "file", ""), gui_workflow_value(body, "marker", ""))
+        } else {
+            gui_analysis_population_statistics(
+                root,
+                gui_workflow_value(body, "file", ""),
+                gui_workflow_value(body, "populationId", "root"),
+                body$markers %||% character()
+            )
+        }
+        list(success = TRUE, mode = mode, result = result)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Export a selected population as FCS, CSV, or both with seeded sampling
+#* @post /analysis/export
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch(
+        list(success = TRUE, result = if (identical(tolower(gui_workflow_value(body, "mode", "events")), "statistics")) gui_analysis_export_statistics(root, body) else gui_analysis_export(root, body)),
+        error = function(e) list(success = FALSE, error = conditionMessage(e))
+    )
+}
+
+#* Inspect cited analysis-method capabilities in the active runtime
+#* @get /analysis/methods
+#* @serializer unboxedJSON
+function() {
+    list(success = TRUE, methods = gui_analysis_method_registry())
+}
+
+#* Run one installed and adapter-verified analysis method
+#* @post /analysis/run
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch(
+        list(success = TRUE, result = gui_analysis_run_method(root, body)),
+        error = function(e) list(success = FALSE, error = conditionMessage(e))
+    )
 }
 
 #* Inspect AI-ready QC readiness and stale state

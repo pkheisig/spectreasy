@@ -10,6 +10,7 @@ export type CockpitAppletId =
   | 'control-gating'
   | 'panel-builder'
   | 'matrix-adjustment'
+  | 'sample-analysis'
   | 'control-qc-report'
   | 'sample-qc-report'
 

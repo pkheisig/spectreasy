@@ -34,20 +34,27 @@ LinkingTo:
 SystemRequirements: GNU make
 Suggests:
     chromote,
+    destiny,
     FNN,
     FlowSOM,
     httpuv,
+    igraph,
     KernSmooth,
     knitr,
     later,
     pdftools,
     plumber,
     processx,
+    ragg,
+    Rphenograph,
+    Rtsne,
     rmarkdown,
     S4Vectors,
     SingleCellExperiment,
     SummarizedExperiment,
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    svglite,
+    uwot
 VignetteBuilder: knitr
 biocViews: FlowCytometry, MultiChannel, QualityControl, Visualization, GUI,
     WorkflowStep

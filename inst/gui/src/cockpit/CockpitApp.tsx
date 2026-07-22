@@ -49,7 +49,7 @@ import type {
 import "./cockpit.css";
 
 const emptyJob: Job = { label: "", state: "idle", progress: 0, subtask: "" };
-const persistentDataApplets: CockpitAppletId[] = ["control-gating", "panel-builder", "matrix-adjustment"];
+const persistentDataApplets: CockpitAppletId[] = ["control-gating", "panel-builder", "matrix-adjustment", "sample-analysis"];
 
 
 export default function CockpitApp() {
