@@ -13,6 +13,7 @@ import {
   persistControlMapping,
   persistGuiState,
   selectProjectFolder,
+  setProjectContext,
   updateProjectInputDirectory,
 } from "./api";
 import { emptyProject } from "./projectState";
@@ -75,6 +76,7 @@ export default function CockpitApp() {
   const [initializationBusy, setInitializationBusy] = useState(false);
   const [initializationMessage, setInitializationMessage] = useState("");
   const [projectLoading, setProjectLoading] = useState(false);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [pendingVersionRun, setPendingVersionRun] = useState<{ action: "control" | "sample"; label: string } | null>(null);
   const [settings, setSettings] = useState<WorkflowSettings>(() => {
     const initial = defaultWorkflowSettings('');
@@ -240,7 +242,7 @@ export default function CockpitApp() {
   }, [backend.connected, refreshProject, settingsReady]);
 
   useEffect(() => {
-    if (!backend.connected || !project.projectPath) return;
+    if (!backend.connected || !project.projectPath || projectPickerOpen || projectLoading) return;
     let checking = false;
     const checkLayout = async () => {
       if (checking) return;
@@ -254,10 +256,10 @@ export default function CockpitApp() {
     };
     const timer = window.setInterval(() => void checkLayout(), 2000);
     return () => window.clearInterval(timer);
-  }, [backend.connected, project.controlInputDir, project.projectPath, project.sampleInputDir, refreshProject]);
+  }, [backend.connected, project.controlInputDir, project.projectPath, project.sampleInputDir, projectLoading, projectPickerOpen, refreshProject]);
 
   useEffect(() => {
-    if (!backend.connected || !project.projectPath) return;
+    if (!backend.connected || !project.projectPath || projectPickerOpen || projectLoading) return;
     let refreshing = false;
     const timer = window.setInterval(() => {
       if (refreshing) return;
@@ -265,10 +267,10 @@ export default function CockpitApp() {
       void refreshProject(false).finally(() => { refreshing = false; });
     }, 10000);
     return () => window.clearInterval(timer);
-  }, [backend.connected, project.projectPath, refreshProject]);
+  }, [backend.connected, project.projectPath, projectLoading, projectPickerOpen, refreshProject]);
 
   useEffect(() => {
-    if (!settingsReady) return;
+    if (!settingsReady || projectPickerOpen || projectLoading) return;
     const projectState = {
       projectPath: project.projectPath,
       projectName: project.projectName,
@@ -277,7 +279,7 @@ export default function CockpitApp() {
     };
     const timer = window.setTimeout(() => void persistGuiState(projectState, settings), 450);
     return () => window.clearTimeout(timer);
-  }, [project.cytometer, project.method, project.projectName, project.projectPath, settings, settingsReady]);
+  }, [project.cytometer, project.method, project.projectName, project.projectPath, projectLoading, projectPickerOpen, settings, settingsReady]);
 
   useEffect(() => {
     const exitOverlay = (event: KeyboardEvent) => {
@@ -562,18 +564,35 @@ export default function CockpitApp() {
   }
 
   async function chooseProject(mode: "create" | "open") {
-    if (projectLoading) return;
+    if (projectLoading || projectPickerOpen) return;
     if (project.mappingDirty && !window.confirm("Discard the unsaved control mapping and switch projects?")) return;
-    setProjectLoading(true);
+    setProjectPickerOpen(true);
+    let response: Awaited<ReturnType<typeof selectProjectFolder>>;
     try {
-      const response = mode === "create"
+      response = mode === "create"
         ? await createProjectFolder()
         : await selectProjectFolder();
-      if (!response.cancelled && !response.success) appendExecutionLogs([{ kind: "error", text: response.message }]);
-      if (response.success) {
-        if (response.projectPath) window.sessionStorage.setItem("spectreasy-project-path", response.projectPath);
-        await refreshProject(true, response.projectPath);
+    } finally {
+      setProjectPickerOpen(false);
+    }
+    if (response.cancelled) return;
+    if (!response.success || !response.projectPath) {
+      appendExecutionLogs([{ kind: "error", text: response.message }]);
+      return;
+    }
+
+    const selectedProjectPath = response.projectPath;
+    setProjectLoading(true);
+    try {
+      const activated = await setProjectContext(selectedProjectPath);
+      if (!activated.success) {
+        appendExecutionLogs([{ kind: "error", text: activated.message }]);
+        return;
       }
+      window.sessionStorage.setItem("spectreasy-project-path", selectedProjectPath);
+      await refreshProject(true, selectedProjectPath);
+      setInitializationMessage("");
+      setInitializationDismissedFor("");
     } finally {
       setProjectLoading(false);
     }

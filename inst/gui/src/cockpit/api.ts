@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { emptyProject } from './projectState'
 import { resolveApiBase, resolveApiToken } from '../apiBase'
+import { normalizeProjectPickerPayload } from './projectRefresh'
 import type { Artifact, BackendStatus, PanelPayload, ProjectState, Report, WorkflowSettings } from './types'
 
 const API_BASE = resolveApiBase()
@@ -739,8 +740,9 @@ export async function createControlMapping(projectPath: string): Promise<{ succe
 export async function setProjectContext(projectPath: string): Promise<{ success: boolean; message: string }> {
   try {
     const response = await client.post('/project/context', { projectPath })
-    if (response.data?.success === false || response.data?.error) {
-      return { success: false, message: response.data?.error ?? 'The R backend rejected this project folder.' }
+    const error = scalarValue(response.data?.error, '')
+    if (scalarValue(response.data?.success, 'false') !== 'true' || error) {
+      return { success: false, message: error || 'The R backend rejected this project folder.' }
     }
     return { success: true, message: '' }
   } catch {
@@ -753,12 +755,7 @@ async function pickProjectFolder(endpoint: '/project/select' | '/project/create'
     // Native file dialogs intentionally wait for the user. They must not inherit
     // the short timeout used by ordinary API calls.
     const response = await client.post(endpoint, {}, { timeout: 0 })
-    const cancelled = scalarValue(response.data?.cancelled, 'false') === 'true'
-    if (cancelled) return { success: false, cancelled: true, message: 'Project selection cancelled.' }
-    if (response.data?.success === false || response.data?.error) {
-      return { success: false, cancelled: false, message: scalarValue(response.data?.error, 'The project folder could not be opened.') }
-    }
-    return { success: true, cancelled: false, message: '', projectPath: scalarValue(response.data?.project?.project_path) }
+    return normalizeProjectPickerPayload(response.data)
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 403) {
       return {

@@ -1287,7 +1287,12 @@ function(req) {
     project_path <- gui_workflow_path(body, "projectPath", "", allow_empty = FALSE)
     tryCatch({
         project_path <- gui_request_project_root(project_path, fallback = FALSE)
-        list(success = TRUE, project = gui_project_scan(project_path))
+        project_path <- gui_set_project_context(project_path)
+        list(
+            success = TRUE,
+            project_path = jsonlite::unbox(project_path),
+            project = list(project_path = jsonlite::unbox(project_path))
+        )
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
 
@@ -1303,25 +1308,35 @@ function(req) {
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
 
-#* Open the native folder picker and activate the selected project
+#* Open the native folder picker and return the selected project path
 #* @post /project/select
 function(req) {
     tryCatch({
         selected <- gui_pick_project_directory(get_matrix_dir(), allow_create = FALSE)
         if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
         selected <- gui_request_project_root(selected, fallback = FALSE)
-        list(success = TRUE, cancelled = FALSE, project = gui_project_scan(selected))
+        list(
+            success = TRUE,
+            cancelled = FALSE,
+            project_path = jsonlite::unbox(selected),
+            project = list(project_path = jsonlite::unbox(selected))
+        )
     }, error = function(e) list(success = FALSE, cancelled = FALSE, error = conditionMessage(e)))
 }
 
-#* Create and activate a project folder with the native folder picker
+#* Create a project folder with the native folder picker and return its path
 #* @post /project/create
 function(req) {
     tryCatch({
         selected <- gui_pick_project_directory(get_matrix_dir(), allow_create = TRUE)
         if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
         selected <- gui_request_project_root(selected, fallback = FALSE)
-        list(success = TRUE, cancelled = FALSE, project = gui_project_scan(selected))
+        list(
+            success = TRUE,
+            cancelled = FALSE,
+            project_path = jsonlite::unbox(selected),
+            project = list(project_path = jsonlite::unbox(selected))
+        )
     }, error = function(e) list(success = FALSE, cancelled = FALSE, error = conditionMessage(e)))
 }
 
