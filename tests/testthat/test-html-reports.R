@@ -45,7 +45,7 @@ test_that("sample HTML report follows PDF plot order and writes an NxN companion
     expect_false(grepl("Input samples", html, fixed = TRUE))
     expect_false(grepl("Unmixing settings", html, fixed = TRUE))
     expect_false(grepl("Generated artifacts", html, fixed = TRUE))
-    expect_true(grepl("Generated locally by Spectreasy", html, fixed = TRUE))
+    expect_false(grepl("quality grade|grade counts|caution: QC-", html, ignore.case = TRUE))
     expect_false(grepl("Report plots are embedded", html, fixed = TRUE))
     expect_match(html, "sidebar-toggle", fixed = TRUE)
     expect_match(html, "IntersectionObserver", fixed = TRUE)
@@ -88,6 +88,10 @@ test_that("HTML report metadata uses its explicit project path", {
     )
     expect_identical(report$project_path, normalizePath(project, mustWork = TRUE))
     expect_false(identical(report$project_path, normalizePath(launch_dir, mustWork = TRUE)))
+    rendered <- render_qc_html_report(report, tempfile(fileext = ".html"), overwrite = "overwrite")
+    html <- paste(readLines(rendered$output_file, warn = FALSE), collapse = "\n")
+    expect_match(html, basename(project), fixed = TRUE)
+    expect_false(grepl(normalizePath(project, mustWork = TRUE), html, fixed = TRUE))
 })
 
 test_that("sample detector residual table includes every available detector", {
@@ -189,7 +193,7 @@ test_that("control HTML report uses supplied matrix without rebuilding controls"
     expect_false(grepl("AF bank spectra", html, fixed = TRUE))
     expect_false(grepl("SCC AF spectra", html, fixed = TRUE))
     expect_false(grepl("SCC unmixing diagnostics", html, fixed = TRUE))
-    expect_true(grepl("Generated locally by Spectreasy", html, fixed = TRUE))
+    expect_false(grepl("quality grade|grade counts|caution: QC-", html, ignore.case = TRUE))
     expect_false(grepl("Report plots are embedded", html, fixed = TRUE))
     expect_match(html, "class=\"report-control\"", fixed = TRUE)
     expect_match(html, "--accent:#70afe8", fixed = TRUE)

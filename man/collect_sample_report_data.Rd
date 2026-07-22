@@ -60,7 +60,8 @@ combined data frame with a `File` column.}
 
 \item{run_settings}{Named list of workflow and report settings.}
 
-\item{project_path}{Project path displayed in the report.}
+\item{project_path}{Project path retained in structured provenance. Only its
+directory name is displayed in the rendered report.}
 
 \item{max_events_per_sample}{Maximum retained events per sample.}
 

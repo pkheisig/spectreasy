@@ -7,15 +7,14 @@
 }
 
 .normalize_unmix_method <- function(method,
-                                    choices = c("AutoSpectral", "Spectreasy", "OLS", "NNLS", "WLS", "RWLS")) {
+                                    choices = c("AutoSpectral", "OLS", "NNLS", "WLS", "RWLS")) {
     method_raw <- toupper(trimws(as.character(method[1])))
     if (length(method_raw) == 0 || is.na(method_raw) || !nzchar(method_raw)) {
-        method_raw <- "SPECTREASY"
+        method_raw <- "AUTOSPECTRAL"
     }
     method_raw <- gsub("[_-]", "", method_raw)
     lookup <- c(
         AUTOSPECTRAL = "AutoSpectral",
-        SPECTREASY = "Spectreasy",
         OLS = "OLS",
         NNLS = "NNLS",
         WLS = "WLS",
@@ -30,7 +29,7 @@
 }
 
 .solver_method_for_unmix <- function(method) {
-    if (method %in% c("AutoSpectral", "Spectreasy")) "OLS" else method
+    if (identical(method, "AutoSpectral")) "OLS" else method
 }
 
 .unmix_with_fixed_reference <- function(Y, M, method, wls_noise, rwls_max_iter, n_threads = 1L) {
@@ -65,93 +64,11 @@
             n_threads = n_threads
         ))
     }
-    stop("method must be one of: AutoSpectral, Spectreasy, OLS, NNLS, WLS, RWLS", call. = FALSE)
+    stop("method must be one of: AutoSpectral, OLS, NNLS, WLS, RWLS", call. = FALSE)
 }
 
-.is_autospectral_style_method <- function(method) {
-    method %in% c("AutoSpectral", "Spectreasy")
-}
-
-.normalize_spectreasy_weight_quantile <- function(spectreasy_weight_quantile) {
-    .normalize_numeric_scalar(
-        spectreasy_weight_quantile, "spectreasy_weight_quantile", lower = 0, upper = 1
-    )
-}
-
-.decoder_projected_af_marker_weights <- function(M,
-                                                 spectreasy_weight_quantile = 0.65,
-                                                 ridge = 1e-8,
-                                                 tol = 1e-12) {
-    M <- .as_reference_matrix(M, "M")
-    spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
-    af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
-    marker_names <- rownames(M)[!af_rows]
-    weights <- stats::setNames(rep(0, length(marker_names)), marker_names)
-    if (!any(af_rows) || length(marker_names) == 0L) {
-        return(weights)
-    }
-
-    marker_spectra <- M[marker_names, , drop = FALSE]
-    af_spectra <- M[af_rows, , drop = FALSE]
-    S <- t(marker_spectra)
-    gram <- crossprod(S) + diag(ridge, ncol(S))
-    decoder <- tryCatch(
-        solve(gram, t(S)),
-        error = function(e) NULL
-    )
-    if (is.null(decoder)) {
-        return(weights)
-    }
-    rownames(decoder) <- marker_names
-
-    impact_by_af <- decoder %*% t(af_spectra)
-    impact <- sqrt(rowMeans(impact_by_af^2))
-    tau <- stats::quantile(impact, probs = spectreasy_weight_quantile, na.rm = TRUE, names = FALSE, type = 7)
-    if (!is.finite(tau) || tau <= tol) {
-        return(weights)
-    }
-
-    weights <- impact^2 / (impact^2 + tau^2)
-    weights[!is.finite(weights)] <- 0
-    weights <- stats::setNames(as.numeric(weights), names(impact))
-    attr(weights, "impact") <- stats::setNames(as.numeric(impact), names(impact))
-    attr(weights, "tau") <- tau
-    attr(weights, "quantile") <- spectreasy_weight_quantile
-    weights
-}
-
-.spectreasy_marker_only_baseline_fit <- function(Y, M, n_threads = 1L) {
-    af_match <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
-    marker_M <- M[!af_match, , drop = FALSE]
-    if (nrow(marker_M) == 0L) {
-        stop("Spectreasy unmixing requires at least one non-AF reference row.", call. = FALSE)
-    }
-    baseline <- .unmix_with_fixed_reference(
-        Y = Y,
-        M = marker_M,
-        method = "OLS",
-        wls_noise = list(noise_floor = numeric(0), signal_scale = numeric(0), max_weight_ratio = .default_wls_max_weight_ratio()),
-        rwls_max_iter = 1L,
-        n_threads = n_threads
-    )
-    colnames(baseline) <- rownames(marker_M)
-    baseline
-}
-
-.apply_spectreasy_decoder_blend <- function(Y, M, autospectral_A, spectreasy_weight_quantile = 0.65, n_threads = 1L) {
-    baseline_A <- .spectreasy_marker_only_baseline_fit(Y = Y, M = M, n_threads = n_threads)
-    out_A <- autospectral_A
-    marker_weights <- .decoder_projected_af_marker_weights(
-        M,
-        spectreasy_weight_quantile = spectreasy_weight_quantile
-    )
-    marker_cols <- intersect(names(marker_weights), colnames(out_A))
-    for (marker in marker_cols) {
-        weight <- marker_weights[[marker]]
-        out_A[, marker] <- baseline_A[, marker] + weight * (autospectral_A[, marker] - baseline_A[, marker])
-    }
-    attr(out_A, "spectreasy_decoder_weights") <- marker_weights
-    out_A
+.is_autospectral_method <- function(method) {
+    identical(method, "AutoSpectral")
 }
 
 .autospectral_assign_af_fluorophores <- function(Y, marker_spectra, af_spectra, tol = 1e-10, n_threads = 1L) {
@@ -270,14 +187,11 @@
 #' @param flow_frame A flowFrame object with raw fluorescence data
 #' @param M Reference matrix (fluorophores x detectors)
 #' @param file_name Optional file name to add to output
-#' @param method Unmixing method: `"AutoSpectral"` (default), `"Spectreasy"`,
-#'   `"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`. `AutoSpectral` assigns the best AF
+#' @param method Unmixing method: `"AutoSpectral"` (default), `"WLS"`,
+#'   `"RWLS"`, `"OLS"`, or `"NNLS"`. `AutoSpectral` assigns the best AF
 #'   spectrum per event with the AutoSpectral fluorophore-leakage score, refits
 #'   marker + selected-AF rows with OLS, and applies spectral-variant
-#'   optimization when a variant library is supplied. `Spectreasy` uses the same
-#'   AutoSpectral-style OLS fit, then blends marker abundances with a marker-only
-#'   OLS anchor using decoder-projected AF-impact weights derived from the
-#'   reference matrix.
+#'   optimization when a variant library is supplied.
 #' @param return_residuals Logical. If TRUE, returns a list containing the unmixed
 #'   data and the detector residual matrix.
 #' @param background_noise Scalar or detector-length vector used as the WLS noise
@@ -290,12 +204,12 @@
 #'   iterations used when `method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
 #' @param n_threads Positive integer; number of threads for event-wise
-#'   AutoSpectral/Spectreasy AF assignment and NNLS/WLS/RWLS fitting. OLS uses
+#'   AutoSpectral AF assignment and NNLS/WLS/RWLS fitting. OLS uses
 #'   vectorized matrix operations. The default, 1, keeps explicit event loops
 #'   single-threaded.
 #' @param spectral_variant_library Optional per-fluorophore spectral-variant
 #'   library learned from single-color controls. Used only with
-#'   `method = "AutoSpectral"` or `"Spectreasy"`.
+#'   `method = "AutoSpectral"`.
 #' @param spectral_variant_top_k Number of best variant candidates to test per
 #'   positive fluorophore.
 #' @param spectral_variant_min_abundance Minimum unmixed abundance for a
@@ -304,10 +218,6 @@
 #'   as a fraction of the event's strongest fluorophore abundance.
 #' @param spectral_variant_min_improvement Minimum fractional residual
 #'   improvement required before accepting a cell-specific variant refit.
-#' @param spectreasy_weight_quantile Numeric in `[0, 1]`; only accepted when
-#'   `method = "Spectreasy"`. Controls the quantile of decoder-projected AF
-#'   impacts used as the soft-saturation scale for marker-specific AutoSpectral
-#'   mixing. The default, `0.65`, uses the 65th percentile of marker AF impacts.
 #' @return Data frame with unmixed abundances and retained acquisition parameters
 #'   (`Time` plus all `FSC*`/`SSC*` columns, when available).
 #'         If return_residuals=TRUE, returns a list with [[data]] and [[residuals]].
@@ -352,9 +262,7 @@ calc_residuals <- function(flow_frame,
                            spectral_variant_top_k = 3L,
                            spectral_variant_min_abundance = 1,
                            spectral_variant_positive_fraction = 0.02,
-                           spectral_variant_min_improvement = 0.01,
-                           spectreasy_weight_quantile = 0.65) {
-    spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
+                           spectral_variant_min_improvement = 0.01) {
     if (!inherits(flow_frame, "flowFrame")) {
         stop("flow_frame must be a flowCore::flowFrame.", call. = FALSE)
     }
@@ -372,14 +280,8 @@ calc_residuals <- function(flow_frame,
         spectral_variant_min_improvement, "spectral_variant_min_improvement", lower = 0, upper = 1
     )
     method <- .normalize_unmix_method(method)
-    if (!identical(method, "Spectreasy") && !spectreasy_weight_quantile_missing) {
-        stop("spectreasy_weight_quantile is only accepted when method = \"Spectreasy\".", call. = FALSE)
-    }
-    if (identical(method, "Spectreasy")) {
-        spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
-    }
     solver_method <- .solver_method_for_unmix(method)
-    use_spectral_variants <- .is_autospectral_style_method(method) &&
+    use_spectral_variants <- .is_autospectral_method(method) &&
         .spectral_variant_library_has_variants(spectral_variant_library)
     full_data <- flowCore::exprs(flow_frame)
     detectors <- colnames(M)
@@ -441,7 +343,7 @@ calc_residuals <- function(flow_frame,
     }
 
     autospectral_fit <- NULL
-    if (.is_autospectral_style_method(method)) {
+    if (.is_autospectral_method(method)) {
         autospectral_fit <- .autospectral_unmix_legacy(Y = Y, M = M, n_threads = n_threads)
         A <- autospectral_fit$A
         Fitted <- autospectral_fit$fitted
@@ -512,18 +414,7 @@ calc_residuals <- function(flow_frame,
         Fitted <- variant_fit$fitted
         variant_info <- variant_fit$info
     }
-    spectreasy_decoder_weights <- NULL
-    if (identical(method, "Spectreasy")) {
-        A <- .apply_spectreasy_decoder_blend(
-            Y = Y,
-            M = M,
-            autospectral_A = A,
-            spectreasy_weight_quantile = spectreasy_weight_quantile,
-            n_threads = n_threads
-        )
-        spectreasy_decoder_weights <- attr(A, "spectreasy_decoder_weights")
-        Fitted <- A %*% M
-    } else if (is.null(autospectral_fit)) {
+    if (is.null(autospectral_fit)) {
         Fitted <- A %*% M
     }
     R <- Y - Fitted
@@ -540,7 +431,6 @@ calc_residuals <- function(flow_frame,
     if (return_residuals) {
         res <- list(data = out, residuals = R)
         if (!is.null(variant_info)) res$spectral_variant_info <- variant_info
-        if (!is.null(spectreasy_decoder_weights)) res$spectreasy_decoder_weights <- spectreasy_decoder_weights
         attr(res, "method") <- method
         attr(res, "reference_matrix") <- M
         return(res)

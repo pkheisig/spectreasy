@@ -1,3 +1,5 @@
+import { API_TOKEN_STORAGE_KEY, selectApiToken } from './apiTokenPersistence'
+
 function locationToken(): string {
   if (typeof window === 'undefined') return ''
   const queryToken = new URLSearchParams(window.location.search).get('token')?.trim()
@@ -5,7 +7,31 @@ function locationToken(): string {
   return new URLSearchParams(window.location.hash.replace(/^#/, '')).get('token')?.trim() ?? ''
 }
 
-const sessionApiToken = locationToken()
+function environmentToken(): string {
+  const env = import.meta.env as Record<string, string | undefined> | undefined
+  return env?.VITE_SPECTREASY_TOKEN?.trim() ?? ''
+}
+
+function storedToken(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    return window.sessionStorage.getItem(API_TOKEN_STORAGE_KEY)?.trim() ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function persistToken(token: string): void {
+  if (typeof window === 'undefined' || !token) return
+  try {
+    window.sessionStorage.setItem(API_TOKEN_STORAGE_KEY, token)
+  } catch {
+    // Storage can be unavailable in hardened browser contexts; the URL/env token still works.
+  }
+}
+
+const sessionApiToken = selectApiToken(locationToken(), environmentToken(), storedToken())
+persistToken(sessionApiToken)
 
 export function resolveApiBase(): string {
   if (typeof window !== 'undefined') {

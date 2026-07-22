@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Download, ExternalLink, FileDown, LoaderCircle } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown, Clipboard, Download, ExternalLink, FileDown, LoaderCircle, Sparkles, X } from 'lucide-react'
 import {
   downloadProjectReport,
+  downloadProjectReportPrompt,
   exportProjectReportPdf,
   loadProjectReportObjectUrl,
+  loadProjectReportPrompt,
   loadProjectReports,
 } from '../api'
 import type { Report } from '../types'
@@ -14,6 +16,7 @@ type QcReportAppletProps = {
   projectPath: string
   outputRoot: string
   initialReportPath: string
+  onRequestExit: () => void
 }
 
 function reportTime(report: Report): number {
@@ -29,14 +32,18 @@ function newestReport(reports: Report[], kind: 'control' | 'sample') {
     .reduce<Report | null>((newest, report) => !newest || reportTime(report) > reportTime(newest) ? report : newest, null)
 }
 
-export default function QcReportApplet({ kind, theme, projectPath, outputRoot, initialReportPath }: QcReportAppletProps) {
+export default function QcReportApplet({ kind, theme, projectPath, outputRoot, initialReportPath, onRequestExit }: QcReportAppletProps) {
   const requestKey = `${projectPath}\n${outputRoot}\n${kind}`
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
   const [loadedRequestKey, setLoadedRequestKey] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [promptMenuOpen, setPromptMenuOpen] = useState(false)
+  const [promptBusy, setPromptBusy] = useState(false)
+  const [promptCopied, setPromptCopied] = useState(false)
   const [message, setMessage] = useState('')
+  const promptMenuRef = useRef<HTMLDivElement>(null)
   const [selectedReportPath, setSelectedReportPath] = useState(initialReportPath)
   const [reportObject, setReportObject] = useState({ key: '', url: '' })
   const reportsForKind = useMemo(() => {
@@ -51,6 +58,7 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot, i
   )
   const reportObjectKey = report?.path ? `${projectPath}\n${report.path}` : ''
   const reportObjectUrl = reportObject.key === reportObjectKey ? reportObject.url : ''
+  const promptExportAvailable = Boolean(report?.promptPath)
 
   useEffect(() => {
     let active = true
@@ -93,6 +101,22 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot, i
     }
   }, [projectPath, report?.format, report?.path])
 
+  useEffect(() => {
+    if (!promptMenuOpen) return
+    const close = (event: MouseEvent) => {
+      if (!promptMenuRef.current?.contains(event.target as Node)) setPromptMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPromptMenuOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [promptMenuOpen])
+
   const reportLabel = (path: string) => path.replace(/\\/g, '/').split('/').slice(-2).join('/')
 
   const download = async () => {
@@ -128,11 +152,73 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot, i
     }
   }
 
+  const copyPrompt = async () => {
+    if (!report?.promptPath) return
+    setMessage('')
+    setPromptBusy(true)
+    try {
+      const prompt = await loadProjectReportPrompt(report.promptPath, projectPath)
+      try {
+        await navigator.clipboard.writeText(prompt)
+      } catch {
+        const textarea = document.createElement('textarea')
+        textarea.value = prompt
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        textarea.remove()
+      }
+      setPromptCopied(true)
+      window.setTimeout(() => setPromptCopied(false), 1600)
+      setPromptMenuOpen(false)
+    } catch {
+      setMessage('Could not copy the saved AI-ready QC prompt.')
+    } finally {
+      setPromptBusy(false)
+    }
+  }
+
+  const downloadPrompt = async () => {
+    if (!report?.promptPath) return
+    setMessage('')
+    setPromptBusy(true)
+    const success = await downloadProjectReportPrompt(report.promptPath, projectPath)
+    setPromptBusy(false)
+    setPromptMenuOpen(false)
+    if (!success) setMessage('Could not download the saved AI-ready QC prompt.')
+  }
+
   return (
     <section className={`qc-report-applet theme-${theme}`} aria-label={`${kind} QC report viewer`}>
       <header className="qc-report-toolbar">
         <strong>{report ? reportLabel(report.path) : `${kind === 'control' ? 'Controls' : 'Samples'} QC reports`}</strong>
-        {report && <div className="qc-report-actions">
+        <div className="qc-report-actions">
+          {report && <>
+          <div className="qc-prompt-action" ref={promptMenuRef}>
+            <button
+              type="button"
+              className="qc-prompt-trigger"
+              aria-haspopup="menu"
+              aria-expanded={promptMenuOpen}
+              disabled={!promptExportAvailable || promptBusy}
+              title={promptExportAvailable ? 'Copy or download the precomputed AI prompt and its numeric QC data' : 'This report predates automatic AI prompt export. Regenerate the QC report to enable this action.'}
+              onClick={() => setPromptMenuOpen((open) => !open)}
+            >
+              {promptCopied ? <Check size={15} /> : <Sparkles size={15} />}
+              {promptCopied ? 'Prompt copied' : 'Export AI prompt'}
+              <ChevronDown size={14} />
+            </button>
+            {promptMenuOpen && promptExportAvailable && <div className="qc-prompt-menu" role="menu" aria-label="AI prompt export actions">
+              <button type="button" role="menuitem" onClick={() => void copyPrompt()}>
+                <Clipboard size={15} /><span><strong>Copy</strong><small>Prompt + all numeric QC data</small></span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => void downloadPrompt()}>
+                <FileDown size={15} /><span><strong>Download prompt</strong><small>{report.promptBytes ? `${Math.max(1, Math.round(report.promptBytes / 1024)).toLocaleString()} KB text file` : 'Complete text file'}</small></span>
+              </button>
+            </div>}
+          </div>
           <button type="button" onClick={() => void openInNewTab()}>
             <ExternalLink size={15} /> Open in new tab
           </button>
@@ -143,7 +229,17 @@ export default function QcReportApplet({ kind, theme, projectPath, outputRoot, i
             {exporting ? <LoaderCircle className="is-spinning" size={15} /> : <FileDown size={15} />}
             {exporting ? 'Exporting…' : 'Export PDF'}
           </button>}
-        </div>}
+          </>}
+          <button
+            type="button"
+            className="qc-report-close"
+            onClick={onRequestExit}
+            aria-label={`Close ${kind} QC report and return to cockpit`}
+            autoFocus
+          >
+            <X size={15} /> Close
+          </button>
+        </div>
       </header>
       {message && <div className="qc-report-message" role="status">{message}</div>}
       {loading || loadedRequestKey !== requestKey ? (

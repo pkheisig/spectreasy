@@ -131,6 +131,8 @@
     spectra_list <- if (nrow(results_dt) > 0) results_dt$spectrum else list()
     if (nrow(results_dt) > 0) names(spectra_list) <- results_dt$fluorophore
     scc_positive_events <- lapply(spectra_list, function(x) attr(x, "scc_positive_events"))
+    scc_qc_positive_events <- lapply(spectra_list, function(x) attr(x, "scc_qc_positive_events"))
+    scc_qc_negative_events <- lapply(spectra_list, function(x) attr(x, "scc_qc_negative_events"))
     has_scc_positive_events <- vapply(
         scc_positive_events,
         function(x) is.matrix(x) && nrow(x) > 0L && ncol(x) == length(detector_names),
@@ -180,6 +182,17 @@
     }
     if (length(scc_positive_events) > 0L && any(has_scc_positive_events)) {
         attr(M, "scc_positive_events") <- scc_positive_events[has_scc_positive_events]
+    }
+    has_qc_pools <- vapply(seq_along(scc_qc_positive_events), function(i) {
+        positive <- scc_qc_positive_events[[i]]
+        negative <- scc_qc_negative_events[[i]]
+        is.matrix(positive) && is.matrix(negative) && nrow(positive) > 0L &&
+            nrow(negative) > 0L && ncol(positive) == length(detector_names) &&
+            ncol(negative) == length(detector_names)
+    }, logical(1))
+    if (length(has_qc_pools) && any(has_qc_pools)) {
+        attr(M, "scc_qc_positive_events") <- scc_qc_positive_events[has_qc_pools]
+        attr(M, "scc_qc_negative_events") <- scc_qc_negative_events[has_qc_pools]
     }
     attr(M, "detector_pd") <- pd_meta
     M

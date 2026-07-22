@@ -27,8 +27,8 @@
 #' @param output_file Output report path. Defaults to
 #'   `"spectreasy_outputs/unmix_samples/qc_samples_report.html"`.
 #' @param unmixing_method Unmixing method used to create `results`
-#'   (`"AutoSpectral"`, `"Spectreasy"`, `"OLS"`, `"WLS"`, `"RWLS"`, or
-#'   `"NNLS"`). When `"NNLS"`, the negative population spread page is skipped
+#'   (`"AutoSpectral"`, `"OLS"`, `"WLS"`, `"RWLS"`, or `"NNLS"`). When
+#'   `"NNLS"`, the negative population spread page is skipped
 #'   because constrained NNLS results are non-negative by construction.
 #' @param res_list Optional residual object/list from `calc_residuals(..., return_residuals = TRUE)`.
 #' @param pd Optional detector metadata (`flowCore::pData(parameters(ff))`) for axis labels.

@@ -1,14 +1,13 @@
-import { ArrowRight, FileText, ScanSearch } from 'lucide-react'
+import { ArrowRight, FileText } from 'lucide-react'
 import type { ProjectState } from '../types'
 
 type Props = {
   project: ProjectState
   kind: 'control' | 'sample'
   onView: (path: string) => void
-  onAiQc?: () => void
 }
 
-export function QcReportPanel({ project, kind, onView, onAiQc }: Props) {
+export function QcReportPanel({ project, kind, onView }: Props) {
   const reportType = kind === 'control' ? 'Control QC report' : 'Sample QC report'
   const label = kind === 'control' ? 'control' : 'sample'
   const reports = project.artifacts.filter((artifact) => artifact.group === 'Reports' && artifact.type === reportType)
@@ -18,16 +17,15 @@ export function QcReportPanel({ project, kind, onView, onAiQc }: Props) {
 
   if (!reports.length) {
     return (
-      <><AiQcCard onOpen={onAiQc} /><section className="surface-card report-history-empty">
+      <section className="surface-card report-history-empty">
           <h2>No {label} QC report yet</h2>
           <p>Run {label} unmixing with report generation enabled.</p>
-        </section></>
+      </section>
     )
   }
 
   return (
     <div className="report-history-grid" aria-label={`${label} QC reports`}>
-      <AiQcCard onOpen={onAiQc} />
       {reports.map((report) => {
         const relativePath = report.relativePath ?? report.path
         return (
@@ -45,13 +43,4 @@ export function QcReportPanel({ project, kind, onView, onAiQc }: Props) {
       })}
     </div>
   )
-}
-
-function AiQcCard({ onOpen }: { onOpen?: () => void }) {
-  if (!onOpen) return null
-  return <article className="surface-card report-history-card ai-qc-launch-card">
-    <span className="report-history-icon"><ScanSearch size={18} /></span>
-    <div className="report-history-copy"><h2>AI-ready QC</h2><p>Local deterministic export and paste-ready prompt</p></div>
-    <button className="button button-ghost" onClick={onOpen}>Open <ArrowRight size={14} /></button>
-  </article>
 }

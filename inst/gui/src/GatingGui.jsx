@@ -12,6 +12,7 @@ import { decodeSpectrumData } from './spectrumData.js'
 import GatingWorkspace from './gating/GatingWorkspace.jsx'
 import { useGatingConfigIO } from './gating/useGatingConfigIO.js'
 import { autogateHistogramsAction, beginGatingSidebarResize } from './gating/GatingActions.js'
+import { appletCacheKey, loadCachedAppletData } from './appletDataCache.ts'
 import {
   AXIS_SETTINGS_VERSION,
   CONFIG_NAME,
@@ -57,7 +58,7 @@ import {
   validateGateCsvRows,
 } from './gating/GatingCore.jsx'
 
-function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
+function App({ embedded = false, cockpitTheme = null, projectPath = '', projectRevision = 'empty', initialFiles = null, initialMetadata = {}, onRequestExit = null, onRequestClose = null }) {
   const [status, setStatus] = useState('Loading controls')
   const [files, setFiles] = useState([])
   const [metadata, setMetadata] = useState({})
@@ -99,6 +100,9 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
   const loadInputRef = useRef(null)
   const payloadCacheRef = useRef({})
   const spectrumBatchRef = useRef('')
+  const bootPromiseRef = useRef(null)
+  const activeProjectPath = projectPath || window.sessionStorage.getItem('spectreasy-project-path') || ''
+  const fileInventoryKey = files.map((file) => file.filename).join('\u0000')
 
   useEffect(() => {
     if (embedded) return
@@ -128,13 +132,18 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
 
   // Initial load config, files, persisted GUI settings, and backend cache
   useEffect(() => {
-    Promise.all([
-      gatingApiRequest('/gate_files'),
+    if (bootPromiseRef.current) return
+    const fileInventory = Array.isArray(initialFiles)
+      ? Promise.resolve({ files: initialFiles, metadata: initialMetadata })
+      : gatingApiRequest('/gate_files')
+    bootPromiseRef.current = Promise.all([
+      fileInventory,
       gatingApiRequest('/gate_configs'),
       gatingApiRequest('/gate_cache'),
       gatingApiRequest(`/gui_state?module=${encodeURIComponent(GUI_MODULE)}`),
       gatingApiRequest('/gate_config')
     ])
+    bootPromiseRef.current
       .then(([fileData, configData, cacheData, guiState, gateConfig]) => {
         const clean = fileData.files.filter((f) => f.file_exists)
         setFiles(clean)
@@ -335,8 +344,13 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
   }, [allSpectraEligible, missingSpectrumFiles, spectrumBatchKey, gates])
 
   useEffect(() => {
-    if (!files.length) return undefined
+    // Wait for persisted gate settings before choosing the cache key or loading
+    // events. Otherwise the default event count starts one preload and the saved
+    // event count immediately starts a second, much more expensive preload.
+    if (!guiStateLoaded || !files.length) return undefined
     const requestedPoints = normalizeEventCount(maxPoints)
+    const preloadKey = appletCacheKey('gating-events', activeProjectPath, projectRevision, requestedPoints)
+    const preloadGroup = appletCacheKey('gating-events')
     const controller = new AbortController()
     let disposed = false
     setPayload(null)
@@ -345,17 +359,20 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
     setPreloadComplete(false)
     setStatus('Preloading controls')
 
-    gatingApiRequest(`/gate_preload_compact?max_points=${requestedPoints}`, {
-      signal: controller.signal,
-    })
-      .then((data) => {
+    loadCachedAppletData(preloadKey, async () => {
+      const data = await gatingApiRequest(`/gate_preload_compact?max_points=${requestedPoints}`, {
+        signal: controller.signal,
+      })
+      const next = {}
+      ;(data?.payloads || []).forEach((item) => {
+        const decoded = decodeCompactPayload(item)
+        const filename = decoded?.file?.filename || decoded?.filename
+        if (filename && !decoded?.error) next[filename] = decoded
+      })
+      return next
+    }, preloadGroup)
+      .then((next) => {
         if (disposed) return
-        const next = {}
-        ;(data?.payloads || []).forEach((item) => {
-          const decoded = decodeCompactPayload(item)
-          const filename = decoded?.file?.filename || decoded?.filename
-          if (filename && !decoded?.error) next[filename] = decoded
-        })
         payloadCacheRef.current = next
         setPayloadCache(next)
         setPreloadComplete(true)
@@ -371,7 +388,7 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
       disposed = true
       controller.abort()
     }
-  }, [files, maxPoints])
+  }, [fileInventoryKey, maxPoints, activeProjectPath, projectRevision, guiStateLoaded])
 
   useEffect(() => {
     if (!preloadComplete || !selected) return
@@ -727,6 +744,7 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
     histogramAutogateMissing,
     setShowAutogateConfirmModal,
     embedded,
+    onRequestClose,
     showSettingsModal,
     setShowSettingsModal,
     setDarkMode,

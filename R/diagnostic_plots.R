@@ -300,7 +300,7 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
     if (is.null(method)) {
         return("OLS")
     }
-    .normalize_unmix_method(method, choices = c("AutoSpectral", "Spectreasy", "OLS", "NNLS", "WLS", "RWLS"))
+    .normalize_unmix_method(method, choices = c("AutoSpectral", "OLS", "NNLS", "WLS", "RWLS"))
 }
 
 .uses_wls_residual_metric <- function(method) {

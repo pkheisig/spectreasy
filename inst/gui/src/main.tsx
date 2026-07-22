@@ -2,8 +2,11 @@ import { StrictMode } from 'react'
 import axios from 'axios'
 import { createRoot } from 'react-dom/client'
 import { removeApiTokenFromLocation, resolveApiToken } from './apiBase.ts'
+import { installStaleChunkRecovery } from './staleChunkRecovery.ts'
 import './index.css'
 import App from './App.tsx'
+
+installStaleChunkRecovery()
 
 const params = new URLSearchParams(window.location.search)
 const mode = params.get('mode')

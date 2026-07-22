@@ -18,7 +18,7 @@ export function ConfigurableSettingsWorkspace({
   const control = settings.control;
   const sample = settings.sample;
   const af = settings.af;
-  const useSpectralControlPipeline = control.method === "Spectreasy" || control.method === "AutoSpectral";
+  const useSpectralControlPipeline = control.method === "AutoSpectral";
   return (
     <>
       <WorkspaceHeader
@@ -62,7 +62,6 @@ export function ConfigurableSettingsWorkspace({
                 onSettingsChange("control", { method: event.target.value })
               }
             >
-              <option>Spectreasy</option>
               <option>AutoSpectral</option>
               <option>OLS</option>
               <option>WLS</option>
@@ -248,21 +247,6 @@ export function ConfigurableSettingsWorkspace({
             />
           </label>
           <label>
-            Spectreasy weight quantile
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.01"
-              value={control.spectreasyWeightQuantile}
-              onChange={(event) =>
-                onSettingsChange("control", {
-                  spectreasyWeightQuantile: Number(event.target.value),
-                })
-              }
-            />
-          </label>
-          <label>
             AutoSpectral candidates
             <input
               type="number"
@@ -381,7 +365,6 @@ export function ConfigurableSettingsWorkspace({
                 onSettingsChange("sample", { method: event.target.value })
               }
             >
-              <option>Spectreasy</option>
               <option>AutoSpectral</option>
               <option>OLS</option>
               <option>WLS</option>
@@ -466,21 +449,6 @@ export function ConfigurableSettingsWorkspace({
               onChange={(event) =>
                 onSettingsChange("sample", {
                   spectralVariantMinImprovement: Number(event.target.value),
-                })
-              }
-            />
-          </label>
-          <label>
-            Spectreasy weight quantile
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.01"
-              value={sample.spectreasyWeightQuantile}
-              onChange={(event) =>
-                onSettingsChange("sample", {
-                  spectreasyWeightQuantile: Number(event.target.value),
                 })
               }
             />

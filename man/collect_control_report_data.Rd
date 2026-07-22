@@ -21,7 +21,8 @@ collect_control_report_data(
   warnings = character(),
   run_settings = list(),
   project_path = getwd(),
-  plot_dir = NULL
+  plot_dir = NULL,
+  qc_metrics_dir = NULL
 )
 }
 \arguments{
@@ -56,9 +57,13 @@ collect_control_report_data(
 
 \item{run_settings}{Named list of workflow and report settings.}
 
-\item{project_path}{Project path displayed in the report.}
+\item{project_path}{Project path retained in structured provenance. Only its
+directory name is displayed in the rendered report.}
 
 \item{plot_dir}{Directory used for cached report PNG files.}
+
+\item{qc_metrics_dir}{Optional directory where plot-ready control QC metric
+CSV files are written.}
 }
 \value{
 A `spectreasy_control_report_data` object.

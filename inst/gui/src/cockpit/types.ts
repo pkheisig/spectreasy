@@ -12,49 +12,19 @@ export type CockpitAppletId =
   | 'matrix-adjustment'
   | 'control-qc-report'
   | 'sample-qc-report'
-  | 'ai-ready-qc'
-
-export type AiQcStatus = 'not_generated' | 'generating' | 'ready' | 'stale' | 'partial' | 'failed'
-export type AiQcScope = 'control' | 'sample' | 'combined'
-export type AiQcPrivacy = 'standard' | 'strict' | 'none'
-export type AiQcDetail = 'compact' | 'standard' | 'full'
-export type AiQcGrade = 'good' | 'review' | 'poor' | 'not_graded'
-
-export type AiQcFinding = {
-  metricId: string
-  entity: string
-  stage: string
-  grade: AiQcGrade
-  explanation: string
-}
-
-export type AiQcResponse = {
-  status: AiQcStatus
-  stale: boolean
-  scope: AiQcScope
-  defaultScope: AiQcScope
-  availableScopes: AiQcScope[]
-  privacyMode: AiQcPrivacy
-  gradeCounts: Record<AiQcGrade, number>
-  findings: AiQcFinding[]
-  artifactPaths: string[]
-  missingSections: string[]
-  warnings: string[]
-  prompt: string
-  promptCharacters: number
-  estimatedTokens: number
-  schemaName: string
-  schemaVersion: string
-  profileName: string
-  profileVersion: string
-  referenceN: number
-  sourceHashes: Array<{ path: string; sha256: string }>
-  error: string
-}
 
 export type ArtifactStatus = 'current' | 'stale' | 'user' | 'missing' | 'unknown'
 export type JobState = 'idle' | 'running' | 'complete' | 'failed'
 export type StepState = 'complete' | 'ready' | 'warning' | 'blocked' | 'stale' | 'idle'
+
+export const WORKFLOW_UNMIXING_METHODS = ['AutoSpectral', 'OLS', 'WLS', 'RWLS', 'NNLS'] as const
+
+export function normalizeWorkflowUnmixingMethod(value: unknown): string {
+  const method = String(value ?? '')
+  return WORKFLOW_UNMIXING_METHODS.includes(method as typeof WORKFLOW_UNMIXING_METHODS[number])
+    ? method
+    : 'AutoSpectral'
+}
 
 export type Artifact = {
   id: string
@@ -98,6 +68,11 @@ export type ProjectState = {
   missingInputDirs: string[]
   controlInputDir: string
   sampleInputDir: string
+  dataRevision: string
+  matrixFiles: string[] | null
+  sampleFiles: string[] | null
+  gatingFiles: Array<Record<string, unknown>> | null
+  gatingMetadata: Record<string, unknown>
   scan: {
     controls: number
     samples: number
@@ -154,6 +129,8 @@ export type Report = {
   status: 'current' | 'stale'
   matrix: string
   path?: string
+  promptPath?: string
+  promptBytes?: number
 }
 
 export type ControlSettings = {
@@ -194,7 +171,6 @@ export type ControlSettings = {
   spectralVariantCosineThreshold: number
   spectralVariantMaxVariants: number
   spectralVariantMinEvents: number
-  spectreasyWeightQuantile: number
   autospectralNCandidates: number
   autospectralNSpectral: number
   autospectralMinEvents: number
@@ -214,7 +190,6 @@ export type SampleSettings = {
   spectralVariantPositiveFraction: number
   spectralVariantMinImprovement: number
   spectralVariantLibraryFile: string
-  spectreasyWeightQuantile: number
   estimateAf: boolean
   writeFcs: boolean
   saveReport: boolean
@@ -313,7 +288,6 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       spectralVariantCosineThreshold: 0.98,
       spectralVariantMaxVariants: 8,
       spectralVariantMinEvents: 50,
-      spectreasyWeightQuantile: 0.65,
       autospectralNCandidates: 1000,
       autospectralNSpectral: 200,
       autospectralMinEvents: 10,
@@ -332,7 +306,6 @@ export function defaultWorkflowSettings(projectPath: string): WorkflowSettings {
       spectralVariantPositiveFraction: 0.02,
       spectralVariantMinImprovement: 0.01,
       spectralVariantLibraryFile: '',
-      spectreasyWeightQuantile: 0.65,
       estimateAf: false,
       writeFcs: true,
       saveReport: true,

@@ -184,7 +184,6 @@ export function MappingWorkspace({
                     </td>
                     <td>
                       <span className="file-cell" title={row.ignoredReason || undefined}>
-                        <span className="file-mini-dot" />
                         {row.file}
                         {row.warning && <AlertCircle size={14} className="row-warning" aria-label={row.warning} />}
                       </span>
@@ -293,6 +292,7 @@ export function MappingWorkspace({
             onSettingsChange={(patch) => onSettingsChange("control", patch)}
             onInputDirectoryChange={onInputDirectoryChange}
             onRun={onRun}
+            disabledReason={project.scan.controls < 1 ? "Add control FCS files before running." : project.mapping.length < 1 ? "Create and confirm the control mapping before running." : project.scan.gates < 1 ? "Review and save control gates before running." : ""}
           />
           <InlineProjectFiles
             kind="controls"
@@ -308,7 +308,6 @@ export function MappingWorkspace({
           project={project}
           kind="control"
           onView={onViewReports}
-          onAiQc={() => onOpenApplet("ai-ready-qc")}
         />
       )}
     </>

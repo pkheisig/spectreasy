@@ -495,7 +495,8 @@ qc_controls <- function(
             unmix_scatter_axis_limit = unmix_scatter_axis_limit,
             output_file = output_file,
             overwrite = overwrite,
-            project_path = project_path
+            project_path = project_path,
+            qc_metrics_dir = qc_metrics_dir
         ))
     }
 
@@ -506,14 +507,7 @@ qc_controls <- function(
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
 
-    ai_qc <- collect_ai_qc(
-        controls = list(M = M_report), M = M_report, scope = "control",
-        privacy = "standard", reference = "none", generated_at = Sys.time()
-    )
-    ai_caption <- .ai_qc_pdf_caption(
-        ai_qc,
-        export_path = file.path(dirname(dirname(dirname(output_file))), "ai_qc")
-    )
+    ai_caption <- NULL
 
     if (is.null(af_bank_info)) {
         af_bank_info <- attr(M_built, "af_bank_info")
@@ -542,6 +536,11 @@ qc_controls <- function(
                 row_id = "af_band"
             )
         }
+        control_numeric <- .control_qc_numeric_tables(M_report, qc_summary)
+        af_numeric <- .af_qc_summary_table(M_report, af_bank_info)
+        if (.report_has_rows(control_numeric$summary)) .write_qc_report_csv(control_numeric$summary, file.path(qc_metrics_dir, "control_signal_metrics.csv"))
+        if (.report_has_rows(control_numeric$variability)) .write_qc_report_csv(control_numeric$variability, file.path(qc_metrics_dir, "control_spectrum_variability.csv"))
+        if (.report_has_rows(af_numeric)) .write_qc_report_csv(af_numeric, file.path(qc_metrics_dir, "af_bank_summary.csv"))
     }
 
     if (nrow(M_reference_overlay) > 0) {
@@ -676,6 +675,28 @@ qc_controls <- function(
 
     .spectreasy_console_field("Saved", .spectreasy_console_path(output_file))
     .spectreasy_console_footer(blank = FALSE)
+    af_rows <- grepl("^AF($|_)", rownames(M_report), ignore.case = TRUE)
+    prompt_data <- list(
+        report_type = "Control QC",
+        project_path = normalizePath(project_path, mustWork = FALSE),
+        created_at = Sys.time(),
+        version = as.character(utils::packageVersion("spectreasy")),
+        unmixing_method = unmixing_method,
+        cytometer = cytometer,
+        counts = list(
+            controls = nrow(qc_summary), markers = sum(!af_rows),
+            detectors = ncol(M_report), af_bands = sum(af_rows)
+        ),
+        warnings = character(),
+        qc_metric_paths = if (!is.null(qc_metrics_dir) && dir.exists(qc_metrics_dir)) list.files(qc_metrics_dir, pattern = "\\.csv$", full.names = TRUE, ignore.case = TRUE) else character()
+    )
+    class(prompt_data) <- c("spectreasy_control_report_data", "spectreasy_report_data", "list")
+    ai_artifacts <- NULL
+    if (isTRUE(report_run_settings$save_ai_qc %||% TRUE)) {
+        ai_artifacts <- .export_report_ai_qc(
+            prompt_data, output_file, numeric_paths = prompt_data$qc_metric_paths
+        )
+    }
     invisible(list(
         output_file = normalizePath(output_file, mustWork = FALSE),
         companion_files = if (length(nxn_file)) normalizePath(nxn_file, mustWork = FALSE) else character(),
@@ -685,6 +706,8 @@ qc_controls <- function(
         qc_plot_dir = retained_qc_plot_dir,
         qc_metrics_dir = qc_metrics_dir,
         af_bank_info = af_bank_info,
-        unmixing_method = unmixing_method
+        unmixing_method = unmixing_method,
+        ai_qc_prompt_path = ai_artifacts$prompt,
+        ai_qc_data_paths = ai_artifacts$numeric_sources
     ))
 }

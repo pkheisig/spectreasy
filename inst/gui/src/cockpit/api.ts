@@ -1,8 +1,7 @@
 import axios from 'axios'
 import { emptyProject } from './projectState'
-import { normalizeAiQcResponse } from './aiQcResponse.ts'
 import { resolveApiBase, resolveApiToken } from '../apiBase'
-import type { AiQcDetail, AiQcPrivacy, AiQcResponse, AiQcScope, Artifact, BackendStatus, PanelPayload, ProjectState, Report, WorkflowSettings } from './types'
+import type { Artifact, BackendStatus, PanelPayload, ProjectState, Report, WorkflowSettings } from './types'
 
 const API_BASE = resolveApiBase()
 
@@ -136,23 +135,38 @@ export const initialBackendStatus: BackendStatus = {
   packageReady: false,
 }
 
-export async function loadProjectSnapshot(requestedProjectPath = ''): Promise<{ project: ProjectState; backend: BackendStatus; savedSettings?: Partial<WorkflowSettings> }> {
+export async function loadProjectSnapshot(requestedProjectPath = '', cachedProject?: ProjectState): Promise<{ project: ProjectState; backend: BackendStatus; savedSettings?: Partial<WorkflowSettings> }> {
   try {
     // Establish connectivity from the lightweight health check first. Artifact
     // endpoints are independent: one unavailable artifact must not make a
     // running R session appear offline.
-    const statusResponse = await client.get('/status', { timeout: 5000 })
-    const [projectResponse, matricesResponse, samplesResponse, mappingResponse, guiStateResponse] = await Promise.all([
+    const [statusResponse, projectResponse] = await Promise.all([
+      client.get('/status', { timeout: 5000 }),
       client.get('/project/status', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
-      client.get('/matrices', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
-      client.get('/samples', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
-      client.get('/control_mapping', { params: { project_path: requestedProjectPath }, timeout: 10000 }).catch(() => null),
-      client.get('/gui_state', { params: { module: 'spectreasy_cockpit', project_path: requestedProjectPath }, timeout: 5000 }).catch(() => null),
     ])
     const status = statusResponse.data as Record<string, unknown>
-    const matrices = Array.isArray(matricesResponse?.data) ? matricesResponse.data : []
-    const samples = Array.isArray(samplesResponse?.data) ? samplesResponse.data : []
-    const liveMapping = normalizeMappingRows(mappingResponse?.data?.rows)
+    const projectPath: string = projectResponse
+      ? scalarValue(projectResponse.data?.project_path, '')
+      : scalarValue(status.matrix_dir, '')
+    const dataRevision = scalarValue(projectResponse?.data?.data_revision, 'empty')
+    const canReuseInventory = Boolean(
+      cachedProject?.projectPath &&
+      cachedProject.projectPath === projectPath &&
+      cachedProject.dataRevision === dataRevision &&
+      cachedProject.matrixFiles !== null &&
+      cachedProject.sampleFiles !== null &&
+      cachedProject.gatingFiles !== null,
+    )
+    const [matricesResponse, samplesResponse, mappingResponse, gateFilesResponse, guiStateResponse] = await Promise.all([
+      canReuseInventory ? Promise.resolve(null) : client.get('/matrices', { params: { project_path: projectPath }, timeout: 10000 }).catch(() => null),
+      canReuseInventory ? Promise.resolve(null) : client.get('/samples', { params: { project_path: projectPath }, timeout: 10000 }).catch(() => null),
+      canReuseInventory ? Promise.resolve(null) : client.get('/control_mapping', { params: { project_path: projectPath }, timeout: 10000 }).catch(() => null),
+      canReuseInventory ? Promise.resolve(null) : client.get('/gate_files', { params: { project_path: projectPath }, timeout: 30000 }).catch(() => null),
+      client.get('/gui_state', { params: { module: 'spectreasy_cockpit', project_path: requestedProjectPath }, timeout: 5000 }).catch(() => null),
+    ])
+    const matrices = canReuseInventory ? cachedProject?.matrixFiles ?? [] : (Array.isArray(matricesResponse?.data) ? matricesResponse.data : [])
+    const samples = canReuseInventory ? cachedProject?.sampleFiles ?? [] : (Array.isArray(samplesResponse?.data) ? samplesResponse.data : [])
+    const liveMapping = canReuseInventory ? cachedProject?.mapping ?? [] : normalizeMappingRows(mappingResponse?.data?.rows)
     const statusOk = scalarValue(status.status) === 'ok'
     const rawScan = (projectResponse?.data?.scan ?? {}) as Record<string, unknown>
     const rawLayout = (projectResponse?.data?.layout ?? {}) as Record<string, unknown>
@@ -177,9 +191,6 @@ export async function loadProjectSnapshot(requestedProjectPath = ''): Promise<{ 
       apiPort: API_BASE.split(':').pop() ?? '8000',
       packageReady: statusOk,
     }
-    const projectPath: string = projectResponse
-      ? scalarValue(projectResponse.data?.project_path, '')
-      : scalarValue(status.matrix_dir, '')
     const reportedProjectName = scalarValue(status.project_name, '').trim()
     // On a fresh browser session the first request cannot be project-scoped
     // because the project path is not in sessionStorage yet. The cockpit
@@ -231,6 +242,15 @@ export async function loadProjectSnapshot(requestedProjectPath = ''): Promise<{ 
       missingInputDirs: stringsFromBackend(projectResponse?.data?.missing_input_dirs),
       controlInputDir,
       sampleInputDir,
+      dataRevision,
+      matrixFiles: canReuseInventory ? cachedProject?.matrixFiles ?? [] : (matricesResponse ? matrices.map(String) : null),
+      sampleFiles: canReuseInventory ? cachedProject?.sampleFiles ?? [] : (samplesResponse ? samples.map(String) : null),
+      gatingFiles: canReuseInventory ? cachedProject?.gatingFiles ?? [] : (gateFilesResponse ? rowsFromBackend(gateFilesResponse.data?.files) : null),
+      gatingMetadata: canReuseInventory
+        ? cachedProject?.gatingMetadata ?? {}
+        : gateFilesResponse?.data?.metadata && typeof gateFilesResponse.data.metadata === 'object'
+        ? gateFilesResponse.data.metadata as Record<string, unknown>
+        : {},
       scan: { ...emptyProject.scan, ...backendScan, matrices: matrices.length, samples: samples.length },
     }
     return { project, backend, savedSettings }
@@ -538,6 +558,8 @@ export async function loadProjectReports(projectPath = '', outputRoot = 'spectre
       status: String(row.status ?? 'current') as Report['status'],
       matrix: '—',
       path: normalized,
+      promptPath: String(row.prompt_path ?? '').replace(/\\/g, '/') || undefined,
+      promptBytes: Number.isFinite(Number(row.prompt_bytes)) ? Number(row.prompt_bytes) : undefined,
     } satisfies Report
   }).filter((report) => report.path.length > 0)
 }
@@ -553,6 +575,10 @@ async function loadProjectReportBlob(path: string, projectPath = ''): Promise<Bl
 
 export async function loadProjectReportObjectUrl(path: string, projectPath = ''): Promise<string> {
   return URL.createObjectURL(await loadProjectReportBlob(path, projectPath))
+}
+
+export async function loadProjectReportPrompt(path: string, projectPath = ''): Promise<string> {
+  return (await loadProjectReportBlob(path, projectPath)).text()
 }
 
 export async function initializeProject(projectPath: string): Promise<{ success: boolean; created: string[]; message: string }> {
@@ -584,6 +610,15 @@ function downloadBlob(filename: string, blob: Blob) {
 export async function downloadProjectReport(path: string, projectPath = ''): Promise<boolean> {
   try {
     downloadBlob(path.split('/').pop() || 'spectreasy_qc_report.html', await loadProjectReportBlob(path, projectPath))
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function downloadProjectReportPrompt(path: string, projectPath = ''): Promise<boolean> {
+  try {
+    downloadBlob(path.split('/').pop() || 'spectreasy_ai_qc_prompt.txt', await loadProjectReportBlob(path, projectPath))
     return true
   } catch {
     return false
@@ -787,35 +822,6 @@ export async function attemptWorkflowAction(action: string, payload: Record<stri
     }
   }
 }
-
-export { normalizeAiQcResponse }
-
-export async function loadAiQc(projectPath: string, outputRoot: string, detail: AiQcDetail = 'standard'): Promise<AiQcResponse> {
-  try {
-    const response = await client.get('/ai-qc/preview', { params: { project_path: projectPath, output_root: normalizeOutputRoot(outputRoot), detail }, timeout: 30000 })
-    return normalizeAiQcResponse(response.data)
-  } catch {
-    return normalizeAiQcResponse({ status: 'failed', error: 'The local AI-ready QC preview could not be loaded.' })
-  }
-}
-
-export async function generateAiQc(input: { projectPath: string; outputRoot: string; scope: AiQcScope; privacy: AiQcPrivacy; detail: AiQcDetail; reference: string; context: string }): Promise<AiQcResponse> {
-  try {
-    const response = await client.post('/ai-qc/generate', {
-      projectPath: input.projectPath,
-      output_root: normalizeOutputRoot(input.outputRoot),
-      scope: input.scope,
-      privacy: input.privacy,
-      detail: input.detail,
-      reference: input.reference,
-      context: input.context,
-    }, { timeout: 0 })
-    return normalizeAiQcResponse(response.data)
-  } catch {
-    return normalizeAiQcResponse({ status: 'failed', error: 'Local AI-ready QC generation failed. Review the project outputs and retry.' })
-  }
-}
-
 
 export function downloadTextFile(filename: string, content: string) {
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })

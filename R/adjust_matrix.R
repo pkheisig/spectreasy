@@ -227,7 +227,7 @@
     list(frontend_url = frontend_url, npm_bin = npm_bin, mode = "bundled")
 }
 
-.spawn_gui_dev_process <- function(gui_path, api_port, frontend_port, npm_bin) {
+.spawn_gui_dev_process <- function(gui_path, api_port, frontend_port, npm_bin, api_token = "") {
     if (!requireNamespace("processx", quietly = TRUE)) {
         stop(
             "Developer mode requires package 'processx' to manage the Vite server safely.",
@@ -236,6 +236,7 @@
     }
     child_env <- Sys.getenv()
     child_env[["VITE_API_BASE"]] <- paste0("http://127.0.0.1:", api_port)
+    child_env[["VITE_SPECTREASY_TOKEN"]] <- trimws(as.character(api_token)[1])
     processx::process$new(
         npm_bin,
         c(
@@ -277,10 +278,11 @@
                                   api_port,
                                   frontend_port,
                                   npm_bin,
+                                  api_token = "",
                                   spawn = .spawn_gui_dev_process,
                                   wait_until_ready = .wait_for_gui_frontend) {
     .spectreasy_console_field("Frontend", paste0("starting npm dev server on port ", frontend_port))
-    process <- spawn(gui_path, api_port, frontend_port, npm_bin)
+    process <- spawn(gui_path, api_port, frontend_port, npm_bin, api_token)
     tryCatch(
         wait_until_ready(process, frontend_port),
         error = function(e) {
@@ -433,6 +435,7 @@
         )
     }
 
+    api_token <- .gui_session_token()
     frontend <- if (!is.null(hosted_frontend_url) && nzchar(trimws(hosted_frontend_url))) {
         list(mode = "hosted", frontend_url = sub("/+$", "", trimws(hosted_frontend_url)))
     } else {
@@ -451,13 +454,13 @@
             gui_path = paths$gui_path,
             api_port = port,
             frontend_port = frontend$frontend_port,
-            npm_bin = frontend$npm_bin
+            npm_bin = frontend$npm_bin,
+            api_token = api_token
         )
         on.exit({
             if (isTRUE(dev_server$is_alive())) dev_server$kill_tree()
         }, add = TRUE)
     }
-    api_token <- .gui_session_token()
     options(
         spectreasy.gui_api_token = api_token,
         spectreasy.gui_allowed_origins = .gui_url_origin(frontend$frontend_url)

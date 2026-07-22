@@ -1,48 +1,3 @@
-.report_relative_artifact_path <- function(path, from_file) {
-    target <- strsplit(normalizePath(path, mustWork = FALSE), "/", fixed = TRUE)[[1]]
-    base <- strsplit(normalizePath(dirname(from_file), mustWork = FALSE), "/", fixed = TRUE)[[1]]
-    common <- 0L
-    limit <- min(length(target), length(base))
-    while (common < limit && identical(target[common + 1L], base[common + 1L])) common <- common + 1L
-    parts <- c(rep("..", length(base) - common), target[(common + 1L):length(target)])
-    paste(parts[nzchar(parts)], collapse = "/")
-}
-
-.report_ai_qc_html <- function(report_data, output_file) {
-    qc <- report_data$ai_qc %||% NULL
-    if (!inherits(qc, "spectreasy_ai_qc")) return("")
-    counts <- qc$grade_summary$counts
-    cards <- paste(vapply(.ai_qc_grades, function(grade) paste0(
-        "<div class=\"ai-qc-grade ai-qc-grade-", grade, "\"><small>",
-        .report_html_escape(gsub("_", " ", grade)), "</small><strong>",
-        counts[[grade]] %||% 0L, "</strong></div>"
-    ), character(1)), collapse = "")
-    findings <- qc$overall_summary$top_findings %||% list()
-    finding_html <- if (length(findings)) paste0("<ol>", paste(vapply(findings, function(item) paste0(
-        "<li><strong>", .report_html_escape(item$grade), " &middot; ", .report_html_escape(item$metric_id),
-        "</strong> &mdash; ", .report_html_escape(item$entity), ". ", .report_html_escape(item$explanation), "</li>"
-    ), character(1)), collapse = ""), "</ol>") else "<p>No deterministic top findings were available.</p>"
-    paths <- report_data$ai_qc_artifact_paths %||% character()
-    paths <- paths[file.exists(paths)]
-    link_html <- if (length(paths)) paste0("<div class=\"ai-qc-links\">", paste(vapply(names(paths), function(kind) paste0(
-        "<a href=\"", .report_html_escape(.report_relative_artifact_path(paths[[kind]], output_file)), "\" download>",
-        .report_html_escape(toupper(kind)), "</a>"
-    ), character(1)), collapse = ""), "</div>") else "<p class=\"note\">AI-QC artifacts can be generated independently of this visual report.</p>"
-    prompt <- build_ai_qc_prompt(qc, detail = "standard")
-    profile <- qc$quality_reference$profile
-    profile_text <- if (is.null(profile)) "No compatible reviewed profile" else paste(profile$name, profile$version)
-    paste0(
-        "<section id=\"ai-ready-qc\" class=\"ai-qc-section\"><h2><button type=\"button\">AI-ready QC</button></h2><div class=\"section-body\">",
-        "<p class=\"note\">", .report_html_escape(qc$privacy$notice), "</p>",
-        "<div class=\"ai-qc-meta\"><span>Status <strong>", .report_html_escape(qc$overall_summary$status), "</strong></span><span>Privacy <strong>", .report_html_escape(qc$privacy$mode), "</strong></span><span>Profile <strong>", .report_html_escape(profile_text), "</strong></span></div>",
-        "<div class=\"ai-qc-grades\">", cards, "</div><h3>Deterministic top findings</h3>", finding_html,
-        "<details><summary>How grades were assigned</summary><p>Hard validation is applied first; compatible literature or reviewed empirical profiles follow. Within-run outliers can reach Review but not Poor without calibrated or hard evidence. Uncalibrated metrics remain Not graded.</p></details>",
-        link_html,
-        "<details class=\"ai-qc-prompt\"><summary>Paste-ready evaluation prompt</summary><button class=\"ai-qc-copy\" type=\"button\">Copy prompt</button><pre>", .report_html_escape(prompt), "</pre></details>",
-        "</div></section>"
-    )
-}
-
 #' Render a Spectreasy QC report object as HTML
 #' @param report_data Object returned by a Spectreasy report data collector.
 #' @param output_file Target `.html` file.
@@ -78,7 +33,7 @@ render_qc_html_report <- function(report_data, output_file, overwrite=c("version
     toc_titles <- vapply(sections,`[`,character(1),1)
     toc_labels <- vapply(seq_along(sections),function(i) .report_toc_label(names(sections)[i],toc_titles[i]),character(1))
     toc_prefix <- if (length(sample_reports)) "sample-1-" else ""
-    toc <- paste0(if (inherits(report_data$ai_qc, "spectreasy_ai_qc")) "<a data-section=\"ai-ready-qc\" href=\"#ai-ready-qc\">AI-ready QC</a>" else "", paste0("<a data-section=\"", names(sections), "\" href=\"#",toc_prefix,names(sections),"\">",.report_html_escape(toc_labels),"</a>",collapse=""))
+    toc <- paste0("<a data-section=\"", names(sections), "\" href=\"#",toc_prefix,names(sections),"\">",.report_html_escape(toc_labels),"</a>",collapse="")
     selector <- ""
     if (length(sample_reports)) {
         sample_names <- names(sample_reports)
@@ -99,15 +54,30 @@ render_qc_html_report <- function(report_data, output_file, overwrite=c("version
     } else {
         body <- paste(vapply(seq_along(sections),function(i) .report_section(names(sections)[i],sections[[i]][1],sections[[i]][2]),character(1)),collapse="")
     }
-    body <- paste0(.report_ai_qc_html(report_data, output_file), body)
     counts <- report_data$counts
     summary <- c(list(`Created`=format(report_data$created_at,"%Y-%m-%d %H:%M:%S %Z"),`Spectreasy`=report_data$version,`Method`=report_data$unmixing_method,`Cytometer`=report_data$cytometer %||% "Not recorded"),counts,.report_changed_run_settings(report_data))
     summary_html <- paste(vapply(names(summary),function(nm) paste0("<div><small>",.report_html_escape(nm),"</small><strong>",.report_html_escape(.report_scalar(summary[[nm]])),"</strong></div>"),character(1)),collapse="")
-    header <- paste0("<header><span class=\"kicker\">Spectreasy &middot; ",.report_html_escape(report_data$report_type),"</span><h1>",.report_html_escape(report_data$report_type)," report</h1><p class=\"paths\">",.report_html_escape(report_data$project_path),"</p><div class=\"summary-grid\">",summary_html,"</div></header>")
+    # Keep the full project path in the structured provenance object, but never
+    # expose a user's home-directory layout in a rendered report. The basename
+    # is sufficient context for a human reader and makes screenshots portable.
+    project_label <- basename(normalizePath(report_data$project_path, mustWork = FALSE))
+    header <- paste0("<header><span class=\"kicker\">Spectreasy &middot; ",.report_html_escape(report_data$report_type),"</span><h1>",.report_html_escape(report_data$report_type)," report</h1><p class=\"paths\">",.report_html_escape(project_label),"</p><div class=\"summary-grid\">",summary_html,"</div></header>")
     report_class <- if (inherits(report_data, "spectreasy_control_report_data")) "report-control" else "report-sample"
     replacements <- list("{{REPORT_TITLE}}"=paste("Spectreasy",report_data$report_type,"report"),"{{REPORT_CLASS}}"=report_class,"{{REPORT_TOC}}"=toc,"{{REPORT_HEADER}}"=header,"{{REPORT_SELECTOR}}"=selector,"{{REPORT_BODY}}"=body)
     for(key in names(replacements)) html <- gsub(key,replacements[[key]],html,fixed=TRUE)
     writeLines(html,output_file,useBytes=TRUE)
+    ai_artifacts <- NULL
+    if (isTRUE(report_data$run_settings$save_ai_qc %||% TRUE)) {
+        ai_artifacts <- .export_report_ai_qc(
+            report_data,
+            output_file,
+            numeric_paths = report_data$qc_metric_paths %||% character()
+        )
+    }
+    if (!is.null(ai_artifacts)) {
+        report_data$ai_qc_prompt_path <- ai_artifacts$prompt
+        report_data$ai_qc_data_paths <- ai_artifacts$numeric_sources
+    }
     companion_files <- character()
     if (length(nxn_companion_files)) companion_files <- .report_render_nxn_companions(report_data, nxn_companion_files)
     if (inherits(report_data, "spectreasy_control_report_data") && length(companion_files)) {
@@ -119,7 +89,7 @@ render_qc_html_report <- function(report_data, output_file, overwrite=c("version
         )
     }
     source_paths <- report_data$source_fingerprint$path %||% character()
-    metadata <- list(output_file=normalizePath(output_file,mustWork=TRUE),companion_files=companion_files,assets_dir=NULL,self_contained=!include_nxn,format="html",report_type=report_data$report_type,created_at=report_data$created_at,source_fingerprint=report_data$source_fingerprint,stale=.report_is_stale(output_file,source_paths),report_data=report_data)
+    metadata <- list(output_file=normalizePath(output_file,mustWork=TRUE),companion_files=companion_files,assets_dir=NULL,self_contained=!include_nxn,format="html",report_type=report_data$report_type,created_at=report_data$created_at,source_fingerprint=report_data$source_fingerprint,stale=.report_is_stale(output_file,source_paths),report_data=report_data,ai_qc_prompt_path=if (!is.null(ai_artifacts)) ai_artifacts$prompt else NULL,ai_qc_data_paths=if (!is.null(ai_artifacts)) ai_artifacts$numeric_sources else character())
     class(metadata) <- c("spectreasy_report_result","list")
     invisible(metadata)
 }

@@ -625,7 +625,7 @@ test_that("event-wise solvers match across thread counts", {
     colnames(Y) <- colnames(M)
     ff <- flowCore::flowFrame(Y)
 
-    for (method in c("AutoSpectral", "Spectreasy", "OLS", "NNLS", "WLS", "RWLS")) {
+    for (method in c("AutoSpectral", "OLS", "NNLS", "WLS", "RWLS")) {
         args <- list(flow_frame = ff, M = M, method = method)
         if (identical(method, "RWLS")) args$rwls_max_iter <- 2L
         single <- do.call(spectreasy::calc_residuals, c(args, list(n_threads = 1L)))

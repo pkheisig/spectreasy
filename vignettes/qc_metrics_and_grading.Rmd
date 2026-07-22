@@ -1,35 +1,22 @@
 ---
-title: "QC metrics and grading"
+title: "QC metrics for interpretation"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{QC metrics and grading}
+  %\VignetteIndexEntry{QC metrics for interpretation}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-Metric definitions live in `inst/extdata/qc_metric_references.yml`. Each graded
-record contains a stable metric ID, entity and stage, full-precision value,
-units, definition reference, expected direction, availability/missing reason,
-grade, and grade provenance.
+Spectreasy persists measured values and their units without assigning
+scientific quality labels. Existing report tables include control gating and
+stain-index summaries, spectral similarity, negative-population spread,
+detector residuals, sample reconstruction error, reference spectra, and AF
+spectra.
 
-The grading hierarchy is conservative:
-
-1. Hard structural validity failures or reviews.
-2. Literature rules only when their assumptions and event reliability hold.
-3. Context-matched reviewed empirical profiles using robust summaries.
-4. Within-run outliers, which can reach Review but never Poor by themselves.
-5. Otherwise Not graded.
-
-Allowed bases are `hard_validation`, `literature_rule`,
-`empirical_reference`, `relative_within_run`, `user_reference`, and
-`not_graded`. WLS/RWLS weighted residuals are never compared with raw residuals
-under a mismatched profile. Matrix conditioning and spectral similarity are
-panel-complexity evidence, not automatic SCC defects. The historical ungated
-lower-tail spread is labeled **Negative-tail MAD proxy**; explicitly gated
-negatives are preferred.
-
-Profiles are `spectreasy_qc_reference_profile` objects discovered from an empty
-built-in location, `.spectreasy/qc_reference_profiles/`, or an explicit path.
-Use `scripts/build_qc_reference_profile.R` to inventory machine-readable runs,
-apply a reviewed manifest, and create a de-identified candidate profile and
-inclusion/exclusion report.
+Additional compact tables provide robust positive/negative separation and
+spectral consistency per control, control-spectrum quantiles, AF-bank rank and
+pairwise similarity, and sample AF-band usage when those measurements are
+available. Large matrices remain CSV files and are represented in the
+paste-ready prompt by derived summaries. WLS/RWLS weighted residuals are never
+described as directly comparable with raw residuals, and spectral similarity is
+treated as panel-complexity evidence rather than an automatic defect.

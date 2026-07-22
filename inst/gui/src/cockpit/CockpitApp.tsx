@@ -28,9 +28,10 @@ import { CockpitApplet } from "./components/CockpitApplet";
 import { TopBar } from "./components/CockpitTopBar";
 import { ProjectFilesDialog } from "./components/ProjectFilesDialog";
 import { ProjectInitializationDialog } from "./components/ProjectInitializationDialog";
+import { VersionRunDialog } from "./components/VersionRunDialog";
 import { GuideDialog } from "./components/GuideDialog";
 import { WorkflowWorkspace } from "./workspaces/WorkflowWorkspace";
-import { defaultWorkflowSettings, normalizeInterfaceScale } from "./types";
+import { defaultWorkflowSettings, normalizeInterfaceScale, normalizeWorkflowUnmixingMethod } from "./types";
 import type {
   Artifact,
   BackendStatus,
@@ -46,6 +47,7 @@ import type {
 import "./cockpit.css";
 
 const emptyJob: Job = { label: "", state: "idle", progress: 0, subtask: "" };
+const persistentDataApplets: CockpitAppletId[] = ["control-gating", "panel-builder", "matrix-adjustment"];
 
 
 export default function CockpitApp() {
@@ -56,7 +58,7 @@ export default function CockpitApp() {
   const [activeSection, setActiveSection] = useState<SectionId>("controls");
   const [activeApplet, setActiveApplet] = useState<CockpitAppletId | null>(null);
   const [selectedReportPath, setSelectedReportPath] = useState("");
-  const [gatingInitialized, setGatingInitialized] = useState(false);
+  const [initializedApplets, setInitializedApplets] = useState<CockpitAppletId[]>([]);
   const [sectionBeforeApplet, setSectionBeforeApplet] =
     useState<SectionId>("controls");
   const [mappingTab, setMappingTab] = useState<
@@ -73,6 +75,7 @@ export default function CockpitApp() {
   const [initializationBusy, setInitializationBusy] = useState(false);
   const [initializationMessage, setInitializationMessage] = useState("");
   const [projectLoading, setProjectLoading] = useState(false);
+  const [pendingVersionRun, setPendingVersionRun] = useState<{ action: "control" | "sample"; label: string } | null>(null);
   const [settings, setSettings] = useState<WorkflowSettings>(() => {
     const initial = defaultWorkflowSettings('');
     const savedTheme = window.localStorage.getItem("spectreasy-theme");
@@ -85,7 +88,9 @@ export default function CockpitApp() {
   const [sectionBeforeSettings, setSectionBeforeSettings] =
     useState<SectionId>("controls");
   const refreshSequence = useRef(createRefreshSequence());
+  const projectRef = useRef<ProjectState>(structuredClone(emptyProject));
   const darkMode = settings.appearance.theme === "dark";
+  const projectIsLoading = projectLoading || !settingsReady;
 
   function appendExecutionLogs(entries: Array<Pick<ExecutionLogEntry, "kind" | "text">>) {
     setExecutionLogs((current) => {
@@ -108,7 +113,7 @@ export default function CockpitApp() {
   const refreshProject = useCallback(async (initial = false, requestedProjectPath = "") => {
     const requestSequence = refreshSequence.current.begin();
     const tabProjectPath = requestedProjectPath || window.sessionStorage.getItem("spectreasy-project-path") || "";
-    const snapshot = await loadProjectSnapshot(tabProjectPath);
+    const snapshot = await loadProjectSnapshot(tabProjectPath, initial ? undefined : projectRef.current);
     if (!refreshSequence.current.isCurrent(requestSequence)) return;
     if (!snapshot.backend.connected) {
       setBackend((current) => ({
@@ -154,10 +159,11 @@ export default function CockpitApp() {
             outputDir: normalizeCockpitOutputRoot(savedControl.outputDir),
             // A cockpit project with confirmed gates always reuses its gate CSV.
             manualGateFile: snapshot.project.scan.gates > 0 ? "ssc_gate_config.csv" : "",
-            method:
+            method: normalizeWorkflowUnmixingMethod(
               savedControl.method ??
               snapshot.project.method ??
               current.control.method,
+            ),
             cytometer: normalizeCockpitCytometer(
               explicitCytometer ?? savedControl.cytometer ?? snapshot.project.cytometer,
             ),
@@ -169,11 +175,12 @@ export default function CockpitApp() {
             matrixFile: savedSample.matrixFile ?? "spectreasy_outputs/unmix_controls/scc_reference_matrix.csv",
             detectorNoiseFile: savedSample.detectorNoiseFile ?? "spectreasy_outputs/unmix_controls/scc_detector_noise.csv",
             outputDir: normalizeCockpitOutputRoot(savedSample.outputDir),
-            method:
+            method: normalizeWorkflowUnmixingMethod(
               savedSample.method ??
               savedControl.method ??
               snapshot.project.method ??
               current.sample.method,
+            ),
           },
           af: {
             ...current.af,
@@ -206,6 +213,10 @@ export default function CockpitApp() {
     }
     return snapshot;
   }, []);
+
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
 
   useEffect(() => {
     let cancelled = false;
@@ -412,7 +423,9 @@ export default function CockpitApp() {
     setSectionBeforeApplet(activeSection);
     setActiveSection(section);
     setSelectedReportPath(reportPath);
-    if (applet === "control-gating") setGatingInitialized(true);
+    if (persistentDataApplets.includes(applet)) {
+      setInitializedApplets((current) => current.includes(applet) ? current : [...current, applet]);
+    }
     setActiveApplet(applet);
   }
 
@@ -519,6 +532,15 @@ export default function CockpitApp() {
     return response.success;
   }
 
+  async function requestRunAction(action: "control" | "sample" | "af", label: string) {
+    const reportType = action === "control" ? "Control QC report" : action === "sample" ? "Sample QC report" : "";
+    if (action !== "af" && reportType && project.artifacts.some((artifact) => artifact.type === reportType)) {
+      setPendingVersionRun({ action, label });
+      return false;
+    }
+    return runAction(action, label);
+  }
+
   async function loadPanel() {
     const payload = await loadPanelPayload("aurora");
     if (payload) {
@@ -620,7 +642,7 @@ export default function CockpitApp() {
 
   return (
     <div className="cockpit-app">
-      <div className="cockpit-app-content" inert={projectLoading} aria-hidden={projectLoading}>
+      <div className="cockpit-app-content" inert={projectIsLoading} aria-hidden={projectIsLoading}>
         <a className="skip-link" href="#cockpit-main">Skip to workflow</a>
       <TopBar
         project={project}
@@ -667,7 +689,7 @@ export default function CockpitApp() {
               sampleTab={sampleTab}
               setSampleTab={setSampleTab}
               onUpdateMapping={updateMapping}
-              onRun={runAction}
+              onRun={requestRunAction}
               onRefresh={() => void refreshProject()}
               onDownload={downloadArtifact}
               onSelectArtifact={selectArtifact}
@@ -684,21 +706,24 @@ export default function CockpitApp() {
           </div>
         </main>
       </div>
-      {gatingInitialized && (
+      {initializedApplets.map((applet) => (
         <CockpitApplet
-          applet="control-gating"
+          key={applet}
+          applet={applet}
           theme={settings.appearance.theme}
+          project={project}
           projectPath={settings.projectPath}
           outputRoot={normalizeCockpitOutputRoot(settings.control.outputDir)}
           reportPath={selectedReportPath}
-          active={activeApplet === "control-gating"}
+          active={activeApplet === applet}
           onExit={exitApplet}
         />
-      )}
-      {activeApplet && activeApplet !== "control-gating" && (
+      ))}
+      {activeApplet && !persistentDataApplets.includes(activeApplet) && (
         <CockpitApplet
           applet={activeApplet}
           theme={settings.appearance.theme}
+          project={project}
           projectPath={settings.projectPath}
           outputRoot={normalizeCockpitOutputRoot(activeApplet === "sample-qc-report" ? settings.sample.outputDir : settings.control.outputDir)}
           reportPath={selectedReportPath}
@@ -731,8 +756,19 @@ export default function CockpitApp() {
           }}
         />
       )}
+      {pendingVersionRun && (
+        <VersionRunDialog
+          workflow={pendingVersionRun.action}
+          onCancel={() => setPendingVersionRun(null)}
+          onConfirm={() => {
+            const pending = pendingVersionRun;
+            setPendingVersionRun(null);
+            void runAction(pending.action, pending.label);
+          }}
+        />
+      )}
       </div>
-      {projectLoading && (
+      {projectIsLoading && (
         <div className="project-loading-overlay" role="status" aria-live="polite" aria-label="Loading project files">
           <div className="project-loading-card">
             <LoaderCircle className="is-spinning" size={36} aria-hidden="true" />

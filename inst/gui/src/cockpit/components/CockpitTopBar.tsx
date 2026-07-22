@@ -79,11 +79,24 @@ export function TopBar({
   return (
     <header className="topbar">
       <div className="brand-lockup">
-        <div className="brand-mark">
-          <span />
-          <span />
-          <span />
-        </div>
+        <span className="brand-favicon-shell" aria-hidden="true">
+          <img
+            className="brand-favicon brand-favicon-light"
+            src="/favicon-light.svg"
+            alt=""
+            loading="eager"
+            decoding="sync"
+            fetchPriority="high"
+          />
+          <img
+            className="brand-favicon brand-favicon-dark"
+            src="/favicon-dark.svg"
+            alt=""
+            loading="eager"
+            decoding="sync"
+            fetchPriority="high"
+          />
+        </span>
         <div>
           <strong>spectreasy</strong>
         </div>
@@ -143,12 +156,9 @@ export function TopBar({
           value={method}
           onChange={(event) => onMethodChange(event.target.value)}
         >
-          <option>Spectreasy</option>
-          <option>AutoSpectral</option>
-          <option>OLS</option>
-          <option>WLS</option>
-          <option>RWLS</option>
-          <option>NNLS</option>
+          {WORKFLOW_UNMIXING_METHODS.map((option) => (
+            <option key={option}>{option}</option>
+          ))}
         </GuiSelect>
       </label>
       <button
@@ -195,6 +205,7 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import { cytometerOptions } from "../cytometerConfig";
+import { WORKFLOW_UNMIXING_METHODS } from "../types";
 import type { ExecutionLogEntry, ProjectState } from "../types";
 import { GuiSelect } from "./GuiSelect";
 import { TerminalPanel } from "./TerminalPanel";

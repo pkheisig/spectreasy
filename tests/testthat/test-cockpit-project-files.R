@@ -58,6 +58,33 @@ test_that("project scans do not initialize or mutate an untouched folder", {
     expect_false(dir.exists(file.path(project, "samples")))
 })
 
+test_that("project data revisions change when applet inputs change", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+    project <- tempfile("cockpit_data_revision_")
+    dir.create(file.path(project, "scc"), recursive = TRUE)
+    dir.create(file.path(project, "samples"), recursive = TRUE)
+    on.exit(unlink(project, recursive = TRUE, force = TRUE), add = TRUE)
+
+    control <- file.path(project, "scc", "control.fcs")
+    writeBin(charToRaw("FCS3.1-one"), control)
+    first <- api_env$gui_project_scan(project)$data_revision
+    dir.create(file.path(project, "derived"))
+    writeBin(charToRaw("unmixed-output"), file.path(project, "derived", "output.fcs"))
+    unchanged <- api_env$gui_project_scan(project)$data_revision
+    writeBin(charToRaw("FCS3.1-a-longer-payload"), control)
+    second <- api_env$gui_project_scan(project)$data_revision
+
+    expect_type(first, "character")
+    expect_lt(nchar(first), 64)
+    expect_identical(first, unchanged)
+    expect_false(identical(first, second))
+})
+
 test_that("project picker routes distinguish opening from creating", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")

@@ -108,7 +108,8 @@
                               unmix_scatter_axis_limit,
                               output_file,
                               overwrite,
-                              project_path) {
+                              project_path,
+                              qc_metrics_dir = NULL) {
     cleanup_dir <- NULL
     if (is.null(collector_plot_dir)) {
         info <- .prepare_scc_report_plot_dir(qc_plot_dir = qc_plot_dir, save_qc_pngs = save_qc_pngs)
@@ -138,6 +139,7 @@
             report_format = "html"
         ), run_settings),
         plot_dir = collector_plot_dir,
+        qc_metrics_dir = qc_metrics_dir,
         project_path = project_path
     )
     if (!isTRUE(save_qc_pngs)) report_data <- .report_embed_plot_manifest(report_data)

@@ -453,9 +453,11 @@ sessionInfo()
 ```
 ## Local AI-ready QC
 
-Control and sample workflows can write a deterministic, schema-versioned QC
-bundle with `save_ai_qc = TRUE`. This is a local export only: Spectreasy sends
-nothing and has no embedded AI model, provider integration, API key, or upload
-step. Use `privacy = "standard"` for stable sample aliases and path removal, or
-`"strict"` to additionally alias controls and remove project/operator/date/free
-text. AI interpretation remains advisory.
+Control and sample workflows write one local numerical QC prompt with
+`save_ai_qc = TRUE`. Spectreasy sends nothing, includes no raw events, assigns
+no scientific quality labels, and does not create a parallel bundle directory.
+
+QC reports generate their prompt companion from the existing numerical CSV
+tables automatically. Open a control or sample report in the cockpit and use
+the highlighted **AI-ready prompt** header menu to copy or download the saved
+text.

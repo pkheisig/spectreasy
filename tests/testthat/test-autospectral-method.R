@@ -121,7 +121,7 @@ test_that("AutoSpectral calc_residuals records per-cell AF assignment for AF ban
     expect_true(all(rowSums(res[, c("AF", "AF_2")] != 0) <= 1))
 })
 
-test_that("Spectreasy calc_residuals applies AS-only soft decoder weights", {
+test_that("retired unmixing methods and parameters are absent", {
     M <- rbind(
         FITC = c(1.00, 0.10, 0.05),
         PE = c(0.12, 1.00, 0.08),
@@ -143,33 +143,14 @@ test_that("Spectreasy calc_residuals applies AS-only soft decoder weights", {
     colnames(exprs) <- colnames(M)
     ff <- flowCore::flowFrame(exprs)
 
-    autospectral <- spectreasy::calc_residuals(ff, M, method = "AutoSpectral", return_residuals = TRUE)
-    spectreasy <- spectreasy::calc_residuals(ff, M, method = "Spectreasy", return_residuals = TRUE)
-    weights <- spectreasy:::.decoder_projected_af_marker_weights(M, spectreasy_weight_quantile = 0.65)
-    baseline <- spectreasy:::.spectreasy_marker_only_baseline_fit(exprs, M)
-
-    expect_equal(spectreasy$spectreasy_decoder_weights, weights, tolerance = 1e-12)
-    for (marker in names(weights)) {
-        expected <- baseline[, marker] + weights[[marker]] * (autospectral$data[[marker]] - baseline[, marker])
-        expect_equal(spectreasy$data[[marker]], expected, tolerance = 1e-5)
+    removed_method <- paste0("Spectre", "asy")
+    expect_error(
+        spectreasy::calc_residuals(ff, M, method = removed_method),
+        "method must be one of"
+    )
+    for (fun in list(spectreasy::calc_residuals, spectreasy::unmix_samples, spectreasy::unmix_controls)) {
+        expect_false(any(grepl("weight_quantile", names(formals(fun)), fixed = TRUE)))
     }
-    expect_true("AF Index" %in% colnames(spectreasy$data))
-    expect_true(all(spectreasy$spectreasy_decoder_weights >= 0 & spectreasy$spectreasy_decoder_weights <= 1))
-    expect_equal(attr(spectreasy$spectreasy_decoder_weights, "quantile"), 0.65)
-    expect_error(
-        spectreasy::calc_residuals(ff, M, method = "Spectreasy", spectreasy_weight_quantile = 1.2),
-        "spectreasy_weight_quantile"
-    )
-    expect_error(
-        spectreasy::calc_residuals(ff, M, method = "WLS", spectreasy_weight_quantile = 0.9),
-        "method = \"Spectreasy\""
-    )
-})
-
-test_that("Spectreasy weight quantile defaults to 0.65 across public APIs", {
-    expect_identical(formals(spectreasy::calc_residuals)$spectreasy_weight_quantile, 0.65)
-    expect_identical(formals(spectreasy::unmix_samples)$spectreasy_weight_quantile, 0.65)
-    expect_identical(formals(spectreasy::unmix_controls)$spectreasy_weight_quantile, 0.65)
 })
 
 test_that("SCC processing follows the selected unmixing method", {
@@ -204,7 +185,7 @@ test_that("SCC processing follows the selected unmixing method", {
     expect_true(all(qc_summary$scc_background_method[qc_summary$fluorophore %in% c("FITC", "PE")] %in% c("scatter_knn", "external_median")))
 })
 
-test_that("unmix_controls learns variants only for AutoSpectral-style methods", {
+test_that("unmix_controls learns variants only for AutoSpectral", {
     set.seed(102)
     wf <- make_autospectral_test_workflow(n = 650)
     control_csv <- tempfile(fileext = ".csv")
@@ -241,22 +222,6 @@ test_that("unmix_controls learns variants only for AutoSpectral-style methods", 
     expect_equal(autospectral$static_unmixing_matrix_method, "AutoSpectral")
     expect_equal(attr(autospectral$unmixed_list, "method"), "AutoSpectral")
 
-    spectreasy_dir <- tempfile("spectreasy_enabled_")
-    spectreasy <- spectreasy::unmix_controls(
-        scc_dir = wf$scc_dir,
-        control_file = control_csv,
-        output_dir = spectreasy_dir,
-        unmixing_method = "Spectreasy",
-        gating_mode = "automatic",
-        spectral_variant_min_events = 20,
-        save_report = FALSE,
-        seed = 102,
-        subsample_n = 400
-    )
-    expect_s3_class(spectreasy$spectral_variant_library, "spectreasy_spectral_variant_library")
-    expect_true(file.exists(spectreasy$spectral_variant_library_file))
-    expect_equal(spectreasy$static_unmixing_matrix_method, "Spectreasy")
-    expect_equal(attr(spectreasy$unmixed_list, "method"), "Spectreasy")
 })
 
 test_that("AF refinement helper returns fixed-size refined k-means bank", {
@@ -308,47 +273,6 @@ test_that("unmix_controls accepts autospectral_refine only for AutoSpectral", {
             save_report = FALSE
         ),
         "unmixing_method = \"AutoSpectral\""
-    )
-    expect_error(
-        spectreasy::unmix_controls(
-            scc_dir = tempfile("missing_scc_"),
-            unmixing_method = "Spectreasy",
-            autospectral_refine = TRUE,
-            save_report = FALSE
-        ),
-        "unmixing_method = \"AutoSpectral\""
-    )
-})
-
-test_that("spectreasy_weight_quantile is accepted only for Spectreasy", {
-    M <- matrix(c(1, 0.1, 0.2, 1), nrow = 2, byrow = TRUE)
-    rownames(M) <- c("FITC", "PE")
-    colnames(M) <- c("B1-A", "YG1-A")
-    exprs <- matrix(c(100, 20, 30, 90), nrow = 2, byrow = TRUE)
-    colnames(exprs) <- colnames(M)
-    sample_dir <- tempfile("spectreasy_quantile_samples_")
-    dir.create(sample_dir, recursive = TRUE)
-    flowCore::write.FCS(flowCore::flowFrame(exprs), file.path(sample_dir, "sample.fcs"))
-
-    expect_error(
-        spectreasy::unmix_samples(
-            sample_dir = sample_dir,
-            M = M,
-            unmixing_method = "WLS",
-            spectreasy_weight_quantile = 0.9,
-            write_fcs = FALSE,
-            save_report = FALSE
-        ),
-        "unmixing_method = \"Spectreasy\""
-    )
-    expect_error(
-        spectreasy::unmix_controls(
-            scc_dir = tempfile("missing_scc_"),
-            unmixing_method = "WLS",
-            spectreasy_weight_quantile = 0.9,
-            save_report = FALSE
-        ),
-        "unmixing_method = \"Spectreasy\""
     )
 })
 

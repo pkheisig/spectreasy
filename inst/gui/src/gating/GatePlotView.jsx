@@ -1,11 +1,8 @@
 import { Eraser, Hexagon } from 'lucide-react'
 import {
-  HISTOGRAM_BIN_MAX,
-  HISTOGRAM_BIN_MIN,
   PAD,
   PLOT_HEIGHT,
   PLOT_WIDTH,
-  TransformDropdown,
   axisLabel,
   channelTitle,
   formatTickValue,
@@ -27,10 +24,6 @@ export default function GatePlotView({ view }) {
     negativeGateEnabled,
     onToggleHistogramGate,
     onClear,
-    histogramBins,
-    onHistogramBinsChange,
-    histogramTransform,
-    onHistogramTransformChange,
     plotRef,
     mode,
     canvasRef,
@@ -81,7 +74,7 @@ export default function GatePlotView({ view }) {
           <h2>{title}</h2>
           {subtitle ? <p>{subtitle}</p> : null}
         </div>
-        <div style={{ textAlign: 'right' }}>
+        <div className="plot-head-summary">
           <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 'bold' }}>
             {events.length.toLocaleString()} shown
           </span>
@@ -95,66 +88,48 @@ export default function GatePlotView({ view }) {
               {warningText}
             </div>
           )}
+          <div
+            className={`plot-toolbar ${isPositivePlot ? 'is-histogram' : 'is-scatter'}`}
+            role="toolbar"
+            aria-label={`${title} plot interaction tools`}
+          >
+            {!isPositivePlot ? (
+              <button
+                className={active && drawActive ? 'on' : ''}
+                onClick={onToggleDraw}
+              >
+                <Hexagon size={14} /> Gate
+              </button>
+            ) : (
+              <>
+                <button
+                  className={`btn-negative-gate ${active && drawActive && histogramGateType === 'negative' ? 'on' : ''}`}
+                  disabled={!negativeGateEnabled}
+                  title={negativeGateEnabled ? 'Draw negative histogram gate' : 'A mapped external negative supplies the background'}
+                  onClick={(e) => onToggleHistogramGate('negative', e)}
+                >
+                  Neg
+                </button>
+                <button
+                  className={`btn-positive-gate ${active && drawActive && histogramGateType === 'positive' ? 'on' : ''}`}
+                  onClick={(e) => onToggleHistogramGate('positive', e)}
+                >
+                  Pos
+                </button>
+                <button
+                  className="btn-clear-histogram"
+                  onClick={onClear}
+                  title="Remove the positive and negative histogram gates for this file"
+                >
+                  <Eraser size={13} /> Clear
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* Toolbar buttons inside plot panel headers */}
-      <div className="plot-toolbar">
-        {!isPositivePlot ? (
-          <>
-            <button
-              className={active && drawActive ? 'on' : ''}
-              onClick={onToggleDraw}
-            >
-              <Hexagon size={14} /> Gate
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              className={`btn-negative-gate ${active && drawActive && histogramGateType === 'negative' ? 'on' : ''}`}
-              disabled={!negativeGateEnabled}
-              title={negativeGateEnabled ? 'Draw negative histogram gate' : 'A mapped external negative supplies the background'}
-              onClick={(e) => onToggleHistogramGate('negative', e)}
-            >
-              Neg
-            </button>
-            <button
-              className={`btn-positive-gate ${active && drawActive && histogramGateType === 'positive' ? 'on' : ''}`}
-              onClick={(e) => onToggleHistogramGate('positive', e)}
-            >
-              Pos
-            </button>
-            <button
-              className="btn-clear-histogram"
-              onClick={onClear}
-              title="Remove the positive and negative histogram gates for this file"
-            >
-              <Eraser size={13} /> Clear
-            </button>
-            <label className="histogram-bin-control">
-              <span>Bins</span>
-              <input
-                type="range"
-                min={HISTOGRAM_BIN_MIN}
-                max={HISTOGRAM_BIN_MAX}
-                step="5"
-                value={histogramBins}
-                onChange={(e) => onHistogramBinsChange?.(Number(e.target.value))}
-                onInput={(e) => onHistogramBinsChange?.(Number(e.currentTarget.value))}
-              />
-              <strong>{histogramBins}</strong>
-            </label>
-            <div className="histogram-transform-control">
-              <TransformDropdown
-                value={histogramTransform}
-                onChange={(nextValue) => onHistogramTransformChange?.(nextValue)}
-              />
-            </div>
-          </>
-        )}
-      </div>
-
+      <div className="plot-stage">
       <div ref={plotRef} style={{ position: 'relative', width: '100%', aspectRatio: `${PLOT_WIDTH} / ${PLOT_HEIGHT}` }}>
         {mode === 'scatter' && (
           <canvas
@@ -350,6 +325,7 @@ export default function GatePlotView({ view }) {
             ))}
           </div>
         )}
+      </div>
       </div>
     </section>
   )

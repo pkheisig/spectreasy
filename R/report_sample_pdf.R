@@ -154,19 +154,19 @@
     }
     plot_dir <- .prepare_qc_report_png_dir(options$qc_plot_dir, options$save_qc_pngs, output_file)
     metrics_dir <- .prepare_qc_report_metrics_dir(options$qc_metrics_dir)
+    if (!is.null(metrics_dir)) {
+        af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
+        af_numeric <- .af_qc_summary_table(M, attr(results, "blind_af_info") %||% attr(M, "af_bank_info"))
+        af_usage <- .af_band_usage_table(prepared$data, af_band_names = rownames(M)[af_rows])
+        if (.report_has_rows(af_numeric)) .write_qc_report_csv(af_numeric, file.path(metrics_dir, "af_bank_summary.csv"))
+        if (.report_has_rows(af_usage)) .write_qc_report_csv(af_usage, file.path(metrics_dir, "af_band_usage.csv"))
+    }
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
     state <- new.env(parent = emptyenv())
     state$page_started <- FALSE
 
-    ai_qc <- collect_ai_qc(
-        samples = results, M = M, scope = "sample", privacy = "standard",
-        reference = "none", generated_at = Sys.time()
-    )
-    ai_caption <- .ai_qc_pdf_caption(
-        ai_qc,
-        export_path = file.path(dirname(dirname(dirname(output_file))), "ai_qc")
-    )
+    ai_caption <- NULL
 
     file_counts <- .qc_report_file_counts(results)
     if (!is.null(options$max_events_per_sample) &&
@@ -185,5 +185,30 @@
     )
     .spectreasy_console_field("Saved", .spectreasy_console_path(output_file))
     .spectreasy_console_footer(blank = FALSE)
-    invisible(list(output_file = output_file, qc_plot_dir = plot_dir, qc_metrics_dir = metrics_dir))
+    af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
+    prompt_data <- list(
+        report_type = "Sample QC",
+        project_path = normalizePath(options$project_path, mustWork = FALSE),
+        created_at = Sys.time(),
+        version = as.character(utils::packageVersion("spectreasy")),
+        unmixing_method = method,
+        cytometer = "not recorded",
+        counts = list(
+            samples = length(unique(as.character(prepared$data$File))),
+            markers = sum(!af_rows), detectors = ncol(M), af_bands = sum(af_rows)
+        ),
+        warnings = character(),
+        qc_metric_paths = if (!is.null(metrics_dir) && dir.exists(metrics_dir)) list.files(metrics_dir, pattern = "\\.csv$", full.names = TRUE, ignore.case = TRUE) else character()
+    )
+    class(prompt_data) <- c("spectreasy_sample_report_data", "spectreasy_report_data", "list")
+    ai_artifacts <- NULL
+    if (isTRUE(options$report_run_settings$save_ai_qc %||% TRUE)) {
+        ai_artifacts <- .export_report_ai_qc(
+            prompt_data, output_file, numeric_paths = prompt_data$qc_metric_paths
+        )
+    }
+    invisible(list(
+        output_file = output_file, qc_plot_dir = plot_dir, qc_metrics_dir = metrics_dir,
+        ai_qc_prompt_path = ai_artifacts$prompt, ai_qc_data_paths = ai_artifacts$numeric_sources
+    ))
 }

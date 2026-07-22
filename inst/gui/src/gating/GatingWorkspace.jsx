@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import {
   CheckCircle2,
   ChevronLeft,
@@ -14,6 +15,7 @@ import {
   Settings,
   Sun,
   Upload,
+  X,
 } from 'lucide-react'
 import { fileUsesHistogramGates } from '../gatingEligibility.js'
 import SpectrumCanvas from '../SpectrumCanvas.jsx'
@@ -32,6 +34,45 @@ import {
   normalizeHistogramBins,
   normalizeHistogramTransform,
 } from './GatingCore.jsx'
+
+function CommitRange({ value, onCommit, formatValue, ...inputProps }) {
+  const [draftValue, setDraftValue] = useState(Number(value))
+  const interactingRef = useRef(false)
+
+  useEffect(() => {
+    if (!interactingRef.current) setDraftValue(Number(value))
+  }, [value])
+
+  const commit = (nextValue) => {
+    const numericValue = Number(nextValue)
+    interactingRef.current = false
+    setDraftValue(numericValue)
+    if (numericValue !== Number(value)) onCommit(numericValue)
+  }
+
+  return <>
+    <input
+      {...inputProps}
+      type="range"
+      value={draftValue}
+      onPointerDown={(event) => {
+        interactingRef.current = true
+        event.currentTarget.setPointerCapture?.(event.pointerId)
+      }}
+      onChange={(event) => setDraftValue(Number(event.currentTarget.value))}
+      onPointerUp={(event) => {
+        commit(event.currentTarget.value)
+        if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId)
+        }
+      }}
+      onPointerCancel={(event) => commit(event.currentTarget.value)}
+      onKeyUp={(event) => commit(event.currentTarget.value)}
+      onBlur={(event) => commit(event.currentTarget.value)}
+    />
+    <strong>{formatValue(draftValue)}</strong>
+  </>
+}
 
 export default function GatingWorkspace({ view }) {
   const {
@@ -55,6 +96,7 @@ export default function GatingWorkspace({ view }) {
     histogramAutogateMissing,
     setShowAutogateConfirmModal,
     embedded,
+    onRequestClose,
     showSettingsModal,
     setShowSettingsModal,
     setDarkMode,
@@ -262,40 +304,36 @@ export default function GatingWorkspace({ view }) {
                   </div>}
                   <label className="gating-settings-row">
                     <span>Point size</span>
-                    <input
-                      type="range"
+                    <CommitRange
                       min="0.5"
                       max="4.0"
                       step="0.25"
                       value={pointSize}
-                      onChange={(e) => setPointSize(Number(e.target.value))}
+                      onCommit={setPointSize}
+                      formatValue={(value) => value.toFixed(2)}
                     />
-                    <strong>{pointSize.toFixed(2)}</strong>
                   </label>
                   <label className="gating-settings-row">
                     <span>Events</span>
-                    <input
-                      type="range"
+                    <CommitRange
                       min="0"
                       max={EVENT_COUNT_STEPS.length - 1}
                       step="1"
                       value={eventStepIndex(maxPoints)}
-                      onChange={(e) => setMaxPoints(EVENT_COUNT_STEPS[Number(e.target.value)])}
+                      onCommit={(index) => setMaxPoints(EVENT_COUNT_STEPS[index])}
+                      formatValue={(index) => eventStepLabel(EVENT_COUNT_STEPS[index], payload?.total_events)}
                     />
-                    <strong>{eventStepLabel(maxPoints, payload?.total_events)}</strong>
                   </label>
                   <label className="gating-settings-row">
                     <span>Histogram bins</span>
-                    <input
-                      type="range"
+                    <CommitRange
                       min={HISTOGRAM_BIN_MIN}
                       max={HISTOGRAM_BIN_MAX}
                       step="5"
                       value={histogramBins}
-                      onChange={(e) => setHistogramBins(normalizeHistogramBins(e.target.value))}
-                      onInput={(e) => setHistogramBins(normalizeHistogramBins(e.currentTarget.value))}
+                      onCommit={(value) => setHistogramBins(normalizeHistogramBins(value))}
+                      formatValue={normalizeHistogramBins}
                     />
-                    <strong>{histogramBins}</strong>
                   </label>
                   <div className="gating-settings-transform">
                     <TransformDropdown
@@ -339,6 +377,17 @@ export default function GatingWorkspace({ view }) {
                 </div>
               )}
             </span>
+            {embedded && onRequestClose && (
+              <button
+                type="button"
+                className="icon-button applet-close-button"
+                onClick={onRequestClose}
+                aria-label="Close control gating and return to cockpit"
+                autoFocus
+              >
+                <X size={16} /> Close
+              </button>
+            )}
           </div>
         </header>
 
@@ -576,8 +625,6 @@ export default function GatingWorkspace({ view }) {
               negativeGateEnabled={usesNegativeHistogramGate}
               histogramBins={histogramBins}
               histogramTransform={histogramTransform}
-              onHistogramTransformChange={(value) => setHistogramTransform(normalizeHistogramTransform(value))}
-              onHistogramBinsChange={(value) => setHistogramBins(normalizeHistogramBins(value))}
               secondaryGates={secondaryHistogramGates}
               onSelectHistogramGate={(type) => {
                 setActiveGate('positive')

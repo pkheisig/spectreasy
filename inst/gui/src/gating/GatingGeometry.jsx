@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Check } from 'lucide-react'
 const CONFIG_NAME = 'ssc_gate_config.csv'
 const GUI_MODULE = 'control_gating'
 
@@ -133,6 +134,8 @@ function TransformDropdown({ value, onChange }) {
         <button
           type="button"
           className="transform-select"
+          aria-haspopup="listbox"
+          aria-expanded={open}
           onClick={(event) => {
             event.stopPropagation()
             setOpen((current) => !current)

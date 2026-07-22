@@ -32,7 +32,7 @@
         cytometer = "auto",
         auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
         output_dir = "spectreasy_outputs",
-        unmixing_method = "Spectreasy",
+        unmixing_method = "AutoSpectral",
         unmix_scatter_panel_size_mm = 30,
         seed = NULL,
         af_profile = NULL,
@@ -55,8 +55,6 @@
         spectral_variant_cosine_threshold = 0.98,
         spectral_variant_max_variants = 8L,
         spectral_variant_min_events = 50L,
-        # Spectreasy only:
-        spectreasy_weight_quantile = 0.65,
         autospectral_n_candidates = 1000L,
         autospectral_n_spectral = 200L,
         autospectral_min_events = 10L,
@@ -109,7 +107,7 @@
         ),
         detector_noise_file = NULL,
         control_file = NULL,
-        unmixing_method = "Spectreasy",
+        unmixing_method = "AutoSpectral",
         rwls_max_iter = 1L,
         n_threads = 1L,
         spectral_variant_library = NULL,
@@ -118,8 +116,6 @@
         spectral_variant_min_abundance = 1,
         spectral_variant_positive_fraction = 0.02,
         spectral_variant_min_improvement = 0.01,
-        # Spectreasy only:
-        spectreasy_weight_quantile = 0.65,
         estimate_af = FALSE,
         output_dir = "spectreasy_outputs",
         write_fcs = TRUE,
@@ -138,32 +134,6 @@
         return_type = c("list", "flowSet", "SingleCellExperiment"),
         verbose = TRUE,
         project_path = getwd()
-    )
-
-    # Spectreasy remains available as an explicit alternative. It builds on the AutoSpectral
-    # approach with AF-band assignment and spectral variants, then reweights
-    # each marker between an AF-aware fit and a marker-only OLS anchor.
-    # Lower spectreasy_weight_quantile values increase the marker blend weights;
-    # higher values make the blend more conservative.
-    ctrl_spectreasy <- unmix_controls(
-        scc_dir = "scc",
-        control_file = "fcs_mapping.csv",
-        output_dir = "spectreasy_outputs_spectreasy",
-        unmixing_method = "Spectreasy",
-        af_n_bands = 100,
-        gating_mode = "interactive",
-        manual_gate_file = file.path(getwd(), "ssc_gate_config.csv"),
-        spectreasy_weight_quantile = 0.65
-    )
-
-    unmixed_spectreasy <- unmix_samples(
-        sample_dir = "samples",
-        M = ctrl_spectreasy$M,
-        control_file = ctrl_spectreasy$control_file,
-        unmixing_method = "Spectreasy",
-        spectral_variant_library = ctrl_spectreasy$spectral_variant_library,
-        output_dir = "spectreasy_outputs_spectreasy",
-        spectreasy_weight_quantile = 0.65
     )
 
     qc_samples_report <- qc_samples(
@@ -206,7 +176,7 @@
         scc_dir = "scc",
         control_file = "fcs_mapping.csv",
         cytometer = "auto",
-        unmixing_method = "Spectreasy",
+        unmixing_method = "AutoSpectral",
         unmixed_list = ctrl$unmixed_list,
         qc_summary = NULL,
         report_plot_dir = NULL,
@@ -218,13 +188,14 @@
         warnings = character(),
         run_settings = list(),
         project_path = getwd(),
-        plot_dir = NULL
+        plot_dir = NULL,
+        qc_metrics_dir = NULL
     )
 
     sample_report_data <- collect_sample_report_data(
         results = unmixed,
         M = ctrl$M,
-        unmixing_method = "Spectreasy",
+        unmixing_method = "AutoSpectral",
         res_list = NULL,
         pd = NULL,
         matrix_source = ctrl$reference_matrix_file,
@@ -259,54 +230,21 @@
         overwrite = "version"
     )
 
-    ai_qc <- collect_ai_qc(
-        controls = ctrl,
-        samples = unmixed,
-        M = ctrl$M,
-        control_report_data = control_report_data,
-        sample_report_data = sample_report_data,
-        project_dir = getwd(),
-        existing_output_dir = "spectreasy_outputs",
-        scope = "combined",
-        privacy = "standard",
-        reference = "auto",
-        generated_at = Sys.time(),
-        context = list()
+    control_metric_details <- calculate_control_qc_metrics(
+        positive = matrix(numeric(), nrow = 0),
+        negative = matrix(numeric(), nrow = 0),
+        expected_peak = NULL,
+        detector_ranges = NULL,
+        final_reference = NULL,
+        off_target_references = NULL,
+        minimum_signal = NULL
     )
 
-    validate_ai_qc(
-        x = ai_qc,
-        error = TRUE
-    )
-
-    ai_prompt <- build_ai_qc_prompt(
-        x = ai_qc,
-        detail = "standard",
-        context = NULL
-    )
-
-    ai_export <- export_ai_qc(
-        x = ai_qc,
-        output_dir = file.path("spectreasy_outputs", "ai_qc"),
-        scope = "combined",
-        detail = "standard",
-        privacy = "standard",
-        reference = "auto",
-        formats = c("json", "txt", "md"),
-        prompt = TRUE,
-        context = NULL,
-        overwrite = "version",
-        generated_at = Sys.time()
-    )
-
-    qc_profiles <- list_qc_reference_profiles(
-        project_dir = getwd()
-    )
-
-    qc_profile <- load_qc_reference_profile(
-        reference = "none",
-        project_dir = getwd(),
-        context = list()
+    af_metric_details <- calculate_af_bank_qc_metrics(
+        af_bank = matrix(numeric(), nrow = 0),
+        assignments = NULL,
+        reconstruction_error = NULL,
+        requested_bands = NULL
     )
 
     # -------------------------------------------------------------------------
@@ -410,7 +348,7 @@
         default_sample_type = "beads",
         cytometer = "auto",
         manual_gate_file = NULL,
-        unmixing_method = "Spectreasy",
+        unmixing_method = "AutoSpectral",
         scc_background_method = c("scatter_knn", "none"),
         scc_background_k = 2L,
         autospectral_n_candidates = 1000L,
@@ -447,9 +385,7 @@
         spectral_variant_top_k = 3L,
         spectral_variant_min_abundance = 1,
         spectral_variant_positive_fraction = 0.02,
-        spectral_variant_min_improvement = 0.01,
-        # Spectreasy only:
-        spectreasy_weight_quantile = 0.65
+        spectral_variant_min_improvement = 0.01
     )
 
     W <- derive_unmixing_matrix(

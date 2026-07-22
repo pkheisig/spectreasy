@@ -18,8 +18,11 @@
 #'   `unmixing_scatter` plot objects.
 #' @param warnings Character vector of captured report warnings.
 #' @param run_settings Named list of workflow and report settings.
-#' @param project_path Project path displayed in the report.
+#' @param project_path Project path retained in structured provenance. Only its
+#'   directory name is displayed in the rendered report.
 #' @param plot_dir Directory used for cached report PNG files.
+#' @param qc_metrics_dir Optional directory where plot-ready control QC metric
+#'   CSV files are written.
 #' @return A `spectreasy_control_report_data` object.
 #' @export
 collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapping.csv", cytometer="auto",
@@ -27,7 +30,7 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
                                         report_plot_dir=NULL, pd=NULL, af_bank_info=NULL,
                                         matrix_source=NULL, artifact_paths=list(), plots=list(),
                                         warnings=character(), run_settings=list(), project_path=getwd(),
-                                        plot_dir=NULL) {
+                                        plot_dir=NULL, qc_metrics_dir=NULL) {
     if (is.null(M)) stop("No reference matrix provided for the control HTML report.", call.=FALSE)
     M <- .as_reference_matrix(M, "M")
     method <- .normalize_unmix_method(unmixing_method)
@@ -36,6 +39,33 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
     af_rows <- grepl("^AF($|_)", rownames(M), ignore.case=TRUE)
     mapping <- .report_control_mapping(control_file, scc_dir)
     similarity <- if (sum(!af_rows) > 1L) calculate_similarity_matrix(M[!af_rows,,drop=FALSE]) else NULL
+    qc_summary_table <- as.data.frame(qc_summary %||% attr(M, "qc_summary") %||% data.frame(), stringsAsFactors = FALSE)
+    control_numeric <- .control_qc_numeric_tables(M, qc_summary_table)
+    af_numeric <- .af_qc_summary_table(M, af_bank_info %||% attr(M, "af_bank_info"))
+    nps <- detector_rms <- reconstruction <- NULL
+    if (!is.null(unmixed_list)) {
+        if (!identical(method, "NNLS")) {
+            nps <- tryCatch(calculate_nps(.normalize_qc_report_results_df(unmixed_list)), error = function(e) NULL)
+            if (.report_has_rows(nps) && "Marker" %in% colnames(nps)) {
+                nps <- nps[!grepl("^AF($|_)", nps$Marker, ignore.case = TRUE), , drop = FALSE]
+            }
+        }
+        detector_rms <- tryCatch(.compute_qc_report_detector_rms(unmixed_list, M = M, pd = pd, unmixing_method = method), error = function(e) NULL)
+        reconstruction <- tryCatch(.compute_qc_report_sample_rms(unmixed_list, M = M, unmixing_method = method), error = function(e) NULL)
+    }
+    qc_metrics_dir <- .prepare_qc_report_metrics_dir(qc_metrics_dir)
+    if (!is.null(qc_metrics_dir)) {
+        if (any(!af_rows)) .write_qc_report_matrix_metric(M[!af_rows, , drop = FALSE], file.path(qc_metrics_dir, "reference_spectra.csv"), row_id = "fluorophore")
+        if (any(af_rows)) .write_qc_report_matrix_metric(M[af_rows, , drop = FALSE], file.path(qc_metrics_dir, "af_bank_spectra.csv"), row_id = "af_band")
+        if (!is.null(similarity)) .write_qc_report_matrix_metric(similarity, file.path(qc_metrics_dir, "fluorophore_spectral_similarity.csv"), row_id = "fluorophore")
+        if (.report_has_rows(qc_summary_table)) .write_qc_report_csv(qc_summary_table, file.path(qc_metrics_dir, "control_qc_summary.csv"))
+        if (.report_has_rows(nps)) .write_qc_report_csv(nps, file.path(qc_metrics_dir, "negative_population_spread.csv"))
+        if (.report_has_rows(detector_rms)) .write_qc_report_csv(detector_rms, file.path(qc_metrics_dir, "rms_residual_per_detector.csv"))
+        if (.report_has_rows(reconstruction)) .write_qc_report_csv(reconstruction, file.path(qc_metrics_dir, "detector_reconstruction_error.csv"))
+        if (.report_has_rows(control_numeric$summary)) .write_qc_report_csv(control_numeric$summary, file.path(qc_metrics_dir, "control_signal_metrics.csv"))
+        if (.report_has_rows(control_numeric$variability)) .write_qc_report_csv(control_numeric$variability, file.path(qc_metrics_dir, "control_spectrum_variability.csv"))
+        if (.report_has_rows(af_numeric)) .write_qc_report_csv(af_numeric, file.path(qc_metrics_dir, "af_bank_summary.csv"))
+    }
     af_info <- af_bank_info %||% attr(M,"af_bank_info")
     af_source_count <- suppressWarnings(as.numeric(af_info$source_count %||% 1)[1])
     af_derived_bands <- suppressWarnings(as.numeric(af_info$derived_bands %||% sum(af_rows))[1])
@@ -88,29 +118,20 @@ collect_control_report_data <- function(M, scc_dir="scc", control_file="fcs_mapp
     plot_files <- .report_existing_paths(c(reference_file, af_file, similarity_file, scatter_files, unlist(lapply(control_panels, `[[`, "paths"), use.names = FALSE)))
     control_paths <- if (nrow(mapping)) file.path(scc_dir,mapping$filename) else character()
     source_paths <- unique(c(matrix_source, tryCatch(.resolve_control_file_path(control_file),error=function(e) control_file), control_paths, artifact_paths$gate_file))
-    artifacts <- .report_artifacts(c(source_paths, unlist(artifact_paths,recursive=TRUE,use.names=FALSE), plot_files))
+    metric_paths <- if (!is.null(qc_metrics_dir) && dir.exists(qc_metrics_dir)) list.files(qc_metrics_dir, pattern = "\\.csv$", full.names = TRUE, ignore.case = TRUE) else character()
+    artifacts <- .report_artifacts(c(source_paths, unlist(artifact_paths,recursive=TRUE,use.names=FALSE), metric_paths, plot_files))
     out <- list(
         report_type="Control QC", project_path=normalizePath(project_path,mustWork=FALSE), created_at=Sys.time(), version=as.character(utils::packageVersion("spectreasy")),
         unmixing_method=method, cytometer=cytometer, matrix=M, matrix_source=matrix_source, matrix_preview=.report_matrix_preview(M), peak_detectors=.report_peak_detectors(M),
         detector_metadata=pd, detector_noise=attr(M,"detector_noise"), af_bank_info=af_info, spectral_variant_metadata=attr(M,"spectral_variant_library"),
-        mapping=mapping, qc_summary=as.data.frame(qc_summary %||% attr(M,"qc_summary") %||% data.frame(),stringsAsFactors=FALSE), gating_summary=as.data.frame(qc_summary %||% data.frame(),stringsAsFactors=FALSE),
-        control_files=control_paths, warnings=unique(as.character(warnings)), similarity=similarity, nps=NULL, detector_rms=NULL, reconstruction_error=NULL,
+        mapping=mapping, qc_summary=qc_summary_table, gating_summary=qc_summary_table,
+        control_files=control_paths, warnings=unique(as.character(warnings)), similarity=similarity, nps=nps, detector_rms=detector_rms, reconstruction_error=reconstruction,
+        control_signal_metrics=control_numeric$summary, control_spectrum_variability=control_numeric$variability, af_bank_summary=af_numeric,
+        qc_metric_paths=metric_paths,
         plots=plot_files, plot_manifest=list(af=af_file, reference=reference_file, similarity=similarity_file, nxn=scatter_files, controls=control_panels), artifacts=artifacts, source_fingerprint=.report_source_fingerprint(source_paths), run_settings=run_settings,
         counts=list(controls=if(nrow(mapping)) nrow(mapping) else length(control_paths), markers=sum(!af_rows), detectors=ncol(M), af_bands=sum(af_rows)),
         input_status=if(isTRUE(attr(M,"adjusted"))) "Adjusted" else if(isTRUE(attr(M,"synthetic"))) "Synthetic" else "Measured"
     )
     class(out) <- c("spectreasy_control_report_data","spectreasy_report_data","list")
-    out$ai_qc <- collect_ai_qc(
-        control_report_data = out, M = M, scope = "control",
-        privacy = "standard", reference = "none", project_dir = project_path,
-        generated_at = out$created_at
-    )
-    out$ai_qc_summary <- list(
-        status = out$ai_qc$overall_summary$status,
-        grade_counts = out$ai_qc$grade_summary$counts,
-        profile = out$ai_qc$quality_reference$profile,
-        privacy = out$ai_qc$privacy$mode,
-        top_findings = out$ai_qc$overall_summary$top_findings
-    )
     out
 }

@@ -7,31 +7,26 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-Spectreasy AI-ready QC is a local deterministic export, not an AI integration.
-Spectreasy sends nothing, stores no provider key, and uploads no data. Existing
-HTML/PDF reports remain the visual scientific reports; the canonical JSON,
-human-readable exports, prompt, report summary, and cockpit view derive from one
-`spectreasy_ai_qc` object. Raw event-level matrices are excluded.
+Spectreasy writes one local, paste-ready interpretation prompt beside each QC
+report. It does not call an AI service, store a provider key, upload data, or
+include raw events. The existing HTML/PDF report remains the visual scientific
+record, and its existing numerical CSV files remain the machine-readable
+record.
 
 ```r
-qc <- collect_ai_qc(controls = ctrl, samples = unmixed, M = ctrl$M,
-                    scope = "combined", privacy = "standard")
-bundle <- export_ai_qc(qc, output_dir = "spectreasy_outputs/ai_qc")
-prompt <- build_ai_qc_prompt(qc, detail = "standard")
+ctrl <- unmix_controls(save_report = TRUE, save_ai_qc = TRUE)
+# qc_controls_report_ai_qc_prompt.txt is written beside the report.
 ```
 
-The standard prompt includes aggregates and selected evidence; full matrices
-remain in JSON/CSV artifacts. Standard privacy aliases samples and removes
-absolute paths. Strict also aliases control files and removes operator, date,
-project, and free-text metadata. `none` requires explicit selection. No privacy
-mode includes raw events.
+When `qc_controls()` or `qc_samples()` writes a report, Spectreasy writes the
+prompt beside that report. In the cockpit,
+open the report and use **AI-ready prompt** in the header to **Copy** or
+**Download prompt**. The button reads the saved text file; it does not calculate
+or regenerate QC data on demand.
 
-Reference profiles may be built from reviewed clean runs and selected with
-`reference = "auto"`, an explicit profile, or `"none"`. Auto-selection matches
-cytometer, detector schema, unmixing method, panel range, and AF configuration.
-Fewer than five compatible reviewed clean runs produces descriptive ranges but
-does not grade empirical metrics.
-
-AI interpretation is advisory. Verify claimed defects against metric
-availability, definition, residual profile, grade provenance, alternative
-explanations, and the visual report before changing a panel or acquisition.
+The prompt embeds the compact numerical tables needed for interpretation. Large
+reference-spectrum, AF-bank, and event-variability tables remain as CSV files
+and are represented by derived summaries so they do not overwhelm the model's
+context window. Spectreasy does not assign scientific quality labels or invent
+thresholds before the prompt is produced; interpretation remains the analyst's
+and the AI assistant's task.

@@ -48,7 +48,8 @@
 #' @param artifact_paths Named list of additional artifact paths.
 #' @param warnings Character vector of captured report warnings.
 #' @param run_settings Named list of workflow and report settings.
-#' @param project_path Project path displayed in the report.
+#' @param project_path Project path retained in structured provenance. Only its
+#'   directory name is displayed in the rendered report.
 #' @param max_events_per_sample Maximum retained events per sample.
 #' @param overview_files_per_page Maximum samples combined in PDF-equivalent
 #'   NPS and reconstruction overview plots.
@@ -100,6 +101,8 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
     }
     detector_rms <- if(!is.null(res_list)) tryCatch(.compute_qc_report_detector_rms(res_list,M=M,pd=pd,unmixing_method=method),error=function(e) NULL) else NULL
     reconstruction <- if(!is.null(res_list)) tryCatch(.compute_qc_report_sample_rms(res_list,M=M,unmixing_method=method),error=function(e) NULL) else NULL
+    af_numeric <- .af_qc_summary_table(M, attr(results, "blind_af_info") %||% attr(M, "af_bank_info"))
+    af_usage <- .af_band_usage_table(results_df, af_band_names = rownames(M)[af_rows])
     qc_metrics_dir <- .prepare_qc_report_metrics_dir(qc_metrics_dir)
     if (!is.null(qc_metrics_dir)) {
         if (any(!af_rows)) {
@@ -140,6 +143,12 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
                 reconstruction,
                 file.path(qc_metrics_dir, "detector_reconstruction_error.csv")
             )
+        }
+        if (.report_has_rows(af_numeric)) {
+            .write_qc_report_csv(af_numeric, file.path(qc_metrics_dir, "af_bank_summary.csv"))
+        }
+        if (.report_has_rows(af_usage)) {
+            .write_qc_report_csv(af_usage, file.path(qc_metrics_dir, "af_band_usage.csv"))
         }
     }
     plot_dir <- plot_dir %||% tempfile("spectreasy_sample_html_plots_")
@@ -214,20 +223,10 @@ collect_sample_report_data <- function(results, M, unmixing_method=NULL, res_lis
         matrix=M,matrix_source=matrix_source,matrix_preview=.report_matrix_preview(M),peak_detectors=.report_peak_detectors(M),detector_metadata=pd %||% attr(M,"detector_pd"),detector_noise_file=detector_noise_file,
         residual_metadata=list(metric=if(.uses_wls_residual_metric(method)) "wls_weighted_rms" else "raw_rms"),af_metadata=attr(results,"blind_af_info") %||% attr(M,"blind_af_info"),spectral_variant_metadata=attr(results,"spectral_variant_library"),spectral_variant_library_file=spectral_variant_library_file,
         samples=sample_table,markers=markers,detectors=colnames(M),warnings=unique(as.character(warnings)),nps=nps,nps_note=if(identical(method,"NNLS")) "Skipped for NNLS because constrained outputs are non-negative by construction." else NULL,
+        af_bank_summary=af_numeric,af_band_usage=af_usage,
+        qc_metric_paths=metric_paths,
         similarity=similarity,spread=spread,detector_rms=detector_rms,reconstruction_error=reconstruction,nxn_interactive=nxn_interactive,plots=unique(plot_files),plot_manifest=list(reference=reference_file,similarity=similarity_files,nps=nps_files,nxn=nxn_files,detector_rms=detector_rms_file,reconstruction=reconstruction_files),artifacts=.report_artifacts(c(source_paths,fcs_paths,metric_paths,plot_files)),source_fingerprint=.report_source_fingerprint(source_paths),run_settings=c(list(report_per_sample=isTRUE(report_per_sample)),run_settings),
         counts=list(samples=length(samples),markers=sum(!af_rows),detectors=ncol(M),af_bands=sum(af_rows)),input_status=if(isTRUE(attr(M,"adjusted"))) "Adjusted" else if(isTRUE(attr(M,"synthetic"))) "Synthetic" else "Measured")
     class(out) <- c("spectreasy_sample_report_data","spectreasy_report_data","list")
-    out$ai_qc <- collect_ai_qc(
-        samples = results, sample_report_data = out, M = M,
-        scope = "sample", privacy = "standard", reference = "none",
-        project_dir = project_path, generated_at = out$created_at
-    )
-    out$ai_qc_summary <- list(
-        status = out$ai_qc$overall_summary$status,
-        grade_counts = out$ai_qc$grade_summary$counts,
-        profile = out$ai_qc$quality_reference$profile,
-        privacy = out$ai_qc$privacy$mode,
-        top_findings = out$ai_qc$overall_summary$top_findings
-    )
     out
 }

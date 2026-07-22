@@ -1032,14 +1032,15 @@ gui_project_report_files <- function(root, files = NULL, output_root = "", repor
             candidates[grepl(paste0("^", report_dir_name, "(?:_(?:[2-9]|[1-9][0-9]+))?$"), basename(candidates), perl = TRUE)]
         } else character()
         report_name <- if (identical(report_type, "sample")) "qc_samples_report" else "qc_controls_report"
-        return(unique(unlist(lapply(report_dirs, function(report_dir) {
+        legacy_reports <- unlist(lapply(report_dirs, function(report_dir) {
             list.files(
                 report_dir,
                 pattern = paste0("^", report_name, "\\.(html?|pdf)$"),
                 full.names = TRUE,
                 ignore.case = TRUE
             )
-        }), use.names = FALSE)))
+        }), use.names = FALSE)
+        return(unique(legacy_reports))
     }
     if (is.null(files)) {
         top_level <- if (dir.exists(root)) list.dirs(root, recursive = FALSE, full.names = TRUE) else character()
@@ -1093,6 +1094,17 @@ gui_project_report_type <- function(relative_path) {
         return("Sample QC")
     }
     "Control QC"
+}
+
+gui_project_report_prompt_file <- function(report) {
+    report <- normalizePath(report, mustWork = FALSE)
+    candidate <- file.path(
+        dirname(report),
+        paste0(tools::file_path_sans_ext(basename(report)), "_ai_qc_prompt.txt")
+    )
+    if (file.exists(candidate) && !dir.exists(candidate)) return(normalizePath(candidate, mustWork = TRUE))
+
+    ""
 }
 
 gui_resolve_project_report <- function(path, root = get_matrix_dir()) {
@@ -1186,6 +1198,7 @@ function(project_path = "", output_root = "", report_type = "") {
         source_files <- source_files[grepl(source_pattern, relative(source_files), ignore.case = TRUE, perl = TRUE)]
         source_files <- setdiff(source_files, report)
         stale <- length(source_files) > 0L && any(file.info(source_files)$mtime > file.info(report)$mtime)
+        prompt_file <- gui_project_report_prompt_file(report)
         data.frame(
             path = relative_report,
             report_type = report_type,
@@ -1193,6 +1206,8 @@ function(project_path = "", output_root = "", report_type = "") {
             created = format(file.info(report)$mtime, "%Y-%m-%dT%H:%M:%S%z"),
             created_epoch = as.numeric(file.info(report)$mtime),
             status = if (stale) "stale" else "current",
+            prompt_path = if (nzchar(prompt_file)) relative(prompt_file) else "",
+            prompt_bytes = if (nzchar(prompt_file)) as.numeric(file.info(prompt_file)$size) else 0,
             stringsAsFactors = FALSE
         )
     })
@@ -1234,6 +1249,8 @@ function(path = "", project_path = "", req, res) {
         pdf = "application/pdf",
         csv = "text/csv; charset=utf-8",
         json = "application/json; charset=utf-8",
+        md = "text/markdown; charset=utf-8",
+        txt = "text/plain; charset=utf-8",
         "application/octet-stream"
     )
     res$setHeader("Content-Type", content_type)
@@ -1525,8 +1542,7 @@ function(req) {
             autospectral_refine = gui_workflow_bool(body, "autospectral_refine", FALSE),
             project_path = root
         ),
-        if (nzchar(active_af_profile)) list(af_profile = active_af_profile) else list(),
-        gui_method_optional_args(method, body)
+        if (nzchar(active_af_profile)) list(af_profile = active_af_profile) else list()
     )
     run <- gui_workflow_run(
         body,
@@ -1544,7 +1560,8 @@ function(req) {
         spectra_file = result$spectra_file,
         unmixing_scatter_file = result$unmixing_scatter_file,
         ai_qc_paths = result$ai_qc_paths,
-        ai_qc_grade_counts = result$ai_qc_grade_counts
+        ai_qc_prompt_path = result$ai_qc_prompt_path,
+        ai_qc_data_paths = result$ai_qc_data_paths
     )
     run
 }
@@ -1596,8 +1613,7 @@ function(req) {
             return_type = gui_workflow_value(body, "return_type", "list"),
             verbose = FALSE,
             project_path = root
-        ),
-        gui_method_optional_args(method, body)
+        )
     )
     run <- gui_workflow_run(
         body,
@@ -1612,7 +1628,8 @@ function(req) {
         qc_metrics_dir = attr(result, "qc_metrics_dir"),
         output_dir = output_dir,
         ai_qc_paths = attr(result, "ai_qc_paths"),
-        ai_qc_grade_counts = attr(result, "ai_qc_grade_counts")
+        ai_qc_prompt_path = attr(result, "ai_qc_prompt_path"),
+        ai_qc_data_paths = attr(result, "ai_qc_data_paths")
     )
     run
 }
@@ -1659,7 +1676,7 @@ function(req) {
     raw_methods <- body$methods
     methods <- unique(as.character(unlist(raw_methods, recursive = TRUE, use.names = FALSE)))
     methods <- methods[nzchar(methods)]
-    if (length(methods) == 0) methods <- c("AutoSpectral", "Spectreasy", "OLS", "WLS", "NNLS")
+    if (length(methods) == 0) methods <- c("AutoSpectral", "OLS", "WLS", "NNLS")
     matrix_input <- gui_workflow_value(body, "matrix_file", "")
     sample_dir_input <- gui_workflow_value(body, "sample_dir", gui_project_layout(root)$sample_input_dir)
     matrix_file <- gui_workflow_file_or_null(matrix_input, root = root)

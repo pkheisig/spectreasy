@@ -132,6 +132,8 @@
             matched_events = nrow(positive_events)
         )
         attr(spectrum_norm, "scc_positive_events") <- positive_events
+        attr(spectrum_norm, "scc_qc_positive_events") <- as.matrix(selected_events[, detector_names, drop = FALSE])
+        attr(spectrum_norm, "scc_qc_negative_events") <- matched_background
 
         return(list(
             spectrum = spectrum_norm,
@@ -192,6 +194,8 @@
         matched_events = 0L
     )
     attr(spectrum_norm, "scc_positive_events") <- positive_events
+    attr(spectrum_norm, "scc_qc_positive_events") <- event_mat[selected_idx, , drop = FALSE]
+    attr(spectrum_norm, "scc_qc_negative_events") <- event_mat[negative_idx, , drop = FALSE]
 
     list(
         spectrum = spectrum_norm,
@@ -273,6 +277,9 @@
     max_val <- max(sig_pure, na.rm = TRUE)
     if (max_val <= 0) max_val <- max(pos_spectrum_raw, na.rm = TRUE)
     res <- sig_pure / max_val
+
+    attr(res, "scc_qc_positive_events") <- as.matrix(final_gated_data[, detector_names, drop = FALSE])
+    attr(res, "scc_qc_negative_events") <- as.matrix(neg_events[, detector_names, drop = FALSE])
 
     res
 }

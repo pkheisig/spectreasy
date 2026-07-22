@@ -1,44 +1,8 @@
-.ai_qc_to_json <- function(x, pretty = TRUE) {
-    ordered <- .ai_qc_stable_order(unclass(x))
-    jsonlite::toJSON(
-        ordered, auto_unbox = TRUE, dataframe = "rows", matrix = "rowmajor",
-        null = "null", na = "null", digits = NA, pretty = isTRUE(pretty),
-        POSIXt = "ISO8601", force = TRUE
-    )
-}
-
-.ai_qc_hash_payload <- function(x) {
-    payload <- unclass(x)
-    payload$provenance$generated_at <- NULL
-    payload$provenance$content_sha256 <- NULL
-    payload$provenance$source_artifacts <- lapply(payload$provenance$source_artifacts %||% list(), function(item) {
-        item$path <- NULL
-        item
-    })
-    payload$references$artifact_paths <- NULL
-    jsonlite::toJSON(.ai_qc_stable_order(payload), auto_unbox = TRUE, dataframe = "rows", matrix = "rowmajor", null = "null", na = "null", digits = NA, pretty = FALSE, force = TRUE)
-}
-
-.ai_qc_sha256_text <- function(text) paste0(openssl::sha256(charToRaw(enc2utf8(paste0(text, collapse = "")))))
-
 .ai_qc_file_hash <- function(path) {
     con <- file(path, "rb")
     on.exit(close(con), add = TRUE)
     bytes <- readBin(con, what = "raw", n = file.info(path)$size)
     paste0(openssl::sha256(bytes))
-}
-
-.ai_qc_resolve_path <- function(path, overwrite) {
-    if (!file.exists(path) || identical(overwrite, "overwrite")) return(path)
-    if (identical(overwrite, "error")) stop("AI-QC artifact already exists: ", path, call. = FALSE)
-    stem <- tools::file_path_sans_ext(path)
-    ext <- tools::file_ext(path)
-    i <- 2L
-    repeat {
-        candidate <- paste0(stem, "_", i, if (nzchar(ext)) paste0(".", ext) else "")
-        if (!file.exists(candidate)) return(candidate)
-        i <- i + 1L
-    }
 }
 
 .ai_qc_write_text <- function(text, path) {
@@ -48,92 +12,137 @@
     path
 }
 
-.ai_qc_bundle_stem <- function(scope) switch(scope, control = "spectreasy_ai_qc_controls", sample = "spectreasy_ai_qc_samples", combined = "spectreasy_ai_qc_combined")
+.ai_qc_report_companion_path <- function(report_file) {
+    report_file <- normalizePath(as.character(report_file)[[1]], mustWork = FALSE)
+    file.path(
+        dirname(report_file),
+        paste0(tools::file_path_sans_ext(basename(report_file)), "_ai_qc_prompt.txt")
+    )
+}
 
-#' Export deterministic local AI-ready QC artifacts
-#'
-#' @param x Optional canonical object. When omitted, one is built with
-#'   [collect_ai_qc()].
-#' @param output_dir Artifact root directory.
-#' @param scope Export scope.
-#' @param detail Human-readable and prompt detail.
-#' @param privacy Privacy mode.
-#' @param reference Reference-profile selection.
-#' @param formats Any of `"json"`, `"txt"`, `"md"`, and `"prompt"`.
-#' @param prompt Whether to write the paste-ready prompt.
-#' @param context Optional prompt context.
-#' @param overwrite Collision policy: `"version"`, `"overwrite"`, or
-#'   `"error"`.
-#' @param generated_at Generation time; tests may supply a fixed value.
-#' @param ... Arguments forwarded to [collect_ai_qc()].
-#' @return Invisibly returns the canonical object, artifact paths, grade counts,
-#'   warnings, schema/profile details, and missing sections.
-#' @export
-export_ai_qc <- function(
-    x = NULL, output_dir = file.path("spectreasy_outputs", "ai_qc"),
-    scope = c("auto", "control", "sample", "combined"),
-    detail = c("standard", "compact", "full"),
-    privacy = c("standard", "strict", "none"), reference = "auto",
-    formats = c("json", "txt", "md"), prompt = TRUE, context = NULL,
-    overwrite = c("version", "overwrite", "error"),
-    generated_at = Sys.time(), ...
-) {
-    scope <- .match_arg_ci(scope, c("auto", "control", "sample", "combined"), "scope")
-    detail <- .match_arg_ci(detail, c("compact", "standard", "full"), "detail")
-    privacy <- .match_arg_ci(privacy, c("standard", "strict", "none"), "privacy")
-    overwrite <- .match_arg_ci(overwrite, c("version", "overwrite", "error"), "overwrite")
-    formats <- unique(tolower(as.character(formats)))
-    if (isTRUE(prompt)) formats <- unique(c(formats, "prompt"))
-    unsupported <- setdiff(formats, c("json", "txt", "md", "prompt"))
-    if (length(unsupported)) stop("Unsupported AI-QC formats: ", paste(unsupported, collapse = ", "), call. = FALSE)
-    if (!inherits(x, "spectreasy_ai_qc")) {
-        args <- list(...)
-        if (is.null(args$controls)) args$controls <- x
-        args$scope <- scope
-        args$privacy <- privacy
-        args$reference <- reference
-        args$generated_at <- generated_at
-        x <- do.call(collect_ai_qc, args)
+.ai_qc_report_csv_label <- function(path, report_file) {
+    path <- normalizePath(path, mustWork = FALSE)
+    report_dir <- normalizePath(dirname(report_file), mustWork = FALSE)
+    prefix <- paste0(report_dir, .Platform$file.sep)
+    if (startsWith(path, prefix)) {
+        return(gsub("\\\\", "/", substring(path, nchar(prefix) + 1L)))
     }
-    scope <- x$scope$value
-    dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-    if (!dir.exists(output_dir)) stop("Could not create AI-QC output directory: ", output_dir, call. = FALSE)
-    stem <- .ai_qc_bundle_stem(scope)
-    suffixes <- c(json = ".json", txt = ".txt", md = ".md", prompt = "_prompt.txt")
-    paths <- stats::setNames(vapply(formats, function(format) .ai_qc_resolve_path(file.path(output_dir, paste0(stem, suffixes[[format]])), overwrite), character(1)), formats)
-    content_hash <- .ai_qc_sha256_text(.ai_qc_hash_payload(x))
-    x$provenance$content_sha256 <- content_hash
-    class(x) <- c("spectreasy_ai_qc", "list")
-    content <- list(
-        json = .ai_qc_to_json(x, pretty = TRUE),
-        txt = .render_ai_qc_text(x, detail = detail, markdown = FALSE),
-        md = .render_ai_qc_text(x, detail = detail, markdown = TRUE),
-        prompt = build_ai_qc_prompt(x, detail = detail, context = context)
+    basename(path)
+}
+
+.qc_prompt_drop_empty <- function(x) {
+    x <- as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE)
+    populated <- function(value) {
+        if (is.numeric(value)) any(is.finite(value)) else any(!is.na(value) & nzchar(trimws(as.character(value))))
+    }
+    if (ncol(x)) x <- x[, vapply(x, populated, logical(1)), drop = FALSE]
+    if (nrow(x) && ncol(x)) {
+        keep <- apply(x, 1, function(row) any(!is.na(row) & nzchar(trimws(as.character(row)))))
+        x <- x[keep, , drop = FALSE]
+    }
+    rownames(x) <- NULL
+    x
+}
+
+.qc_prompt_csv_text <- function(x) {
+    lines <- character()
+    con <- textConnection("lines", "w", local = TRUE)
+    utils::write.csv(x, con, row.names = FALSE, na = "")
+    close(con)
+    paste(lines, collapse = "\n")
+}
+
+.qc_prompt_numeric_summary <- function(x) {
+    numeric_names <- names(x)[vapply(x, is.numeric, logical(1))]
+    rows <- lapply(numeric_names, function(name) {
+        values <- as.numeric(x[[name]])
+        finite <- values[is.finite(values)]
+        if (!length(finite)) return(NULL)
+        data.frame(
+            variable = name, n = length(finite), missing = sum(!is.finite(values)),
+            minimum = min(finite), q25 = as.numeric(stats::quantile(finite, 0.25, names = FALSE)),
+            median = stats::median(finite), q75 = as.numeric(stats::quantile(finite, 0.75, names = FALSE)),
+            maximum = max(finite), stringsAsFactors = FALSE
+        )
+    })
+    rows <- Filter(Negate(is.null), rows)
+    if (length(rows)) do.call(rbind, rows) else data.frame()
+}
+
+.qc_prompt_table_block <- function(path, report_file, max_rows = 250L) {
+    table <- tryCatch(utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE), error = function(e) NULL)
+    if (is.null(table)) return(NULL)
+    table <- .qc_prompt_drop_empty(table)
+    label <- .ai_qc_report_csv_label(path, report_file)
+    dimensions <- paste0(nrow(table), " rows x ", ncol(table), " columns")
+    if (!nrow(table) || !ncol(table)) return(paste0("--- ", label, " (", dimensions, ") ---\nNo measured values."))
+    if (nrow(table) <= max_rows) {
+        return(paste0("--- ", label, " (", dimensions, ") ---\n", .qc_prompt_csv_text(table)))
+    }
+    summary <- .qc_prompt_numeric_summary(table)
+    paste0(
+        "--- ", label, " (", dimensions, ") ---\n",
+        "The table is too long to paste without obscuring the rest of the evidence. Numerical distribution summary:\n",
+        if (nrow(summary)) .qc_prompt_csv_text(summary) else "No finite numeric columns."
     )
-    for (format in formats) .ai_qc_write_text(content[[format]], paths[[format]])
-    manifest_path <- .ai_qc_resolve_path(file.path(output_dir, paste0(stem, "_manifest.json")), overwrite)
-    artifact_rows <- lapply(names(paths), function(format) list(
-        format = format, path = basename(paths[[format]]), sha256 = .ai_qc_file_hash(paths[[format]]), bytes = unname(file.info(paths[[format]])$size)
-    ))
-    manifest <- list(
-        schema = x$schema, generated_at = x$provenance$generated_at,
-        content_sha256 = content_hash, package_version = x$provenance$package_version,
-        git_commit = x$provenance$git_commit,
-        template_version = "1.0.0", rule_version = .ai_qc_metric_version,
-        profile = x$quality_reference$profile,
-        privacy = x$privacy, scope = scope, detail = detail,
-        source_artifacts = x$provenance$source_artifacts,
-        artifacts = artifact_rows
+}
+
+.build_report_ai_qc_prompt <- function(report_data, report_file, numeric_paths = character(), context = NULL) {
+    if (!inherits(report_data, "spectreasy_report_data")) stop("report_data must be created by a Spectreasy report data collector.", call. = FALSE)
+    numeric_paths <- unique(as.character(unlist(c(numeric_paths, report_data$qc_metric_paths), recursive = TRUE, use.names = FALSE)))
+    numeric_paths <- numeric_paths[!is.na(numeric_paths) & nzchar(numeric_paths) & file.exists(numeric_paths) & !dir.exists(numeric_paths)]
+    numeric_paths <- numeric_paths[grepl("\\.csv$", numeric_paths, ignore.case = TRUE)]
+    large_tables <- c("reference_spectra.csv", "af_bank_spectra.csv", "control_spectrum_variability.csv")
+    embedded <- numeric_paths[!tolower(basename(numeric_paths)) %in% large_tables]
+    embedded <- embedded[order(basename(embedded), method = "radix")]
+    blocks <- Filter(Negate(is.null), lapply(embedded, .qc_prompt_table_block, report_file = report_file))
+    inventory <- lapply(numeric_paths[tolower(basename(numeric_paths)) %in% large_tables], function(path) {
+        header <- tryCatch(utils::read.csv(path, nrows = 1L, check.names = FALSE), error = function(e) NULL)
+        rows <- tryCatch(length(readLines(path, warn = FALSE)) - 1L, error = function(e) NA_integer_)
+        paste0(.ai_qc_report_csv_label(path, report_file), ": ", rows, " data rows x ", if (is.null(header)) NA_integer_ else ncol(header), " columns; retained as CSV and represented here by derived summaries.")
+    })
+    metadata <- c(
+        paste0("Report type: ", report_data$report_type),
+        paste0("Project: ", basename(normalizePath(report_data$project_path, mustWork = FALSE))),
+        paste0("Generated: ", format(report_data$created_at, "%Y-%m-%d %H:%M:%S %Z")),
+        paste0("Spectreasy: ", report_data$version),
+        paste0("Unmixing method: ", report_data$unmixing_method),
+        paste0("Cytometer: ", report_data$cytometer %||% "not recorded"),
+        paste0(names(report_data$counts), ": ", unlist(report_data$counts, use.names = FALSE))
     )
-    .ai_qc_write_text(jsonlite::toJSON(.ai_qc_stable_order(manifest), auto_unbox = TRUE, null = "null", na = "null", digits = NA, pretty = TRUE), manifest_path)
-    paths <- c(paths, manifest = manifest_path)
-    missing <- unique(vapply(Filter(function(m) !isTRUE(m$availability), .ai_qc_walk_metrics(x)), `[[`, character(1), "stage"))
-    invisible(list(
-        object = x, paths = paths, grade_counts = x$grade_summary$counts,
-        warnings = character(), schema = x$schema,
-        profile = x$quality_reference$profile,
-        missing_sections = missing,
-        content_sha256 = content_hash,
-        prompt_size = list(characters = nchar(content$prompt), estimated_tokens = ceiling(nchar(content$prompt) / 4))
-    ))
+    runtime_notes <- unique(as.character(report_data$warnings %||% character()))
+    runtime_notes <- runtime_notes[!is.na(runtime_notes) & nzchar(trimws(runtime_notes))]
+    definitions <- c(
+        "control_signal_metrics.csv: robust_separation = (positive peak median - negative peak median) / (2 x negative peak MAD); midpoint_overlap_fraction = fraction of positive and negative peak-channel events falling on the opposite side of their median midpoint; spectral_cosine_* = cosine similarity of background-subtracted, event-normalized spectra to the final reference; upper_boundary_fraction = observed fraction at the acquisition maximum recorded in detector metadata.",
+        "control_spectrum_variability.csv: q10, median, and q90 are detector-wise quantiles across background-subtracted, event-normalized positive-control spectra; retained as a separate CSV to avoid bloating this prompt.",
+        "af_bank_summary.csv: effective_rank is the numerical matrix rank; pairwise values are cosine similarities between AF basis spectra.",
+        "af_band_usage.csv: event counts and fractions assigned to each AF basis, grouped by sample.",
+        "negative_population_spread.csv, residual, reconstruction, and similarity tables retain the definitions used by the standard Spectreasy QC report."
+    )
+    paste(
+        "SPECTREASY NUMERICAL QC INTERPRETATION PROMPT", "",
+        "You are assisting a scientist with interpretation of measured spectral-flow cytometry QC output. Separate observations from interpretation. Do not invent thresholds, categorical quality labels, or unavailable measurements. Do not infer values from plots that are not included. Explain uncertainty and alternative explanations. Compare residual quantities only when their metric definitions and unmixing methods match. Spectral similarity describes panel complexity and is not by itself evidence of a defective control. Do not recommend uploading raw FCS events.", "",
+        "Return these sections: Measurement overview; Control and gating observations; Reference matrix and spectral overlap; Autofluorescence observations; Sample and residual observations; Plausible technical explanations; Additional measurements that would reduce uncertainty.", "",
+        "RUN AND METHOD", paste(metadata, collapse = "\n"), "",
+        "ANALYST CONTEXT", context %||% "No additional analyst context was supplied.", "",
+        "METRIC DEFINITIONS", paste(definitions, collapse = "\n"), "",
+        "NUMERICAL TABLES", if (length(blocks)) paste(blocks, collapse = "\n\n") else "No machine-readable QC tables were available.", "",
+        "LARGE TABLES RETAINED OUTSIDE THE PROMPT", if (length(inventory)) paste(unlist(inventory), collapse = "\n") else "None.", "",
+        "RUNTIME NOTES", if (length(runtime_notes)) paste(runtime_notes, collapse = "\n") else "None recorded.", "",
+        "LIMITATIONS", "The prompt contains summaries and persisted QC tables, not raw events. Biological interpretation requires panel design, sample preparation, gating, instrument settings, and experimental context. Associations within one run are descriptive and do not establish causation.",
+        sep = "\n"
+    )
+}
+
+.export_report_ai_qc <- function(report_data, report_file, numeric_paths = character(), context = NULL) {
+    if (!inherits(report_data, "spectreasy_report_data")) return(NULL)
+    report_file <- normalizePath(as.character(report_file)[[1]], mustWork = FALSE)
+    prompt <- .build_report_ai_qc_prompt(report_data, report_file, numeric_paths = numeric_paths, context = context)
+    prompt_path <- .ai_qc_report_companion_path(report_file)
+    .ai_qc_write_text(prompt, prompt_path)
+    list(
+        prompt = prompt_path,
+        numeric_sources = unique(as.character(unlist(c(numeric_paths, report_data$qc_metric_paths), recursive = TRUE, use.names = FALSE))),
+        bytes = unname(file.info(prompt_path)$size), estimated_tokens = ceiling(nchar(prompt) / 4)
+    )
 }
