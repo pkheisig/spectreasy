@@ -493,6 +493,50 @@ testthat::test_that("GUI histogram autogating omits bead negatives supplied by A
     testthat::expect_equal(generated$gates_generated, 1L)
 })
 
+testthat::test_that("GUI histogram autogating preserves successful files when another file fails", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    testthat::skip_if_not(file.exists(api_path))
+    testthat::skip_if_not_installed("flowCore")
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+    api_env$gate_read_mapping <- function() data.frame(
+        filename = c("good.fcs", "empty.fcs"),
+        channel = c("R1-A", "R1-A"),
+        control.type = c("beads", "beads"),
+        is_af = c(FALSE, FALSE),
+        uses_histogram_gates = c(TRUE, TRUE),
+        uses_negative_histogram_gate = c(FALSE, FALSE),
+        is_viability = c(FALSE, FALSE),
+        stringsAsFactors = FALSE
+    )
+    api_env$gate_read_fcs <- function(path) {
+        values <- if (identical(basename(path), "good.fcs")) seq_len(100) else seq_len(5)
+        flowCore::flowFrame(matrix(values, ncol = 1, dimnames = list(NULL, "R1-A")))
+    }
+    api_env$gate_polygon_mask <- function(expr, gate) rep(TRUE, nrow(expr))
+    api_env$gate_histogram_autogate_ranges <- function(...) {
+        list(positive = c(60, 100), negative = NULL)
+    }
+    polygon <- list(mode = "scatter", vertices = list(
+        list(x = 0, y = 0), list(x = 1, y = 0), list(x = 1, y = 1)
+    ))
+    gates <- list("cell:beads" = polygon, "singlet:beads" = polygon)
+
+    generated <- api_env$gate_autogenerate_histograms(gates)
+
+    testthat::expect_setequal(names(generated$gates), "positive:good.fcs")
+    testthat::expect_named(generated$spectra, "good.fcs")
+    testthat::expect_equal(generated$files_processed, 2L)
+    testthat::expect_equal(generated$files_succeeded, 1L)
+    testthat::expect_equal(generated$files_failed, 1L)
+    testthat::expect_equal(generated$gates_generated, 1L)
+    testthat::expect_length(generated$failures, 1L)
+    testthat::expect_identical(as.character(generated$failures[[1]]$filename), "empty.fcs")
+    testthat::expect_match(as.character(generated$failures[[1]]$error), "Only 5 events remain")
+})
+
 testthat::test_that("GUI spectrum binning keeps a compact empty spectrum for zero events", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) {

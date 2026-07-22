@@ -93,6 +93,7 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
   const [preloadComplete, setPreloadComplete] = useState(false)
   const [gatesLoaded, setGatesLoaded] = useState(false)
   const [histogramAutogating, setHistogramAutogating] = useState(false)
+  const [histogramAutogateNotice, setHistogramAutogateNotice] = useState(null)
   const [axisSettings, setAxisSettings] = useState({ cell: {}, singlet: {} })
   const [viewSettings, setViewSettings] = useState({ cell: {}, singlet: {}, histogram: {} })
   const [spectrum, setSpectrum] = useState(null)
@@ -719,6 +720,7 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
     gates,
     files,
     setHistogramAutogating,
+    setHistogramAutogateNotice,
     setStatus,
     setGates,
     setSpectrumCache,
@@ -732,6 +734,8 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
     darkMode,
     initialLoading,
     histogramAutogating,
+    histogramAutogateNotice,
+    setHistogramAutogateNotice,
     sidebarCollapsed,
     sidebarWidth,
     setSidebarCollapsed,

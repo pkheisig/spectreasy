@@ -8,10 +8,12 @@ import {
 
 export async function autogateHistogramsAction(options) {
   const {
-    enabled, gates, files, setHistogramAutogating, setStatus, setGates, setSpectrumCache,
+    enabled, gates, files, setHistogramAutogating, setHistogramAutogateNotice,
+    setStatus, setGates, setSpectrumCache,
   } = options
   if (!enabled) return
   setHistogramAutogating(true)
+  setHistogramAutogateNotice?.(null)
   setStatus('Auto-generating histogram gates')
   try {
     const result = await gatingApiRequest('/gate_histogram_autogate', {
@@ -35,11 +37,29 @@ export async function autogateHistogramsAction(options) {
     })
     const generated = Number(result.gates_generated ?? Object.keys(generatedGates).length)
     const preserved = Number(result.gates_preserved ?? 0)
+    const decodedFailures = unboxGuiState(result.failures || [])
+    const failures = Array.isArray(decodedFailures)
+      ? decodedFailures
+      : decodedFailures && typeof decodedFailures === 'object'
+        ? [decodedFailures]
+        : []
+    if (failures.length > 0) {
+      setHistogramAutogateNotice?.({
+        generated,
+        processed: Number(result.files_processed ?? files.length),
+        failures: failures.map((failure) => ({
+          filename: String(failure?.filename || 'Unknown control'),
+          error: String(failure?.error || 'Histogram gates could not be generated.'),
+        })),
+      })
+    }
     setStatus(
       `Auto-generated ${generated} missing histogram gate${generated === 1 ? '' : 's'} ` +
-      `for ${result.files_processed} controls; preserved ${preserved} existing gate${preserved === 1 ? '' : 's'}.`,
+      `for ${Number(result.files_succeeded ?? result.files_processed)} controls; ` +
+      `preserved ${preserved} existing gate${preserved === 1 ? '' : 's'}.`,
     )
   } catch (error) {
+    setHistogramAutogateNotice?.(null)
     setStatus(`Could not auto-generate histogram gates: ${error.message}`)
   } finally {
     setHistogramAutogating(false)

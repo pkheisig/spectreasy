@@ -388,6 +388,30 @@
   line-height: 1.45;
 }
 
+.gating-autogate-notice {
+  position: relative;
+}
+
+.gating-autogate-notice ul {
+  margin: 2px 0 0;
+  padding-left: 19px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.gating-status-dismiss {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  min-width: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  color: currentColor;
+  background: transparent;
+}
+
 .app-shell.dark .gating-status-banner {
   color: #f2d894;
   border-color: #6f5b29;
@@ -1083,7 +1107,6 @@
 }
 
 .gate-path.is-draft {
-  fill: none;
   stroke-dasharray: 6 5;
 }
 

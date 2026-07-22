@@ -270,8 +270,11 @@ function(req) {
             gates = result$gates,
             spectra = result$spectra,
             files_processed = result$files_processed,
+            files_succeeded = result$files_succeeded,
+            files_failed = result$files_failed,
             gates_generated = result$gates_generated,
-            gates_preserved = result$gates_preserved
+            gates_preserved = result$gates_preserved,
+            failures = result$failures
         )
     }, error = function(e) {
         list(success = FALSE, error = conditionMessage(e))

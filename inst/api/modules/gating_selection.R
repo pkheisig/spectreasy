@@ -252,71 +252,100 @@ gate_autogenerate_histograms <- function(gates) {
     generated <- list()
     spectra <- list()
     preserved_count <- 0L
+    failures <- list()
     for (item in resolved) {
-        positive_key <- paste0("positive:", item$filename)
-        negative_key <- paste0("negative:", item$filename)
-        keep_positive <- gate_is_finalized_histogram(gates[[positive_key]])
-        keep_negative <- item$needs_negative && gate_is_finalized_histogram(gates[[negative_key]])
-        preserved_count <- preserved_count + as.integer(keep_positive) + as.integer(keep_negative)
+        file_result <- tryCatch({
+            positive_key <- paste0("positive:", item$filename)
+            negative_key <- paste0("negative:", item$filename)
+            keep_positive <- gate_is_finalized_histogram(gates[[positive_key]])
+            keep_negative <- item$needs_negative && gate_is_finalized_histogram(gates[[negative_key]])
+            file_generated <- list()
 
-        path <- file.path(get_gate_scc_dir(), item$filename)
-        ff <- gate_read_fcs(path)
-        expr <- flowCore::exprs(ff)
-        peak <- as.character(item$row$channel[1])
-        if (!peak %in% colnames(expr)) {
-            det_info <- gate_detector_info(ff)
-            detectors <- if (is.null(det_info)) colnames(expr) else det_info$names
-            detectors <- intersect(detectors, colnames(expr))
-            if (length(detectors) == 0) {
-                stop("Could not resolve a peak channel for ", item$filename, ".", call. = FALSE)
+            path <- file.path(get_gate_scc_dir(), item$filename)
+            ff <- gate_read_fcs(path)
+            expr <- flowCore::exprs(ff)
+            peak <- as.character(item$row$channel[1])
+            if (!peak %in% colnames(expr)) {
+                det_info <- gate_detector_info(ff)
+                detectors <- if (is.null(det_info)) colnames(expr) else det_info$names
+                detectors <- intersect(detectors, colnames(expr))
+                if (length(detectors) == 0) {
+                    stop("Could not resolve a peak channel.", call. = FALSE)
+                }
+                peak <- detectors[which.max(apply(expr[, detectors, drop = FALSE], 2, stats::var, na.rm = TRUE))]
             }
-            peak <- detectors[which.max(apply(expr[, detectors, drop = FALSE], 2, stats::var, na.rm = TRUE))]
-        }
-        scatter_mask <- gate_polygon_mask(expr, item$cell_gate) &
-            gate_polygon_mask(expr, item$singlet_gate)
-        if (!keep_positive || (item$needs_negative && !keep_negative)) {
-            ranges <- gate_histogram_autogate_ranges(
-                expr[scatter_mask, peak],
-                sample_type = item$control_type,
-                is_viability = isTRUE(item$row$is_viability[1]),
-                include_negative = item$needs_negative
+            scatter_mask <- gate_polygon_mask(expr, item$cell_gate) &
+                gate_polygon_mask(expr, item$singlet_gate)
+            gated_count <- sum(scatter_mask, na.rm = TRUE)
+            if (gated_count < 10L) {
+                stop(
+                    "Only ", gated_count,
+                    " events remain after the FSC/SSC and singlet gates; at least 10 are required.",
+                    call. = FALSE
+                )
+            }
+            if (!keep_positive || (item$needs_negative && !keep_negative)) {
+                ranges <- gate_histogram_autogate_ranges(
+                    expr[scatter_mask, peak],
+                    sample_type = item$control_type,
+                    is_viability = isTRUE(item$row$is_viability[1]),
+                    include_negative = item$needs_negative
+                )
+                if (!keep_positive) {
+                    file_generated[[positive_key]] <- gate_histogram_interval(
+                        "positive", item$filename, peak, ranges$positive
+                    )
+                }
+                if (item$needs_negative && !keep_negative) {
+                    file_generated[[negative_key]] <- gate_histogram_interval(
+                        "negative", item$filename, peak, ranges$negative
+                    )
+                }
+            }
+            positive_gate <- if (keep_positive) gates[[positive_key]] else file_generated[[positive_key]]
+            spectrum_gates <- list(
+                cell = item$cell_gate,
+                singlet = item$singlet_gate,
+                positive = positive_gate
             )
-            if (!keep_positive) {
-                generated[[positive_key]] <- gate_histogram_interval(
-                    "positive", item$filename, peak, ranges$positive
-                )
-            }
-            if (item$needs_negative && !keep_negative) {
-                generated[[negative_key]] <- gate_histogram_interval(
-                    "negative", item$filename, peak, ranges$negative
-                )
-            }
+            spectrum <- gate_spectrum_data_from_loaded(
+                expr = expr,
+                ff = ff,
+                spectrum_gates = spectrum_gates,
+                peak = peak,
+                is_af = FALSE,
+                scatter_mask = scatter_mask
+            )
+            list(
+                gates = file_generated,
+                spectrum = gate_cache_spectrum(item$filename, spectrum_gates, spectrum),
+                preserved = as.integer(keep_positive) + as.integer(keep_negative)
+            )
+        }, error = function(e) {
+            list(error = conditionMessage(e))
+        })
+
+        if (!is.null(file_result$error)) {
+            failures[[length(failures) + 1L]] <- list(
+                filename = jsonlite::unbox(item$filename),
+                error = jsonlite::unbox(file_result$error)
+            )
+            next
         }
-        positive_gate <- if (keep_positive) gates[[positive_key]] else generated[[positive_key]]
-        spectrum_gates <- list(
-            cell = item$cell_gate,
-            singlet = item$singlet_gate,
-            positive = positive_gate
-        )
-        spectrum <- gate_spectrum_data_from_loaded(
-            expr = expr,
-            ff = ff,
-            spectrum_gates = spectrum_gates,
-            peak = peak,
-            is_af = FALSE,
-            scatter_mask = scatter_mask
-        )
-        spectra[[item$filename]] <- gate_cache_spectrum(
-            item$filename,
-            spectrum_gates,
-            spectrum
-        )
+        if (length(file_result$gates)) {
+            generated[names(file_result$gates)] <- file_result$gates
+        }
+        spectra[[item$filename]] <- file_result$spectrum
+        preserved_count <- preserved_count + file_result$preserved
     }
     list(
         gates = generated,
         spectra = spectra,
         files_processed = nrow(targets),
+        files_succeeded = nrow(targets) - length(failures),
+        files_failed = length(failures),
         gates_generated = length(generated),
-        gates_preserved = preserved_count
+        gates_preserved = preserved_count,
+        failures = failures
     )
 }

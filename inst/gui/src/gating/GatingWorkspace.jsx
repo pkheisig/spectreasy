@@ -79,6 +79,8 @@ export default function GatingWorkspace({ view }) {
     darkMode,
     initialLoading,
     histogramAutogating,
+    histogramAutogateNotice,
+    setHistogramAutogateNotice,
     sidebarCollapsed,
     sidebarWidth,
     setSidebarCollapsed,
@@ -409,8 +411,35 @@ export default function GatingWorkspace({ view }) {
           </div>
         )}
 
+        {histogramAutogateNotice && (
+          <div className="gating-status-banner gating-autogate-notice" role="alert">
+            <button
+              type="button"
+              className="gating-status-dismiss"
+              aria-label="Dismiss histogram autogating warning"
+              onClick={() => setHistogramAutogateNotice(null)}
+            >
+              <X size={15} />
+            </button>
+            <strong>
+              Generated {histogramAutogateNotice.generated} gates for{' '}
+              {histogramAutogateNotice.processed - histogramAutogateNotice.failures.length} of{' '}
+              {histogramAutogateNotice.processed} controls; {histogramAutogateNotice.failures.length} still need attention
+            </strong>
+            <span>
+              Valid gates were kept. Adjust the FSC/SSC or singlet gate for the controls below, then run histogram autogating again.
+            </span>
+            <ul>
+              {histogramAutogateNotice.failures.map((failure) => (
+                <li key={failure.filename}><b>{failure.filename}</b>: {failure.error}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="plot-grid">
           <GatePlot
+            key={`cell:${controlType}`}
             title={isBead ? 'Beads' : 'Cells'}
             subtitle={`${channelTitle(cellAxes.x)} / ${channelTitle(cellAxes.y)} population gate`}
             events={events}
@@ -456,8 +485,8 @@ export default function GatingWorkspace({ view }) {
             onDragEnd={handleDragEnd}
             xDomain={domainForChannel(cellAxes.x, domains.fsc_a)}
             yDomain={domainForChannel(cellAxes.y, domains.ssc_a)}
-            viewDomain={viewSettings.cell?.global || null}
-            onViewDomainChange={(view) => updateViewSetting('cell', 'global', view)}
+            viewDomain={viewSettings.cell?.[controlType] || viewSettings.cell?.global || null}
+            onViewDomainChange={(view) => updateViewSetting('cell', controlType, view)}
             statsText={cellGate ? `${cellSummary.count.toLocaleString()} (${cellSummary.pct.toFixed(1)}%)` : null}
             drawActive={drawActive}
             pointSize={pointSize}
@@ -483,6 +512,7 @@ export default function GatingWorkspace({ view }) {
             }}
           />
           <GatePlot
+            key={`singlet:${controlType}`}
             title="Singlets"
             subtitle={`${channelTitle(singletAxes.x)} / ${channelTitle(singletAxes.y)} doublet filter`}
             events={cellsFilteredEvents}
@@ -528,8 +558,8 @@ export default function GatingWorkspace({ view }) {
             onDragEnd={handleDragEnd}
             xDomain={domainForChannel(singletAxes.x, domains.fsc_h)}
             yDomain={domainForChannel(singletAxes.y, domains.fsc_a)}
-            viewDomain={viewSettings.singlet?.global || null}
-            onViewDomainChange={(view) => updateViewSetting('singlet', 'global', view)}
+            viewDomain={viewSettings.singlet?.[controlType] || viewSettings.singlet?.global || null}
+            onViewDomainChange={(view) => updateViewSetting('singlet', controlType, view)}
             statsText={singletGate ? `${singletSummary.count.toLocaleString()} (${singletSummary.pct.toFixed(1)}%)` : null}
             warningText={singletWarningText}
             drawActive={drawActive}
