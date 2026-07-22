@@ -171,7 +171,9 @@ calculate_control_qc_metrics <- function(
 #' Calculate deterministic AF-bank diagnostics
 #'
 #' @param af_bank Numeric AF spectra matrix (bands by detectors).
-#' @param assignments Optional event-wise band labels or indices.
+#' @param assignments Optional event-wise band labels or one-based indices.
+#'   Missing, unknown, non-integer, and out-of-range assignments are excluded
+#'   from occupancy and reported explicitly in the aggregate metrics.
 #' @param reconstruction_error Optional event-wise AF reconstruction errors.
 #' @param requested_bands Optional requested number of AF bands.
 #' @return A list containing aggregate metrics, occupancy, similarity, and
@@ -188,13 +190,31 @@ calculate_af_bank_qc_metrics <- function(af_bank, assignments = NULL, reconstruc
     sv <- svd(af_bank, nu = 0, nv = 0)$d
     effective_rank <- sum(sv > max(dim(af_bank)) * max(sv) * .Machine$double.eps)
     occupancy <- stats::setNames(rep(NA_real_, nrow(af_bank)), rownames(af_bank))
+    assignment_count <- if (is.null(assignments)) 0L else length(assignments)
+    valid_assignment_count <- 0L
+    invalid_assignment_count <- 0L
     if (!is.null(assignments) && length(assignments)) {
-        labels <- as.character(assignments)
-        numeric_labels <- suppressWarnings(as.integer(labels))
-        if (all(!is.na(numeric_labels))) labels <- rownames(af_bank)[pmin(pmax(numeric_labels, 1L), nrow(af_bank))]
-        tab <- table(factor(labels, levels = rownames(af_bank)))
-        occupancy <- as.numeric(tab) / pmax(sum(tab), 1)
-        names(occupancy) <- rownames(af_bank)
+        assignment_values <- trimws(as.character(assignments))
+        labels <- rep(NA_character_, length(assignment_values))
+        label_index <- match(assignment_values, rownames(af_bank))
+        exact_label <- !is.na(label_index)
+        labels[exact_label] <- rownames(af_bank)[label_index[exact_label]]
+
+        unresolved <- !exact_label
+        numeric_values <- suppressWarnings(as.numeric(assignment_values))
+        valid_index <- unresolved & is.finite(numeric_values) &
+            numeric_values == floor(numeric_values) &
+            numeric_values >= 1 & numeric_values <= nrow(af_bank)
+        labels[valid_index] <- rownames(af_bank)[as.integer(numeric_values[valid_index])]
+
+        valid <- !is.na(labels)
+        valid_assignment_count <- sum(valid)
+        invalid_assignment_count <- length(labels) - valid_assignment_count
+        if (valid_assignment_count > 0L) {
+            tab <- table(factor(labels[valid], levels = rownames(af_bank)))
+            occupancy <- as.numeric(tab) / valid_assignment_count
+            names(occupancy) <- rownames(af_bank)
+        }
     }
     detector_variability <- data.frame(
         detector = colnames(af_bank) %||% paste0("detector_", seq_len(ncol(af_bank))),
@@ -206,6 +226,10 @@ calculate_af_bank_qc_metrics <- function(af_bank, assignments = NULL, reconstruc
         requested_bands = requested_bands %||% NA_real_,
         returned_bands = nrow(af_bank),
         effective_rank = effective_rank,
+        assignment_count = assignment_count,
+        valid_assignment_count = valid_assignment_count,
+        invalid_assignment_count = invalid_assignment_count,
+        invalid_assignment_fraction = if (assignment_count > 0L) invalid_assignment_count / assignment_count else NA_real_,
         maximum_pairwise_similarity = if (length(pairwise)) max(pairwise) else NA_real_,
         median_pairwise_similarity = if (length(pairwise)) stats::median(pairwise) else NA_real_,
         reconstruction_error_median = if (!is.null(reconstruction_error)) stats::median(reconstruction_error, na.rm = TRUE) else NA_real_,

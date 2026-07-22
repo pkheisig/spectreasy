@@ -1029,12 +1029,17 @@ gui_project_report_files <- function(root, files = NULL, output_root = "", repor
         if (!identical(output_base, root) && !startsWith(output_base, root_prefix)) {
             stop("Report output folder is outside the active project.", call. = FALSE)
         }
-        stage_dir <- file.path(output_base, if (identical(report_type, "sample")) "unmix_samples" else "unmix_controls")
+        stage_name <- if (identical(report_type, "sample")) "unmix_samples" else "unmix_controls"
+        stage_pattern <- paste0("^", stage_name, "(?:_(?:[2-9]|[1-9][0-9]+))?$")
+        stage_dirs <- if (dir.exists(output_base)) {
+            candidates <- list.dirs(output_base, recursive = FALSE, full.names = TRUE)
+            candidates[grepl(stage_pattern, basename(candidates), perl = TRUE)]
+        } else character()
         report_dir_name <- if (identical(report_type, "sample")) "qc_samples" else "qc_controls"
-        report_dirs <- if (dir.exists(stage_dir)) {
+        report_dirs <- unique(unlist(lapply(stage_dirs, function(stage_dir) {
             candidates <- list.dirs(stage_dir, recursive = FALSE, full.names = TRUE)
             candidates[grepl(paste0("^", report_dir_name, "(?:_(?:[2-9]|[1-9][0-9]+))?$"), basename(candidates), perl = TRUE)]
-        } else character()
+        }), use.names = FALSE))
         report_name <- if (identical(report_type, "sample")) "qc_samples_report" else "qc_controls_report"
         legacy_reports <- unlist(lapply(report_dirs, function(report_dir) {
             list.files(
@@ -1094,7 +1099,7 @@ gui_project_report_source_files <- function(root, sample = FALSE, output_root = 
 gui_project_report_type <- function(relative_path) {
     relative_path <- gsub("\\\\", "/", as.character(relative_path)[1])
     if (grepl("panel", relative_path, ignore.case = TRUE)) return("Panel overview")
-    if (grepl("(^|/)(unmix_samples|qc_samples)(/|$)|qc_samples_report", relative_path, ignore.case = TRUE, perl = TRUE)) {
+    if (grepl("(^|/)(unmix_samples(?:_(?:[2-9]|[1-9][0-9]+))?|qc_samples)(/|$)|qc_samples_report", relative_path, ignore.case = TRUE, perl = TRUE)) {
         return("Sample QC")
     }
     "Control QC"
@@ -1515,6 +1520,7 @@ function(req) {
             cytometer = cytometer,
             auto_unknown_fluor_policy = gui_workflow_value(body, "auto_unknown_fluor_policy", "by_channel"),
             output_dir = output_dir,
+            output_collision = gui_workflow_value(body, "output_collision", "version"),
             unmixing_method = method,
             unmix_scatter_panel_size_mm = gui_workflow_number(body, "unmix_scatter_panel_size_mm", 30, minimum = 1),
             seed = gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1),

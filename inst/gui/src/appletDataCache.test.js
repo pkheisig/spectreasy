@@ -44,3 +44,33 @@ test('allows a saved payload to replace a cached response', async () => {
   setCachedAppletData(key, ['saved'])
   assert.deepEqual(await loadCachedAppletData(key, async () => ['stale']), ['saved'])
 })
+
+test('an aborted cached load is retried with the next consumer loader', async () => {
+  clearAppletDataCache()
+  const key = appletCacheKey('gating', '/project', 'revision-1', 50000)
+  const firstController = new AbortController()
+  let firstCalls = 0
+  let retryCalls = 0
+  const first = loadCachedAppletData(key, () => {
+    firstCalls += 1
+    return new Promise((resolve, reject) => {
+      firstController.signal.addEventListener(
+        'abort',
+        () => reject(new DOMException('Aborted', 'AbortError')),
+        { once: true },
+      )
+      setTimeout(() => resolve('stale'), 25)
+    })
+  })
+  firstController.abort()
+  const second = loadCachedAppletData(key, async () => {
+    retryCalls += 1
+    return 'ready'
+  })
+
+  const settled = await Promise.allSettled([first, second])
+  assert.equal(firstCalls, 1)
+  assert.equal(retryCalls, 1)
+  assert.equal(settled[0]?.status, 'rejected')
+  assert.deepEqual(settled[1], { status: 'fulfilled', value: 'ready' })
+})

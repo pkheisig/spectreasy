@@ -23,11 +23,11 @@
 
 ## New
 
-- Added local-only AI-ready QC exports with a deterministic `spectreasy_ai_qc`
-  schema, JSON/TXT/Markdown bundles, manifests, privacy redaction, paste-ready
-  prompts, conservative grading provenance, reference-profile tooling, report
-  summaries, and an integrated cockpit workspace. Spectreasy sends nothing and
-  includes no AI model, provider integration, API key, or upload path.
+- Added a local-only AI prompt companion to control QC reports. Report
+  generation writes a context-bounded text prompt alongside the deterministic
+  numerical QC CSV tables, and the report toolbar can copy or download that
+  prompt. Spectreasy sends nothing and includes no AI model, provider
+  integration, API key, or upload path.
 - Added the hosted Spectreasy cockpit with native project selection, schema-aligned control mapping, embedded analysis applets, and automatically persisted GUI settings.
 - Added `unmix_controls()` as the main SCC workflow entry point.
 - Added `unmix_samples()` support for loading a saved unmixing matrix file.

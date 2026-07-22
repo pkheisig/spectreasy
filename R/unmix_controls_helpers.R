@@ -165,6 +165,30 @@
     file.path(output_dir, "unmix_controls")
 }
 
+.resolve_unmix_controls_stage_dir <- function(output_dir,
+                                               output_collision = c("version", "overwrite", "error")) {
+    output_collision <- .match_arg_ci(
+        output_collision,
+        c("version", "overwrite", "error"),
+        "output_collision"
+    )
+    stage_dir <- .unmix_controls_stage_dir(output_dir)
+    if (file.exists(stage_dir) && !dir.exists(stage_dir)) {
+        stop("Control-stage output path points to a file: ", stage_dir, call. = FALSE)
+    }
+    if (!dir.exists(stage_dir) || identical(output_collision, "overwrite")) {
+        return(stage_dir)
+    }
+    if (identical(output_collision, "version")) {
+        return(.next_safe_output_dir(stage_dir))
+    }
+    stop(
+        "Control-stage output already exists: ", stage_dir,
+        ". Use output_collision = 'overwrite' or 'version'.",
+        call. = FALSE
+    )
+}
+
 .unmix_output_paths <- function(output_dir) {
     list(
         unmixed_dir = file.path(output_dir, "unmixed_fcs"),

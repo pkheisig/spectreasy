@@ -289,11 +289,14 @@
   gap: 7px;
 }
 
-.file-row {
+.app-shell .file-row {
   width: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: auto auto;
+  grid-template-areas:
+    "fluorophore channel"
+    "marker control-type";
   align-items: baseline;
   justify-content: stretch;
   column-gap: 12px;
@@ -321,6 +324,7 @@
 }
 
 .file-row-fluorophore {
+  grid-area: fluorophore;
   justify-self: start;
   color: var(--blueprint);
   font-size: 14px;
@@ -328,6 +332,7 @@
 }
 
 .file-row-channel {
+  grid-area: channel;
   justify-self: end;
   text-align: right;
   white-space: nowrap;
@@ -337,6 +342,7 @@
 }
 
 .file-row-marker {
+  grid-area: marker;
   justify-self: start;
   max-width: 100%;
   color: var(--ink);
@@ -345,6 +351,7 @@
 }
 
 .file-row-control-type {
+  grid-area: control-type;
   justify-self: end;
   text-align: right;
   white-space: nowrap;

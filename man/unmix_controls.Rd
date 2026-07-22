@@ -11,6 +11,7 @@ unmix_controls(
   cytometer = "auto",
   auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
   output_dir = "spectreasy_outputs",
+  output_collision = c("version", "overwrite", "error"),
   unmixing_method = "AutoSpectral",
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
@@ -59,6 +60,11 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 \item{output_dir}{Root output directory. Control-stage artifacts are written
 under `output_dir/unmix_controls`, including the automatic QC report and
 its HTML NxN companion.}
+
+\item{output_collision}{Collision policy for an existing control-stage
+directory. `"version"` (default) writes the complete rerun to
+`unmix_controls_2`, `unmix_controls_3`, and so on; `"overwrite"` reuses
+the canonical stage directory; `"error"` stops before writing anything.}
 
 \item{unmixing_method}{SCC unmixing method (`"WLS"`, `"RWLS"`,
 `"OLS"`, `"NNLS"`, or `"AutoSpectral"`).

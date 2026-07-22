@@ -32,6 +32,7 @@
         cytometer = "auto",
         auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
         output_dir = "spectreasy_outputs",
+        output_collision = c("version", "overwrite", "error"),
         unmixing_method = "AutoSpectral",
         unmix_scatter_panel_size_mm = 30,
         seed = NULL,

@@ -15,7 +15,15 @@ export function loadCachedAppletData<T>(key: string, loader: () => Promise<T>, g
   if (cached) {
     appletDataCache.delete(key)
     appletDataCache.set(key, cached)
-    return cached.promise as Promise<T>
+    return (cached.promise as Promise<T>).catch((error) => {
+      // A cached request may have belonged to an effect instance that was
+      // discarded by React StrictMode. The next consumer supplies its own
+      // loader, so retry an aborted shared entry once instead of inheriting
+      // the previous consumer's cancellation.
+      if (error?.name !== 'AbortError') throw error
+      if (appletDataCache.get(key)?.promise === cached.promise) appletDataCache.delete(key)
+      return loadCachedAppletData(key, loader, group)
+    })
   }
 
   for (const [cachedKey, entry] of appletDataCache) {

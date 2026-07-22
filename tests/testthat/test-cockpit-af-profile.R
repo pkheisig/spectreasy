@@ -247,16 +247,19 @@ test_that("cockpit discovers and classifies control and sample reports from rela
     root <- tempfile("sample_named_cockpit_project_")
     control <- file.path(root, "spectreasy_outputs", "unmix_controls", "qc_controls", "qc_controls_report.html")
     control_2 <- file.path(root, "spectreasy_outputs", "unmix_controls", "qc_controls_2", "qc_controls_report.pdf")
+    control_stage_2 <- file.path(root, "spectreasy_outputs", "unmix_controls_2", "qc_controls", "qc_controls_report.html")
     sample <- file.path(root, "spectreasy_outputs", "unmix_samples", "qc_samples", "qc_samples_report.html")
     sample_2 <- file.path(root, "spectreasy_outputs", "unmix_samples", "qc_samples_2", "qc_samples_report.pdf")
     custom <- file.path(root, "spectreasy_outputs_065", "unmix_samples", "qc_samples", "qc_samples_report.html")
     dir.create(dirname(control), recursive = TRUE)
     dir.create(dirname(control_2), recursive = TRUE)
+    dir.create(dirname(control_stage_2), recursive = TRUE)
     dir.create(dirname(sample), recursive = TRUE)
     dir.create(dirname(sample_2), recursive = TRUE)
     dir.create(dirname(custom), recursive = TRUE)
     writeLines("<!doctype html><title>Controls</title>", control)
     writeLines("PDF", control_2)
+    writeLines("<!doctype html><title>Controls rerun</title>", control_stage_2)
     writeLines("<!doctype html><title>Samples</title>", sample)
     writeLines("PDF", sample_2)
     writeLines("<!doctype html><title>Custom output root</title>", custom)
@@ -268,12 +271,14 @@ test_that("cockpit discovers and classifies control and sample reports from rela
     expect_setequal(relative, c(
         "spectreasy_outputs/unmix_controls/qc_controls/qc_controls_report.html",
         "spectreasy_outputs/unmix_controls/qc_controls_2/qc_controls_report.pdf",
+        "spectreasy_outputs/unmix_controls_2/qc_controls/qc_controls_report.html",
         "spectreasy_outputs/unmix_samples/qc_samples/qc_samples_report.html",
         "spectreasy_outputs/unmix_samples/qc_samples_2/qc_samples_report.pdf",
         "spectreasy_outputs_065/unmix_samples/qc_samples/qc_samples_report.html"
     ))
-    expect_identical(unname(types[grepl("unmix_controls", relative)]), c("Control QC", "Control QC"))
+    expect_identical(unname(types[grepl("unmix_controls", relative)]), c("Control QC", "Control QC", "Control QC"))
     expect_identical(unname(types[grepl("unmix_samples", relative)]), c("Sample QC", "Sample QC", "Sample QC"))
+    expect_identical(api_env$gui_project_report_type("spectreasy_outputs/unmix_samples_10/qc_samples/qc_samples_report.html"), "Sample QC")
 
     exact_control <- api_env$gui_project_report_files(
         root,
@@ -285,7 +290,7 @@ test_that("cockpit discovers and classifies control and sample reports from rela
         output_root = "spectreasy_outputs",
         report_type = "sample"
     )
-    expect_setequal(normalizePath(exact_control), normalizePath(c(control, control_2)))
+    expect_setequal(normalizePath(exact_control), normalizePath(c(control, control_2, control_stage_2)))
     expect_setequal(normalizePath(exact_sample), normalizePath(c(sample, sample_2)))
     expect_false(normalizePath(custom) %in% normalizePath(exact_sample))
 })

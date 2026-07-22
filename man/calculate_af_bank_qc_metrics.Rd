@@ -14,7 +14,9 @@ calculate_af_bank_qc_metrics(
 \arguments{
 \item{af_bank}{Numeric AF spectra matrix (bands by detectors).}
 
-\item{assignments}{Optional event-wise band labels or indices.}
+\item{assignments}{Optional event-wise band labels or one-based indices.
+Missing, unknown, non-integer, and out-of-range assignments are excluded
+from occupancy and reported explicitly in the aggregate metrics.}
 
 \item{reconstruction_error}{Optional event-wise AF reconstruction errors.}
 

@@ -49,7 +49,28 @@ test_that("AF diagnostics expose redundancy and occupancy", {
     qc <- calculate_af_bank_qc_metrics(af, assignments = c(rep(1, 90), rep(3, 10)), requested_bands = 3)
     values <- setNames(qc$metrics$value, qc$metrics$metric_id)
     expect_gt(values[["maximum_pairwise_similarity"]], 0.99)
+    expect_equal(values[["invalid_assignment_count"]], 0)
     expect_equal(qc$occupancy$fraction, c(0.9, 0, 0.1))
+})
+
+test_that("AF diagnostics exclude and count invalid assignments", {
+    af <- rbind(AF_1 = c(1, 0), AF_2 = c(0, 1))
+    colnames(af) <- c("D1", "D2")
+
+    invalid <- calculate_af_bank_qc_metrics(af, assignments = c(0, 3, NA, "unknown"))
+    invalid_values <- setNames(invalid$metrics$value, invalid$metrics$metric_id)
+    expect_true(all(is.na(invalid$occupancy$fraction)))
+    expect_equal(invalid_values[["assignment_count"]], 4)
+    expect_equal(invalid_values[["valid_assignment_count"]], 0)
+    expect_equal(invalid_values[["invalid_assignment_count"]], 4)
+    expect_equal(invalid_values[["invalid_assignment_fraction"]], 1)
+
+    mixed <- calculate_af_bank_qc_metrics(af, assignments = c(1, "AF_2", 0, 3))
+    mixed_values <- setNames(mixed$metrics$value, mixed$metrics$metric_id)
+    expect_equal(mixed$occupancy$fraction, c(0.5, 0.5))
+    expect_equal(mixed_values[["valid_assignment_count"]], 2)
+    expect_equal(mixed_values[["invalid_assignment_count"]], 2)
+    expect_equal(mixed_values[["invalid_assignment_fraction"]], 0.5)
 })
 
 test_that("AF occupancy is unavailable rather than falsely empty without assignments", {

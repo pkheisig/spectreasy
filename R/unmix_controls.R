@@ -22,6 +22,10 @@
 #' @param output_dir Root output directory. Control-stage artifacts are written
 #'   under `output_dir/unmix_controls`, including the automatic QC report and
 #'   its HTML NxN companion.
+#' @param output_collision Collision policy for an existing control-stage
+#'   directory. `"version"` (default) writes the complete rerun to
+#'   `unmix_controls_2`, `unmix_controls_3`, and so on; `"overwrite"` reuses
+#'   the canonical stage directory; `"error"` stops before writing anything.
 #' @param unmixing_method SCC unmixing method (`"WLS"`, `"RWLS"`,
 #'   `"OLS"`, `"NNLS"`, or `"AutoSpectral"`).
 #'   `AutoSpectral` keeps the k-means AF bank controlled by `af_n_bands`,
@@ -116,6 +120,7 @@ unmix_controls <- function(
     cytometer = "auto",
     auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
     output_dir = "spectreasy_outputs",
+    output_collision = c("version", "overwrite", "error"),
     unmixing_method = "AutoSpectral",
     unmix_scatter_panel_size_mm = 30,
     seed = NULL,
@@ -164,6 +169,11 @@ unmix_controls <- function(
         c("by_channel", "empty", "filename"),
         "auto_unknown_fluor_policy"
     )
+    output_collision <- .match_arg_ci(
+        output_collision,
+        c("version", "overwrite", "error"),
+        "output_collision"
+    )
     unmixing_method <- .normalize_unmix_method(unmixing_method)
     use_autospectral <- .is_autospectral_method(unmixing_method)
     use_refine <- identical(unmixing_method, "AutoSpectral")
@@ -201,7 +211,7 @@ unmix_controls <- function(
     if (file.exists(output_dir) && !dir.exists(output_dir)) {
         stop("output_dir points to a file, not a directory: ", output_dir, call. = FALSE)
     }
-    output_dir <- .unmix_controls_stage_dir(output_dir)
+    output_dir <- .resolve_unmix_controls_stage_dir(output_dir, output_collision)
     manual_gate_file_explicit <- !manual_gate_file_missing
 
     if (!dir.exists(output_dir)) {

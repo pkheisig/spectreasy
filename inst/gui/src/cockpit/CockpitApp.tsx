@@ -23,6 +23,7 @@ import {
   cockpitExecutionCode,
   createWorkflowPayload,
   normalizeCockpitOutputRoot,
+  workflowHasExistingResults,
 } from "./workflowExecution";
 import { WorkflowRail } from "./components/WorkflowRail";
 import { CockpitApplet } from "./components/CockpitApplet";
@@ -535,8 +536,7 @@ export default function CockpitApp() {
   }
 
   async function requestRunAction(action: "control" | "sample" | "af", label: string) {
-    const reportType = action === "control" ? "Control QC report" : action === "sample" ? "Sample QC report" : "";
-    if (action !== "af" && reportType && project.artifacts.some((artifact) => artifact.type === reportType)) {
+    if (action !== "af" && workflowHasExistingResults(action, project)) {
       setPendingVersionRun({ action, label });
       return false;
     }

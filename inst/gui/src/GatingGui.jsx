@@ -370,7 +370,6 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
     const requestedPoints = normalizeEventCount(maxPoints)
     const preloadKey = appletCacheKey('gating-events', activeProjectPath, projectRevision, requestedPoints)
     const preloadGroup = appletCacheKey('gating-events')
-    const controller = new AbortController()
     let disposed = false
     setPayload(null)
     setPayloadCache({})
@@ -379,9 +378,10 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
     setStatus('Preloading controls')
 
     loadCachedAppletData(preloadKey, async () => {
-      const data = await gatingApiRequest(`/gate_preload_compact?max_points=${requestedPoints}`, {
-        signal: controller.signal,
-      })
+      // The cache owns this request. An effect instance may stop consuming the
+      // result, but it must not abort a promise shared with the StrictMode
+      // remount (or another consumer of the same project revision).
+      const data = await gatingApiRequest(`/gate_preload_compact?max_points=${requestedPoints}`)
       const next = {}
       ;(data?.payloads || []).forEach((item) => {
         const decoded = decodeCompactPayload(item)
@@ -405,7 +405,6 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
 
     return () => {
       disposed = true
-      controller.abort()
     }
   }, [fileInventoryKey, maxPoints, activeProjectPath, projectRevision, guiStateLoaded])
 
