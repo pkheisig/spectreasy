@@ -84,12 +84,6 @@ function densityPalette(size = 64) {
 }
 
 const DENSITY_PALETTE = densityPalette()
-const DARK_DENSITY_PALETTE = Array.from({ length: DENSITY_PALETTE.length }, (_, index) => {
-  const value = index / Math.max(DENSITY_PALETTE.length - 1, 1)
-  const hue = 218 - value * 198
-  const lightness = 72 - value * 10
-  return `hsla(${hue}, 100%, ${lightness}%, 0.94)`
-})
 
 function computeDensityBuckets(points, xField, yField, xDomain, yDomain) {
   const n = points.length
@@ -184,7 +178,6 @@ function computeDensityBuckets(points, xField, yField, xDomain, yDomain) {
 }
 
 export {
-  DARK_DENSITY_PALETTE,
   DENSITY_PALETTE,
   computeDensityBuckets,
   eventStepIndex,

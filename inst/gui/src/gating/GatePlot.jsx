@@ -8,7 +8,6 @@ import {
 import { normalizePlotView } from '../gatingViewSettings.js'
 import GatePlotView from './GatePlotView.jsx'
 import {
-  DARK_DENSITY_PALETTE,
   DEFAULT_HISTOGRAM_BINS,
   DEFAULT_HISTOGRAM_TRANSFORM,
   DENSITY_PALETTE,
@@ -341,8 +340,7 @@ export default function GatePlot({
     const half = side / 2
     densityBuckets.forEach((bucket, colorIndex) => {
       if (!bucket.length) return
-      const palette = darkMode ? DARK_DENSITY_PALETTE : DENSITY_PALETTE
-      ctx.fillStyle = palette[colorIndex] || (darkMode ? 'rgba(90, 190, 255, 0.9)' : 'rgba(0, 0, 255, 0.6)')
+      ctx.fillStyle = DENSITY_PALETTE[colorIndex] || 'rgba(0, 0, 255, 0.7)'
       ctx.beginPath()
       bucket.forEach((eventIndex) => {
         const p = events[eventIndex]

@@ -11,7 +11,11 @@ import { normalizePlotView } from './gatingViewSettings.js'
 import { decodeSpectrumData } from './spectrumData.js'
 import GatingWorkspace from './gating/GatingWorkspace.jsx'
 import { useGatingConfigIO } from './gating/useGatingConfigIO.js'
-import { autogateHistogramsAction, beginGatingSidebarResize } from './gating/GatingActions.js'
+import {
+  GATING_SIDEBAR_MIN_WIDTH,
+  autogateHistogramsAction,
+  beginGatingSidebarResize,
+} from './gating/GatingActions.js'
 import { appletCacheKey, loadCachedAppletData } from './appletDataCache.ts'
 import {
   AXIS_SETTINGS_VERSION,
@@ -59,6 +63,9 @@ import {
   validateGateCsvRows,
 } from './gating/GatingCore.jsx'
 
+const DEFAULT_SIDEBAR_WIDTH = 252
+const SIDEBAR_WIDTH_VERSION = 2
+
 function App({ embedded = false, cockpitTheme = null, projectPath = '', projectRevision = 'empty', initialFiles = null, initialMetadata = {}, onRequestExit = null, onRequestClose = null }) {
   const [status, setStatus] = useState('Loading controls')
   const [files, setFiles] = useState([])
@@ -88,7 +95,7 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches || false
   })
   const [guiStateLoaded, setGuiStateLoaded] = useState(false)
-  const [sidebarWidth, setSidebarWidth] = useState(192)
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [preloadComplete, setPreloadComplete] = useState(false)
   const [gatesLoaded, setGatesLoaded] = useState(false)
@@ -191,8 +198,14 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
         if (typeof persisted.histogramTransform === 'string' && persisted.histogramTransformVersion === HISTOGRAM_TRANSFORM_VERSION) {
           setHistogramTransform(normalizeHistogramTransform(persisted.histogramTransform))
         }
-        if (typeof persisted.sidebarWidth === 'number' && Number.isFinite(persisted.sidebarWidth)) {
-          setSidebarWidth(Math.min(380, Math.max(160, persisted.sidebarWidth)))
+        if (
+          persisted.sidebarWidthVersion === SIDEBAR_WIDTH_VERSION &&
+          typeof persisted.sidebarWidth === 'number' &&
+          Number.isFinite(persisted.sidebarWidth)
+        ) {
+          setSidebarWidth(Math.min(380, Math.max(GATING_SIDEBAR_MIN_WIDTH, persisted.sidebarWidth)))
+        } else {
+          setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)
         }
         if (typeof persisted.sidebarCollapsed === 'boolean') setSidebarCollapsed(persisted.sidebarCollapsed)
         if (persisted.axisSettings && typeof persisted.axisSettings === 'object' && persisted.axisSettingsVersion === AXIS_SETTINGS_VERSION) {
@@ -213,7 +226,7 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           module: GUI_MODULE,
-          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, histogramTransformVersion: HISTOGRAM_TRANSFORM_VERSION, ...(!embedded ? { darkMode } : {}), axisSettings, axisSettingsVersion: AXIS_SETTINGS_VERSION, sidebarWidth, sidebarCollapsed }
+          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, histogramTransformVersion: HISTOGRAM_TRANSFORM_VERSION, ...(!embedded ? { darkMode } : {}), axisSettings, axisSettingsVersion: AXIS_SETTINGS_VERSION, sidebarWidth, sidebarWidthVersion: SIDEBAR_WIDTH_VERSION, sidebarCollapsed }
         })
       }).catch(() => {})
     }, 350)

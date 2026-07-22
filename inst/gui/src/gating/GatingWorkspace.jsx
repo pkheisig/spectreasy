@@ -29,6 +29,7 @@ import {
   channelTitle,
   eventStepIndex,
   eventStepLabel,
+  fileControlType,
   gateKey,
   histogramGateKey,
   normalizeHistogramBins,
@@ -211,11 +212,12 @@ export default function GatingWorkspace({ view }) {
               className={`file-row ${selected === file.filename ? 'selected' : ''} ${fileUsesHistogramGates(file) ? '' : 'is-af'}`}
               onClick={() => setSelected(file.filename)}
             >
-              <div className="file-row-top">
-                <span>{file.fluorophore}</span>
-                <small>{file.channel}{fileUsesHistogramGates(file) ? '' : ' · AF'}</small>
-              </div>
-              <strong>{file.marker}</strong>
+              <span className="file-row-fluorophore" title={file.fluorophore}>{file.fluorophore}</span>
+              <small className="file-row-channel" title={file.channel}>{file.channel}</small>
+              <strong className="file-row-marker" title={file.marker}>{file.marker}</strong>
+              <small className="file-row-control-type">
+                {fileControlType(file) === 'beads' ? 'Beads' : 'Cells'}
+              </small>
             </button>
           ))}
         </div>

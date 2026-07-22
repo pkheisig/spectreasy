@@ -21,8 +21,8 @@
   --negative-gate-fill: rgba(75, 145, 207, 0.2);
   --negative-gate-preview: rgba(75, 145, 207, 0.14);
   --negative-gate-on-ink: #ffffff;
-  --bead-gate: #8052c7;
-  --bead-gate-fill: rgba(128, 82, 199, 0.16);
+  --bead-gate: #7b2e86;
+  --bead-gate-fill: rgba(123, 46, 134, 0.19);
 }
 
 .app-shell.dark {
@@ -47,8 +47,8 @@
   --negative-gate-fill: rgba(120, 201, 255, 0.26);
   --negative-gate-preview: rgba(120, 201, 255, 0.2);
   --negative-gate-on-ink: #07171f;
-  --bead-gate: #b794ff;
-  --bead-gate-fill: rgba(183, 148, 255, 0.2);
+  --bead-gate: #e0a4ea;
+  --bead-gate-fill: rgba(224, 164, 234, 0.25);
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
     linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
@@ -188,8 +188,8 @@
 }
 
 .gating-sidebar {
-  flex: 0 0 var(--gating-sidebar-width, 192px);
-  width: var(--gating-sidebar-width, 192px);
+  flex: 0 0 var(--gating-sidebar-width, 252px);
+  width: var(--gating-sidebar-width, 252px);
   border-right: 1px solid var(--line);
   background: var(--panel);
   padding: 18px 14px;
@@ -276,6 +276,7 @@
   font-weight: 400;
   color: var(--ink);
   letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .brand p {
@@ -290,53 +291,67 @@
 
 .file-row {
   width: 100%;
-  align-items: flex-start;
-  justify-content: flex-start;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 11px;
-  min-height: 70px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: baseline;
+  justify-content: stretch;
+  column-gap: 12px;
+  row-gap: 10px;
+  padding: 10px 12px 11px;
+  min-height: 78px;
   text-align: left;
   border: 1px solid var(--line);
   border-left: 4px solid var(--blueprint);
 }
 
-.file-row-top {
-  width: 100%;
+.file-row-fluorophore,
+.file-row-channel,
+.file-row-marker,
+.file-row-control-type {
   min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+  line-height: 1.2;
 }
 
-.file-row-top span {
-  min-width: 0;
+.file-row-fluorophore,
+.file-row-marker {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.file-row-top small {
-  flex: 0 0 auto;
-  margin-left: auto;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.file-row span {
-  font-size: 13px;
+.file-row-fluorophore {
+  justify-self: start;
   color: var(--blueprint);
-  font-weight: 400;
-}
-
-.file-row strong {
   font-size: 14px;
   font-weight: 400;
 }
 
-.file-row small {
+.file-row-channel {
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
   color: var(--muted);
+  font-size: 13px;
   font-weight: 400;
+}
+
+.file-row-marker {
+  justify-self: start;
+  max-width: 100%;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.file-row-control-type {
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
 }
 
 .file-row.selected {
@@ -1448,7 +1463,7 @@
 .gate-path-bead {
   fill: var(--bead-gate-fill);
   stroke: var(--bead-gate);
-  stroke-width: 2.2;
+  stroke-width: 3.2;
 }
 
 .gate-handle-bead {

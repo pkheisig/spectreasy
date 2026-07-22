@@ -6,6 +6,8 @@ import {
   gatingApiRequest,
 } from './GatingCore.jsx'
 
+export const GATING_SIDEBAR_MIN_WIDTH = 244
+
 export async function autogateHistogramsAction(options) {
   const {
     enabled, gates, files, setHistogramAutogating, setHistogramAutogateNotice,
@@ -74,7 +76,7 @@ export function beginGatingSidebarResize(event, collapsed, width, setWidth) {
   const previousUserSelect = document.body.style.userSelect
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
-  const move = (moveEvent) => setWidth(Math.min(380, Math.max(160, width + moveEvent.clientX - startX)))
+  const move = (moveEvent) => setWidth(Math.min(380, Math.max(GATING_SIDEBAR_MIN_WIDTH, width + moveEvent.clientX - startX)))
   const finish = () => {
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', finish)
