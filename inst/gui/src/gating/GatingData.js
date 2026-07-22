@@ -1,5 +1,6 @@
 import { resolveApiBase, resolveApiToken } from '../apiBase'
 import { withGatingApiToken } from '../gatingApi.js'
+import { DENSITY_PALETTE } from './GatingPalette.js'
 import {
   DEFAULT_EVENT_COUNT,
   DEFAULT_HISTOGRAM_BINS,
@@ -72,18 +73,6 @@ function getDensityCurve(values, domain, steps = DEFAULT_HISTOGRAM_BINS) {
   }
   return points
 }
-
-function densityPalette(size = 64) {
-  const jetColors = (v) => {
-    const r = clamp(Math.min(4 * v - 1.5, -4 * v + 4.5), 0, 1)
-    const g = clamp(Math.min(4 * v - 0.5, -4 * v + 3.5), 0, 1)
-    const b = clamp(Math.min(4 * v + 0.5, -4 * v + 2.5), 0, 1)
-    return `rgba(${Math.floor(r * 255)}, ${Math.floor(g * 255)}, ${Math.floor(b * 255)}, 0.7)`
-  }
-  return Array.from({ length: size }, (_, i) => jetColors(i / Math.max(size - 1, 1)))
-}
-
-const DENSITY_PALETTE = densityPalette()
 
 function computeDensityBuckets(points, xField, yField, xDomain, yDomain) {
   const n = points.length
@@ -178,7 +167,6 @@ function computeDensityBuckets(points, xField, yField, xDomain, yDomain) {
 }
 
 export {
-  DENSITY_PALETTE,
   computeDensityBuckets,
   eventStepIndex,
   eventStepLabel,
@@ -186,3 +174,5 @@ export {
   normalizeEventCount,
   gatingApiRequest,
 }
+
+export { DARK_PLOT_BACKGROUND, DENSITY_PALETTE } from './GatingPalette.js'

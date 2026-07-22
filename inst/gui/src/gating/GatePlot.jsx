@@ -10,6 +10,7 @@ import GatePlotView from './GatePlotView.jsx'
 import {
   DEFAULT_HISTOGRAM_BINS,
   DEFAULT_HISTOGRAM_TRANSFORM,
+  DARK_PLOT_BACKGROUND,
   DENSITY_PALETTE,
   HISTOGRAM_BIN_MAX,
   HISTOGRAM_BIN_MIN,
@@ -326,7 +327,7 @@ export default function GatePlot({
     ctx.rect(PAD.left, PAD.top, PLOT_WIDTH - PAD.left - PAD.right, PLOT_HEIGHT - PAD.top - PAD.bottom)
     ctx.clip()
 
-    ctx.fillStyle = darkMode ? '#0b1110' : '#f8f7f3'
+    ctx.fillStyle = darkMode ? DARK_PLOT_BACKGROUND : '#f8f7f3'
     ctx.fillRect(PAD.left, PAD.top, PLOT_WIDTH - PAD.left - PAD.right, PLOT_HEIGHT - PAD.top - PAD.bottom)
     ctx.strokeStyle = darkMode ? '#52615b' : '#c7c3ba'
     ctx.strokeRect(PAD.left, PAD.top, PLOT_WIDTH - PAD.left - PAD.right, PLOT_HEIGHT - PAD.top - PAD.bottom)
