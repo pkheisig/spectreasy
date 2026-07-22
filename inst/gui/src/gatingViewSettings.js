@@ -15,7 +15,7 @@ export function normalizePlotView(value, includeY = true) {
   return { x, y }
 }
 
-export function buildViewSettingRows(viewSettings = {}, files = []) {
+export function buildViewSettingRows(viewSettings = {}) {
   const rows = []
   const addDomain = (plot, scope, filename, axis, domain) => {
     const clean = normalizeViewDomain(domain)
@@ -40,12 +40,6 @@ export function buildViewSettingRows(viewSettings = {}, files = []) {
     addDomain(plot, 'global', '', 'y', view.y)
   })
 
-  const knownFiles = new Set(files.map((file) => String(file?.filename || '')).filter(Boolean))
-  Object.entries(viewSettings?.histogram || {}).forEach(([filename, rawView]) => {
-    if (!knownFiles.has(filename)) return
-    const view = normalizePlotView(rawView, false)
-    if (view?.x) addDomain('histogram', 'file', filename, 'x', view.x)
-  })
   return rows
 }
 
@@ -53,16 +47,15 @@ export function parseViewSettings(rows = []) {
   const views = { cell: {}, singlet: {}, histogram: {} }
   rows.forEach((row) => {
     if (String(row?.gate_type || '') !== 'setting') return
-    const match = /^view_(cell|singlet|histogram)$/.exec(String(row?.x_channel || ''))
+    const match = /^view_(cell|singlet)$/.exec(String(row?.x_channel || ''))
     const axisMatch = /^(x|y)_domain$/.exec(String(row?.y_channel || ''))
     if (!match || !axisMatch) return
     const plot = match[1]
     const axis = axisMatch[1]
-    if (plot === 'histogram' && axis !== 'x') return
-    const rawTarget = plot === 'histogram' ? String(row?.filename || '') : String(row?.scope || '')
+    const rawTarget = String(row?.scope || '')
     if (!rawTarget) return
-    if (plot !== 'histogram' && rawTarget !== 'global' && !LEGACY_CONTROL_SCOPES.includes(rawTarget)) return
-    const target = plot === 'histogram' ? rawTarget : 'global'
+    if (rawTarget !== 'global' && !LEGACY_CONTROL_SCOPES.includes(rawTarget)) return
+    const target = 'global'
     const domain = normalizeViewDomain([row.x, row.y])
     if (!domain) return
     if (!views[plot][target]) views[plot][target] = { x: null, y: null }

@@ -177,9 +177,25 @@
     p
 }
 
-.reference_histogram_transform_values <- function(values, transform = "asinh") {
+.reference_histogram_auto_cofactor <- function(values) {
+    finite <- sort(as.numeric(values[is.finite(values)]))
+    if (length(finite) < 2L) return(1)
+    q <- as.numeric(stats::quantile(finite, c(0.001, 0.05, 0.10, 0.999), names = FALSE, na.rm = TRUE))
+    robust_span <- max(q[4] - q[1], .Machine$double.eps)
+    lower_scale <- max(abs(q[2]), abs(q[3]), abs(q[3] - q[2]), robust_span / 1000)
+    cofactor <- lower_scale / sinh(2.5)
+    max(robust_span / 1e6, min(robust_span / 2, cofactor))
+}
+
+.reference_histogram_transform_values <- function(values, transform = "auto", cofactor = NULL) {
     transform <- tolower(trimws(as.character(transform)[1]))
     values <- as.numeric(values)
+    if (identical(transform, "auto")) {
+        if (is.null(cofactor) || !is.finite(cofactor) || cofactor <= 0) {
+            cofactor <- .reference_histogram_auto_cofactor(values)
+        }
+        return(asinh(values / cofactor))
+    }
     if (identical(transform, "log10")) {
         return(log10(pmax(values, 1)))
     }
@@ -192,9 +208,13 @@
     values
 }
 
-.reference_histogram_inverse_values <- function(values, transform = "asinh") {
+.reference_histogram_inverse_values <- function(values, transform = "auto", cofactor = NULL) {
     transform <- tolower(trimws(as.character(transform)[1]))
     values <- as.numeric(values)
+    if (identical(transform, "auto")) {
+        if (is.null(cofactor) || !is.finite(cofactor) || cofactor <= 0) cofactor <- 1
+        return(sinh(values) * cofactor)
+    }
     if (identical(transform, "log10")) {
         return(10^values)
     }
@@ -344,9 +364,9 @@
     )
 }
 
-.reference_add_histogram_qc_gate <- function(plot, bounds, present, transform, ymax, color) {
+.reference_add_histogram_qc_gate <- function(plot, bounds, present, transform, ymax, color, cofactor = NULL) {
     if (!isTRUE(present) || length(bounds) != 2L || !all(is.finite(bounds)) || bounds[2] <= bounds[1]) return(plot)
-    transformed <- .reference_histogram_transform_values(bounds, transform = transform)
+    transformed <- .reference_histogram_transform_values(bounds, transform = transform, cofactor = cofactor)
     handles <- data.frame(x = transformed, y = rep(ymax * 0.5, length(transformed)))
     plot +
         ggplot2::annotate("rect", xmin = min(transformed), xmax = max(transformed), ymin = -Inf, ymax = Inf, alpha = 0.13, fill = color) +
@@ -368,17 +388,18 @@
                                              x_domain = NULL) {
     transform <- settings$histogram_transform
     bins <- settings$histogram_bins
-    values_t <- .reference_histogram_transform_values(peak_vals, transform = transform)
+    cofactor <- if (identical(transform, "auto")) .reference_histogram_auto_cofactor(peak_vals) else NULL
+    values_t <- .reference_histogram_transform_values(peak_vals, transform = transform, cofactor = cofactor)
     bounds <- .reference_histogram_qc_bounds(vals_log, hist_info, gate_min, gate_max)
     raw_domain <- if (!is.null(x_domain) && length(x_domain) >= 2L && all(is.finite(x_domain[1:2])) && x_domain[2] > x_domain[1]) {
         as.numeric(x_domain[1:2])
     } else {
         .reference_gui_extent(peak_vals)
     }
-    domain <- .reference_histogram_transform_values(raw_domain, transform = transform)
+    domain <- .reference_histogram_transform_values(raw_domain, transform = transform, cofactor = cofactor)
     if (!all(is.finite(domain)) || domain[2] <= domain[1]) domain <- c(0, 1)
     x_breaks <- .reference_gui_ticks(domain, 5L)
-    x_labels <- .reference_pretty_k_label(.reference_histogram_inverse_values(x_breaks, transform = transform))
+    x_labels <- .reference_pretty_k_label(.reference_histogram_inverse_values(x_breaks, transform = transform, cofactor = cofactor))
     curve <- .reference_histogram_density_curve(values_t, domain, bins = bins)
     ymax <- max(curve$y, 1, na.rm = TRUE)
     y_lim <- c(0, ymax * 1.12)
@@ -403,8 +424,8 @@
             plot.margin = ggplot2::margin(5.5, 24, 5.5, 5.5)
         ) +
         ggplot2::coord_fixed(ratio = coord_ratio, xlim = domain, ylim = y_lim, expand = FALSE, clip = "off")
-    p <- .reference_add_histogram_qc_gate(p, bounds$negative, bounds$negative_present, transform, ymax, "#263f73")
-    .reference_add_histogram_qc_gate(p, bounds$positive, bounds$positive_present, transform, ymax, "#d65238")
+    p <- .reference_add_histogram_qc_gate(p, bounds$negative, bounds$negative_present, transform, ymax, "#263f73", cofactor = cofactor)
+    .reference_add_histogram_qc_gate(p, bounds$positive, bounds$positive_present, transform, ymax, "#d65238", cofactor = cofactor)
 }
 
 # Generates and saves PDF quality control (QC) plots for a processed sample.

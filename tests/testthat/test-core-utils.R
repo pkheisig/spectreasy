@@ -1621,6 +1621,23 @@ test_that("QC histogram ticks are drawn in transform space but labeled as raw va
     expect_false(any(labels %in% c("2", "4", "6", "8")))
 })
 
+test_that("automatic histogram transforms calibrate independently and preserve raw coordinates", {
+    narrow <- c(-100, -60, -20, 0, 200, 1000, 5000, 10000)
+    wide <- c(-1000, -600, -200, 0, 20000, 100000, 500000, 1000000)
+    narrow_cofactor <- spectreasy:::.reference_histogram_auto_cofactor(narrow)
+    wide_cofactor <- spectreasy:::.reference_histogram_auto_cofactor(wide)
+
+    expect_gt(wide_cofactor, narrow_cofactor)
+    transformed <- spectreasy:::.reference_histogram_transform_values(
+        wide, transform = "auto", cofactor = wide_cofactor
+    )
+    restored <- spectreasy:::.reference_histogram_inverse_values(
+        transformed, transform = "auto", cofactor = wide_cofactor
+    )
+    expect_equal(restored, wide, tolerance = 1e-6)
+    expect_lt(diff(range(transformed)), 20)
+})
+
 test_that("histogram gating cutoff detection extends right gate leftwards", {
     # 1. Test .compute_reference_histogram_gate density-based cutoff
     set.seed(42)

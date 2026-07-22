@@ -2,11 +2,64 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  adaptiveHistogramCofactor,
+  adaptiveHistogramTransform,
   clearHistogramGatesForFile,
+  dragHistogramGateInDisplaySpace,
   histogramDomainIncludingGates,
   padHistogramDomain,
   panHistogramDomain,
 } from './histogramGates.js'
+
+test('adaptive histogram transform calibrates independently for each control range', () => {
+  const narrow = [-100, -60, -20, 0, 200, 1000, 5000, 10000]
+  const wide = [-1000, -600, -200, 0, 20000, 100000, 500000, 1000000]
+
+  assert.ok(adaptiveHistogramCofactor(wide) > adaptiveHistogramCofactor(narrow))
+})
+
+test('adaptive histogram transform compresses wide controls and remains invertible', () => {
+  const values = [-1000, -500, 0, 5000, 200000, 1000000]
+  const transform = adaptiveHistogramTransform(values)
+  const transformed = values.map(transform.forward)
+
+  assert.ok(transformed.at(-1) - transformed[0] < 20)
+  values.forEach((value, index) => {
+    assert.ok(Math.abs(transform.inverse(transformed[index]) - value) < 1e-6)
+  })
+})
+
+test('adaptive histogram transform keeps a minority lower population visible', () => {
+  const lowerPopulation = Array.from({ length: 15 }, (_, index) => 1000 + index * 140)
+  const upperPopulation = Array.from({ length: 85 }, (_, index) => 500000 + index * 6000)
+  const transform = adaptiveHistogramTransform([...lowerPopulation, ...upperPopulation])
+
+  assert.ok(transform.forward(1000) > 1)
+  assert.ok(transform.forward(1000000) < 10)
+})
+
+test('moving a histogram gate preserves its visible width', () => {
+  const transform = adaptiveHistogramTransform([-1000, -500, 0, 5000, 200000, 1000000])
+  const gate = [{ x: -500, y: 0 }, { x: 5000, y: 0 }]
+  const initialDisplay = gate.map((vertex) => transform.forward(vertex.x))
+  const moved = dragHistogramGateInDisplaySpace(gate, 1.75, transform)
+  const movedDisplay = moved.map((vertex) => transform.forward(vertex.x))
+
+  assert.ok(Math.abs((movedDisplay[1] - movedDisplay[0]) - (initialDisplay[1] - initialDisplay[0])) < 1e-10)
+  assert.ok(Math.abs(movedDisplay[0] - initialDisplay[0] - 1.75) < 1e-10)
+  assert.ok(Math.abs(movedDisplay[1] - initialDisplay[1] - 1.75) < 1e-10)
+})
+
+test('resizing a histogram gate moves only the dragged border in display space', () => {
+  const transform = adaptiveHistogramTransform([-1000, -500, 0, 5000, 200000, 1000000])
+  const gate = [{ x: -500, y: 0 }, { x: 5000, y: 0 }]
+  const initialDisplay = gate.map((vertex) => transform.forward(vertex.x))
+  const resized = dragHistogramGateInDisplaySpace(gate, -0.8, transform, 1)
+  const resizedDisplay = resized.map((vertex) => transform.forward(vertex.x))
+
+  assert.equal(resized[0].x, gate[0].x)
+  assert.ok(Math.abs(resizedDisplay[1] - initialDisplay[1] + 0.8) < 1e-10)
+})
 
 test('histogram domain includes the complete negative and positive event tails', () => {
   const domain = histogramDomainIncludingGates(

@@ -154,9 +154,9 @@
     bins <- suppressWarnings(as.integer(bins_value))
     if (!is.finite(bins) || is.na(bins)) bins <- 100L
     bins <- min(max(bins, 5L), 500L)
-    transform_value <- if (is.null(settings$histogram_transform)) "asinh" else settings$histogram_transform
+    transform_value <- if (is.null(settings$histogram_transform)) "auto" else settings$histogram_transform
     transform <- tolower(trimws(as.character(transform_value)))
-    if (!transform %in% c("asinh", "linear", "log10", "biexponential")) transform <- "asinh"
+    if (!transform %in% c("auto", "asinh", "linear", "log10", "biexponential")) transform <- "auto"
     max_points_value <- if (is.null(settings$max_points)) 50000L else settings$max_points
     max_points <- suppressWarnings(as.integer(max_points_value))
     if (!is.finite(max_points) || is.na(max_points) || max_points <= 0L) max_points <- 50000L

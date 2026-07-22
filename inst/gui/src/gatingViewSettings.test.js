@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildViewSettingRows, parseViewSettings } from './gatingViewSettings.js'
 
-test('viewport settings round-trip with global scatter and file histogram scopes', () => {
+test('viewport settings round-trip only for global scatter plots', () => {
   const views = {
     cell: {
       global: { x: [10, 200], y: [30, 400] },
@@ -20,8 +20,16 @@ test('viewport settings round-trip with global scatter and file histogram scopes
 
   assert.deepEqual(parsed.cell, views.cell)
   assert.deepEqual(parsed.singlet, views.singlet)
-  assert.deepEqual(parsed.histogram, { 'one.fcs': { x: [-5, 55], y: null } })
-  assert.equal(rows.some((row) => row.filename === 'removed.fcs'), false)
+  assert.deepEqual(parsed.histogram, {})
+  assert.equal(rows.some((row) => row.x_channel === 'view_histogram'), false)
+})
+
+test('legacy saved histogram view rows are ignored', () => {
+  const parsed = parseViewSettings([
+    { gate_type: 'setting', scope: 'file', filename: 'one.fcs', x_channel: 'view_histogram', y_channel: 'x_domain', x: -5, y: 55 },
+  ])
+
+  assert.deepEqual(parsed.histogram, {})
 })
 
 test('legacy control-type scatter views migrate to one fixed global envelope', () => {

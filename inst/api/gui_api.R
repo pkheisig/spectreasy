@@ -390,7 +390,7 @@ function(project_path = "") {
     gui_with_project_context(project_path, {
     cache <- getOption("spectreasy.gating_state_cache")
     if (is.null(cache)) {
-        return(list(gates = list(), pointSize = 1.5, maxPoints = 50000, histogramBins = 100, histogramTransform = "asinh", viewSettings = list(), eventCountVersion = 2))
+        return(list(gates = list(), pointSize = 1.5, maxPoints = 50000, histogramBins = 100, histogramTransform = "auto", histogramTransformVersion = 2, viewSettings = list(), eventCountVersion = 2))
     }
     cache
     })
@@ -406,6 +406,7 @@ function(req) {
         maxPoints = body$maxPoints,
         histogramBins = body$histogramBins,
         histogramTransform = body$histogramTransform,
+        histogramTransformVersion = body$histogramTransformVersion,
         viewSettings = body$viewSettings,
         eventCountVersion = body$eventCountVersion
     )))

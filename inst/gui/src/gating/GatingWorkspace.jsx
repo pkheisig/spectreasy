@@ -557,6 +557,7 @@ export default function GatingWorkspace({ view }) {
           />
           {fileUsesHistogramGates(currentFile) ? (
             <GatePlot
+              key={`histogram:${selected}`}
               title="Histogram"
               subtitle=""
               events={singletsFilteredEvents}
@@ -609,8 +610,6 @@ export default function GatingWorkspace({ view }) {
               }}
               onDragEnd={handleDragEnd}
               xDomain={domains.peak}
-              viewDomain={viewSettings.histogram?.[selected] || null}
-              onViewDomainChange={(view) => updateViewSetting('histogram', selected, view)}
               statsText={[
                 positiveGate ? `Pos ${positiveSummary.count.toLocaleString()} (${positiveSummary.pct.toFixed(1)}%)` : null,
                 negativeGate ? `Neg ${negativeSummary.count.toLocaleString()} (${negativeSummary.pct.toFixed(1)}%)` : null,

@@ -24,6 +24,7 @@ import {
   GUI_MODULE,
   HISTOGRAM_BIN_MAX,
   HISTOGRAM_BIN_MIN,
+  HISTOGRAM_TRANSFORM_VERSION,
   HistogramSparkleIcon,
   MIN_CONFIRM_EVENTS,
   REQUIRED_GATE_CSV_COLUMNS,
@@ -161,7 +162,9 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
         if (typeof csvGates.pointSize === 'number') setPointSize(csvGates.pointSize)
         if (typeof csvGates.maxPoints === 'number') setMaxPoints(normalizeEventCount(csvGates.maxPoints))
         if (typeof csvGates.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(csvGates.histogramBins))
-        if (typeof csvGates.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(csvGates.histogramTransform))
+        if (typeof csvGates.histogramTransform === 'string' && csvGates.histogramTransformVersion === HISTOGRAM_TRANSFORM_VERSION) {
+          setHistogramTransform(normalizeHistogramTransform(csvGates.histogramTransform))
+        }
         if (hasViewSettings(csvGates.viewSettings)) {
           setViewSettings(csvGates.viewSettings)
         } else if (hasViewSettings(cacheData?.viewSettings)) {
@@ -176,7 +179,7 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
         if (typeof cacheData?.histogramBins === 'number') {
           setHistogramBins(normalizeHistogramBins(cacheData.histogramBins))
         }
-        if (typeof cacheData?.histogramTransform === 'string') {
+        if (typeof cacheData?.histogramTransform === 'string' && cacheData?.histogramTransformVersion === HISTOGRAM_TRANSFORM_VERSION) {
           setHistogramTransform(normalizeHistogramTransform(cacheData.histogramTransform))
         }
         const persisted = unboxGuiState(guiState?.config || {})
@@ -184,7 +187,9 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
         if (typeof persisted.maxPoints === 'number' && persisted.eventCountVersion === EVENT_COUNT_VERSION) setMaxPoints(normalizeEventCount(persisted.maxPoints))
         if (!embedded && typeof persisted.darkMode === 'boolean') setDarkMode(persisted.darkMode)
         if (typeof persisted.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(persisted.histogramBins))
-        if (typeof persisted.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(persisted.histogramTransform))
+        if (typeof persisted.histogramTransform === 'string' && persisted.histogramTransformVersion === HISTOGRAM_TRANSFORM_VERSION) {
+          setHistogramTransform(normalizeHistogramTransform(persisted.histogramTransform))
+        }
         if (typeof persisted.sidebarWidth === 'number' && Number.isFinite(persisted.sidebarWidth)) {
           setSidebarWidth(Math.min(380, Math.max(160, persisted.sidebarWidth)))
         }
@@ -207,7 +212,7 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           module: GUI_MODULE,
-          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, ...(!embedded ? { darkMode } : {}), axisSettings, axisSettingsVersion: AXIS_SETTINGS_VERSION, sidebarWidth, sidebarCollapsed }
+          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, histogramTransformVersion: HISTOGRAM_TRANSFORM_VERSION, ...(!embedded ? { darkMode } : {}), axisSettings, axisSettingsVersion: AXIS_SETTINGS_VERSION, sidebarWidth, sidebarCollapsed }
         })
       }).catch(() => {})
     }, 350)
@@ -221,7 +226,7 @@ function App({ embedded = false, cockpitTheme = null, projectPath = '', projectR
       gatingApiRequest('/gate_cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gates, pointSize, maxPoints: normalizeEventCount(maxPoints), histogramBins, histogramTransform, viewSettings, eventCountVersion: EVENT_COUNT_VERSION })
+        body: JSON.stringify({ gates, pointSize, maxPoints: normalizeEventCount(maxPoints), histogramBins, histogramTransform, histogramTransformVersion: HISTOGRAM_TRANSFORM_VERSION, viewSettings, eventCountVersion: EVENT_COUNT_VERSION })
       }).catch(() => {})
     }, 400)
     return () => clearTimeout(timer)

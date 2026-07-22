@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  dragHistogramGateInDisplaySpace,
   histogramDomainIncludingGates,
   padHistogramDomain,
   panHistogramDomain,
@@ -92,7 +93,14 @@ export default function GatePlot({
   const panMovedRef = useRef(false)
   const pendingViewRef = useRef(null)
 
-  const transformFns = useMemo(() => histogramTransformFns(histogramTransform), [histogramTransform])
+  const histogramValues = useMemo(
+    () => mode === 'histogram' ? events.map((event) => event[xField]) : [],
+    [events, mode, xField],
+  )
+  const transformFns = useMemo(
+    () => histogramTransformFns(histogramTransform, histogramValues),
+    [histogramTransform, histogramValues],
+  )
   const toPlotX = (value) => {
     const out = mode === 'histogram' ? transformFns.forward(value) : Number(value)
     return Number.isFinite(out) ? out : 0
@@ -103,7 +111,7 @@ export default function GatePlot({
   }
 
   const baseXDomain = useMemo(() => {
-    const eventValues = events.map((e) => e[xField])
+    const eventValues = histogramValues
     const rawDomain = xDomainProp || extent(eventValues)
     if (mode !== 'histogram') return rawDomain
     const visibleDomain = histogramDomainIncludingGates(
@@ -114,7 +122,7 @@ export default function GatePlot({
     const transformed = visibleDomain.map((value) => transformFns.forward(value)).filter(Number.isFinite)
     if (transformed.length < 2 || transformed[0] === transformed[1]) return [0, 1]
     return padHistogramDomain([Math.min(...transformed), Math.max(...transformed)])
-  }, [events, xField, xDomainProp, mode, transformFns, gate, secondaryGates])
+  }, [histogramValues, xDomainProp, mode, transformFns, gate, secondaryGates])
   const xDomain = zoomXDomain || baseXDomain
 
   const densityCurve = useMemo(() => {
@@ -487,6 +495,7 @@ export default function GatePlot({
     if (dragTarget === null || lastMousePos === null || !dragTarget.gate?.vertices?.length) return
     const dx = currentPt.x - lastMousePos.x
     const dy = currentPt.y - lastMousePos.y
+    const displayDx = currentPt.plotX - (lastMousePos.plotX ?? toPlotX(lastMousePos.x))
     setLastMousePos(currentPt)
 
     const dragMode = dragTarget.gate.mode
@@ -495,10 +504,13 @@ export default function GatePlot({
     const sourceVertices = dragPreviewVertices || dragTarget.gate.vertices
 
     if (dragKind === 'gate' || dragKind === 'separator') {
+      if (is1D) {
+        setDragPreviewVertices(
+          dragHistogramGateInDisplaySpace(sourceVertices, displayDx, transformFns),
+        )
+        return
+      }
       const newVertices = sourceVertices.map((v) => {
-        if (is1D) {
-          return { x: v.x + dx, y: 0 }
-        }
         return {
           x: v.x + dx,
           y: v.y + dy,
@@ -506,15 +518,16 @@ export default function GatePlot({
       })
       setDragPreviewVertices(newVertices)
     } else if (typeof dragKind === 'number') {
-      const newVertices = sourceVertices.map((v) => ({ ...v }))
-      let newPt
       if (is1D) {
-        newPt = { x: sourceVertices[dragKind].x + dx, y: 0 }
-      } else {
-        newPt = {
-          x: sourceVertices[dragKind].x + dx,
-          y: sourceVertices[dragKind].y + dy,
-        }
+        setDragPreviewVertices(
+          dragHistogramGateInDisplaySpace(sourceVertices, displayDx, transformFns, dragKind),
+        )
+        return
+      }
+      const newVertices = sourceVertices.map((v) => ({ ...v }))
+      const newPt = {
+        x: sourceVertices[dragKind].x + dx,
+        y: sourceVertices[dragKind].y + dy,
       }
       newVertices[dragKind] = newPt
       setDragPreviewVertices(newVertices)
