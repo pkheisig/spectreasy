@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { histogramDomainIncludingGates } from '../histogramGates.js'
+import {
+  histogramDomainIncludingGates,
+  padHistogramDomain,
+  panHistogramDomain,
+} from '../histogramGates.js'
 import { normalizePlotView } from '../gatingViewSettings.js'
 import GatePlotView from './GatePlotView.jsx'
 import {
@@ -109,7 +113,7 @@ export default function GatePlot({
     )
     const transformed = visibleDomain.map((value) => transformFns.forward(value)).filter(Number.isFinite)
     if (transformed.length < 2 || transformed[0] === transformed[1]) return [0, 1]
-    return [Math.min(...transformed), Math.max(...transformed)]
+    return padHistogramDomain([Math.min(...transformed), Math.max(...transformed)])
   }, [events, xField, xDomainProp, mode, transformFns, gate, secondaryGates])
   const xDomain = zoomXDomain || baseXDomain
 
@@ -433,6 +437,7 @@ export default function GatePlot({
       clientX: evt.clientX,
       clientY: evt.clientY,
       xDomain: [...xDomain],
+      rawXDomain: mode === 'histogram' ? xDomain.map((value) => fromPlotX(value)) : null,
       yDomain: [...yDomain],
     })
   }
@@ -449,15 +454,25 @@ export default function GatePlot({
       const dyPixels = evt.clientY - panTarget.clientY
       if (Math.abs(dxPixels) > 2 || Math.abs(dyPixels) > 2) panMovedRef.current = true
 
-      const startXSpan = panTarget.xDomain[1] - panTarget.xDomain[0]
-      const xShift = -(dxPixels / plotWidth) * startXSpan
       if (mode === 'histogram') {
-        const baseSpan = baseXDomain[1] - baseXDomain[0]
-        const extendedLimits = [baseXDomain[0] - baseSpan * 4, baseXDomain[1] + baseSpan * 4]
-        const nextX = shiftDomain(panTarget.xDomain, xShift, extendedLimits)
+        const baseRawDomain = baseXDomain.map((value) => fromPlotX(value))
+        const baseRawSpan = baseRawDomain[1] - baseRawDomain[0]
+        const extendedRawLimits = [
+          baseRawDomain[0] - baseRawSpan * 4,
+          baseRawDomain[1] + baseRawSpan * 4,
+        ]
+        const nextRawX = panHistogramDomain(
+          panTarget.rawXDomain,
+          dxPixels,
+          plotWidth,
+          extendedRawLimits,
+        )
+        const nextX = nextRawX.map((value) => toPlotX(value))
         setZoomXDomain(nextX)
         pendingViewRef.current = { x: nextX, y: null }
       } else {
+        const startXSpan = panTarget.xDomain[1] - panTarget.xDomain[0]
+        const xShift = -(dxPixels / plotWidth) * startXSpan
         const startYSpan = panTarget.yDomain[1] - panTarget.yDomain[0]
         const yShift = (dyPixels / plotHeight) * startYSpan
         const nextX = shiftDomain(panTarget.xDomain, xShift, baseXDomain)
@@ -472,7 +487,6 @@ export default function GatePlot({
     if (dragTarget === null || lastMousePos === null || !dragTarget.gate?.vertices?.length) return
     const dx = currentPt.x - lastMousePos.x
     const dy = currentPt.y - lastMousePos.y
-    const dPlotX = currentPt.plotX - (lastMousePos.plotX ?? toPlotX(lastMousePos.x))
     setLastMousePos(currentPt)
 
     const dragMode = dragTarget.gate.mode
@@ -483,8 +497,7 @@ export default function GatePlot({
     if (dragKind === 'gate' || dragKind === 'separator') {
       const newVertices = sourceVertices.map((v) => {
         if (is1D) {
-          const newPlotX = toPlotX(v.x) + dPlotX
-          return { x: fromPlotX(newPlotX), y: 0 }
+          return { x: v.x + dx, y: 0 }
         }
         return {
           x: v.x + dx,
@@ -496,8 +509,7 @@ export default function GatePlot({
       const newVertices = sourceVertices.map((v) => ({ ...v }))
       let newPt
       if (is1D) {
-        const newPlotX = toPlotX(sourceVertices[dragKind].x) + dPlotX
-        newPt = { x: fromPlotX(newPlotX), y: 0 }
+        newPt = { x: sourceVertices[dragKind].x + dx, y: 0 }
       } else {
         newPt = {
           x: sourceVertices[dragKind].x + dx,
