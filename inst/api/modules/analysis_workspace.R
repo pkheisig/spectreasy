@@ -804,15 +804,18 @@ gui_analysis_method_registry <- function() {
         research_only = FALSE, adapter_verified = TRUE,
         prerequisites = character(), outputs = character(), pipeline = id,
         user_prerequisites = character(), supports_3d = FALSE,
-        python_package = "", visible = TRUE
+        python_package = "", visible = TRUE,
+        additional_packages = character()
     ) {
         python_info <- if (nzchar(python_package)) python_packages[[python_package]] %||% list(available = FALSE, version = "") else NULL
+        r_packages <- unique(c(package, additional_packages))
+        r_packages <- r_packages[nzchar(r_packages)]
         package_available <- if (nzchar(python_package)) {
             isTRUE(python_info$available)
-        } else if (!nzchar(package)) {
+        } else if (!length(r_packages)) {
             TRUE
         } else {
-            requireNamespace(package, quietly = TRUE)
+            all(vapply(r_packages, requireNamespace, logical(1), quietly = TRUE))
         }
         available <- isTRUE(package_available) && isTRUE(adapter_verified) && !isTRUE(research_only)
         availability_state <- if (available) {
@@ -827,7 +830,7 @@ gui_analysis_method_registry <- function() {
             if (nzchar(python_package)) {
                 paste0("Install the maintained Spectreasy Python analysis runtime with ", python_package, ", then reopen this workspace.")
             } else {
-                paste0("Install the ", package, " package, restart Spectreasy, and reopen this workspace.")
+                paste0("Install the ", paste(r_packages, collapse = " and "), " package", if (length(r_packages) > 1L) "s" else "", ", restart Spectreasy, and reopen this workspace.")
             }
         } else if (identical(availability_state, "unavailable")) {
             "This method is not available in this build. Choose an enabled method."
@@ -875,7 +878,7 @@ gui_analysis_method_registry <- function() {
         method("flowsom", "FlowSOM", "clustering", "FlowSOM", "Van Gassen et al. (2015), Cytometry A", "10.1002/cyto.a.22625", outputs = "cluster_labels"),
         method("phenograph", "PhenoGraph", "clustering", "Rphenograph", "Levine et al. (2015), Cell", "10.1016/j.cell.2015.05.047", outputs = "cluster_labels"),
         method("dpt", "Diffusion pseudotime", "trajectory", "destiny", "Haghverdi et al. (2016), Nature Methods", "10.1038/nmeth.3971", "Select a trajectory root event in the gating workspace", prerequisites = "diffusion-map", user_prerequisites = "trajectory-root", outputs = c("embedding", "pseudotime"), pipeline = c("diffusion-map", "dpt"), supports_3d = TRUE),
-        method("slingshot", "Slingshot", "trajectory", "slingshot", "Street et al. (2018), BMC Genomics", "10.1186/s12864-018-4772-0", "Current Bioconductor slingshot", prerequisites = c("reduction", "clustering"), user_prerequisites = "trajectory-root", outputs = c("lineages", "pseudotime"), pipeline = c("reduction", "clustering", "slingshot")),
+        method("slingshot", "Slingshot", "trajectory", "slingshot", "Street et al. (2018), BMC Genomics", "10.1186/s12864-018-4772-0", "Current Bioconductor slingshot with DelayedMatrixStats", prerequisites = c("reduction", "clustering"), user_prerequisites = "trajectory-root", outputs = c("lineages", "pseudotime"), pipeline = c("reduction", "clustering", "slingshot"), additional_packages = "DelayedMatrixStats"),
         method("tscan", "TSCAN", "trajectory", "TSCAN", "Ji and Ji (2016), Nucleic Acids Research", "10.1093/nar/gkw430", "Current Bioconductor TSCAN", prerequisites = c("reduction", "clustering"), user_prerequisites = "trajectory-root", outputs = c("minimum_spanning_tree", "pseudotime"), pipeline = c("reduction", "clustering", "tscan")),
         method("palantir", "Palantir", "trajectory", "", "Setty et al. (2019), Nature Biotechnology", "10.1038/s41587-019-0068-4", "Python palantir 1.4.5 or newer", prerequisites = "diffusion-map", user_prerequisites = "trajectory-root", outputs = c("pseudotime", "branch_probabilities"), supports_3d = TRUE, python_package = "palantir"),
         method("paga-dpt", "PAGA + DPT", "trajectory", "", "Wolf et al. (2019), Genome Biology", "10.1186/s13059-019-1663-x", "Python scanpy 1.12.2 or newer", prerequisites = c("neighbor_graph", "clustering"), user_prerequisites = "trajectory-root", outputs = c("graph", "pseudotime"), supports_3d = TRUE, python_package = "scanpy"),

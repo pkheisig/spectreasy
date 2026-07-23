@@ -74,7 +74,9 @@ test_that("the exported method registry exposes every executable parameter schem
 test_that("the full analysis installer has a complete platform-neutral dependency plan", {
     plan <- spectreasy:::.analysis_dependency_plan()
     expect_setequal(plan$cran, c("Rtsne", "uwot"))
-    expect_setequal(plan$bioconductor, c("destiny", "FlowSOM", "slingshot", "TSCAN"))
+    expect_setequal(plan$bioconductor, c(
+        "DelayedMatrixStats", "destiny", "FlowSOM", "slingshot", "TSCAN"
+    ))
     expect_identical(
         unname(plan$github[["Rphenograph"]]),
         "JinmiaoChenLab/Rphenograph@0298487f0ee13aac55eb77d19992f6bd878ba2fc"

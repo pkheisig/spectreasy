@@ -37,6 +37,7 @@ SystemRequirements: GNU make
 Suggests:
     BiocManager,
     chromote,
+    DelayedMatrixStats,
     destiny,
     FNN,
     FlowSOM,

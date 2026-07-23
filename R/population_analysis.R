@@ -93,7 +93,7 @@ install_analysis_runtime <- function(
 .analysis_dependency_plan <- function() {
     list(
         cran = c("Rtsne", "uwot"),
-        bioconductor = c("destiny", "FlowSOM", "slingshot", "TSCAN"),
+        bioconductor = c("DelayedMatrixStats", "destiny", "FlowSOM", "slingshot", "TSCAN"),
         github = c(Rphenograph = "JinmiaoChenLab/Rphenograph@0298487f0ee13aac55eb77d19992f6bd878ba2fc")
     )
 }
