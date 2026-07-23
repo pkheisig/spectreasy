@@ -10,6 +10,9 @@
 ^inst/gui/yarn-error\.log.*$
 ^inst/gui/pnpm-debug\.log.*$
 ^inst/gui/\.DS_Store$
+^inst/python/__pycache__($|/)
+^tests/python/__pycache__($|/)
+^.*\.pyc$
 ^\.DS_Store$
 ^\.git$
 ^\.codex_tmp$

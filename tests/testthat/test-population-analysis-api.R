@@ -71,6 +71,17 @@ test_that("the exported method registry exposes every executable parameter schem
     }, logical(1))))
 })
 
+test_that("the full analysis installer has a complete platform-neutral dependency plan", {
+    plan <- spectreasy:::.analysis_dependency_plan()
+    expect_setequal(plan$cran, c("Rtsne", "uwot"))
+    expect_setequal(plan$bioconductor, c("destiny", "FlowSOM", "slingshot", "TSCAN"))
+    expect_identical(
+        unname(plan$github[["Rphenograph"]]),
+        "JinmiaoChenLab/Rphenograph@0298487f0ee13aac55eb77d19992f6bd878ba2fc"
+    )
+    expect_true(is.function(install_analysis_dependencies))
+})
+
 test_that("exported R pipelines use advanced settings and reuse fitted objects", {
     fixture <- population_code_fixture()
     on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)

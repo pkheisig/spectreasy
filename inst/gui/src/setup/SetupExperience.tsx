@@ -6,7 +6,7 @@ import {
   PackageOpen,
   TerminalSquare,
 } from 'lucide-react'
-import { installPackageCommand, launchCommand } from './installCommands'
+import { installAnalysisCommand, installPackageCommand, launchCommand } from './installCommands'
 import './setup.css'
 
 function CopyButton({ value, label }: { value: string; label: string }) {
@@ -97,9 +97,25 @@ export function SetupExperience() {
             </div>
           </section>
 
-          <section className="setup-panel setup-r-panel">
+          <section className="setup-panel setup-analysis-panel">
             <div className="setup-card-head">
               <StepNumber>3</StepNumber>
+              <div>
+                <span className="setup-card-state">Using population analysis?</span>
+                <h2>Install analysis methods</h2>
+              </div>
+              <PackageOpen size={20} aria-hidden="true" />
+            </div>
+            <p>Installs the optional R methods and a pinned private Python environment. It never changes system Python; a Python 3.11 or newer <code>python3</code> command is required for the Python-backed methods.</p>
+            <div className="setup-code setup-code-single">
+              <code>{installAnalysisCommand}</code>
+              <CopyButton value={installAnalysisCommand} label="Copy command" />
+            </div>
+          </section>
+
+          <section className="setup-panel setup-r-panel">
+            <div className="setup-card-head">
+              <StepNumber>4</StepNumber>
               <div>
                 <span className="setup-card-state">No R or R below 4.5?</span>
                 <h2>Install R 4.5.0 or newer</h2>

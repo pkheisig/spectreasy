@@ -62,7 +62,7 @@ without pretending that gate geometry is embedded in the file.
 Each gate is a project-persistent node with:
 
 - stable ID, name, parent ID, and source scope;
-- rectangle, polygon, or one-dimensional range geometry;
+- rectangle, ellipse, polygon, or one-dimensional range geometry;
 - x/y channels and per-axis transform;
 - global or per-file scope;
 - optional semantic role (`positive`, `negative`, `root`, `terminal`);
@@ -82,6 +82,10 @@ node requires explicit handling of descendants.
 - Support marker/density/population colouring, backgating overlays, adjustable
   point size/opacity, and linear/logicle/asinh display transforms.
 - Plot state belongs to the workspace, not to an FCS export.
+- Complete workspace JSON import/export carries the hierarchy, gates, roles,
+  plots, transforms, annotations, and trajectory root between projects.
+- Undo/redo records up to 100 complete persisted workspace transitions.
+- Long channel selectors filter by detector name or marker label.
 
 ### Staining index
 

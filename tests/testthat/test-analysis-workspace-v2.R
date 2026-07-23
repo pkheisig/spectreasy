@@ -220,6 +220,70 @@ test_that("analysis v2 workspace records where a trajectory root was selected", 
     expect_null(workspace$root_source_file)
 })
 
+test_that("analysis workspace import validates hierarchy and round-trips complete state", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    workspace <- api$gui_analysis_default_workspace()
+    workspace$seed <- 77L
+    workspace$annotations <- list(list(id = "identity-1", label = "T cell"))
+    workspace$plots[[1]]$color_palette <- "sunset"
+    workspace$populations <- c(workspace$populations, list(list(
+        id = "gate-1", name = "Cells", parent_id = "root", type = "ellipse",
+        role = "positive", source_file = NULL, x = "FSC-A", y = "SSC-A",
+        geometry = list(center_x = 60, center_y = 10, radius_x = 30, radius_y = 6)
+    )))
+
+    saved <- api$gui_analysis_write_workspace(fixture$project, workspace)
+    restored <- api$gui_analysis_read_workspace(fixture$project)
+    expect_identical(restored$seed, 77L)
+    expect_identical(restored$plots[[1]]$color_palette, "sunset")
+    expect_identical(restored$annotations[[1]]$label, "T cell")
+    expect_equal(restored$populations[[2]]$geometry, saved$populations[[2]]$geometry)
+
+    invalid <- workspace
+    invalid$populations <- invalid$populations[-1]
+    expect_error(api$gui_analysis_write_workspace(fixture$project, invalid), "missing its root")
+})
+
+test_that("analysis export folder route uses the native picker and rejects paths outside the project", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    endpoints <- unname(unlist(plumber::plumb(api_path)$endpoints, recursive = FALSE))
+    match <- which(vapply(endpoints, function(endpoint) {
+        identical(endpoint$path, "/analysis/export-folder") && "POST" %in% endpoint$verbs
+    }, logical(1)))
+    route <- endpoints[[match[1]]]$getFunc()
+    route_env <- environment(route)
+    original_picker <- get("gui_pick_project_directory", envir = route_env)
+    on.exit(assign("gui_pick_project_directory", original_picker, envir = route_env), add = TRUE)
+    project <- tempfile("analysis_export_picker_")
+    output <- file.path(project, "spectreasy_outputs", "analysis", "exports")
+    dir.create(output, recursive = TRUE)
+    on.exit(unlink(project, recursive = TRUE, force = TRUE), add = TRUE)
+    request <- new.env(parent = emptyenv())
+    request$postBody <- jsonlite::toJSON(list(
+        projectPath = project,
+        current = "spectreasy_outputs/analysis/exports"
+    ), auto_unbox = TRUE)
+    observed <- list()
+    assign("gui_pick_project_directory", function(initial_dir, allow_create = FALSE, prompt = NULL) {
+        observed <<- list(initial_dir = initial_dir, allow_create = allow_create, prompt = prompt)
+        output
+    }, envir = route_env)
+    response <- route(request)
+    expect_true(response$success)
+    expect_false(response$cancelled)
+    expect_identical(response$path, "spectreasy_outputs/analysis/exports")
+    expect_true(observed$allow_create)
+    expect_match(observed$prompt, "analysis export")
+
+    assign("gui_pick_project_directory", function(...) tempdir(), envir = route_env)
+    rejected <- route(request)
+    expect_false(rejected$success)
+    expect_match(rejected$error, "outside the active project")
+})
+
 test_that("analysis v2 persists hierarchical gates and calculates robust staining index", {
     api <- analysis_v2_api_env()
     fixture <- analysis_v2_fixture()

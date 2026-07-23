@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Boxes,
   Check,
@@ -9,7 +9,10 @@ import {
   CircleHelp,
   Crosshair,
   Download,
+  FileDown,
+  FileUp,
   FlaskConical,
+  FolderOpen,
   MousePointer2,
   Pentagon,
   Plus,
@@ -18,6 +21,8 @@ import {
   SlidersHorizontal,
   SquareDashed,
   Trash2,
+  Undo2,
+  Redo2,
   X,
 } from 'lucide-react'
 import { analysisRequest } from './api'
@@ -148,6 +153,12 @@ function normalizeWorkspace(value: AnalysisWorkspaceState): AnalysisWorkspaceSta
     })),
     annotations: asArray(value.annotations),
   }
+}
+
+function cloneWorkspace(value: AnalysisWorkspaceState): AnalysisWorkspaceState {
+  return typeof structuredClone === 'function'
+    ? structuredClone(value)
+    : JSON.parse(JSON.stringify(value)) as AnalysisWorkspaceState
 }
 
 function normalizeMethod(method: AnalysisMethod): AnalysisMethod {
@@ -357,6 +368,12 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
   const [inspectorOpen, setInspectorOpen] = useState(
     () => typeof window === 'undefined' || !window.matchMedia('(max-width: 850px)').matches,
   )
+  const undoStack = useRef<AnalysisWorkspaceState[]>([])
+  const redoStack = useRef<AnalysisWorkspaceState[]>([])
+  const importWorkspaceInput = useRef<HTMLInputElement>(null)
+  const [, setHistoryRevision] = useState(0)
+
+  const bumpHistory = useCallback(() => setHistoryRevision((revision) => revision + 1), [])
 
   useEffect(() => {
     const root = document.documentElement
@@ -396,9 +413,55 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
   }, [])
 
   const updateWorkspace = useCallback((update: (current: AnalysisWorkspaceState) => AnalysisWorkspaceState) => {
-    setWorkspace((current) => current ? update(current) : current)
-    setSaveState('saving')
-  }, [])
+    setWorkspace((current) => {
+      if (!current) return current
+      const next = update(current)
+      if (next === current) return current
+      undoStack.current.push(cloneWorkspace(current))
+      if (undoStack.current.length > 100) undoStack.current.shift()
+      redoStack.current = []
+      bumpHistory()
+      setSaveState('saving')
+      return next
+    })
+  }, [bumpHistory])
+
+  const replaceWorkspace = useCallback((next: AnalysisWorkspaceState, recordHistory = true) => {
+    setWorkspace((current) => {
+      if (recordHistory && current) {
+        undoStack.current.push(cloneWorkspace(current))
+        if (undoStack.current.length > 100) undoStack.current.shift()
+      } else {
+        undoStack.current = []
+      }
+      redoStack.current = []
+      bumpHistory()
+      setSaveState('saving')
+      return cloneWorkspace(next)
+    })
+  }, [bumpHistory])
+
+  const undoWorkspace = useCallback(() => {
+    setWorkspace((current) => {
+      const previous = undoStack.current.pop()
+      if (!current || !previous) return current
+      redoStack.current.push(cloneWorkspace(current))
+      bumpHistory()
+      setSaveState('saving')
+      return previous
+    })
+  }, [bumpHistory])
+
+  const redoWorkspace = useCallback(() => {
+    setWorkspace((current) => {
+      const next = redoStack.current.pop()
+      if (!current || !next) return current
+      undoStack.current.push(cloneWorkspace(current))
+      bumpHistory()
+      setSaveState('saving')
+      return next
+    })
+  }, [bumpHistory])
 
   useEffect(() => {
     let cancelled = false
@@ -436,6 +499,9 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
       setStainingMarker(preferredMarkers(selected)[0] ?? selected?.channels[0] ?? '')
       setAnalysisFiles(selected?.path ? [selected.path] : [])
       setWorkspace(loaded)
+      undoStack.current = []
+      redoStack.current = []
+      bumpHistory()
       setSelectedPlotId(loaded.plots[0]?.id ?? 'plot-1')
       setReady(true)
       setStatus(loadedSources.length ? 'Ready' : 'No FCS sources found')
@@ -443,7 +509,26 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
       if (!cancelled) setStatus(reason instanceof Error ? reason.message : String(reason))
     })
     return () => { cancelled = true }
-  }, [projectPath])
+  }, [bumpHistory, projectPath])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return
+      const modifier = event.metaKey || event.ctrlKey
+      if (!modifier) return
+      if (event.key.toLocaleLowerCase() === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) redoWorkspace()
+        else undoWorkspace()
+      } else if (event.ctrlKey && event.key.toLocaleLowerCase() === 'y') {
+        event.preventDefault()
+        redoWorkspace()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [redoWorkspace, undoWorkspace])
 
   useEffect(() => {
     if (!ready || !workspace || saveState !== 'saving') return
@@ -781,6 +866,64 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
     }
   }
 
+  async function chooseExportFolder() {
+    setActionMessage('Opening folder picker…')
+    try {
+      const response = await analysisRequest<{ success: boolean; cancelled: boolean; path?: string }>('/analysis/export-folder', projectPath, {
+        method: 'POST',
+        body: JSON.stringify({ current: exportFolder }),
+      })
+      if (response.cancelled) {
+        setActionMessage('Folder selection cancelled.')
+        return
+      }
+      if (response.path) setExportFolder(response.path)
+      setActionMessage(response.path ? `Export folder: ${response.path}` : '')
+    } catch (reason) {
+      setActionMessage(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
+
+  function downloadWorkspace() {
+    if (!workspace) return
+    const envelope = {
+      format: 'spectreasy-analysis-workspace',
+      schema_version: 1,
+      exported_at: new Date().toISOString(),
+      workspace,
+    }
+    const blob = new Blob([`${JSON.stringify(envelope, null, 2)}\n`], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `spectreasy-workspace-${new Date().toISOString().slice(0, 10)}.json`
+    anchor.click()
+    URL.revokeObjectURL(url)
+    setActionMessage('Workspace JSON exported.')
+  }
+
+  async function importWorkspaceFile(file: File) {
+    try {
+      const parsed = JSON.parse(await file.text()) as {
+        format?: string
+        workspace?: AnalysisWorkspaceState
+      } | AnalysisWorkspaceState
+      const candidate = 'workspace' in parsed && parsed.workspace ? parsed.workspace : parsed as AnalysisWorkspaceState
+      const response = await analysisRequest<{ success: boolean; workspace: AnalysisWorkspaceState }>('/analysis/workspace', projectPath, {
+        method: 'POST',
+        body: JSON.stringify({ workspace: candidate }),
+      })
+      const imported = normalizeWorkspace(response.workspace)
+      replaceWorkspace(imported)
+      setSelectedPlotId(imported.plots[0]?.id ?? '')
+      setActionMessage(`Imported ${imported.populations.length} populations and ${imported.plots.length} plots. Undo is available.`)
+    } catch (reason) {
+      setActionMessage(`Workspace import failed: ${reason instanceof Error ? reason.message : String(reason)}`)
+    } finally {
+      if (importWorkspaceInput.current) importWorkspaceInput.current.value = ''
+    }
+  }
+
   async function runMethod() {
     if (!workspace || !selectedFile || !methodCanRun) return
     setMethodRunning(true)
@@ -900,6 +1043,9 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
 
         <main className="analysis-main">
           <div className="analysis-toolstrip" role="toolbar" aria-label="Gating tools">
+            <button type="button" disabled={undoStack.current.length === 0} onClick={undoWorkspace} title="Undo workspace change (Ctrl/Cmd+Z)"><Undo2 size={15} /> Undo</button>
+            <button type="button" disabled={redoStack.current.length === 0} onClick={redoWorkspace} title="Redo workspace change (Ctrl/Cmd+Shift+Z)"><Redo2 size={15} /> Redo</button>
+            <span className="analysis-tool-divider" />
             <button type="button" className={tool === 'select' ? 'is-active' : ''} onClick={() => setTool('select')} title="Select"><MousePointer2 size={15} /> Select</button>
             <button type="button" className={tool === 'rectangle' ? 'is-active' : ''} onClick={() => setTool('rectangle')} title="Rectangle gate"><SquareDashed size={15} /> Rectangle</button>
             <button type="button" className={tool === 'ellipse' ? 'is-active' : ''} onClick={() => setTool('ellipse')} title="Ellipse gate"><CircleDashed size={15} /> Ellipse</button>
@@ -1119,10 +1265,27 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
                 <label>Format<select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}><option value="fcs">FCS</option><option value="csv">CSV</option><option value="both">FCS + CSV</option></select></label>
                 <label>Maximum events<input type="number" min="0" value={exportCount} onChange={(event) => setExportCount(Math.max(0, Number(event.target.value)))} /><small>0 exports every event; otherwise seeded random sampling without replacement.</small></label>
                 <label>Master seed<input type="number" min="1" value={workspace.seed} onChange={(event) => updateWorkspace((current) => ({ ...current, seed: Math.max(1, Number(event.target.value)) }))} /></label>
-                <label>Output folder<input value={exportFolder} onChange={(event) => setExportFolder(event.target.value)} /></label>
+                <label>Output folder<span className="analysis-folder-field"><input value={exportFolder} onChange={(event) => setExportFolder(event.target.value)} /><button type="button" onClick={() => void chooseExportFolder()} aria-label="Choose export folder"><FolderOpen size={14} /></button></span><small>The folder must be inside the active project.</small></label>
                 <label className="analysis-check"><input type="checkbox" checked={exportAllFiles} onChange={(event) => setExportAllFiles(event.target.checked)} /><span>Export this population from every file in the selected source</span></label>
                 <button type="button" className="analysis-primary" onClick={() => void exportPopulation()}><Download size={14} /> Export population</button>
                 <button type="button" className="analysis-secondary" onClick={() => void exportStatistics()}><Download size={14} /> Export hierarchy statistics CSV</button>
+              </section>
+              <section className="analysis-inspector-section">
+                <h3>Workspace</h3>
+                <p>Move the complete hierarchy, plots, gates, roles, transforms, annotations and trajectory root between projects.</p>
+                <button type="button" className="analysis-secondary" onClick={downloadWorkspace}><FileDown size={14} /> Export workspace JSON</button>
+                <button type="button" className="analysis-secondary" onClick={() => importWorkspaceInput.current?.click()}><FileUp size={14} /> Import workspace JSON</button>
+                <input
+                  ref={importWorkspaceInput}
+                  className="analysis-hidden-input"
+                  type="file"
+                  accept=".json,application/json"
+                  aria-label="Import analysis workspace"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (file) void importWorkspaceFile(file)
+                  }}
+                />
               </section>
               <section className="analysis-inspector-section analysis-provenance"><h3>Recorded provenance</h3><p>Source file, source event row, population path, seed, event count, software writer and SHA-256 checksum.</p></section>
             </div>

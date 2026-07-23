@@ -42,8 +42,17 @@ with sync_playwright() as playwright:
     page.get_by_role("button", name="Analyze population", exact=True).click()
     dialog = page.locator(".analysis-method-dialog")
     dialog.wait_for()
-    assert dialog.bounding_box()["width"] <= 820
+    dialog_box = dialog.bounding_box()
+    assert dialog_box is not None
+    assert dialog_box["x"] == 0 and dialog_box["y"] == 0
+    assert dialog_box["width"] == 820 and dialog_box["height"] == 900
     cluster = dialog.locator(".analysis-pipeline-stage").nth(0)
+    markers = dialog.locator(".analysis-method-markers")
+    catalog = dialog.locator(".analysis-method-catalog")
+    marker_box = markers.bounding_box()
+    catalog_box = catalog.bounding_box()
+    assert marker_box is not None and catalog_box is not None
+    assert marker_box["y"] + marker_box["height"] <= catalog_box["y"] + 1
     cluster.get_by_role("checkbox", name="Skip").check()
     dialog.get_by_label("Dimensional-reduction method").select_option("pca")
     dialog.get_by_role("button", name="Run pipeline").click()

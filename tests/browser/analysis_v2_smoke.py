@@ -47,14 +47,37 @@ with sync_playwright() as playwright:
     x_axis.click()
     axis_menu = plot_card.get_by_role("listbox", name="Choose X axis")
     axis_menu.wait_for()
+    axis_search = axis_menu.get_by_label("Search X dimensions")
+    axis_search.fill("CD3")
+    assert axis_menu.get_by_role("option").count() == 1
     capture(page, 9)
     axis_menu.get_by_role("option", name="CD3 · CD3-A", exact=True).click()
     assert "CD3" in x_axis.get_attribute("aria-label")
     plot_card.get_by_role("button", name="Delete plot", exact=True).click()
     page.get_by_text("No plots", exact=True).wait_for()
     assert page.locator(".analysis-plot-card").count() == 0
-    page.get_by_role("button", name="Add plot", exact=True).first.click()
+    undo = page.get_by_role("button", name="Undo", exact=True)
+    redo = page.get_by_role("button", name="Redo", exact=True)
+    undo.click()
     assert page.locator(".analysis-plot-card").count() == 1
+    redo.click()
+    page.get_by_text("No plots", exact=True).wait_for()
+    undo.click()
+    assert page.locator(".analysis-plot-card").count() == 1
+
+    inspector = page.locator(".analysis-inspector")
+    inspector.locator(":scope > nav").get_by_role("button", name="Export", exact=True).click()
+    with page.expect_download() as workspace_download:
+        page.get_by_role("button", name="Export workspace JSON", exact=True).click()
+    workspace_path = workspace_download.value.path()
+    page.get_by_role("button", name="Add plot", exact=True).first.click()
+    assert page.locator(".analysis-plot-card").count() == 2
+    inspector.locator(":scope > nav").get_by_role("button", name="Export", exact=True).click()
+    inspector.locator('input[type="file"][aria-label="Import analysis workspace"]').set_input_files(workspace_path)
+    page.get_by_text("Imported", exact=False).wait_for()
+    assert page.locator(".analysis-plot-card").count() == 1
+    assert page.get_by_text("Undo is available.", exact=False).is_visible()
+
     analyze_button.click()
     dialog = page.locator(".analysis-method-dialog")
     dialog.wait_for()

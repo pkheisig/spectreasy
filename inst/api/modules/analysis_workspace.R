@@ -700,6 +700,7 @@ gui_analysis_method_parameter_definitions <- function() {
             boolean("density_normalization", "Density normalization", TRUE)
         ),
         slingshot = list(
+            select("distance", "Cluster distance", "simple", c(simple = "Euclidean centers (robust)", slingshot = "Slingshot covariance-aware")),
             number("shrink", "Shared-lineage shrinkage", 1, 0, 1, 0.05),
             select("extend", "Curve extension", "y", c(y = "Data range", n = "None", pc1 = "Terminal PC1")),
             boolean("reweight", "Reweight shared cells", TRUE),
@@ -939,7 +940,10 @@ gui_analysis_result_plot <- function(result, method, output_dir, root) {
             x = "Dimension 1", y = "Dimension 2"
         ) +
         ggplot2::theme_minimal(base_size = 10) +
-        ggplot2::theme(panel.grid.minor = ggplot2::element_blank(), plot.title = ggplot2::element_text(face = "bold"))
+        ggplot2::theme(
+            panel.grid = ggplot2::element_blank(),
+            plot.title = ggplot2::element_text(face = "bold")
+        )
     if (is.null(colour_name)) plot <- plot + ggplot2::geom_point(colour = "#247f9e", size = 0.45, alpha = 0.72) else plot <- plot + ggplot2::geom_point(size = 0.45, alpha = 0.72)
     if (identical(colour_name, "cluster")) plot <- plot + ggplot2::labs(colour = "Cluster")
     if (identical(colour_name, "pseudotime")) plot <- plot + ggplot2::labs(colour = "Pseudotime")
@@ -1317,6 +1321,7 @@ gui_analysis_fit_trajectory <- function(
                     coordinates,
                     clusterLabels = clusters,
                     start.clus = start_cluster,
+                    dist.method = parameters$distance,
                     shrink = parameters$shrink,
                     extend = parameters$extend,
                     reweight = isTRUE(parameters$reweight),

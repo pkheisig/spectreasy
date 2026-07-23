@@ -1,4 +1,5 @@
 export const launchCommand = 'spectreasy::spectreasy_gui()'
+export const installAnalysisCommand = 'spectreasy::install_analysis_dependencies()'
 
 export const installPackageCommand = `setup_packages <- c(
   "remotes",

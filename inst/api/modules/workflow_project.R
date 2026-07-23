@@ -489,13 +489,24 @@ gui_set_project_context <- function(project_path, reset_gate_cache = TRUE) {
     project_path
 }
 
-gui_pick_project_directory <- function(initial_dir = path.expand("~"), allow_create = FALSE) {
+gui_pick_project_directory <- function(initial_dir = path.expand("~"), allow_create = FALSE, prompt = NULL) {
     initial_dir <- normalizePath(initial_dir, mustWork = FALSE)
-    prompt <- if (isTRUE(allow_create)) "Create a Spectreasy project folder" else "Open a Spectreasy project folder"
+    if (is.null(prompt) || !nzchar(trimws(as.character(prompt)[1]))) {
+        prompt <- if (isTRUE(allow_create)) "Create a Spectreasy project folder" else "Open a Spectreasy project folder"
+    } else {
+        prompt <- trimws(as.character(prompt)[1])
+    }
     if (identical(Sys.info()[["sysname"]], "Darwin")) {
-        script <- paste0(
-            "POSIX path of (choose folder with prompt ", gate_applescript_quote(prompt), " default location POSIX file ",
-            gate_applescript_quote(initial_dir), ")"
+        script <- paste(
+            "tell application \"Finder\"",
+            "activate",
+            paste0(
+                "set chosenFolder to choose folder with prompt ", gate_applescript_quote(prompt),
+                " default location POSIX file ", gate_applescript_quote(initial_dir)
+            ),
+            "end tell",
+            "POSIX path of chosenFolder",
+            sep = "\n"
         )
         result <- suppressWarnings(system2("osascript", c("-e", shQuote(script)), stdout = TRUE, stderr = FALSE))
         if (!is.null(attr(result, "status")) || length(result) == 0L) return(NULL)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, ChevronDown, Copy, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, Copy, Search, Trash2 } from 'lucide-react'
 import { analysisRequest } from './api'
 import { AnalysisPlot } from './AnalysisPlot'
 import type { PlotTool } from './AnalysisPlot'
@@ -68,16 +68,28 @@ function AxisSelector({
   onChange: (channel: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const hostRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const selected = channels.find((channel) => channel.channel === value) ?? { channel: value, marker: '' }
+  const filteredChannels = channels.filter((channel) => (
+    channelLabel(channel).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
+  ))
 
   useEffect(() => {
     if (!open) return
     const close = (event: PointerEvent) => {
-      if (!hostRef.current?.contains(event.target as Node)) setOpen(false)
+      if (!hostRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+        setQuery('')
+      }
     }
     document.addEventListener('pointerdown', close)
     return () => document.removeEventListener('pointerdown', close)
+  }, [open])
+
+  useEffect(() => {
+    if (open) window.requestAnimationFrame(() => searchRef.current?.focus())
   }, [open])
 
   return (
@@ -88,14 +100,32 @@ function AxisSelector({
         aria-expanded={open}
         onClick={(event) => {
           event.stopPropagation()
-          setOpen((current) => !current)
+          if (open) setQuery('')
+          setOpen(!open)
         }}
       >
         <span>{channelLabel(selected)}</span><ChevronDown size={11} />
       </button>
       {open ? (
         <div className="analysis-axis-menu" role="listbox" aria-label={`Choose ${axis.toUpperCase()} axis`}>
-          {channels.map((channel) => (
+          <label className="analysis-axis-search">
+            <Search size={12} />
+            <input
+              ref={searchRef}
+              aria-label={`Search ${axis.toUpperCase()} dimensions`}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setOpen(false)
+                  setQuery('')
+                }
+              }}
+              placeholder="Search dimensions"
+            />
+          </label>
+          {filteredChannels.map((channel) => (
             <button
               type="button"
               role="option"
@@ -107,11 +137,13 @@ function AxisSelector({
                 event.stopPropagation()
                 onChange(channel.channel)
                 setOpen(false)
+                setQuery('')
               }}
             >
               {channelLabel(channel)}
             </button>
           ))}
+          {!filteredChannels.length ? <span className="analysis-axis-empty">No matching dimensions</span> : null}
         </div>
       ) : null}
     </div>

@@ -50,6 +50,17 @@ install_analysis_runtime <- function(
 ) {
     python <- .analysis_scalar_character(python, "python")
     if (!file.exists(python)) stop("Bootstrap Python was not found: ", python, call. = FALSE)
+    version_output <- suppressWarnings(system2(
+        python,
+        c("-c", shQuote("import sys; print('.'.join(map(str, sys.version_info[:3])))")),
+        stdout = TRUE,
+        stderr = TRUE
+    ))
+    version_status <- attr(version_output, "status") %||% 0L
+    python_version <- tryCatch(package_version(trimws(version_output[[1]])), error = function(e) NULL)
+    if (!identical(as.integer(version_status), 0L) || is.null(python_version) || python_version < package_version("3.11")) {
+        stop("Population analysis requires Python 3.11 or newer; selected interpreter: ", python, call. = FALSE)
+    }
     if (is.null(path)) {
         cache_root <- if (identical(Sys.info()[["sysname"]], "Darwin")) {
             file.path(path.expand("~/Library/Caches"), "spectreasy")
@@ -77,6 +88,84 @@ install_analysis_runtime <- function(
         stop("Managed runtime installed, but adapters failed validation: ", paste(missing, collapse = ", "), call. = FALSE)
     }
     status
+}
+
+.analysis_dependency_plan <- function() {
+    list(
+        cran = c("Rtsne", "uwot"),
+        bioconductor = c("destiny", "FlowSOM", "slingshot", "TSCAN"),
+        github = c(Rphenograph = "JinmiaoChenLab/Rphenograph@0298487f0ee13aac55eb77d19992f6bd878ba2fc")
+    )
+}
+
+#' Install optional population-analysis dependencies
+#'
+#' Installs the complete optional R and managed Python runtime used by the
+#' population-analysis GUI and code API. System Python is never modified.
+#' Already installed packages are left untouched unless `reinstall` is true.
+#'
+#' @param include_python Install the pinned managed Python runtime.
+#' @param python Bootstrap Python executable (3.11 or newer).
+#' @param ask Pass interactive update questions to Bioconductor.
+#' @param reinstall Reinstall optional R packages and rebuild Python.
+#'
+#' @return A list containing the installation plan, installed package versions,
+#'   managed Python status, and method availability.
+#' @export
+install_analysis_dependencies <- function(
+    include_python = TRUE,
+    python = Sys.which("python3"),
+    ask = FALSE,
+    reinstall = FALSE
+) {
+    plan <- .analysis_dependency_plan()
+    install_missing <- function(packages) {
+        if (isTRUE(reinstall)) packages else packages[
+            !vapply(packages, requireNamespace, logical(1), quietly = TRUE)
+        ]
+    }
+
+    cran <- install_missing(plan$cran)
+    if (length(cran)) {
+        utils::install.packages(cran, repos = "https://cloud.r-project.org")
+    }
+
+    if (!requireNamespace("BiocManager", quietly = TRUE)) {
+        utils::install.packages("BiocManager", repos = "https://cloud.r-project.org")
+    }
+    bioconductor <- install_missing(plan$bioconductor)
+    if (length(bioconductor)) {
+        BiocManager::install(bioconductor, ask = ask, update = FALSE, force = isTRUE(reinstall))
+    }
+
+    github_names <- names(plan$github)
+    github <- github_names[isTRUE(reinstall) | !vapply(github_names, requireNamespace, logical(1), quietly = TRUE)]
+    if (length(github)) {
+        if (!requireNamespace("remotes", quietly = TRUE)) {
+            utils::install.packages("remotes", repos = "https://cloud.r-project.org")
+        }
+        for (package in github) {
+            remotes::install_github(unname(plan$github[[package]]), upgrade = "never", force = isTRUE(reinstall))
+        }
+    }
+
+    runtime <- if (isTRUE(include_python)) {
+        install_analysis_runtime(python = python, rebuild = isTRUE(reinstall))
+    } else {
+        analysis_runtime_status()
+    }
+    packages <- unique(c(plan$cran, plan$bioconductor, names(plan$github)))
+    versions <- stats::setNames(vapply(packages, function(package) {
+        if (requireNamespace(package, quietly = TRUE)) as.character(utils::packageVersion(package)) else NA_character_
+    }, character(1)), packages)
+    methods <- analysis_methods(refresh = TRUE)
+    list(
+        plan = plan,
+        package_versions = versions,
+        python = runtime,
+        methods = methods,
+        ready = all(vapply(methods, function(method) isTRUE(method$available), logical(1)))
+    )
 }
 
 .analysis_runtime_lock_file <- function() {

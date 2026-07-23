@@ -188,6 +188,9 @@ def trajectory_palantir(args: argparse.Namespace) -> None:
 def trajectory_paga_dpt(args: argparse.Namespace) -> None:
     import anndata
     import scanpy as sc
+    import scipy.sparse
+    from scipy.sparse.csgraph import minimum_spanning_tree
+    from scipy.spatial.distance import cdist
 
     data = _matrix(args.input)
     parameters = _parameters(args.parameters)
@@ -203,11 +206,39 @@ def trajectory_paga_dpt(args: argparse.Namespace) -> None:
         metric=str(parameters.get("metric", "euclidean")),
         random_state=args.seed,
     )
-    sc.tl.paga(
-        adata,
-        groups="spectreasy_cluster",
-        model=str(parameters.get("paga_model", "v1.2")),
-    )
+    try:
+        sc.tl.paga(
+            adata,
+            groups="spectreasy_cluster",
+            model=str(parameters.get("paga_model", "v1.2")),
+        )
+    except ValueError as error:
+        # Scanpy/igraph currently fails when the kNN graph contains no
+        # inter-cluster edges. Preserve a valid, explicit PAGA graph by
+        # connecting cluster centroids with their minimum spanning tree.
+        # DPT itself continues to use the event-level diffusion graph.
+        message = str(error).lower()
+        if "index arrays" not in message and "adjacency" not in message:
+            raise
+        categories = list(adata.obs["spectreasy_cluster"].cat.categories)
+        codes = np.asarray(adata.obs["spectreasy_cluster"].cat.codes)
+        if len(categories) < 2:
+            raise ValueError("PAGA+DPT requires clustering with at least two populated clusters.") from error
+        centroids = np.vstack([data[codes == index].mean(axis=0) for index in range(len(categories))])
+        distances = cdist(centroids, centroids, metric="euclidean")
+        positive = distances[np.isfinite(distances) & (distances > 0)]
+        scale = float(np.median(positive)) if positive.size else 1.0
+        connectivities = np.exp(-distances / max(scale, np.finfo(float).eps))
+        np.fill_diagonal(connectivities, 0.0)
+        tree_cost = np.where(connectivities > 0, 1.0 / connectivities, 0.0)
+        tree = minimum_spanning_tree(scipy.sparse.csr_matrix(tree_cost))
+        tree = tree + tree.T
+        adata.uns["paga"] = {
+            "connectivities": scipy.sparse.csr_matrix(connectivities),
+            "connectivities_tree": scipy.sparse.csr_matrix(tree),
+            "groups": "spectreasy_cluster",
+        }
+        adata.uns["spectreasy_paga_fallback"] = "centroid_mst_no_intercluster_edges"
     diffusion_components = min(
         max(int(parameters.get("diffusion_components", 10)), args.dimensions + 1),
         data.shape[0] - 1,

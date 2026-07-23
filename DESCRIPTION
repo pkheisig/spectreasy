@@ -33,6 +33,7 @@ LinkingTo:
     RcppParallel
 SystemRequirements: GNU make
 Suggests:
+    BiocManager,
     chromote,
     destiny,
     FNN,
@@ -47,6 +48,7 @@ Suggests:
     processx,
     plotly,
     ragg,
+    remotes,
     Rphenograph,
     Rtsne,
     rmarkdown,

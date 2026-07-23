@@ -1696,6 +1696,33 @@ function(req) {
     )
 }
 
+#* Choose a project-contained analysis export folder
+#* @post /analysis/export-folder
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch({
+        current <- gui_workflow_path(body, "current", "spectreasy_outputs/analysis/exports")
+        initial <- if (grepl("^([A-Za-z]:|[/\\\\])", current)) current else file.path(root, current)
+        if (!dir.exists(initial)) {
+            candidates <- c(initial, dirname(initial), root)
+            initial <- candidates[vapply(candidates, dir.exists, logical(1))][1] %||% root
+        }
+        selected <- gui_pick_project_directory(
+            initial_dir = initial,
+            allow_create = TRUE,
+            prompt = "Choose an analysis export folder inside this project"
+        )
+        if (is.null(selected)) return(list(success = TRUE, cancelled = TRUE))
+        list(
+            success = TRUE,
+            cancelled = FALSE,
+            path = gui_analysis_relative_path(selected, root)
+        )
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
 #* Load a compact population-scoped event payload for one user-configured plot
 #* @get /analysis/events
 #* @serializer unboxedJSON

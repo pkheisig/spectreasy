@@ -39,6 +39,7 @@ export function AnalysisGuideDialog({
             <li>Draw rectangle, ellipse, or polygon gates on a 2D plot, or a range gate on a histogram, then name the child population.</li>
           </ol>
           <p>Click the underlined X or Y dimension outside the plot canvas to choose another channel, matching the control-gating interaction. Scatter plots use a clean, gridless canvas; numeric ticks remain available around the data region.</p>
+          <p>Type in the dimension menu to filter long panels by either detector channel or marker name. Undo and Redo restore complete workspace changes; use Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z outside text fields.</p>
           <p>Delete any gating or result plot with its trash button. Deleting every plot does not delete the gates or analysis object; use Add plot to create another view. Filter or collapse the population hierarchy when it grows. Exact gate coordinates can be edited in the Population inspector; histogram range boundaries can also be dragged directly.</p>
           <p><strong>Backgating</strong> overlays another population without changing the events used by the active plot. Gates can apply to every compatible file or only the current file. Plots can be duplicated and reordered without changing their data.</p>
           <p className="analysis-guide-callout">The highlighted plot is the one edited by Plot settings. Its border replaces a separate “active plot” title.</p>
@@ -93,6 +94,7 @@ export function AnalysisGuideDialog({
           <p>Pipeline prerequisites such as <strong>diffusion map → DPT</strong> are automatic. Spectreasy creates the intermediate model, sends that exact object into the next stage, and records the hand-off. Methods that also require clustering show explicit cluster and map selectors.</p>
           <p>For trajectory analysis, choose <strong>Set root</strong> in the gating toolbar and click an event inside the population being analyzed. The Run button remains disabled until the root and all required stages are valid.</p>
           <p>Slingshot and TSCAN ask for both clustering and dimensional-reduction inputs. DPT automatically creates and retains its diffusion map. Other trajectory methods build or reuse the neighbor graph, diffusion representation, or cluster input required by their backend.</p>
+          <p>Slingshot uses robust Euclidean cluster-center distances by default; covariance-aware distance remains available in Advanced settings. If a valid PAGA input has no inter-cluster kNN edges, Spectreasy records a centroid minimum-spanning-tree fallback and still runs DPT on the original event-level diffusion graph.</p>
         </>,
       },
       {
@@ -138,8 +140,9 @@ export function AnalysisGuideDialog({
           <p>The Population inspector reports event count, percentage of the parent and total population, plus marker median, mean, and robust standard deviation.</p>
           <p>For a staining index, create sibling gates under the same parent and assign one the <strong>POS</strong> role and one the <strong>NEG</strong> role. Spectreasy calculates:</p>
           <p className="analysis-guide-formula">(median POS − median NEG) / (2 × robust SD of NEG)</p>
-          <p>The Export tab writes the active population as FCS, CSV, or both. Set Maximum events to 0 for every event or use seeded random sampling without replacement. The same population can be exported from one file or every file in the selected source.</p>
+          <p>The Export tab writes the active population as FCS, CSV, or both. Set Maximum events to 0 for every event or use seeded random sampling without replacement. The same population can be exported from one file or every file in the selected source. Use the folder button to choose a destination inside the active project.</p>
           <p>Hierarchy-statistics CSVs include every population and marker summary. Event exports record the source, original event row, population path, seed, software writer, and checksum.</p>
+          <p><strong>Export workspace JSON</strong> preserves the complete hierarchy, gates, roles, plots, transforms, annotations, and trajectory root. Import validates and normalizes the file before replacing the current workspace, and the replacement can be undone.</p>
         </>,
       },
       {
@@ -161,7 +164,7 @@ export function AnalysisGuideDialog({
             <li><strong>analysis_workspace()</strong>, <strong>add_population_gate()</strong>, <strong>update_population_gate()</strong>, and <strong>delete_population_gate()</strong> provide gate-hierarchy CRUD.</li>
             <li><strong>population_statistics()</strong>, <strong>staining_index()</strong>, and <strong>export_gated_population()</strong> reproduce the gating inspector and export actions.</li>
             <li><strong>analysis_methods()</strong> reports availability and every advanced-parameter schema.</li>
-            <li><strong>analysis_runtime_status()</strong> inspects the managed Python runtime; <strong>install_analysis_runtime()</strong> creates it from the pinned package lock without changing system Python.</li>
+            <li><strong>install_analysis_dependencies()</strong> installs all optional R methods and the pinned private Python runtime; <strong>analysis_runtime_status()</strong> inspects that runtime without changing system Python.</li>
             <li><strong>analyze_population()</strong> runs clustering, maps, and trajectories with named setting lists.</li>
             <li><strong>find_population_markers()</strong> ranks cluster-versus-rest marker evidence and exports the complete table.</li>
             <li><strong>population_identity_templates()</strong> creates the same panel-aware, editable common immune starting patterns used by the GUI.</li>

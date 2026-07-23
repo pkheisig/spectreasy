@@ -429,6 +429,13 @@
         rebuild = FALSE
     )
 
+    install_analysis_dependencies(
+        include_python = TRUE,
+        python = Sys.which("python3"),
+        ask = FALSE,
+        reinstall = FALSE
+    )
+
     # -------------------------------------------------------------------------
     # Autofluorescence profile library workflow
     # -------------------------------------------------------------------------
