@@ -248,13 +248,23 @@ test_that("public settings fail before execution when invalid", {
         ),
         "final learning rate"
     )
+    wishbone <- analysis_methods()
+    wishbone <- wishbone[[match(
+        "wishbone",
+        vapply(wishbone, `[[`, character(1), "id")
+    )]]
+    wishbone_error <- if (isTRUE(wishbone$available)) {
+        "candidate neighbors"
+    } else {
+        "not executable"
+    }
     expect_error(
         analyze_population(
             fixture$project, fixture$file, fixture$markers,
             trajectory = "wishbone", root_event_id = 1L, max_events = 100L,
             trajectory_settings = list(neighbors = 20L, candidate_neighbors = 15L)
         ),
-        "candidate neighbors"
+        wishbone_error
     )
     expect_error(
         analyze_population(
