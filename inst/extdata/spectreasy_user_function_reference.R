@@ -368,6 +368,16 @@
         workspace = workspace
     )
 
+    exported_gates <- export_population_gates(
+        project_path = ".",
+        path = "spectreasy_outputs/analysis/population-gates.csv"
+    )
+
+    imported_gates <- import_population_gates(
+        project_path = ".",
+        path = exported_gates[["path"]]
+    )
+
     add_population_gate(
         project_path = ".",
         name = "CD3 positive",

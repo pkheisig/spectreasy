@@ -43,8 +43,49 @@ test_that("exported gating API creates, updates, summarizes, and deletes gates",
     expect_gt(statistics$count, 0L)
     expect_lt(statistics$count, statistics$total_count)
     expect_equal(nrow(statistics$markers), 2L)
+    workspace <- analysis_workspace(fixture$project)
+    workspace$plots[[1]]$overlay_population_id <- "low-fsc"
+    workspace$root_event_id <- 1L
+    workspace$root_population_id <- "low-fsc"
+    workspace$root_source_file <- fixture$file
+    save_analysis_workspace(fixture$project, workspace)
     deleted <- delete_population_gate(fixture$project, "low-fsc")
     expect_identical(vapply(deleted$populations, `[[`, character(1), "id"), "root")
+    expect_null(deleted$plots[[1]]$overlay_population_id)
+    expect_null(deleted$root_event_id)
+    expect_null(deleted$root_population_id)
+    expect_null(deleted$root_source_file)
+})
+
+test_that("exported R API saves and replaces schema-versioned population gate CSVs", {
+    fixture <- population_code_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    workspace <- analysis_workspace(fixture$project)
+    workspace$source_path <- "samples"
+    workspace$selected_file <- fixture$file
+    save_analysis_workspace(fixture$project, workspace)
+    add_population_gate(
+        fixture$project,
+        name = "Reusable CD3 gate",
+        type = "range",
+        x = "CD3-A",
+        geometry = list(min = 3, max = 15),
+        id = "reusable-cd3"
+    )
+    path <- file.path(fixture$project, "templates", "immune-gates")
+    exported <- export_population_gates(fixture$project, path)
+    expect_true(file.exists(paste0(path, ".csv")))
+    expect_equal(exported$gate_count, 1L)
+    expect_equal(exported$schema_version, 1L)
+    csv <- utils::read.csv(exported$path, stringsAsFactors = FALSE, check.names = FALSE)
+    expect_true(all(c("format", "schema_version", "population_id", "vertex_index", "x", "y") %in% names(csv)))
+    expect_identical(csv$format[[1]], "spectreasy-population-gates")
+
+    delete_population_gate(fixture$project, "reusable-cd3")
+    imported <- import_population_gates(fixture$project, exported$path)
+    expect_true("reusable-cd3" %in% vapply(imported$populations, `[[`, character(1), "id"))
+    expect_equal(attr(imported, "import_summary")$imported_gate_count, 1L)
+    expect_identical(analysis_workspace(fixture$project)$populations[[2]]$id, "reusable-cd3")
 })
 
 test_that("the exported method registry exposes every executable parameter schema", {

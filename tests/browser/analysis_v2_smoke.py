@@ -1,3 +1,4 @@
+import csv
 import sys
 from pathlib import Path
 
@@ -39,6 +40,19 @@ with sync_playwright() as playwright:
 
     analyze_button = page.get_by_role("button", name="Analyze population", exact=True)
     analyze_button.wait_for(timeout=60000)
+    page.get_by_role("button", name="Add plot", exact=True).first.click()
+    assert page.locator(".analysis-plot-card").count() == 2
+    page.get_by_role("button", name="Close population analysis", exact=True).click()
+    page.wait_for_timeout(700)
+    population_entry = page.locator(".rail-subitem", has_text="Population analysis")
+    if not population_entry.is_visible():
+        page.get_by_role("button", name="Other tools").click()
+    population_entry.click()
+    page.get_by_text("v2 workspace", exact=True).wait_for()
+    assert page.locator(".analysis-plot-card").count() == 2
+    page.locator(".analysis-plot-card").nth(1).get_by_role("button", name="Delete plot", exact=True).click()
+    assert page.locator(".analysis-plot-card").count() == 1
+
     plot_card = page.locator(".analysis-plot-card").first
     x_axis = plot_card.get_by_role("button", name="X axis", exact=False)
     y_axis = plot_card.get_by_role("button", name="Y axis", exact=False)
@@ -64,6 +78,53 @@ with sync_playwright() as playwright:
     page.get_by_text("No plots", exact=True).wait_for()
     undo.click()
     assert page.locator(".analysis-plot-card").count() == 1
+
+    # Gate CSV is a narrow template format: browser-download fallback, strict
+    # preview, explicit replacement, and session undo all share the real API.
+    page.route(
+        "**/analysis/gate-set/save-dialog",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"success":true,"fallback":true,"cancelled":false}',
+        ),
+    )
+    with page.expect_download() as gate_download:
+        page.get_by_role("button", name="Save gates as CSV", exact=True).click()
+    gate_path = Path(gate_download.value.path())
+    with gate_path.open(newline="") as handle:
+        gate_rows = list(csv.reader(handle))
+    assert gate_rows[0][:3] == ["format", "schema_version", "record_type"]
+    assert gate_rows[1][:3] == ["spectreasy-population-gates", "1", "metadata"]
+    gate_rows.extend([
+        [
+            "spectreasy-population-gates", "1", "gate", "browser-cd3", "root",
+            "Browser CD3 range", "range", "positive", "", "CD3-A", "", "1", "-1", "",
+        ],
+        [
+            "spectreasy-population-gates", "1", "gate", "browser-cd3", "root",
+            "Browser CD3 range", "range", "positive", "", "CD3-A", "", "2", "12", "",
+        ],
+    ])
+    gate_import_path = gate_path.with_name("spectreasy-browser-gates.csv")
+    with gate_import_path.open("w", newline="") as handle:
+        csv.writer(handle).writerows(gate_rows)
+    page.locator('input[type="file"][aria-label="Load gates from CSV"]').set_input_files(gate_import_path)
+    gate_import_dialog = page.get_by_role("dialog", name="Replace population gates?")
+    gate_import_dialog.wait_for()
+    assert "Channels, source files, hierarchy, and geometry are compatible." in gate_import_dialog.inner_text()
+    assert "plot layout" in gate_import_dialog.inner_text()
+    capture(page, 10)
+    gate_import_dialog.get_by_role("button", name="Replace gates", exact=True).click()
+    browser_gate_row = page.locator(".analysis-population-row", has_text="Browser CD3 range")
+    browser_gate_row.wait_for()
+    assert page.get_by_text("Undo is available.", exact=False).is_visible()
+    undo.click()
+    assert browser_gate_row.count() == 0
+    redo.click()
+    browser_gate_row.wait_for()
+    page.wait_for_timeout(900)
+    capture(page, 11)
 
     inspector = page.locator(".analysis-inspector")
     inspector.locator(":scope > nav").get_by_role("button", name="Export", exact=True).click()
@@ -103,6 +164,9 @@ with sync_playwright() as playwright:
     assert guide.get_by_text("Minimum identity match", exact=True).is_visible()
     assert guide.get_by_text("Minimum lead over second choice", exact=True).is_visible()
     assert guide.get_by_text("Marker sensitivity", exact=True).is_visible()
+    guide.get_by_role("tab", name="Gating workspace", exact=True).click()
+    assert guide.get_by_text("Save", exact=True).first.is_visible()
+    assert "reusable gate CSVs" in guide.get_by_role("tabpanel").inner_text()
     capture(page, 0)
     guide.get_by_role("button", name="Close analysis guide").click()
     file_picker = dialog.locator(".analysis-analysis-file-picker")

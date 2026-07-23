@@ -1696,6 +1696,101 @@ function(req) {
     )
 }
 
+#* Serialize reusable population gates without the surrounding analysis workspace
+#* @post /analysis/gate-set/export
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch({
+        workspace <- gui_analysis_normalize_workspace(body$workspace %||% gui_analysis_read_workspace(root))
+        list(
+            success = TRUE,
+            filename = paste0("spectreasy-population-gates-", format(Sys.Date(), "%Y-%m-%d"), ".csv"),
+            csv = gui_analysis_gate_set_csv(workspace),
+            gate_count = max(0L, length(workspace$populations) - 1L),
+            schema_version = gui_analysis_gate_set_schema_version()
+        )
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Save reusable population gates with the native CSV picker when available
+#* @post /analysis/gate-set/save-dialog
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch({
+        if (!gate_has_system_file_picker()) {
+            return(list(success = TRUE, fallback = TRUE, cancelled = FALSE))
+        }
+        selected <- gate_pick_csv_file(
+            "save",
+            initial_dir = root,
+            default_name = paste0("spectreasy-population-gates-", format(Sys.Date(), "%Y-%m-%d"), ".csv"),
+            title = "Save population gates as CSV"
+        )
+        if (identical(selected, "CANCEL")) {
+            return(list(success = TRUE, fallback = FALSE, cancelled = TRUE))
+        }
+        if (!nzchar(selected)) {
+            return(list(success = TRUE, fallback = TRUE, cancelled = FALSE))
+        }
+        result <- gui_analysis_write_gate_set(root, selected, workspace = body$workspace)
+        list(
+            success = TRUE,
+            fallback = FALSE,
+            cancelled = FALSE,
+            path = result$path,
+            gate_count = result$gate_count
+        )
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Validate a browser-selected population gate CSV and prepare replacement state
+#* @post /analysis/gate-set/prepare
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch({
+        prepared <- gui_analysis_prepare_gate_set_import(
+            root,
+            body$csv,
+            workspace = body$workspace,
+            source_name = gui_workflow_value(body, "source_name", "gate CSV")
+        )
+        c(list(success = TRUE), prepared)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
+#* Load and validate population gates with the native CSV picker when available
+#* @post /analysis/gate-set/load-dialog
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch({
+        if (!gate_has_system_file_picker()) {
+            return(list(success = TRUE, fallback = TRUE, cancelled = FALSE))
+        }
+        selected <- gate_pick_csv_file(
+            "open",
+            initial_dir = root,
+            default_name = "spectreasy-population-gates.csv",
+            title = "Load population gates from CSV"
+        )
+        if (identical(selected, "CANCEL")) {
+            return(list(success = TRUE, fallback = FALSE, cancelled = TRUE))
+        }
+        if (!nzchar(selected)) {
+            return(list(success = TRUE, fallback = TRUE, cancelled = FALSE))
+        }
+        prepared <- gui_analysis_read_gate_set_file(root, selected, workspace = body$workspace)
+        c(list(success = TRUE, fallback = FALSE, cancelled = FALSE), prepared)
+    }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
+}
+
 #* Choose a project-contained analysis export folder
 #* @post /analysis/export-folder
 #* @serializer unboxedJSON
@@ -1752,13 +1847,19 @@ function(req) {
     tryCatch({
         mode <- tolower(gui_workflow_value(body, "mode", "population"))
         result <- if (identical(mode, "staining_index")) {
-            gui_analysis_staining_index(root, gui_workflow_value(body, "file", ""), gui_workflow_value(body, "marker", ""))
+            gui_analysis_staining_index(
+                root,
+                gui_workflow_value(body, "file", ""),
+                gui_workflow_value(body, "marker", ""),
+                body$workspace
+            )
         } else {
             gui_analysis_population_statistics(
                 root,
                 gui_workflow_value(body, "file", ""),
                 gui_workflow_value(body, "populationId", "root"),
-                body$markers %||% character()
+                body$markers %||% character(),
+                body$workspace
             )
         }
         list(success = TRUE, mode = mode, result = result)
@@ -1809,10 +1910,11 @@ function(req) {
 }
 
 #* Poll a background population-analysis job
+#* @param project_path Active project directory
 #* @get /analysis/jobs
 #* @serializer unboxedJSON
-function(req, job_id = "") {
-    root <- gui_request_project_root(req$HTTP_X_SPECTREASY_PROJECT %||% getOption("spectreasy.project_dir", ""))
+function(job_id = "", project_path = "") {
+    root <- gui_request_project_root(project_path)
     tryCatch(
         list(success = TRUE, job = gui_analysis_job_status(root, job_id)),
         error = function(e) list(success = FALSE, error = conditionMessage(e))
@@ -1823,7 +1925,8 @@ function(req, job_id = "") {
 #* @delete /analysis/jobs
 #* @serializer unboxedJSON
 function(req, job_id = "") {
-    root <- gui_request_project_root(req$HTTP_X_SPECTREASY_PROJECT %||% getOption("spectreasy.project_dir", ""))
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
     tryCatch(
         list(success = TRUE, job = gui_analysis_cancel_job(root, job_id)),
         error = function(e) list(success = FALSE, error = conditionMessage(e))

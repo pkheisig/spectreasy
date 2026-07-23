@@ -40,6 +40,7 @@ export function AnalysisGuideDialog({
           </ol>
           <p>Click the underlined X or Y dimension outside the plot canvas to choose another channel, matching the control-gating interaction. Scatter plots use a clean, gridless canvas; numeric ticks remain available around the data region.</p>
           <p>Type in the dimension menu to filter long panels by either detector channel or marker name. Undo and Redo restore complete workspace changes; use Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z outside text fields.</p>
+          <p><strong>Save</strong> and <strong>Load</strong> beside Populations handle reusable gate CSVs. They contain only the nested population hierarchy, semantic roles, channels, optional file scope, and geometry. Loading checks the selected source first, shows the exact replacement and compatibility adjustments, and replaces gates only after confirmation. Undo restores the previous tree during the session.</p>
           <p>Delete any gating or result plot with its trash button. Deleting every plot does not delete the gates or analysis object; use Add plot to create another view. Filter or collapse the population hierarchy when it grows. Exact gate coordinates can be edited in the Population inspector; histogram range boundaries can also be dragged directly.</p>
           <p><strong>Backgating</strong> overlays another population without changing the events used by the active plot. Gates can apply to every compatible file or only the current file. Plots can be duplicated and reordered without changing their data.</p>
           <p className="analysis-guide-callout">The highlighted plot is the one edited by Plot settings. Its border replaces a separate “active plot” title.</p>
@@ -142,7 +143,8 @@ export function AnalysisGuideDialog({
           <p className="analysis-guide-formula">(median POS − median NEG) / (2 × robust SD of NEG)</p>
           <p>The Export tab writes the active population as FCS, CSV, or both. Set Maximum events to 0 for every event or use seeded random sampling without replacement. The same population can be exported from one file or every file in the selected source. Use the folder button to choose a destination inside the active project.</p>
           <p>Hierarchy-statistics CSVs include every population and marker summary. Event exports record the source, original event row, population path, seed, software writer, and checksum.</p>
-          <p><strong>Export workspace JSON</strong> preserves the complete hierarchy, gates, roles, plots, transforms, annotations, and trajectory root. Import validates and normalizes the file before replacing the current workspace, and the replacement can be undone.</p>
+          <p><strong>Gate CSV</strong> is the ordinary sharing format for reusable gating templates. It deliberately excludes plots, annotations, active selections, analysis settings, seeds, and trajectory-root state. Empty source-file cells are global gates; populated values are project-relative file-specific gates.</p>
+          <p><strong>Export workspace JSON</strong> is the advanced whole-workspace option. It preserves the complete hierarchy, gates, roles, plots, transforms, annotations, active selections, settings, seeds, and trajectory root. The normal internal state continues to autosave at <strong>.spectreasy/analysis-v2/workspace.json</strong>.</p>
         </>,
       },
       {
@@ -162,6 +164,7 @@ export function AnalysisGuideDialog({
           <p>The browser does not contain a separate scientific implementation. Method discovery, clustering, dimensional reduction, trajectory inference, annotation, validation, caching, and provenance call the same Spectreasy package backend available from R.</p>
           <ul>
             <li><strong>analysis_workspace()</strong>, <strong>add_population_gate()</strong>, <strong>update_population_gate()</strong>, and <strong>delete_population_gate()</strong> provide gate-hierarchy CRUD.</li>
+            <li><strong>export_population_gates()</strong> and <strong>import_population_gates()</strong> save and replace the same schema-versioned gate CSV used by the sidebar controls.</li>
             <li><strong>population_statistics()</strong>, <strong>staining_index()</strong>, and <strong>export_gated_population()</strong> reproduce the gating inspector and export actions.</li>
             <li><strong>analysis_methods()</strong> reports availability and every advanced-parameter schema.</li>
             <li><strong>install_analysis_dependencies()</strong> installs all optional R methods and the pinned private Python runtime; <strong>analysis_runtime_status()</strong> inspects that runtime without changing system Python.</li>

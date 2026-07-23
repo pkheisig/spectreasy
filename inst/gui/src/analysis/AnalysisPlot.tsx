@@ -36,6 +36,7 @@ type TwoDimensionalGateEdit = {
   vertex?: number
   startRaw: GatePoint
   geometry: NonNullable<AnalysisPopulation['geometry']>
+  previewGeometry: NonNullable<AnalysisPopulation['geometry']>
 }
 
 function containsScreenPoint(point: GatePoint, polygon: GatePoint[]) {
@@ -120,10 +121,24 @@ export function AnalysisPlot({
     gateId: string
     mode: 'minimum' | 'maximum' | 'move'
     startX: number
-    min: number
-    max: number
+    initialMin: number
+    initialMax: number
+    previewMin: number
+    previewMax: number
   } | null>(null)
   const [twoDimensionalEdit, setTwoDimensionalEdit] = useState<TwoDimensionalGateEdit | null>(null)
+  const displayedChildGates = useMemo(() => childGates.map((gate) => {
+    if (rangeEdit?.gateId === gate.id) {
+      return {
+        ...gate,
+        geometry: { ...(gate.geometry ?? {}), min: rangeEdit.previewMin, max: rangeEdit.previewMax },
+      }
+    }
+    if (twoDimensionalEdit?.gate.id === gate.id) {
+      return { ...gate, geometry: twoDimensionalEdit.previewGeometry }
+    }
+    return gate
+  }), [childGates, rangeEdit, twoDimensionalEdit])
 
   useEffect(() => {
     const host = hostRef.current
@@ -318,7 +333,7 @@ export function AnalysisPlot({
     }
 
     if (plot.type === 'histogram') {
-      for (const gate of childGates) {
+      for (const gate of displayedChildGates) {
         if (gate.type !== 'range' || gate.x !== plot.x || !gate.geometry) continue
         const left = xScale.toScreen(transformValue(gate.geometry.min ?? 0, plot.x_transform))
         const right = xScale.toScreen(transformValue(gate.geometry.max ?? 0, plot.x_transform))
@@ -333,7 +348,7 @@ export function AnalysisPlot({
       }
     }
 
-    for (const gate of plot.type === 'histogram' ? [] : childGates) {
+    for (const gate of plot.type === 'histogram' ? [] : displayedChildGates) {
       if (gate.x !== plot.x || gate.y !== plot.y) continue
       const points = gateScreenPoints(gate, scale, plot)
       if (points.length < 3) continue
@@ -367,7 +382,7 @@ export function AnalysisPlot({
       context.lineTo(x, y + 9)
       context.stroke()
     }
-  }, [childGates, overlayPayload, payload?.events, plot, rootEventId, size, transformed])
+  }, [displayedChildGates, overlayPayload, payload?.events, plot, rootEventId, size, transformed])
 
   function localPoint(event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>): GatePoint {
     const bounds = event.currentTarget.getBoundingClientRect()
@@ -463,7 +478,15 @@ export function AnalysisPlot({
                     : null
               if (mode) {
                 onSelectGate(gate.id)
-                setRangeEdit({ gateId: gate.id, mode, startX: point.x, min: minimum, max: maximum })
+                setRangeEdit({
+                  gateId: gate.id,
+                  mode,
+                  startX: point.x,
+                  initialMin: minimum,
+                  initialMax: maximum,
+                  previewMin: minimum,
+                  previewMax: maximum,
+                })
                 event.currentTarget.setPointerCapture(event.pointerId)
                 return
               }
@@ -525,6 +548,7 @@ export function AnalysisPlot({
                   vertex,
                   startRaw: rawPoint,
                   geometry: { ...(gate.geometry ?? {}) },
+                  previewGeometry: { ...(gate.geometry ?? {}) },
                 })
                 event.currentTarget.setPointerCapture(event.pointerId)
                 return
@@ -543,14 +567,18 @@ export function AnalysisPlot({
           if (rangeEdit && scaleRef.current) {
             const raw = inverseTransformValue(scaleRef.current.x.fromScreen(localPoint(event).x), plot.x_transform)
             const startRaw = inverseTransformValue(scaleRef.current.x.fromScreen(rangeEdit.startX), plot.x_transform)
+            let previewMin = rangeEdit.initialMin
+            let previewMax = rangeEdit.initialMax
             if (rangeEdit.mode === 'minimum') {
-              onUpdateGate(rangeEdit.gateId, { min: Math.min(raw, rangeEdit.max), max: rangeEdit.max })
+              previewMin = Math.min(raw, rangeEdit.initialMax)
             } else if (rangeEdit.mode === 'maximum') {
-              onUpdateGate(rangeEdit.gateId, { min: rangeEdit.min, max: Math.max(raw, rangeEdit.min) })
+              previewMax = Math.max(raw, rangeEdit.initialMin)
             } else {
               const delta = raw - startRaw
-              onUpdateGate(rangeEdit.gateId, { min: rangeEdit.min + delta, max: rangeEdit.max + delta })
+              previewMin = rangeEdit.initialMin + delta
+              previewMax = rangeEdit.initialMax + delta
             }
+            setRangeEdit({ ...rangeEdit, previewMin, previewMax })
             return
           }
           if (twoDimensionalEdit && scaleRef.current) {
@@ -585,23 +613,31 @@ export function AnalysisPlot({
               points[twoDimensionalEdit.vertex] = raw
               geometry.points = points
             }
-            onUpdateGate(twoDimensionalEdit.gate.id, geometry)
+            setTwoDimensionalEdit({ ...twoDimensionalEdit, previewGeometry: geometry })
             return
           }
           if ((tool === 'rectangle' || tool === 'ellipse' || tool === 'range') && dragStart) setDragCurrent(localPoint(event))
         }}
         onPointerUp={(event) => {
           if (rangeEdit) {
+            onUpdateGate(rangeEdit.gateId, { min: rangeEdit.previewMin, max: rangeEdit.previewMax })
             setRangeEdit(null)
             return
           }
           if (twoDimensionalEdit) {
+            onUpdateGate(twoDimensionalEdit.gate.id, twoDimensionalEdit.previewGeometry)
             setTwoDimensionalEdit(null)
             return
           }
           if (tool === 'rectangle' && dragStart) finishRectangle(localPoint(event))
           if (tool === 'ellipse' && dragStart) finishEllipse(localPoint(event))
           if (tool === 'range' && dragStart) finishRange(localPoint(event))
+        }}
+        onPointerCancel={() => {
+          setRangeEdit(null)
+          setTwoDimensionalEdit(null)
+          setDragStart(null)
+          setDragCurrent(null)
         }}
         onClick={(event) => {
           const point = localPoint(event)

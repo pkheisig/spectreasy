@@ -67,6 +67,22 @@ export type AnalysisWorkspaceState = {
   root_source_file: string | null
 }
 
+export type GateSetImportSummary = {
+  current_gate_count: number
+  imported_gate_count: number
+  plot_references_redirected: number
+  overlays_cleared: number
+  annotations_removed: number
+  trajectory_root_cleared: boolean
+}
+
+export type PreparedGateSetImport = {
+  workspace: AnalysisWorkspaceState
+  warnings: string[]
+  source_name: string
+  summary: GateSetImportSummary
+}
+
 export type AnalysisFile = {
   id: string
   name: string

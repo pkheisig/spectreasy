@@ -198,6 +198,59 @@ save_analysis_workspace <- function(project_path, workspace) {
     .spectreasy_analysis_backend()$gui_analysis_write_workspace(project_path, workspace)
 }
 
+#' Export or replace reusable population gates as CSV
+#'
+#' Gate-set CSV files contain only population IDs, names, parent relationships,
+#' semantic roles, optional file scope, channels, and gate geometry. They do not
+#' contain plots, annotations, analysis settings, seeds, or trajectory state;
+#' use [save_analysis_workspace()] for the complete internal workspace instead.
+#'
+#' `import_population_gates()` validates the CSV and its referenced channels and
+#' source files against the active project, then replaces the current gate
+#' hierarchy. Plot layout and other analysis settings are retained, while
+#' references to populations that no longer exist are repaired or removed.
+#'
+#' Schema version 1 records `format`, `schema_version`, `record_type`,
+#' `population_id`, `parent_id`, `population_name`, `gate_type`,
+#' `semantic_role`, `source_file`, `x_channel`, `y_channel`, `vertex_index`,
+#' `x`, and `y`. Polygon vertices use one row each; rectangles and ellipses use
+#' two bounding-box corners; range gates use two X coordinates. The root
+#' population is recreated automatically.
+#'
+#' @param project_path Spectreasy project directory.
+#' @param path CSV file to write or read.
+#'
+#' @return `export_population_gates()` returns the saved path and gate count.
+#'   `import_population_gates()` returns the normalized, saved workspace with
+#'   import warnings and a replacement summary in attributes named `warnings`
+#'   and `import_summary`.
+#' @export
+export_population_gates <- function(project_path, path) {
+    project_path <- .analysis_project_path(project_path)
+    path <- .analysis_scalar_character(path, "path")
+    backend <- .spectreasy_analysis_backend()
+    result <- backend$gui_analysis_write_gate_set(
+        project_path,
+        path,
+        workspace = backend$gui_analysis_read_workspace(project_path)
+    )
+    c(result, schema_version = backend$gui_analysis_gate_set_schema_version())
+}
+
+#' @rdname export_population_gates
+#' @export
+import_population_gates <- function(project_path, path) {
+    project_path <- .analysis_project_path(project_path)
+    path <- .analysis_scalar_character(path, "path")
+    backend <- .spectreasy_analysis_backend()
+    current <- backend$gui_analysis_read_workspace(project_path)
+    prepared <- backend$gui_analysis_read_gate_set_file(project_path, path, workspace = current)
+    saved <- backend$gui_analysis_write_workspace(project_path, prepared$workspace)
+    attr(saved, "warnings") <- prepared$warnings
+    attr(saved, "import_summary") <- prepared$summary
+    saved
+}
+
 #' Create a population gate in code
 #'
 #' @param project_path Spectreasy project directory.
@@ -298,9 +351,15 @@ delete_population_gate <- function(project_path, population_id) {
     workspace$populations <- Filter(function(node) !as.character(node$id)[1] %in% removing, workspace$populations)
     workspace$plots <- lapply(workspace$plots, function(plot) {
         if (as.character(plot$population_id %||% "root")[1] %in% removing) plot$population_id <- "root"
+        if (as.character(plot$overlay_population_id %||% "")[1] %in% removing) plot$overlay_population_id <- NULL
         plot
     })
     if (workspace$active_population_id %in% removing) workspace$active_population_id <- "root"
+    if (as.character(workspace$root_population_id %||% "")[1] %in% removing) {
+        workspace$root_event_id <- NULL
+        workspace$root_population_id <- NULL
+        workspace$root_source_file <- NULL
+    }
     backend$gui_analysis_write_workspace(project_path, workspace)
 }
 

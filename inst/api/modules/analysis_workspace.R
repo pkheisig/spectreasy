@@ -157,9 +157,138 @@ gui_analysis_normalize_workspace <- function(value) {
         stop("Analysis workspace must contain a population hierarchy.", call. = FALSE)
     }
     if (length(out$populations) > 500L) stop("Analysis workspace has too many populations.", call. = FALSE)
-    ids <- vapply(out$populations, function(node) trimws(as.character(node$id %||% "")[1]), character(1))
+    scalar <- function(value, fallback = "") {
+        if (is.null(value) || !length(value)) return(fallback)
+        if (is.list(value)) {
+            if (length(value) != 1L) return(fallback)
+            return(scalar(value[[1]], fallback))
+        }
+        if (length(value) != 1L || is.na(value[[1]])) return(fallback)
+        trimws(as.character(value[[1]]))
+    }
+    finite_values <- function(geometry, fields, label) {
+        values <- vapply(fields, function(field) suppressWarnings(as.numeric(geometry[[field]] %||% NA_real_)[1]), numeric(1))
+        if (any(!is.finite(values))) stop(label, " gate geometry is invalid.", call. = FALSE)
+        values
+    }
+    ids <- vapply(out$populations, function(node) scalar(node$id), character(1))
     if (any(!nzchar(ids)) || anyDuplicated(ids)) stop("Population IDs must be non-empty and unique.", call. = FALSE)
-    if (!"root" %in% ids) stop("Analysis workspace is missing its root population.", call. = FALSE)
+    if (!any(ids == "root")) stop("Analysis workspace is missing its root population.", call. = FALSE)
+    if (sum(ids == "root") > 1L) stop("Analysis workspace must contain exactly one root population.", call. = FALSE)
+    names(out$populations) <- NULL
+    parent_ids <- vapply(out$populations, function(node) scalar(node$parent_id), character(1))
+    types <- vapply(out$populations, function(node) tolower(scalar(node$type)), character(1))
+    root_index <- match("root", ids)
+    if (nzchar(parent_ids[[root_index]]) || !identical(types[[root_index]], "root")) {
+        stop("The root population must have type 'root' and no parent.", call. = FALSE)
+    }
+    non_root <- ids != "root"
+    if (any(types[non_root] == "root") || any(!types[non_root] %in% c("rectangle", "ellipse", "polygon", "range"))) {
+        stop("Non-root populations must use rectangle, ellipse, polygon, or range gates.", call. = FALSE)
+    }
+    if (any(!nzchar(parent_ids[non_root])) || any(!parent_ids[non_root] %in% ids)) {
+        stop("Every non-root population must reference an existing parent.", call. = FALSE)
+    }
+    if (any(ids[non_root] == parent_ids[non_root])) stop("A population cannot be its own parent.", call. = FALSE)
+    for (id in ids[non_root]) {
+        seen <- character()
+        current <- id
+        while (!identical(current, "root")) {
+            if (current %in% seen) stop("Population hierarchy contains a cycle.", call. = FALSE)
+            seen <- c(seen, current)
+            index <- match(current, ids)
+            if (is.na(index)) stop("Population hierarchy references a missing parent.", call. = FALSE)
+            current <- parent_ids[[index]]
+        }
+    }
+    roles <- vapply(out$populations, function(node) tolower(scalar(node$role)), character(1))
+    if (any(nzchar(roles) & !roles %in% c("positive", "negative", "root", "terminal"))) {
+        stop("Population roles must be positive, negative, root, terminal, or empty.", call. = FALSE)
+    }
+    for (index in which(non_root)) {
+        node <- out$populations[[index]]
+        if (!nzchar(scalar(node$name))) stop("Population names must be non-empty.", call. = FALSE)
+        x <- scalar(node$x)
+        y <- scalar(node$y)
+        geometry <- node$geometry
+        if (!is.list(geometry) || !nzchar(x)) stop("Every gate needs a channel and valid geometry.", call. = FALSE)
+        if (identical(types[[index]], "range")) {
+            values <- finite_values(geometry, c("min", "max"), "Range")
+            if (values[[1]] >= values[[2]]) stop("Range gate minimum must be below its maximum.", call. = FALSE)
+        } else if (identical(types[[index]], "rectangle")) {
+            if (!nzchar(y)) stop("Rectangle gates require two channels.", call. = FALSE)
+            values <- finite_values(geometry, c("x_min", "x_max", "y_min", "y_max"), "Rectangle")
+            if (values[[1]] >= values[[2]] || values[[3]] >= values[[4]]) {
+                stop("Rectangle gate minima must be below their maxima.", call. = FALSE)
+            }
+        } else if (identical(types[[index]], "ellipse")) {
+            if (!nzchar(y)) stop("Ellipse gates require two channels.", call. = FALSE)
+            values <- finite_values(geometry, c("center_x", "center_y", "radius_x", "radius_y"), "Ellipse")
+            if (values[[3]] <= 0 || values[[4]] <= 0) stop("Ellipse gate radii must be positive.", call. = FALSE)
+        } else {
+            if (!nzchar(y)) stop("Polygon gates require two channels.", call. = FALSE)
+            points <- geometry$points
+            if (!is.list(points) || length(points) < 3L) stop("Polygon gates require at least three points.", call. = FALSE)
+            valid <- vapply(points, function(point) {
+                is.list(point) &&
+                    is.finite(suppressWarnings(as.numeric(point$x %||% NA_real_)[1])) &&
+                    is.finite(suppressWarnings(as.numeric(point$y %||% NA_real_)[1]))
+            }, logical(1))
+            if (!all(valid)) stop("Polygon gate points must be finite x/y coordinates.", call. = FALSE)
+        }
+    }
+    active_population_id <- scalar(out$active_population_id, "root")
+    if (!active_population_id %in% ids) stop("The active population does not exist.", call. = FALSE)
+    out$active_population_id <- active_population_id
+    seed <- suppressWarnings(as.numeric(out$seed)[1])
+    if (!is.finite(seed) || seed < 1 || !isTRUE(all.equal(seed, round(seed)))) {
+        stop("Analysis workspace seed must be a positive integer.", call. = FALSE)
+    }
+    out$seed <- as.integer(seed)
+    if (!is.list(out$plots)) stop("Analysis workspace plots must be a JSON array.", call. = FALSE)
+    if (length(out$plots) > 100L) stop("Analysis workspace has too many plots.", call. = FALSE)
+    plot_ids <- vapply(out$plots, function(plot) scalar(plot$id), character(1))
+    if (length(plot_ids) && (any(!nzchar(plot_ids)) || anyDuplicated(plot_ids))) {
+        stop("Plot IDs must be non-empty and unique.", call. = FALSE)
+    }
+    for (plot in out$plots) {
+        population_id <- scalar(plot$population_id, "root")
+        overlay_id <- scalar(plot$overlay_population_id)
+        if (!population_id %in% ids) stop("A plot references a missing population.", call. = FALSE)
+        if (nzchar(overlay_id) && (!overlay_id %in% ids || identical(overlay_id, population_id))) {
+            stop("A backgate must reference a different existing population.", call. = FALSE)
+        }
+        type <- tolower(scalar(plot$type, "scatter"))
+        if (!type %in% c("scatter", "histogram", "contour", "hexbin")) stop("Unsupported analysis plot type.", call. = FALSE)
+        if (!nzchar(scalar(plot$x)) || (!identical(type, "histogram") && !nzchar(scalar(plot$y)))) {
+            stop("Analysis plots require valid axis channels.", call. = FALSE)
+        }
+        transforms <- c(tolower(scalar(plot$x_transform, "linear")), tolower(scalar(plot$y_transform, "linear")))
+        if (any(!transforms %in% c("linear", "asinh", "biexponential"))) stop("Unsupported analysis axis transform.", call. = FALSE)
+        limits <- lapply(c("x_min", "x_max", "y_min", "y_max"), function(field) plot[[field]])
+        finite_or_null <- vapply(limits, function(limit) {
+            is.null(limit) || !length(limit) || is.na(limit[[1]]) || is.finite(suppressWarnings(as.numeric(limit[[1]])))
+        }, logical(1))
+        if (!all(finite_or_null)) stop("Analysis plot limits must be finite or empty.", call. = FALSE)
+    }
+    root_event <- suppressWarnings(as.numeric(out$root_event_id %||% NA_real_)[1])
+    if (is.finite(root_event)) {
+        if (root_event < 1 || !isTRUE(all.equal(root_event, round(root_event)))) {
+            stop("Trajectory root event must be a positive integer.", call. = FALSE)
+        }
+        root_population <- scalar(out$root_population_id)
+        root_source <- scalar(out$root_source_file)
+        if (!root_population %in% ids || !nzchar(root_source)) {
+            stop("Trajectory root metadata is incomplete.", call. = FALSE)
+        }
+        out$root_event_id <- as.integer(root_event)
+        out$root_population_id <- root_population
+        out$root_source_file <- root_source
+    } else {
+        out$root_event_id <- NULL
+        out$root_population_id <- NULL
+        out$root_source_file <- NULL
+    }
     out$schema_version <- 2L
     out$updated_at <- as.character(Sys.time())
     out
@@ -184,6 +313,444 @@ gui_analysis_write_workspace <- function(root, value) {
         unlink(temporary, force = TRUE)
     }
     value
+}
+
+gui_analysis_gate_set_format <- function() "spectreasy-population-gates"
+
+gui_analysis_gate_set_schema_version <- function() 1L
+
+gui_analysis_gate_set_columns <- function() {
+    c(
+        "format", "schema_version", "record_type", "population_id", "parent_id",
+        "population_name", "gate_type", "semantic_role", "source_file",
+        "x_channel", "y_channel", "vertex_index", "x", "y"
+    )
+}
+
+gui_analysis_gate_set_row <- function(
+    record_type,
+    population_id = "",
+    parent_id = "",
+    population_name = "",
+    gate_type = "",
+    semantic_role = "",
+    source_file = "",
+    x_channel = "",
+    y_channel = "",
+    vertex_index = "",
+    x = "",
+    y = ""
+) {
+    data.frame(
+        format = gui_analysis_gate_set_format(),
+        schema_version = as.character(gui_analysis_gate_set_schema_version()),
+        record_type = record_type,
+        population_id = population_id,
+        parent_id = parent_id,
+        population_name = population_name,
+        gate_type = gate_type,
+        semantic_role = semantic_role,
+        source_file = source_file,
+        x_channel = x_channel,
+        y_channel = y_channel,
+        vertex_index = as.character(vertex_index),
+        x = as.character(x),
+        y = as.character(y),
+        stringsAsFactors = FALSE,
+        check.names = FALSE
+    )
+}
+
+gui_analysis_gate_set_rows <- function(workspace) {
+    workspace <- gui_analysis_normalize_workspace(workspace)
+    rows <- list(gui_analysis_gate_set_row("metadata"))
+    gates <- Filter(function(node) !identical(as.character(node$id)[1], "root"), workspace$populations)
+    for (node in gates) {
+        type <- tolower(as.character(node$type)[1])
+        geometry <- node$geometry
+        coordinates <- if (identical(type, "polygon")) {
+            lapply(seq_along(geometry$points), function(index) {
+                point <- geometry$points[[index]]
+                list(index = index, x = point$x, y = point$y)
+            })
+        } else if (identical(type, "rectangle")) {
+            list(
+                list(index = 1L, x = geometry$x_min, y = geometry$y_min),
+                list(index = 2L, x = geometry$x_max, y = geometry$y_max)
+            )
+        } else if (identical(type, "ellipse")) {
+            list(
+                list(index = 1L, x = geometry$center_x - geometry$radius_x, y = geometry$center_y - geometry$radius_y),
+                list(index = 2L, x = geometry$center_x + geometry$radius_x, y = geometry$center_y + geometry$radius_y)
+            )
+        } else {
+            list(
+                list(index = 1L, x = geometry$min, y = ""),
+                list(index = 2L, x = geometry$max, y = "")
+            )
+        }
+        for (coordinate in coordinates) {
+            rows[[length(rows) + 1L]] <- gui_analysis_gate_set_row(
+                record_type = "gate",
+                population_id = as.character(node$id)[1],
+                parent_id = as.character(node$parent_id)[1],
+                population_name = as.character(node$name)[1],
+                gate_type = type,
+                semantic_role = as.character(node$role %||% "")[1],
+                source_file = as.character(node$source_file %||% "")[1],
+                x_channel = as.character(node$x %||% "")[1],
+                y_channel = as.character(node$y %||% "")[1],
+                vertex_index = coordinate$index,
+                x = format(as.numeric(coordinate$x), scientific = FALSE, trim = TRUE, digits = 15),
+                y = if (identical(coordinate$y, "")) "" else format(as.numeric(coordinate$y), scientific = FALSE, trim = TRUE, digits = 15)
+            )
+        }
+    }
+    do.call(rbind, rows)
+}
+
+gui_analysis_gate_set_csv <- function(workspace) {
+    rows <- gui_analysis_gate_set_rows(workspace)
+    output <- character()
+    connection <- textConnection("output", "w", local = TRUE)
+    on.exit(try(close(connection), silent = TRUE), add = TRUE)
+    utils::write.csv(rows, connection, row.names = FALSE, quote = TRUE, na = "")
+    close(connection)
+    paste0(paste(output, collapse = "\n"), "\n")
+}
+
+gui_analysis_gate_set_read_text <- function(csv_text) {
+    csv_text <- paste(as.character(csv_text %||% ""), collapse = "\n")
+    if (!nzchar(trimws(csv_text))) stop("Gate CSV is empty.", call. = FALSE)
+    if (nchar(csv_text, type = "bytes") > 5L * 1024L * 1024L) {
+        stop("Gate CSV is larger than the 5 MB safety limit.", call. = FALSE)
+    }
+    rows <- tryCatch(
+        utils::read.csv(
+            text = csv_text, stringsAsFactors = FALSE, check.names = FALSE,
+            colClasses = "character", na.strings = character(), strip.white = FALSE
+        ),
+        error = function(e) stop("Gate CSV could not be parsed: ", conditionMessage(e), call. = FALSE)
+    )
+    if (anyDuplicated(names(rows))) stop("Gate CSV contains duplicate column names.", call. = FALSE)
+    required <- gui_analysis_gate_set_columns()
+    missing <- setdiff(required, names(rows))
+    if (length(missing)) {
+        stop("Gate CSV is missing required column(s): ", paste(missing, collapse = ", "), ".", call. = FALSE)
+    }
+    rows <- rows[, required, drop = FALSE]
+    rows[] <- lapply(rows, function(column) {
+        column[is.na(column)] <- ""
+        trimws(as.character(column))
+    })
+    rows
+}
+
+gui_analysis_gate_set_scalar <- function(rows, field, population_id, allow_empty = FALSE) {
+    values <- unique(rows[[field]])
+    if (length(values) != 1L || (!isTRUE(allow_empty) && !nzchar(values[[1]]))) {
+        stop(
+            "Population '", population_id, "' must have one ",
+            if (isTRUE(allow_empty)) "consistent" else "non-empty consistent",
+            " ", field, " value.", call. = FALSE
+        )
+    }
+    values[[1]]
+}
+
+gui_analysis_gate_set_parse <- function(rows) {
+    if (!is.data.frame(rows)) stop("Gate CSV rows are invalid.", call. = FALSE)
+    if (anyDuplicated(names(rows))) stop("Gate CSV contains duplicate column names.", call. = FALSE)
+    required <- gui_analysis_gate_set_columns()
+    missing <- setdiff(required, names(rows))
+    if (length(missing)) stop("Gate CSV is missing required columns.", call. = FALSE)
+    formats <- unique(rows$format)
+    if (length(formats) != 1L || !identical(formats[[1]], gui_analysis_gate_set_format())) {
+        stop(
+            "This is not a Spectreasy population gate CSV (expected format '",
+            gui_analysis_gate_set_format(), "').", call. = FALSE
+        )
+    }
+    expected_version <- as.character(gui_analysis_gate_set_schema_version())
+    if (any(rows$schema_version != expected_version)) {
+        supplied <- paste(unique(rows$schema_version), collapse = ", ")
+        stop(
+            "Unsupported population gate CSV schema version '", supplied,
+            "'. This Spectreasy build supports version ",
+            gui_analysis_gate_set_schema_version(), ".", call. = FALSE
+        )
+    }
+    if (sum(rows$record_type == "metadata") != 1L) {
+        stop("Gate CSV must contain exactly one metadata row.", call. = FALSE)
+    }
+    if (any(!rows$record_type %in% c("metadata", "gate"))) {
+        stop("Gate CSV record_type must be 'metadata' or 'gate'.", call. = FALSE)
+    }
+    metadata <- rows[rows$record_type == "metadata", , drop = FALSE]
+    metadata_fields <- setdiff(required, c("format", "schema_version", "record_type"))
+    if (any(vapply(metadata[metadata_fields], function(column) any(nzchar(column)), logical(1)))) {
+        stop("The gate CSV metadata row must not contain population or geometry values.", call. = FALSE)
+    }
+    gates <- rows[rows$record_type == "gate", , drop = FALSE]
+    if (!nrow(gates)) return(list())
+    if (any(!nzchar(gates$population_id))) stop("Every gate row requires a non-empty population_id.", call. = FALSE)
+    if (any(gates$population_id == "root")) {
+        stop("The root 'All events' population must not be stored as an ordinary gate.", call. = FALSE)
+    }
+    ids <- unique(gates$population_id)
+    populations <- lapply(ids, function(id) {
+        group <- gates[gates$population_id == id, , drop = FALSE]
+        parent_id <- gui_analysis_gate_set_scalar(group, "parent_id", id)
+        population_name <- gui_analysis_gate_set_scalar(group, "population_name", id)
+        gate_type <- tolower(gui_analysis_gate_set_scalar(group, "gate_type", id))
+        semantic_role <- tolower(gui_analysis_gate_set_scalar(group, "semantic_role", id, allow_empty = TRUE))
+        source_file <- gui_analysis_gate_set_scalar(group, "source_file", id, allow_empty = TRUE)
+        x_channel <- gui_analysis_gate_set_scalar(group, "x_channel", id)
+        y_channel <- gui_analysis_gate_set_scalar(group, "y_channel", id, allow_empty = TRUE)
+        if (!gate_type %in% c("rectangle", "ellipse", "polygon", "range")) {
+            stop("Population '", id, "' has unsupported gate type '", gate_type, "'.", call. = FALSE)
+        }
+        if (nzchar(semantic_role) && !semantic_role %in% c("positive", "negative", "root", "terminal")) {
+            stop("Population '", id, "' has unsupported semantic role '", semantic_role, "'.", call. = FALSE)
+        }
+        indexes <- suppressWarnings(as.numeric(group$vertex_index))
+        if (
+            any(!is.finite(indexes)) || any(indexes < 1) ||
+            any(indexes != round(indexes)) || anyDuplicated(indexes)
+        ) {
+            stop("Population '", id, "' requires unique positive integer vertex_index values.", call. = FALSE)
+        }
+        order_index <- order(indexes)
+        group <- group[order_index, , drop = FALSE]
+        indexes <- as.integer(indexes[order_index])
+        if (!identical(indexes, seq_len(nrow(group)))) {
+            stop("Population '", id, "' vertex_index values must be sequential from 1.", call. = FALSE)
+        }
+        x <- suppressWarnings(as.numeric(group$x))
+        if (any(!is.finite(x))) stop("Population '", id, "' contains a non-finite X coordinate.", call. = FALSE)
+        if (identical(gate_type, "range")) {
+            if (nrow(group) != 2L || nzchar(y_channel) || any(nzchar(group$y))) {
+                stop("Range population '", id, "' requires exactly two X coordinates and no Y channel.", call. = FALSE)
+            }
+            geometry <- list(min = x[[1]], max = x[[2]])
+        } else {
+            y <- suppressWarnings(as.numeric(group$y))
+            if (!nzchar(y_channel) || any(!is.finite(y))) {
+                stop("Population '", id, "' requires a Y channel and finite Y coordinates.", call. = FALSE)
+            }
+            if (identical(gate_type, "polygon")) {
+                if (nrow(group) < 3L) stop("Polygon population '", id, "' requires at least three vertices.", call. = FALSE)
+                geometry <- list(points = lapply(seq_len(nrow(group)), function(index) list(x = x[[index]], y = y[[index]])))
+            } else {
+                if (nrow(group) != 2L) {
+                    stop(tools::toTitleCase(gate_type), " population '", id, "' requires exactly two bounding-box corners.", call. = FALSE)
+                }
+                x_min <- min(x)
+                x_max <- max(x)
+                y_min <- min(y)
+                y_max <- max(y)
+                geometry <- if (identical(gate_type, "rectangle")) {
+                    list(x_min = x_min, x_max = x_max, y_min = y_min, y_max = y_max)
+                } else {
+                    list(
+                        center_x = (x_min + x_max) / 2,
+                        center_y = (y_min + y_max) / 2,
+                        radius_x = (x_max - x_min) / 2,
+                        radius_y = (y_max - y_min) / 2
+                    )
+                }
+            }
+        }
+        list(
+            id = id,
+            name = population_name,
+            parent_id = parent_id,
+            type = gate_type,
+            role = if (nzchar(semantic_role)) semantic_role else NULL,
+            source_file = if (nzchar(source_file)) source_file else NULL,
+            x = x_channel,
+            y = if (nzchar(y_channel)) y_channel else NULL,
+            geometry = geometry
+        )
+    })
+    candidate <- gui_analysis_default_workspace()
+    candidate$populations <- c(candidate$populations, populations)
+    gui_analysis_normalize_workspace(candidate)$populations[-1L]
+}
+
+gui_analysis_gate_set_validate_compatibility <- function(root, workspace, populations) {
+    root <- gui_request_project_root(root)
+    inventory <- gui_analysis_source_inventory(root)
+    selected_source <- Filter(function(source) identical(as.character(source$path)[1], as.character(workspace$source_path %||% "")[1]), inventory)
+    if (!length(selected_source) && nzchar(as.character(workspace$selected_file %||% "")[1])) {
+        selected_source <- Filter(function(source) {
+            as.character(workspace$selected_file)[1] %in% vapply(source$files, function(file) as.character(file$path)[1], character(1))
+        }, inventory)
+    }
+    selected_source <- if (length(selected_source)) selected_source[[1]] else NULL
+    if (length(populations) && (is.null(selected_source) || !length(selected_source$files))) {
+        stop("Gate CSV compatibility error: select a data source with at least one FCS file before loading gates.", call. = FALSE)
+    }
+    selected_paths <- if (is.null(selected_source)) character() else vapply(selected_source$files, function(file) as.character(file$path)[1], character(1))
+    selected_headers <- if (is.null(selected_source)) list() else stats::setNames(
+        lapply(selected_source$files, function(file) unique(as.character(file$channels %||% character()))),
+        selected_paths
+    )
+    warnings <- character()
+    normalized <- lapply(populations, function(population) {
+        source_file <- trimws(as.character(population$source_file %||% "")[1])
+        needed <- c(as.character(population$x)[1], if (!identical(population$type, "range")) as.character(population$y)[1] else character())
+        if (!nzchar(source_file)) {
+            missing_by_file <- vapply(names(selected_headers), function(path) {
+                missing <- setdiff(needed, selected_headers[[path]])
+                if (length(missing)) paste0(path, " [", paste(missing, collapse = ", "), "]") else ""
+            }, character(1))
+            missing_by_file <- missing_by_file[nzchar(missing_by_file)]
+            if (length(missing_by_file)) {
+                stop(
+                    "Gate CSV compatibility error: global population '", population$name,
+                    "' uses channel(s) missing from the selected source: ",
+                    paste(missing_by_file, collapse = "; "),
+                    ". Select a compatible source or edit the CSV channel names.", call. = FALSE
+                )
+            }
+            return(population)
+        }
+        if (grepl("^(/|[A-Za-z]:[/\\\\])", source_file) || any(strsplit(gsub("\\\\", "/", source_file), "/", fixed = TRUE)[[1]] == "..")) {
+            stop(
+                "Gate CSV compatibility error: population '", population$name,
+                "' source_file must be a project-relative path without '..'.", call. = FALSE
+            )
+        }
+        source_path <- tryCatch(
+            gui_analysis_resolve_fcs(root, source_file),
+            error = function(e) stop(
+                "Gate CSV compatibility error: population '", population$name,
+                "' references unavailable source file '", source_file,
+                "'. Add that FCS file to this project or clear source_file to make the gate global.", call. = FALSE
+            )
+        )
+        normalized_source <- gui_analysis_relative_path(source_path, root)
+        header <- gui_analysis_header(source_path)
+        missing <- setdiff(needed, as.character(header$channels))
+        if (length(missing)) {
+            stop(
+                "Gate CSV compatibility error: population '", population$name,
+                "' references channel(s) ", paste(missing, collapse = ", "),
+                " that are absent from '", normalized_source, "'.", call. = FALSE
+            )
+        }
+        if (!normalized_source %in% selected_paths) {
+            warnings <<- c(
+                warnings,
+                paste0(
+                    "Population '", population$name, "' is file-specific to '",
+                    normalized_source, "', which is inside the project but outside the selected source."
+                )
+            )
+        }
+        population$source_file <- normalized_source
+        population
+    })
+    list(populations = normalized, warnings = unique(warnings))
+}
+
+gui_analysis_prepare_gate_set_import <- function(root, csv_text, workspace = NULL, source_name = "gate CSV") {
+    root <- gui_request_project_root(root)
+    workspace <- gui_analysis_normalize_workspace(workspace %||% gui_analysis_read_workspace(root))
+    rows <- gui_analysis_gate_set_read_text(csv_text)
+    populations <- gui_analysis_gate_set_parse(rows)
+    compatibility <- gui_analysis_gate_set_validate_compatibility(root, workspace, populations)
+    populations <- compatibility$populations
+    imported_ids <- c("root", vapply(populations, function(population) population$id, character(1)))
+    current_gate_count <- max(0L, length(workspace$populations) - 1L)
+    warnings <- compatibility$warnings
+    plots_redirected <- 0L
+    overlays_cleared <- 0L
+    plots <- lapply(workspace$plots, function(plot) {
+        if (!as.character(plot$population_id %||% "root")[1] %in% imported_ids) {
+            plot$population_id <- "root"
+            plots_redirected <<- plots_redirected + 1L
+        }
+        overlay <- as.character(plot$overlay_population_id %||% "")[1]
+        if (nzchar(overlay) && (!overlay %in% imported_ids || identical(overlay, as.character(plot$population_id)[1]))) {
+            plot$overlay_population_id <- NULL
+            overlays_cleared <<- overlays_cleared + 1L
+        }
+        plot
+    })
+    annotation_count <- length(workspace$annotations)
+    annotations <- Filter(function(annotation) {
+        population_id <- as.character(annotation$population_id %||% "")[1]
+        !nzchar(population_id) || population_id %in% imported_ids
+    }, workspace$annotations)
+    annotations_removed <- annotation_count - length(annotations)
+    trajectory_cleared <- FALSE
+    root_population <- as.character(workspace$root_population_id %||% "")[1]
+    root_source <- as.character(workspace$root_source_file %||% "")[1]
+    root_source_exists <- nzchar(root_source) && isTRUE(tryCatch(
+        file.exists(gui_workflow_resolve_path(root_source, root)),
+        error = function(e) FALSE
+    ))
+    if (nzchar(root_population) && (!root_population %in% imported_ids || !root_source_exists)) {
+        workspace$root_event_id <- NULL
+        workspace$root_population_id <- NULL
+        workspace$root_source_file <- NULL
+        trajectory_cleared <- TRUE
+    }
+    active <- as.character(workspace$active_population_id %||% "root")[1]
+    if (!active %in% imported_ids) active <- "root"
+    root_node <- gui_analysis_default_workspace()$populations[[1]]
+    candidate <- workspace
+    candidate$populations <- c(list(root_node), populations)
+    candidate$plots <- plots
+    candidate$annotations <- annotations
+    candidate$active_population_id <- active
+    candidate <- gui_analysis_normalize_workspace(candidate)
+    if (plots_redirected) warnings <- c(warnings, paste(plots_redirected, "plot population reference(s) were redirected to All events."))
+    if (overlays_cleared) warnings <- c(warnings, paste(overlays_cleared, "backgating overlay reference(s) were cleared."))
+    if (annotations_removed) warnings <- c(warnings, paste(annotations_removed, "annotation reference(s) to removed populations were discarded."))
+    if (trajectory_cleared) warnings <- c(warnings, "The trajectory root referenced a removed or unavailable population and was cleared.")
+    list(
+        workspace = candidate,
+        warnings = unique(warnings),
+        source_name = basename(as.character(source_name)[1]),
+        summary = list(
+            current_gate_count = current_gate_count,
+            imported_gate_count = length(populations),
+            plot_references_redirected = plots_redirected,
+            overlays_cleared = overlays_cleared,
+            annotations_removed = annotations_removed,
+            trajectory_root_cleared = trajectory_cleared
+        )
+    )
+}
+
+gui_analysis_write_gate_set <- function(root, path, workspace = NULL) {
+    root <- gui_request_project_root(root)
+    workspace <- gui_analysis_normalize_workspace(workspace %||% gui_analysis_read_workspace(root))
+    path <- as.character(path)[1]
+    if (!grepl("[.]csv$", path, ignore.case = TRUE)) path <- paste0(path, ".csv")
+    path <- normalizePath(path, mustWork = FALSE)
+    dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+    temporary <- tempfile("population-gates-", tmpdir = dirname(path), fileext = ".csv")
+    writeLines(gui_analysis_gate_set_csv(workspace), temporary, useBytes = TRUE)
+    if (!file.rename(temporary, path)) {
+        if (!file.copy(temporary, path, overwrite = TRUE)) stop("Could not save the population gate CSV.", call. = FALSE)
+        unlink(temporary, force = TRUE)
+    }
+    list(path = path, gate_count = max(0L, length(workspace$populations) - 1L))
+}
+
+gui_analysis_read_gate_set_file <- function(root, path, workspace = NULL) {
+    path <- path.expand(as.character(path)[1])
+    if (!file.exists(path)) stop("Population gate CSV not found: ", path, call. = FALSE)
+    info <- file.info(path)
+    if (!is.finite(info$size) || info$size > 5L * 1024L * 1024L) {
+        stop("Gate CSV is larger than the 5 MB safety limit.", call. = FALSE)
+    }
+    text <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+    gui_analysis_prepare_gate_set_import(root, text, workspace = workspace, source_name = path)
 }
 
 gui_analysis_fcs_directories <- function(root) {
@@ -422,8 +989,13 @@ gui_analysis_population_path <- function(workspace, population_id) {
     paste(names, collapse = "/")
 }
 
-gui_analysis_population_statistics <- function(root, file, population_id = "root", markers = character()) {
-    workspace <- gui_analysis_read_workspace(root)
+gui_analysis_request_workspace <- function(root, workspace = NULL) {
+    if (is.null(workspace)) return(gui_analysis_read_workspace(root))
+    gui_analysis_normalize_workspace(workspace)
+}
+
+gui_analysis_population_statistics <- function(root, file, population_id = "root", markers = character(), workspace = NULL) {
+    workspace <- gui_analysis_request_workspace(root, workspace)
     frame <- gui_analysis_flow_frame(root, file)
     data <- flowCore::exprs(frame)
     mask <- gui_analysis_gate_mask(data, workspace, population_id, source_file = file)
@@ -453,8 +1025,8 @@ gui_analysis_population_statistics <- function(root, file, population_id = "root
     )
 }
 
-gui_analysis_staining_index <- function(root, file, marker) {
-    workspace <- gui_analysis_read_workspace(root)
+gui_analysis_staining_index <- function(root, file, marker, workspace = NULL) {
+    workspace <- gui_analysis_request_workspace(root, workspace)
     frame <- gui_analysis_flow_frame(root, file)
     data <- flowCore::exprs(frame)
     if (!marker %in% colnames(data)) stop("Staining-index marker is unavailable: ", marker, call. = FALSE)
@@ -493,7 +1065,7 @@ gui_analysis_staining_index <- function(root, file, marker) {
 
 gui_analysis_export <- function(root, body) {
     root <- gui_request_project_root(root)
-    workspace <- gui_analysis_read_workspace(root)
+    workspace <- gui_analysis_request_workspace(root, body$workspace)
     files <- as.character(unlist(body$files %||% body$file, use.names = FALSE))
     files <- files[nzchar(files)]
     if (!length(files)) stop("Select at least one FCS file to export.", call. = FALSE)
@@ -506,14 +1078,31 @@ gui_analysis_export <- function(root, body) {
     output <- gui_workflow_resolve_path(output_value, root)
     if (!dir.exists(output) && !dir.create(output, recursive = TRUE, showWarnings = FALSE)) stop("Could not create the export folder.", call. = FALSE)
     population_path <- gui_analysis_population_path(workspace, population_id)
-    records <- lapply(files, function(file) {
+    stems <- tools::file_path_sans_ext(basename(files))
+    duplicate_stems <- duplicated(tolower(stems)) | duplicated(tolower(stems), fromLast = TRUE)
+    export_stems <- vapply(seq_along(files), function(index) {
+        if (!duplicate_stems[[index]]) return(stems[[index]])
+        paste0(stems[[index]], "_", sub("^file-", "", gui_analysis_stable_id("file", files[[index]])))
+    }, character(1))
+    records <- lapply(seq_along(files), function(index) {
+        file <- files[[index]]
         frame <- gui_analysis_flow_frame(root, file)
         data <- flowCore::exprs(frame)
         mask <- gui_analysis_gate_mask(data, workspace, population_id, source_file = file)
         population_indices <- which(mask)
+        if (!length(population_indices)) {
+            return(list(
+                files = list(),
+                skipped = list(
+                    source_file = file,
+                    source_events = 0L,
+                    reason = "The selected population has no events in this file."
+                )
+            ))
+        }
         selected <- gui_analysis_sample_indices(population_indices, target_count, seed, paste(file, population_id, "export"))
         safe_population <- gsub("[^[:alnum:]_.-]+", "_", gui_analysis_population(workspace, population_id)$name %||% population_id)
-        stem <- tools::file_path_sans_ext(basename(file))
+        stem <- export_stems[[index]]
         paths <- character()
         if (format %in% c("fcs", "both")) {
             output_frame <- frame[selected, ]
@@ -541,19 +1130,24 @@ gui_analysis_export <- function(root, body) {
             data.table::fwrite(csv, csv_path)
             paths <- c(paths, csv_path)
         }
-        lapply(paths, function(path) list(
-            path = gui_analysis_relative_path(path, root),
-            events = length(selected),
-            source_events = length(population_indices),
-            sha256 = gui_analysis_file_sha256(path)
-        ))
+        list(
+            files = lapply(paths, function(path) list(
+                path = gui_analysis_relative_path(path, root),
+                events = length(selected),
+                source_events = length(population_indices),
+                sha256 = gui_analysis_file_sha256(path)
+            )),
+            skipped = NULL
+        )
     })
+    skipped <- Filter(Negate(is.null), lapply(records, `[[`, "skipped"))
     list(
         population_id = population_id,
         population_path = population_path,
         seed = seed,
         max_events = target_count,
-        files = unlist(records, recursive = FALSE)
+        files = unlist(lapply(records, `[[`, "files"), recursive = FALSE),
+        skipped_files = skipped
     )
 }
 
@@ -565,7 +1159,7 @@ gui_analysis_file_sha256 <- function(path) {
 
 gui_analysis_export_statistics <- function(root, body) {
     root <- gui_request_project_root(root)
-    workspace <- gui_analysis_read_workspace(root)
+    workspace <- gui_analysis_request_workspace(root, body$workspace)
     files <- as.character(unlist(body$files %||% body$file, use.names = FALSE))
     files <- files[nzchar(files)]
     if (!length(files)) stop("Select at least one FCS file for statistics export.", call. = FALSE)
@@ -573,7 +1167,7 @@ gui_analysis_export_statistics <- function(root, body) {
     population_ids <- as.character(unlist(body$populationIds %||% vapply(workspace$populations, `[[`, character(1), "id"), use.names = FALSE))
     rows <- unlist(lapply(files, function(file) {
         unlist(lapply(population_ids, function(population_id) {
-            statistics <- gui_analysis_population_statistics(root, file, population_id, markers)
+            statistics <- gui_analysis_population_statistics(root, file, population_id, markers, workspace)
             marker_rows <- statistics$markers
             if (!nrow(marker_rows)) marker_rows <- data.frame(marker = "", median = NA_real_, mean = NA_real_, robust_sd = NA_real_)
             lapply(seq_len(nrow(marker_rows)), function(index) data.frame(
@@ -919,6 +1513,15 @@ gui_analysis_marker_display_labels <- function(frame, channels) {
     fallback <- sub("-(A|H|W)$", "", channels, ignore.case = TRUE)
     labels[!nzchar(trimws(labels))] <- fallback[!nzchar(trimws(labels))]
     make.unique(trimws(labels), sep = " ")
+}
+
+gui_analysis_marker_description <- function(frame, channel) {
+    parameters <- tryCatch(flowCore::parameters(frame)@data, error = function(e) NULL)
+    if (!is.data.frame(parameters) || !all(c("name", "desc") %in% names(parameters))) return("")
+    matched <- match(channel, as.character(parameters$name))
+    if (is.na(matched)) return("")
+    value <- as.character(parameters$desc[[matched]])
+    if (is.na(value)) "" else trimws(value)
 }
 
 gui_analysis_result_plot <- function(result, method, output_dir, root) {
@@ -1802,15 +2405,36 @@ gui_analysis_job_status <- function(root, job_id) {
     if (!file.exists(status_path)) stop("Analysis job not found.", call. = FALSE)
     status <- jsonlite::fromJSON(status_path, simplifyVector = FALSE)
     entry <- if (exists(job_id, envir = .gui_analysis_jobs, inherits = FALSE)) get(job_id, envir = .gui_analysis_jobs) else NULL
-    if (is.list(entry) && identical(status$state, "queued") && entry$process$is_alive()) {
+    process_alive <- is.list(entry) && isTRUE(entry$process$is_alive())
+    if (process_alive && identical(status$state, "queued")) {
         status$state <- "running"
         status$message <- "Starting analysis"
+    }
+    if (is.list(entry) && !process_alive && status$state %in% c("queued", "running")) {
+        stderr_path <- file.path(directory, "stderr.log")
+        details <- if (file.exists(stderr_path)) {
+            lines <- readLines(stderr_path, warn = FALSE)
+            trimws(paste(tail(lines[nzchar(trimws(lines))], 8L), collapse = "\n"))
+        } else {
+            ""
+        }
+        exit_status <- suppressWarnings(tryCatch(entry$process$get_exit_status(), error = function(e) NA_integer_))
+        status <- list(
+            state = "failed",
+            message = "Analysis worker stopped before producing a result",
+            updated_at = as.character(Sys.time()),
+            error = if (nzchar(details)) details else paste0("Analysis worker exited with status ", exit_status, ".")
+        )
+        jsonlite::write_json(status, status_path, auto_unbox = TRUE, pretty = TRUE, null = "null")
     }
     status$job_id <- job_id
     if (identical(status$state, "completed")) {
         result_path <- file.path(directory, "result.rds")
         if (!file.exists(result_path)) stop("Analysis job completed without a result.", call. = FALSE)
         status$result <- readRDS(result_path)
+    }
+    if (status$state %in% c("completed", "failed", "cancelled") && exists(job_id, envir = .gui_analysis_jobs, inherits = FALSE)) {
+        rm(list = job_id, envir = .gui_analysis_jobs)
     }
     status
 }
@@ -1830,12 +2454,13 @@ gui_analysis_cancel_job <- function(root, job_id) {
         error = NULL
     )
     jsonlite::write_json(status, status_path, auto_unbox = TRUE, pretty = TRUE, null = "null")
+    if (exists(job_id, envir = .gui_analysis_jobs, inherits = FALSE)) rm(list = job_id, envir = .gui_analysis_jobs)
     status
 }
 
 gui_analysis_run_method <- function(root, body) {
     root <- gui_request_project_root(root)
-    workspace <- gui_analysis_read_workspace(root)
+    workspace <- gui_analysis_request_workspace(root, body$workspace)
     requested_method_id <- gui_workflow_value(body, "method", "")
     cluster_method_id <- gui_workflow_value(body, "clusterMethod", "")
     reduction_method_id <- gui_workflow_value(body, "reductionMethod", "")
@@ -1885,7 +2510,7 @@ gui_analysis_run_method <- function(root, body) {
         stop(method$name, " is not executable in this runtime. ", requirement, call. = FALSE)
     }
 
-    files <- unique(as.character(unlist(body$files %||% body$file %||% "", use.names = FALSE)))
+    files <- sort(unique(as.character(unlist(body$files %||% body$file %||% "", use.names = FALSE))), method = "radix")
     files <- files[nzchar(trimws(files))]
     if (!length(files)) stop("Select at least one FCS file.", call. = FALSE)
     file <- files[[1]]
@@ -1904,6 +2529,22 @@ gui_analysis_run_method <- function(root, body) {
         stop(
             "Selected markers are not present in every pooled file: ",
             paste(missing_markers, collapse = ", "),
+            call. = FALSE
+        )
+    }
+    inconsistent_labels <- Filter(function(marker) {
+        labels <- unique(vapply(frames, gui_analysis_marker_description, character(1), channel = marker))
+        length(labels[nzchar(labels)]) > 1L
+    }, requested_markers)
+    if (length(inconsistent_labels)) {
+        details <- vapply(inconsistent_labels, function(marker) {
+            labels <- unique(vapply(frames, gui_analysis_marker_description, character(1), channel = marker))
+            paste0(marker, " (", paste(labels[nzchar(labels)], collapse = " / "), ")")
+        }, character(1))
+        stop(
+            "Selected channels have inconsistent marker labels across pooled files: ",
+            paste(details, collapse = ", "),
+            ". Pool only files from the same panel or choose unambiguous channels.",
             call. = FALSE
         )
     }

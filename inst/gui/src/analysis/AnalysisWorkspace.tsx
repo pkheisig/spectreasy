@@ -32,6 +32,7 @@ import { AnalysisGuideDialog } from './AnalysisGuideDialog'
 import { AnalysisResultPlots } from './AnalysisResultPlots'
 import { CellIdentityPanel } from './CellIdentityPanel'
 import { CONTINUOUS_PALETTES, paletteGradient } from './resultColor'
+import { scalarNullableNumber } from './workspaceNormalization'
 import { PlotCard } from './PlotCard'
 import type { PlotTool } from './AnalysisPlot'
 import type {
@@ -46,6 +47,7 @@ import type {
   ChannelLabel,
   GateDraft,
   PopulationStatistics,
+  PreparedGateSetImport,
 } from './types'
 import './analysis.css'
 
@@ -146,10 +148,10 @@ function normalizeWorkspace(value: AnalysisWorkspaceState): AnalysisWorkspaceSta
       y_transform: scalarString(plot.y_transform, 'linear') as AnalysisPlotState['y_transform'],
       point_size: scalarNumber(plot.point_size, 2.4),
       opacity: scalarNumber(plot.opacity, 0.82),
-      x_min: plot.x_min == null ? null : scalarNumber(plot.x_min),
-      x_max: plot.x_max == null ? null : scalarNumber(plot.x_max),
-      y_min: plot.y_min == null ? null : scalarNumber(plot.y_min),
-      y_max: plot.y_max == null ? null : scalarNumber(plot.y_max),
+      x_min: scalarNullableNumber(plot.x_min),
+      x_max: scalarNullableNumber(plot.x_max),
+      y_min: scalarNullableNumber(plot.y_min),
+      y_max: scalarNullableNumber(plot.y_max),
     })),
     annotations: asArray(value.annotations),
   }
@@ -254,6 +256,26 @@ function preferredAxes(channels: string[]): [string, string] {
   return [x, y]
 }
 
+function repairPlotChannels(plot: AnalysisPlotState, file: AnalysisSource['files'][number] | undefined): AnalysisPlotState {
+  const available = file?.channels ?? []
+  const [fallbackX, fallbackY] = preferredAxes(available)
+  const x = available.includes(plot.x) ? plot.x : fallbackX
+  const y = available.includes(plot.y) && plot.y !== x
+    ? plot.y
+    : available.find((channel) => channel !== x) ?? fallbackY
+  const colorMarker = plot.color_marker && available.includes(plot.color_marker) ? plot.color_marker : x
+  return {
+    ...plot,
+    x,
+    y,
+    color_marker: colorMarker,
+    x_min: x === plot.x ? plot.x_min : null,
+    x_max: x === plot.x ? plot.x_max : null,
+    y_min: y === plot.y ? plot.y_min : null,
+    y_max: y === plot.y ? plot.y_max : null,
+  }
+}
+
 function preferredMarkers(file: AnalysisSource['files'][number] | undefined) {
   if (!file) return []
   const markerChannels = file.channels.filter((channel, index) => file.descriptions[index] && !/^(time|fsc|ssc)/i.test(channel))
@@ -328,6 +350,7 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
   const [sources, setSources] = useState<AnalysisSource[]>([])
   const [methods, setMethods] = useState<AnalysisMethod[]>([])
   const [workspace, setWorkspace] = useState<AnalysisWorkspaceState | null>(null)
+  const workspaceRef = useRef<AnalysisWorkspaceState | null>(null)
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState('Opening analysis workspace')
   const [saveState, setSaveState] = useState<SaveState>('saved')
@@ -337,6 +360,7 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
   const [analysisDialogOpen, setAnalysisDialogOpen] = useState(false)
   const [analysisGuideOpen, setAnalysisGuideOpen] = useState(false)
   const [gateDraft, setGateDraft] = useState<GateDraft | null>(null)
+  const [gateParentId, setGateParentId] = useState('root')
   const [gateName, setGateName] = useState('Population')
   const [gateRole, setGateRole] = useState('')
   const [fileSpecificGate, setFileSpecificGate] = useState(false)
@@ -363,6 +387,11 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
   const [analysisMaxEvents, setAnalysisMaxEvents] = useState(20000)
   const [analysisCofactor, setAnalysisCofactor] = useState(150)
   const [analysisFiles, setAnalysisFiles] = useState<string[]>([])
+  const [analysisCountResponse, setAnalysisCountResponse] = useState<{
+    key: string
+    counts: Record<string, number>
+    error: string
+  } | null>(null)
   const [populationQuery, setPopulationQuery] = useState('')
   const [collapsedPopulationIds, setCollapsedPopulationIds] = useState<Set<string>>(() => new Set())
   const [inspectorOpen, setInspectorOpen] = useState(
@@ -370,7 +399,12 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
   )
   const undoStack = useRef<AnalysisWorkspaceState[]>([])
   const redoStack = useRef<AnalysisWorkspaceState[]>([])
+  const saveRevision = useRef(0)
+  const savedRevision = useRef(0)
+  const saveQueue = useRef<Promise<void>>(Promise.resolve())
   const importWorkspaceInput = useRef<HTMLInputElement>(null)
+  const importGateSetInput = useRef<HTMLInputElement>(null)
+  const [pendingGateSetImport, setPendingGateSetImport] = useState<PreparedGateSetImport | null>(null)
   const [, setHistoryRevision] = useState(0)
 
   const bumpHistory = useCallback(() => setHistoryRevision((revision) => revision + 1), [])
@@ -413,54 +447,59 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
   }, [])
 
   const updateWorkspace = useCallback((update: (current: AnalysisWorkspaceState) => AnalysisWorkspaceState) => {
-    setWorkspace((current) => {
-      if (!current) return current
-      const next = update(current)
-      if (next === current) return current
-      undoStack.current.push(cloneWorkspace(current))
-      if (undoStack.current.length > 100) undoStack.current.shift()
-      redoStack.current = []
-      bumpHistory()
-      setSaveState('saving')
-      return next
-    })
+    const current = workspaceRef.current
+    if (!current) return
+    const next = update(current)
+    if (next === current) return
+    undoStack.current.push(cloneWorkspace(current))
+    if (undoStack.current.length > 100) undoStack.current.shift()
+    redoStack.current = []
+    workspaceRef.current = next
+    bumpHistory()
+    saveRevision.current += 1
+    setSaveState('saving')
+    setWorkspace(next)
   }, [bumpHistory])
 
   const replaceWorkspace = useCallback((next: AnalysisWorkspaceState, recordHistory = true) => {
-    setWorkspace((current) => {
-      if (recordHistory && current) {
-        undoStack.current.push(cloneWorkspace(current))
-        if (undoStack.current.length > 100) undoStack.current.shift()
-      } else {
-        undoStack.current = []
-      }
-      redoStack.current = []
-      bumpHistory()
-      setSaveState('saving')
-      return cloneWorkspace(next)
-    })
+    const current = workspaceRef.current
+    if (recordHistory && current) {
+      undoStack.current.push(cloneWorkspace(current))
+      if (undoStack.current.length > 100) undoStack.current.shift()
+    } else {
+      undoStack.current = []
+    }
+    redoStack.current = []
+    const replacement = cloneWorkspace(next)
+    workspaceRef.current = replacement
+    bumpHistory()
+    saveRevision.current += 1
+    setSaveState('saving')
+    setWorkspace(replacement)
   }, [bumpHistory])
 
   const undoWorkspace = useCallback(() => {
-    setWorkspace((current) => {
-      const previous = undoStack.current.pop()
-      if (!current || !previous) return current
-      redoStack.current.push(cloneWorkspace(current))
-      bumpHistory()
-      setSaveState('saving')
-      return previous
-    })
+    const current = workspaceRef.current
+    const previous = undoStack.current.pop()
+    if (!current || !previous) return
+    redoStack.current.push(cloneWorkspace(current))
+    workspaceRef.current = previous
+    bumpHistory()
+    saveRevision.current += 1
+    setSaveState('saving')
+    setWorkspace(previous)
   }, [bumpHistory])
 
   const redoWorkspace = useCallback(() => {
-    setWorkspace((current) => {
-      const next = redoStack.current.pop()
-      if (!current || !next) return current
-      undoStack.current.push(cloneWorkspace(current))
-      bumpHistory()
-      setSaveState('saving')
-      return next
-    })
+    const current = workspaceRef.current
+    const next = redoStack.current.pop()
+    if (!current || !next) return
+    undoStack.current.push(cloneWorkspace(current))
+    workspaceRef.current = next
+    bumpHistory()
+    saveRevision.current += 1
+    setSaveState('saving')
+    setWorkspace(next)
   }, [bumpHistory])
 
   useEffect(() => {
@@ -474,6 +513,11 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
       const loadedSources = asArray(sourceResponse.sources).map(normalizeSource)
       const loadedMethods = asArray(methodResponse.methods).map(normalizeMethod)
       let loaded = normalizeWorkspace(workspaceResponse.workspace)
+      const persistedSelection = {
+        source_path: loaded.source_path,
+        selected_file: loaded.selected_file,
+        plots: loaded.plots,
+      }
       const preferredSource = loadedSources.find((source) => source.path === loaded.source_path)
         ?? loadedSources.find((source) => source.role === 'unmixed')
         ?? loadedSources.find((source) => source.role === 'samples')
@@ -484,11 +528,7 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
         ...loaded,
         source_path: preferredSource?.path ?? '',
         selected_file: selected?.path ?? '',
-        plots: loaded.plots.map((plot) => ({
-          ...plot,
-          x: selected?.channels.includes(plot.x) ? plot.x : x,
-          y: selected?.channels.includes(plot.y) ? plot.y : y,
-        })),
+        plots: loaded.plots.map((plot) => repairPlotChannels({ ...plot, x: plot.x || x, y: plot.y || y }, selected)),
       }
       setSources(loadedSources)
       setMethods(loadedMethods)
@@ -498,12 +538,22 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
       setSelectedMarkers(preferredMarkers(selected))
       setStainingMarker(preferredMarkers(selected)[0] ?? selected?.channels[0] ?? '')
       setAnalysisFiles(selected?.path ? [selected.path] : [])
+      workspaceRef.current = loaded
       setWorkspace(loaded)
       undoStack.current = []
       redoStack.current = []
+      saveRevision.current += 1
+      const repairedSelection = {
+        source_path: loaded.source_path,
+        selected_file: loaded.selected_file,
+        plots: loaded.plots,
+      }
+      const selectionChanged = JSON.stringify(repairedSelection) !== JSON.stringify(persistedSelection)
+      savedRevision.current = selectionChanged ? saveRevision.current - 1 : saveRevision.current
       bumpHistory()
       setSelectedPlotId(loaded.plots[0]?.id ?? 'plot-1')
       setReady(true)
+      setSaveState(selectionChanged ? 'saving' : 'saved')
       setStatus(loadedSources.length ? 'Ready' : 'No FCS sources found')
     }).catch((reason: unknown) => {
       if (!cancelled) setStatus(reason instanceof Error ? reason.message : String(reason))
@@ -532,13 +582,42 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
 
   useEffect(() => {
     if (!ready || !workspace || saveState !== 'saving') return
+    const revision = saveRevision.current
+    const snapshot = cloneWorkspace(workspace)
     const timer = window.setTimeout(() => {
-      void analysisRequest<{ success: boolean }>('/analysis/workspace', projectPath, {
-        method: 'POST', body: JSON.stringify({ workspace }),
-      }).then(() => setSaveState('saved')).catch(() => setSaveState('error'))
+      const queued = saveQueue.current
+        .catch(() => undefined)
+        .then(async () => {
+          await analysisRequest<{ success: boolean }>('/analysis/workspace', projectPath, {
+            method: 'POST', body: JSON.stringify({ workspace: snapshot }),
+          })
+          if (saveRevision.current === revision) {
+            savedRevision.current = revision
+            setSaveState('saved')
+          }
+        })
+      saveQueue.current = queued.then(() => undefined, () => undefined)
+      void queued.catch(() => {
+        if (saveRevision.current === revision) setSaveState('error')
+      })
     }, 450)
     return () => window.clearTimeout(timer)
   }, [projectPath, ready, saveState, workspace])
+
+  useEffect(() => () => {
+    const revision = saveRevision.current
+    const snapshot = workspaceRef.current
+    if (!snapshot || savedRevision.current === revision) return
+    const queued = saveQueue.current
+      .catch(() => undefined)
+      .then(async () => {
+        await analysisRequest<{ success: boolean }>('/analysis/workspace', projectPath, {
+          method: 'POST', body: JSON.stringify({ workspace: snapshot }),
+        })
+        if (saveRevision.current === revision) savedRevision.current = revision
+      })
+    saveQueue.current = queued.then(() => undefined, () => undefined)
+  }, [projectPath])
 
   const selectedSource = useMemo(
     () => sources.find((source) => source.path === workspace?.source_path) ?? sources[0],
@@ -552,6 +631,10 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
   const activePopulation = useMemo(
     () => workspace?.populations.find((population) => population.id === workspace.active_population_id) ?? workspace?.populations[0],
     [workspace],
+  )
+  const gateParent = useMemo(
+    () => workspace?.populations.find((population) => population.id === gateParentId) ?? activePopulation,
+    [activePopulation, gateParentId, workspace],
   )
   const selectedPlot = useMemo(
     () => workspace?.plots.find((plot) => plot.id === selectedPlotId) ?? workspace?.plots[0],
@@ -569,6 +652,17 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
     () => methods.find((method) => method.id === selectedTrajectoryMethod),
     [methods, selectedTrajectoryMethod],
   )
+  const selectedAnalysisFiles = useMemo(
+    () => (selectedSource?.files ?? []).filter((file) => analysisFiles.includes(file.path)),
+    [analysisFiles, selectedSource],
+  )
+  const commonAnalysisChannels = useMemo(() => {
+    if (!selectedAnalysisFiles.length) return new Set<string>()
+    return new Set(selectedAnalysisFiles.slice(1).reduce(
+      (common, file) => common.filter((channel) => file.channels.includes(channel)),
+      [...selectedAnalysisFiles[0].channels],
+    ))
+  }, [selectedAnalysisFiles])
   const selectedAnalysisMethods = useMemo(() => {
     if (analysisMode === 'explore') {
       return [selectedClusterMethod === 'none' ? undefined : selectedCluster, selectedReduction]
@@ -596,13 +690,57 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
     }
     return result
   }, [populationQuery, workspace])
+
+  const analysisCountKey = workspace && activePopulation && analysisFiles.length
+    ? JSON.stringify({
+        projectPath,
+        populationId: activePopulation.id,
+        files: analysisFiles,
+        populations: workspace.populations,
+      })
+    : ''
+  useEffect(() => {
+    if (!activePopulation || !analysisCountKey || !analysisFiles.length) return
+    const controller = new AbortController()
+    void Promise.all(analysisFiles.map(async (file) => {
+      const response = await analysisRequest<{ success: boolean; result: PopulationStatistics }>('/analysis/statistics', projectPath, {
+        method: 'POST',
+        signal: controller.signal,
+        body: JSON.stringify({ file, populationId: activePopulation.id, markers: [], workspace }),
+      })
+      return [file, response.result.count] as const
+    })).then((counts) => {
+      setAnalysisCountResponse({ key: analysisCountKey, counts: Object.fromEntries(counts), error: '' })
+    }).catch((reason: unknown) => {
+      if (!controller.signal.aborted) {
+        setAnalysisCountResponse({
+          key: analysisCountKey,
+          counts: {},
+          error: reason instanceof Error ? reason.message : String(reason),
+        })
+      }
+    })
+    return () => controller.abort()
+  }, [activePopulation, analysisCountKey, analysisFiles, projectPath, workspace])
+
   const methodIssues = (() => {
     const issues: string[] = []
-    const eventCountKnown = statistics?.population_id === activePopulation?.id
-    const eventCountReady = !eventCountKnown || (statistics?.count ?? 0) >= 20
+    const analysisPopulationCounts = analysisCountResponse?.key === analysisCountKey
+      ? analysisCountResponse.counts
+      : {}
+    const analysisCountsError = analysisCountResponse?.key === analysisCountKey
+      ? analysisCountResponse.error
+      : ''
+    const analysisCountsLoading = Boolean(analysisCountKey && analysisCountResponse?.key !== analysisCountKey)
+    const eventCountKnown = !analysisCountsLoading
+      && analysisFiles.length > 0
+      && analysisFiles.every((file) => Object.hasOwn(analysisPopulationCounts, file))
+    const selectedPopulationCount = analysisFiles.reduce((total, file) => total + (analysisPopulationCounts[file] ?? 0), 0)
+    const eventCountReady = !eventCountKnown || selectedPopulationCount >= 20
     const rootReady = Boolean(
       workspace?.root_event_id
-      && workspace.root_source_file === selectedFile?.path
+      && workspace.root_source_file
+      && analysisFiles.includes(workspace.root_source_file)
       && activePopulation
       && populationContainsRoot(workspace.populations, activePopulation.id, workspace.root_population_id),
     )
@@ -630,7 +768,23 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
       }
     }
     if (selectedMarkers.length < 2) issues.push('Select at least two markers.')
+    const missingMarkers = selectedMarkers.filter((marker) => !commonAnalysisChannels.has(marker))
+    if (analysisFiles.length && missingMarkers.length) {
+      issues.push(`Selected markers are not present in every pooled file: ${missingMarkers.join(', ')}.`)
+    }
+    const inconsistentMarkers = selectedMarkers.filter((marker) => {
+      const labels = new Set(selectedAnalysisFiles.map((file) => {
+        const index = file.channels.indexOf(marker)
+        return index >= 0 ? (file.descriptions[index] ?? '').trim() : ''
+      }).filter(Boolean))
+      return labels.size > 1
+    })
+    if (inconsistentMarkers.length) {
+      issues.push(`Selected channels have inconsistent marker labels across pooled files: ${inconsistentMarkers.join(', ')}.`)
+    }
     if (!analysisFiles.length) issues.push('Select at least one sample file.')
+    if (analysisCountsLoading) issues.push('Checking the selected population across pooled files.')
+    if (analysisCountsError) issues.push(analysisCountsError)
     if (!eventCountReady) issues.push('The selected population needs at least 20 events.')
     issues.push(...advancedSettingsIssues(selectedAnalysisMethods, advancedSettings))
     return issues
@@ -643,7 +797,7 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
     const markers = Array.from(new Set(workspace.plots.flatMap((plot) => [plot.x, plot.y]))).filter(Boolean)
     void analysisRequest<{ success: boolean; result: PopulationStatistics }>('/analysis/statistics', projectPath, {
       method: 'POST', signal: controller.signal,
-      body: JSON.stringify({ file: selectedFile.path, populationId: activePopulation.id, markers }),
+      body: JSON.stringify({ file: selectedFile.path, populationId: activePopulation.id, markers, workspace }),
     }).then((response) => {
       setStatistics(response.result)
       setStatisticsError('')
@@ -721,7 +875,6 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
   function changeSource(path: string) {
     const source = sources.find((candidate) => candidate.path === path)
     const file = source?.files[0]
-    const [x, y] = preferredAxes(file?.channels ?? [])
     updateWorkspace((current) => ({
       ...current,
       source_path: path,
@@ -730,7 +883,13 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
       root_event_id: null,
       root_population_id: null,
       root_source_file: null,
-      plots: current.plots.map((plot) => ({ ...plot, population_id: 'root', x, y, color_marker: x })),
+      plots: current.plots.map((plot) => repairPlotChannels({
+        ...plot,
+        population_id: 'root',
+        x: '',
+        y: '',
+        color_marker: '',
+      }, file)),
     }))
     setSelectedMarkers(preferredMarkers(file))
     setStainingMarker(preferredMarkers(file)[0] ?? file?.channels[0] ?? '')
@@ -746,6 +905,7 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
       root_event_id: null,
       root_population_id: null,
       root_source_file: null,
+      plots: current.plots.map((plot) => repairPlotChannels(plot, file)),
     }))
     setSelectedMarkers(preferredMarkers(file))
     setStainingMarker(preferredMarkers(file)[0] ?? file?.channels[0] ?? '')
@@ -774,7 +934,7 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
     const node: AnalysisPopulation = {
       id,
       name: gateName.trim() || 'Population',
-      parent_id: workspace.active_population_id,
+      parent_id: gateParent?.id ?? workspace.active_population_id,
       type: gateDraft.type,
       role: gateRole === 'positive' || gateRole === 'negative' || gateRole === 'root' || gateRole === 'terminal' ? gateRole : null,
       source_file: fileSpecificGate ? selectedFile.path : null,
@@ -784,6 +944,7 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
     }
     updateWorkspace((current) => ({ ...current, populations: [...current.populations, node] }))
     setGateDraft(null)
+    setGateParentId('root')
     setGateName('Population')
     setGateRole('')
     setFileSpecificGate(false)
@@ -814,7 +975,13 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
     setActionMessage('Calculating staining index…')
     try {
       const response = await analysisRequest<{ success: boolean; result: Record<string, number | string> }>('/analysis/statistics', projectPath, {
-        method: 'POST', body: JSON.stringify({ mode: 'staining_index', file: selectedFile.path, marker: stainingMarker }),
+        method: 'POST',
+        body: JSON.stringify({
+          mode: 'staining_index',
+          file: selectedFile.path,
+          marker: stainingMarker,
+          workspace,
+        }),
       })
       setStainingResult(response.result)
       setActionMessage('')
@@ -828,7 +995,13 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
     setActionMessage('Exporting selected population…')
     try {
       const files = exportAllFiles ? selectedSource.files.map((file) => file.path) : [selectedFile.path]
-      const response = await analysisRequest<{ success: boolean; result: { files: Array<{ path: string; events: number }> } }>('/analysis/export', projectPath, {
+      const response = await analysisRequest<{
+        success: boolean
+        result: {
+          files: Array<{ path: string; events: number }>
+          skipped_files?: Array<{ source_file: string; reason: string }>
+        }
+      }>('/analysis/export', projectPath, {
         method: 'POST',
         body: JSON.stringify({
           files,
@@ -837,10 +1010,17 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
           maxEvents: exportCount,
           seed: workspace.seed,
           outputFolder: exportFolder,
+          workspace,
         }),
       })
       const exported = asArray(response.result.files)
-      setActionMessage(`Exported ${exported.length} file${exported.length === 1 ? '' : 's'} · ${exported.map((file) => file.path).join(', ')}`)
+      const skipped = asArray(response.result.skipped_files)
+      const exportSummary = exported.length
+        ? `Exported ${exported.length} file${exported.length === 1 ? '' : 's'} · ${exported.map((file) => file.path).join(', ')}`
+        : 'No files were exported.'
+      setActionMessage(skipped.length
+        ? `${exportSummary} Skipped ${skipped.length} source file${skipped.length === 1 ? '' : 's'} with no events.`
+        : exportSummary)
     } catch (reason) {
       setActionMessage(reason instanceof Error ? reason.message : String(reason))
     }
@@ -858,6 +1038,7 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
           populationIds: workspace.populations.map((population) => population.id),
           markers: channels.map((channel) => channel.channel),
           outputFolder: exportFolder,
+          workspace,
         }),
       })
       setActionMessage(`Exported ${response.result.rows.toLocaleString()} statistic rows · ${response.result.path}`)
@@ -924,6 +1105,141 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
     }
   }
 
+  function normalizePreparedGateSet(response: PreparedGateSetImport): PreparedGateSetImport {
+    return {
+      workspace: normalizeWorkspace(response.workspace),
+      warnings: asArray(response.warnings).map((warning) => scalarString(warning)).filter(Boolean),
+      source_name: scalarString(response.source_name, 'gate CSV'),
+      summary: {
+        current_gate_count: scalarNumber(response.summary?.current_gate_count),
+        imported_gate_count: scalarNumber(response.summary?.imported_gate_count),
+        plot_references_redirected: scalarNumber(response.summary?.plot_references_redirected),
+        overlays_cleared: scalarNumber(response.summary?.overlays_cleared),
+        annotations_removed: scalarNumber(response.summary?.annotations_removed),
+        trajectory_root_cleared: scalarBoolean(response.summary?.trajectory_root_cleared),
+      },
+    }
+  }
+
+  function downloadGateSet(csv: string, filename: string) {
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function saveGateSet() {
+    if (!workspace) return
+    setActionMessage('Opening gate CSV save picker…')
+    try {
+      const response = await analysisRequest<{
+        success: boolean
+        fallback: boolean
+        cancelled: boolean
+        path?: string
+        gate_count?: number
+      }>('/analysis/gate-set/save-dialog', projectPath, {
+        method: 'POST',
+        body: JSON.stringify({ workspace }),
+      })
+      if (scalarBoolean(response.cancelled)) {
+        setActionMessage('Gate CSV save cancelled.')
+        return
+      }
+      if (scalarBoolean(response.fallback)) {
+        const exported = await analysisRequest<{
+          success: boolean
+          filename: string
+          csv: string
+          gate_count: number
+        }>('/analysis/gate-set/export', projectPath, {
+          method: 'POST',
+          body: JSON.stringify({ workspace }),
+        })
+        downloadGateSet(scalarString(exported.csv), scalarString(exported.filename, 'spectreasy-population-gates.csv'))
+        setActionMessage(`Downloaded ${scalarNumber(exported.gate_count).toLocaleString()} reusable gate${scalarNumber(exported.gate_count) === 1 ? '' : 's'} as CSV.`)
+        return
+      }
+      const count = scalarNumber(response.gate_count)
+      setActionMessage(`Saved ${count.toLocaleString()} reusable gate${count === 1 ? '' : 's'} · ${scalarString(response.path)}`)
+    } catch (reason) {
+      setActionMessage(`Gate CSV save failed: ${reason instanceof Error ? reason.message : String(reason)}`)
+    }
+  }
+
+  async function prepareGateSetFromFile(file: File) {
+    if (!workspace) return
+    setActionMessage(`Checking ${file.name}…`)
+    try {
+      const response = await analysisRequest<{ success: boolean } & PreparedGateSetImport>('/analysis/gate-set/prepare', projectPath, {
+        method: 'POST',
+        body: JSON.stringify({
+          workspace,
+          csv: await file.text(),
+          source_name: file.name,
+        }),
+      })
+      setPendingGateSetImport(normalizePreparedGateSet(response))
+      setActionMessage('')
+    } catch (reason) {
+      setActionMessage(`Gate CSV load failed: ${reason instanceof Error ? reason.message : String(reason)}`)
+    } finally {
+      if (importGateSetInput.current) importGateSetInput.current.value = ''
+    }
+  }
+
+  async function loadGateSet() {
+    if (!workspace) return
+    setActionMessage('Opening gate CSV picker…')
+    try {
+      const response = await analysisRequest<{
+        success: boolean
+        fallback: boolean
+        cancelled: boolean
+      } & Partial<PreparedGateSetImport>>('/analysis/gate-set/load-dialog', projectPath, {
+        method: 'POST',
+        body: JSON.stringify({ workspace }),
+      })
+      if (scalarBoolean(response.cancelled)) {
+        setActionMessage('Gate CSV load cancelled.')
+        return
+      }
+      if (scalarBoolean(response.fallback)) {
+        setActionMessage('')
+        importGateSetInput.current?.click()
+        return
+      }
+      setPendingGateSetImport(normalizePreparedGateSet(response as PreparedGateSetImport))
+      setActionMessage('')
+    } catch (reason) {
+      setActionMessage(`Gate CSV load failed: ${reason instanceof Error ? reason.message : String(reason)}`)
+    }
+  }
+
+  async function confirmGateSetImport() {
+    if (!pendingGateSetImport) return
+    try {
+      const response = await analysisRequest<{ success: boolean; workspace: AnalysisWorkspaceState }>('/analysis/workspace', projectPath, {
+        method: 'POST',
+        body: JSON.stringify({ workspace: pendingGateSetImport.workspace }),
+      })
+      const imported = normalizeWorkspace(response.workspace)
+      replaceWorkspace(imported)
+      setSelectedPlotId((current) => imported.plots.some((plot) => plot.id === current) ? current : imported.plots[0]?.id ?? '')
+      setGateParentId(imported.active_population_id)
+      const warningSuffix = pendingGateSetImport.warnings.length
+        ? ` ${pendingGateSetImport.warnings.length} compatibility adjustment${pendingGateSetImport.warnings.length === 1 ? '' : 's'} applied.`
+        : ''
+      setActionMessage(`Loaded ${pendingGateSetImport.summary.imported_gate_count.toLocaleString()} reusable gate${pendingGateSetImport.summary.imported_gate_count === 1 ? '' : 's'}. Undo is available.${warningSuffix}`)
+      setPendingGateSetImport(null)
+    } catch (reason) {
+      setActionMessage(`Gate replacement failed: ${reason instanceof Error ? reason.message : String(reason)}`)
+    }
+  }
+
   async function runMethod() {
     if (!workspace || !selectedFile || !methodCanRun) return
     setMethodRunning(true)
@@ -953,6 +1269,7 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
         rootSourceFile: workspace.root_source_file,
         cofactor: analysisCofactor,
         advancedSettings: resolvedAdvancedSettings(selectedAnalysisMethods, advancedSettings),
+        workspace,
       }
       const response = await analysisRequest<{ success: boolean; job: { job_id: string; state: string; message: string } }>('/analysis/jobs', projectPath, {
         method: 'POST',
@@ -1013,6 +1330,21 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
       <div className="analysis-body">
         <aside className="analysis-populations">
           <div className="analysis-panel-title"><Boxes size={15} /><strong>Populations</strong></div>
+          <div className="analysis-gate-set-actions" role="toolbar" aria-label="Population gate CSV">
+            <button type="button" onClick={() => void saveGateSet()} title="Save gates as CSV"><Save size={13} /><span>Save gates as CSV</span></button>
+            <button type="button" onClick={() => void loadGateSet()} title="Load gates from CSV"><FolderOpen size={13} /><span>Load gates from CSV</span></button>
+          </div>
+          <input
+            ref={importGateSetInput}
+            className="analysis-hidden-input"
+            type="file"
+            accept=".csv,text/csv"
+            aria-label="Load gates from CSV"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) void prepareGateSetFromFile(file)
+            }}
+          />
           <label className="analysis-population-search">
             <Search size={13} />
             <input aria-label="Filter populations" value={populationQuery} onChange={(event) => setPopulationQuery(event.target.value)} placeholder="Filter populations" />
@@ -1071,7 +1403,12 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
                 populations={workspace.populations}
                 seed={workspace.seed}
                 tool={tool}
-                rootEventId={workspace.root_event_id}
+                rootEventId={
+                  workspace.root_source_file === selectedFile?.path
+                  && populationContainsRoot(workspace.populations, plot.population_id, workspace.root_population_id)
+                    ? workspace.root_event_id
+                    : null
+                }
                 selected={selectedPlot?.id === plot.id}
                 onSelect={() => { setSelectedPlotId(plot.id); setTab('plot') }}
                 onChange={(patch) => updateWorkspace((current) => ({
@@ -1087,7 +1424,11 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
                 onMove={(direction) => movePlot(plot.id, direction)}
                 canMoveLeft={plotIndex > 0}
                 canMoveRight={plotIndex < workspace.plots.length - 1}
-                onGateDraft={(draft) => { setGateDraft(draft); setGateName(`Population ${workspace.populations.length}`) }}
+                onGateDraft={(draft) => {
+                  setGateDraft(draft)
+                  setGateParentId(plot.population_id)
+                  setGateName(`Population ${workspace.populations.length}`)
+                }}
                 onRootEvent={(eventId) => {
                   updateWorkspace((current) => ({
                     ...current,
@@ -1131,8 +1472,14 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
               <section className="analysis-inspector-section analysis-setting-grid">
                 <label>Population
                   <select value={selectedPlot.population_id} onChange={(event) => {
-                    updateSelectedPlot({ population_id: event.target.value })
-                    updateWorkspace((current) => ({ ...current, active_population_id: event.target.value }))
+                    const populationId = event.target.value
+                    updateWorkspace((current) => ({
+                      ...current,
+                      active_population_id: populationId,
+                      plots: current.plots.map((plot) => plot.id === selectedPlot.id
+                        ? { ...plot, population_id: populationId }
+                        : plot),
+                    }))
                   }}>
                     {workspace.populations.map((population) => <option key={population.id} value={population.id}>{population.name}</option>)}
                   </select>
@@ -1271,8 +1618,8 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
                 <button type="button" className="analysis-secondary" onClick={() => void exportStatistics()}><Download size={14} /> Export hierarchy statistics CSV</button>
               </section>
               <section className="analysis-inspector-section">
-                <h3>Workspace</h3>
-                <p>Move the complete hierarchy, plots, gates, roles, transforms, annotations and trajectory root between projects.</p>
+                <h3>Advanced workspace JSON</h3>
+                <p>Move the complete analysis layout, including plots, gates, roles, transforms, annotations, settings, seed, active selections and trajectory root.</p>
                 <button type="button" className="analysis-secondary" onClick={downloadWorkspace}><FileDown size={14} /> Export workspace JSON</button>
                 <button type="button" className="analysis-secondary" onClick={() => importWorkspaceInput.current?.click()}><FileUp size={14} /> Import workspace JSON</button>
                 <input
@@ -1298,12 +1645,44 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
       {gateDraft ? (
         <div className="analysis-modal-backdrop" role="presentation">
           <form className="analysis-gate-dialog" onSubmit={(event) => { event.preventDefault(); createGate() }}>
-            <header><div><strong>Create subpopulation</strong><span>{gateDraft.type} gate under {activePopulation?.name}</span></div><button type="button" onClick={() => setGateDraft(null)}><X size={16} /></button></header>
+            <header><div><strong>Create subpopulation</strong><span>{gateDraft.type} gate under {gateParent?.name}</span></div><button type="button" onClick={() => setGateDraft(null)}><X size={16} /></button></header>
             <label>Name<input autoFocus value={gateName} onChange={(event) => setGateName(event.target.value)} /></label>
             <label>Role<select value={gateRole} onChange={(event) => setGateRole(event.target.value)}><option value="">None</option><option value="positive">POS for staining index</option><option value="negative">NEG for staining index</option><option value="root">Trajectory root population</option><option value="terminal">Terminal population</option></select></label>
             <label className="analysis-check"><input type="checkbox" checked={fileSpecificGate} onChange={(event) => setFileSpecificGate(event.target.checked)} /><span>Apply only to {selectedFile?.name}</span></label>
             <footer><button type="button" onClick={() => setGateDraft(null)}>Cancel</button><button type="submit" className="analysis-primary">Create population</button></footer>
           </form>
+        </div>
+      ) : null}
+
+      {pendingGateSetImport ? (
+        <div className="analysis-modal-backdrop" role="presentation">
+          <section className="analysis-gate-dialog analysis-gate-import-dialog" role="dialog" aria-modal="true" aria-labelledby="analysis-gate-import-title">
+            <header>
+              <div>
+                <strong id="analysis-gate-import-title">Replace population gates?</strong>
+                <span>{pendingGateSetImport.source_name}</span>
+              </div>
+              <button type="button" onClick={() => setPendingGateSetImport(null)} aria-label="Cancel gate import"><X size={16} /></button>
+            </header>
+            <p>
+              Replace {pendingGateSetImport.summary.current_gate_count.toLocaleString()} current gate{pendingGateSetImport.summary.current_gate_count === 1 ? '' : 's'} with{' '}
+              {pendingGateSetImport.summary.imported_gate_count.toLocaleString()} imported gate{pendingGateSetImport.summary.imported_gate_count === 1 ? '' : 's'}?
+              The data source, plot layout, visual settings, compatible annotations, analysis settings, and seed stay unchanged.
+            </p>
+            {pendingGateSetImport.warnings.length ? (
+              <div className="analysis-gate-import-warnings">
+                <strong>Compatibility adjustments</strong>
+                <ul>{pendingGateSetImport.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+              </div>
+            ) : (
+              <div className="analysis-gate-import-ready"><Check size={14} /><span>Channels, source files, hierarchy, and geometry are compatible.</span></div>
+            )}
+            <p className="analysis-gate-import-note">The replacement is saved to the normal analysis workspace. It does not create a second project format, and Undo restores the pre-import tree during this session.</p>
+            <footer>
+              <button type="button" onClick={() => setPendingGateSetImport(null)}>Cancel</button>
+              <button type="button" className="analysis-primary" onClick={() => void confirmGateSetImport()}>Replace gates</button>
+            </footer>
+          </section>
         </div>
       ) : null}
 

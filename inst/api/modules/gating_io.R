@@ -39,8 +39,8 @@ gate_powershell_quote <- function(x) {
     paste0("'", gsub("'", "''", as.character(x)[1], fixed = TRUE), "'")
 }
 
-gate_pick_csv_file_windows <- function(mode, initial_dir, default_name) {
-    title <- if (mode == "save") "Save gate CSV" else "Load gate CSV"
+gate_pick_csv_file_windows <- function(mode, initial_dir, default_name, title = NULL) {
+    if (is.null(title) || !nzchar(title)) title <- if (mode == "save") "Save gate CSV" else "Load gate CSV"
     dialog_class <- if (mode == "save") "SaveFileDialog" else "OpenFileDialog"
     ps_cmd <- paste0(
         "Add-Type -AssemblyName System.Windows.Forms; ",
@@ -61,9 +61,10 @@ gate_pick_csv_file_windows <- function(mode, initial_dir, default_name) {
     character()
 }
 
-gate_pick_csv_file_linux <- function(mode, initial_dir, default_name) {
+gate_pick_csv_file_linux <- function(mode, initial_dir, default_name, title = NULL) {
+    if (is.null(title) || !nzchar(title)) title <- if (mode == "save") "Save gate CSV" else "Load gate CSV"
     if (nzchar(Sys.which("zenity"))) {
-        args <- c("--file-selection", "--title", if (mode == "save") "Save gate CSV" else "Load gate CSV")
+        args <- c("--file-selection", "--title", title)
         if (mode == "save") {
             args <- c(args, "--save", "--confirm-overwrite", "--filename", file.path(initial_dir, default_name))
         } else {
@@ -81,9 +82,9 @@ gate_pick_csv_file_linux <- function(mode, initial_dir, default_name) {
         }
     } else if (nzchar(Sys.which("kdialog"))) {
         args <- if (mode == "save") {
-            c("--getsavefilename", file.path(initial_dir, default_name), "*.csv", "--title", "Save gate CSV")
+            c("--getsavefilename", file.path(initial_dir, default_name), "*.csv", "--title", title)
         } else {
-            c("--getopenfilename", initial_dir, "*.csv", "--title", "Load gate CSV")
+            c("--getopenfilename", initial_dir, "*.csv", "--title", title)
         }
         res <- tryCatch(
             system2("kdialog", args, stdout = TRUE, stderr = TRUE),
@@ -98,18 +99,22 @@ gate_pick_csv_file_linux <- function(mode, initial_dir, default_name) {
     character()
 }
 
-gate_pick_csv_file <- function(mode = c("open", "save")) {
+gate_pick_csv_file <- function(
+    mode = c("open", "save"),
+    initial_dir = gate_working_dir(),
+    default_name = basename(get_gate_file()),
+    title = NULL
+) {
     mode <- match.arg(tolower(mode[1]), c("open", "save"))
-    initial_dir <- gate_working_dir()
     if (!dir.exists(initial_dir)) {
         initial_dir <- gate_working_dir()
     }
-    default_name <- basename(get_gate_file())
+    if (is.null(title) || !nzchar(title)) title <- if (mode == "save") "Save gate CSV" else "Load gate CSV"
     sysname <- Sys.info()[["sysname"]]
 
     if (identical(sysname, "Darwin")) {
         if (nzchar(Sys.which("osascript"))) {
-            prompt <- if (mode == "save") "Save gate CSV" else "Load gate CSV"
+            prompt <- title
             action <- if (mode == "save") {
                 paste0(
                     "choose file name with prompt ", gate_applescript_quote(prompt),
@@ -165,7 +170,7 @@ gate_pick_csv_file <- function(mode = c("open", "save")) {
 
     if (identical(sysname, "Windows")) {
         if (nzchar(Sys.which("powershell"))) {
-            path <- gate_pick_csv_file_windows(mode, initial_dir, default_name)
+            path <- gate_pick_csv_file_windows(mode, initial_dir, default_name, title)
             if (identical(path, "CANCEL")) return("CANCEL")
             if (nzchar(path)) {
                 return(normalizePath(path, mustWork = mode == "open"))
@@ -175,7 +180,7 @@ gate_pick_csv_file <- function(mode = c("open", "save")) {
     }
 
     if (identical(sysname, "Linux")) {
-        path <- gate_pick_csv_file_linux(mode, initial_dir, default_name)
+        path <- gate_pick_csv_file_linux(mode, initial_dir, default_name, title)
         if (identical(path, "CANCEL")) return("CANCEL")
         if (nzchar(path)) {
             return(normalizePath(path, mustWork = mode == "open"))

@@ -122,6 +122,160 @@ test_that("analysis v2 event payload includes marker labels", {
     expect_identical(payload$channels$marker, c("FSC", "SSC", "CD3"))
 })
 
+test_that("population gate CSV round-trips every geometry and repairs workspace references", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    template <- api$gui_analysis_default_workspace()
+    template$source_path <- "samples"
+    template$selected_file <- fixture$relative_file
+    template$populations <- c(template$populations, list(
+        list(
+            id = "rect", name = "Lymphocytes", parent_id = "root",
+            type = "rectangle", role = "positive", source_file = NULL,
+            x = "FSC-A", y = "SSC-A",
+            geometry = list(x_min = 5, x_max = 90, y_min = 1, y_max = 20)
+        ),
+        list(
+            id = "ellipse", name = "Focused", parent_id = "rect",
+            type = "ellipse", role = NULL, source_file = fixture$relative_file,
+            x = "FSC-A", y = "SSC-A",
+            geometry = list(center_x = 40, center_y = 10, radius_x = 12, radius_y = 5)
+        ),
+        list(
+            id = "polygon", name = "Polygon", parent_id = "root",
+            type = "polygon", role = "terminal", source_file = NULL,
+            x = "FSC-A", y = "SSC-A",
+            geometry = list(points = list(
+                list(x = 10, y = 2), list(x = 70, y = 3), list(x = 50, y = 17)
+            ))
+        ),
+        list(
+            id = "range", name = "CD3 positive", parent_id = "rect",
+            type = "range", role = "negative", source_file = NULL,
+            x = "CD3-A", y = NULL, geometry = list(min = 0, max = 12)
+        )
+    ))
+    template <- api$gui_analysis_normalize_workspace(template)
+    csv <- api$gui_analysis_gate_set_csv(template)
+    rows <- api$gui_analysis_gate_set_read_text(csv)
+    expect_identical(rows$record_type[[1]], "metadata")
+    expect_equal(sum(rows$population_id == "rect"), 2L)
+    expect_equal(sum(rows$population_id == "ellipse"), 2L)
+    expect_equal(sum(rows$population_id == "polygon"), 3L)
+    expect_equal(sum(rows$population_id == "range"), 2L)
+    expect_false(any(rows$population_id == "root"))
+
+    current <- api$gui_analysis_default_workspace()
+    current$source_path <- "samples"
+    current$selected_file <- fixture$relative_file
+    current$populations <- c(current$populations, list(list(
+        id = "old", name = "Old gate", parent_id = "root",
+        type = "range", role = NULL, source_file = NULL,
+        x = "FSC-A", y = NULL, geometry = list(min = 1, max = 50)
+    )))
+    current$active_population_id <- "old"
+    current$plots[[1]]$population_id <- "old"
+    current$plots[[1]]$overlay_population_id <- "root"
+    current$annotations <- list(
+        list(population_id = "old", label = "discard"),
+        list(population_id = "root", label = "retain")
+    )
+    current$root_event_id <- 1L
+    current$root_population_id <- "old"
+    current$root_source_file <- fixture$relative_file
+    current <- api$gui_analysis_normalize_workspace(current)
+
+    prepared <- api$gui_analysis_prepare_gate_set_import(fixture$project, csv, current, "template.csv")
+    imported <- prepared$workspace
+    expect_identical(vapply(imported$populations, `[[`, character(1), "id"), c("root", "rect", "ellipse", "polygon", "range"))
+    expect_identical(imported$active_population_id, "root")
+    expect_identical(imported$plots[[1]]$population_id, "root")
+    expect_null(imported$plots[[1]]$overlay_population_id)
+    expect_identical(imported$annotations[[1]]$population_id, "root")
+    expect_null(imported$root_event_id)
+    expect_equal(prepared$summary$current_gate_count, 1L)
+    expect_equal(prepared$summary$imported_gate_count, 4L)
+    expect_true(prepared$summary$trajectory_root_cleared)
+    expect_gte(length(prepared$warnings), 3L)
+    expect_silent(api$gui_analysis_normalize_workspace(imported))
+
+    ellipse <- imported$populations[[3]]
+    expect_equal(ellipse$geometry$center_x, 40)
+    expect_equal(ellipse$geometry$radius_y, 5)
+    polygon <- imported$populations[[4]]
+    expect_equal(length(polygon$geometry$points), 3L)
+})
+
+test_that("population gate CSV rejects incompatible schemas, hierarchies, channels, files, and coordinates", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    workspace <- api$gui_analysis_default_workspace()
+    workspace$source_path <- "samples"
+    workspace$selected_file <- fixture$relative_file
+    workspace$populations <- c(workspace$populations, list(
+        list(
+            id = "a", name = "A", parent_id = "root", type = "rectangle",
+            role = NULL, source_file = NULL, x = "FSC-A", y = "SSC-A",
+            geometry = list(x_min = 1, x_max = 50, y_min = 1, y_max = 10)
+        ),
+        list(
+            id = "b", name = "B", parent_id = "a", type = "range",
+            role = NULL, source_file = NULL, x = "CD3-A", y = NULL,
+            geometry = list(min = -1, max = 1)
+        )
+    ))
+    workspace <- api$gui_analysis_normalize_workspace(workspace)
+    base_rows <- api$gui_analysis_gate_set_rows(workspace)
+    as_csv <- function(rows) paste(capture.output(utils::write.csv(rows, row.names = FALSE, quote = TRUE, na = "")), collapse = "\n")
+    prepare <- function(rows) api$gui_analysis_prepare_gate_set_import(fixture$project, as_csv(rows), workspace)
+
+    wrong_version <- base_rows
+    wrong_version$schema_version <- "99"
+    expect_error(prepare(wrong_version), "Unsupported population gate CSV schema version")
+    fractional_version <- base_rows
+    fractional_version$schema_version <- "1.5"
+    expect_error(prepare(fractional_version), "Unsupported population gate CSV schema version")
+
+    missing_parent <- base_rows
+    missing_parent$parent_id[missing_parent$population_id == "b"] <- "missing"
+    expect_error(prepare(missing_parent), "existing parent")
+
+    cycle <- base_rows
+    cycle$parent_id[cycle$population_id == "a"] <- "b"
+    expect_error(prepare(cycle), "cycle")
+
+    duplicate_vertex <- base_rows
+    duplicate_vertex$vertex_index[duplicate_vertex$population_id == "a"] <- "1"
+    expect_error(prepare(duplicate_vertex), "unique positive integer")
+
+    non_finite <- base_rows
+    non_finite$x[non_finite$population_id == "b" & non_finite$vertex_index == "2"] <- "Inf"
+    expect_error(prepare(non_finite), "non-finite X")
+
+    missing_channel <- base_rows
+    missing_channel$x_channel[missing_channel$population_id == "b"] <- "NOT-A-CHANNEL"
+    expect_error(prepare(missing_channel), "missing from the selected source")
+
+    traversal <- base_rows
+    traversal$source_file[traversal$population_id == "a"] <- "../outside.fcs"
+    expect_error(prepare(traversal), "project-relative path")
+
+    missing_file <- base_rows
+    missing_file$source_file[missing_file$population_id == "a"] <- "samples/missing.fcs"
+    expect_error(prepare(missing_file), "unavailable source file")
+
+    layout <- api$gui_project_layout(fixture$project, persist = FALSE)
+    outside_source <- file.path(fixture$project, layout$control_input_dir, "reference.fcs")
+    dir.create(dirname(outside_source), recursive = TRUE, showWarnings = FALSE)
+    file.copy(file.path(fixture$project, fixture$relative_file), outside_source)
+    file_specific <- base_rows
+    file_specific$source_file[file_specific$population_id == "a"] <- api$gui_analysis_relative_path(outside_source, fixture$project)
+    prepared <- prepare(file_specific)
+    expect_match(paste(prepared$warnings, collapse = " "), "outside the selected source")
+})
+
 test_that("analysis v2 pools files while retaining source event identity", {
     api <- analysis_v2_api_env()
     fixture <- analysis_v2_fixture()
@@ -148,6 +302,18 @@ test_that("analysis v2 pools files while retaining source event identity", {
     expect_setequal(unique(result$events$source_file), c(fixture$relative_file, "samples/sample_2.fcs"))
     expect_true(all(result$events$source_event_id >= 1L & result$events$source_event_id <= 120L))
     expect_identical(result$events$sample_id, match(result$events$source_file, result$metadata$source_files))
+
+    parameters$desc <- c("FSC", "SSC", "CD19")
+    flowCore::parameters(second)@data <- parameters
+    flowCore::write.FCS(second, second_file)
+    expect_error(
+        api$gui_analysis_run_method(fixture$project, list(
+            files = c(fixture$relative_file, "samples/sample_2.fcs"),
+            populationId = "root", reductionMethod = "pca", clusterMethod = "none",
+            markers = c("FSC-A", "SSC-A", "CD3-A"), maxEvents = 160L, seed = 17L
+        )),
+        "inconsistent marker labels"
+    )
 })
 
 test_that("analysis v2 discovers cluster markers without inventing identities", {
@@ -244,6 +410,57 @@ test_that("analysis workspace import validates hierarchy and round-trips complet
     invalid <- workspace
     invalid$populations <- invalid$populations[-1]
     expect_error(api$gui_analysis_write_workspace(fixture$project, invalid), "missing its root")
+
+    missing_parent <- workspace
+    missing_parent$populations[[2]]$parent_id <- "missing"
+    expect_error(api$gui_analysis_write_workspace(fixture$project, missing_parent), "existing parent")
+
+    cycle <- workspace
+    cycle$populations <- c(cycle$populations, list(list(
+        id = "gate-2", name = "Child", parent_id = "gate-1", type = "range",
+        role = NULL, source_file = NULL, x = "CD3-A", geometry = list(min = 1, max = 2)
+    )))
+    cycle$populations[[2]]$parent_id <- "gate-2"
+    expect_error(api$gui_analysis_write_workspace(fixture$project, cycle), "cycle")
+
+    invalid_geometry <- workspace
+    invalid_geometry$populations[[2]]$geometry$radius_x <- 0
+    expect_error(api$gui_analysis_write_workspace(fixture$project, invalid_geometry), "radii must be positive")
+
+    dangling_plot <- workspace
+    dangling_plot$plots[[1]]$population_id <- "missing"
+    expect_error(api$gui_analysis_write_workspace(fixture$project, dangling_plot), "missing population")
+})
+
+test_that("analysis requests use the submitted workspace snapshot before autosave completes", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    workspace <- api$gui_analysis_default_workspace()
+    workspace$populations <- c(workspace$populations, list(list(
+        id = "unsaved-gate", name = "Unsaved gate", parent_id = "root", type = "range",
+        role = NULL, source_file = NULL, x = "FSC-A",
+        geometry = list(min = 15, max = 45)
+    )))
+
+    statistics <- api$gui_analysis_population_statistics(
+        fixture$project, fixture$relative_file, "unsaved-gate", "CD3-A", workspace
+    )
+    result <- api$gui_analysis_run_method(fixture$project, list(
+        file = fixture$relative_file, populationId = "unsaved-gate",
+        reductionMethod = "pca", clusterMethod = "none",
+        markers = c("FSC-A", "SSC-A", "CD3-A"), maxEvents = 100L, seed = 17L,
+        workspace = workspace
+    ))
+
+    expect_gt(statistics$count, 0L)
+    expect_lt(statistics$count, statistics$total_count)
+    expect_identical(result$metadata$population_id, "unsaved-gate")
+    expect_equal(nrow(result$events), statistics$count)
+    expect_identical(
+        vapply(api$gui_analysis_read_workspace(fixture$project)$populations, `[[`, character(1), "id"),
+        "root"
+    )
 })
 
 test_that("analysis export folder route uses the native picker and rejects paths outside the project", {
@@ -282,6 +499,42 @@ test_that("analysis export folder route uses the native picker and rejects paths
     rejected <- route(request)
     expect_false(rejected$success)
     expect_match(rejected$error, "outside the active project")
+})
+
+test_that("analysis job routes preserve the explicit project for polling and cancellation", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    endpoints <- unname(unlist(plumber::plumb(api_path)$endpoints, recursive = FALSE))
+    job_routes <- Filter(function(endpoint) identical(endpoint$path, "/analysis/jobs"), endpoints)
+    get_route <- job_routes[[which(vapply(job_routes, function(endpoint) "GET" %in% endpoint$verbs, logical(1)))[1]]]$getFunc()
+    delete_route <- job_routes[[which(vapply(job_routes, function(endpoint) "DELETE" %in% endpoint$verbs, logical(1)))[1]]]$getFunc()
+    route_env <- environment(get_route)
+    project <- tempfile("analysis_job_route_")
+    dir.create(project)
+    on.exit(unlink(project, recursive = TRUE, force = TRUE), add = TRUE)
+    observed <- list()
+    original_status <- get("gui_analysis_job_status", envir = route_env)
+    original_cancel <- get("gui_analysis_cancel_job", envir = route_env)
+    on.exit(assign("gui_analysis_job_status", original_status, envir = route_env), add = TRUE)
+    on.exit(assign("gui_analysis_cancel_job", original_cancel, envir = route_env), add = TRUE)
+    assign("gui_analysis_job_status", function(root, job_id) {
+        observed$status <<- c(root = root, job_id = job_id)
+        list(state = "running")
+    }, envir = route_env)
+    assign("gui_analysis_cancel_job", function(root, job_id) {
+        observed$cancel <<- c(root = root, job_id = job_id)
+        list(state = "cancelled")
+    }, envir = route_env)
+
+    polled <- get_route(job_id = "20260724-deadbeef", project_path = project)
+    request <- new.env(parent = emptyenv())
+    request$postBody <- jsonlite::toJSON(list(projectPath = project), auto_unbox = TRUE)
+    cancelled <- delete_route(request, job_id = "20260724-deadbeef")
+
+    expect_true(polled$success)
+    expect_true(cancelled$success)
+    expect_identical(unname(observed$status), c(normalizePath(project), "20260724-deadbeef"))
+    expect_identical(unname(observed$cancel), c(normalizePath(project), "20260724-deadbeef"))
 })
 
 test_that("analysis v2 persists hierarchical gates and calculates robust staining index", {
@@ -362,6 +615,108 @@ test_that("analysis v2 exports a reproducible population with provenance", {
     stats_table <- data.table::fread(file.path(fixture$project, statistics$path))
     expect_setequal(stats_table$population_id, c("root", "middle"))
     expect_setequal(stats_table$marker, c("FSC-A", "CD3-A"))
+})
+
+test_that("analysis v2 keeps pooled input stable under file reordering", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    second_path <- file.path(fixture$project, "samples", "sample_2.fcs")
+    second <- flowCore::flowFrame(fixture$data + 0.25)
+    second_parameters <- flowCore::parameters(second)@data
+    second_parameters$desc <- c("FSC", "SSC", "CD3")
+    flowCore::parameters(second)@data <- second_parameters
+    flowCore::write.FCS(second, second_path)
+    files <- c(fixture$relative_file, "samples/sample_2.fcs")
+    request <- list(
+        populationId = "root", reductionMethod = "pca", clusterMethod = "none",
+        markers = c("FSC-A", "SSC-A", "CD3-A"), maxEvents = 100L, seed = 31L
+    )
+
+    forward <- api$gui_analysis_run_method(fixture$project, c(request, list(files = files)))
+    reversed <- api$gui_analysis_run_method(fixture$project, c(request, list(files = rev(files))))
+
+    expect_identical(forward$metadata$source_files, sort(files, method = "radix"))
+    expect_identical(reversed$metadata$source_files, forward$metadata$source_files)
+    expect_identical(
+        reversed$events[, c("source_file", "source_event_id")],
+        forward$events[, c("source_file", "source_event_id")]
+    )
+})
+
+test_that("analysis v2 export does not overwrite duplicate source basenames", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    second_directory <- file.path(fixture$project, "alternate")
+    dir.create(second_directory)
+    second_path <- file.path(second_directory, "sample.fcs")
+    file.copy(file.path(fixture$project, fixture$relative_file), second_path)
+
+    result <- api$gui_analysis_export(fixture$project, list(
+        files = c(fixture$relative_file, "alternate/sample.fcs"),
+        populationId = "root", format = "csv", maxEvents = 10L, seed = 44L,
+        outputFolder = "spectreasy_outputs/analysis/exports"
+    ))
+    paths <- vapply(result$files, `[[`, character(1), "path")
+
+    expect_length(unique(paths), 2L)
+    expect_true(all(file.exists(file.path(fixture$project, paths))))
+    expect_true(all(vapply(paths, function(path) nrow(data.table::fread(file.path(fixture$project, path))) == 10L, logical(1))))
+})
+
+test_that("analysis v2 export reports files where a scoped population does not apply", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    second_path <- file.path(fixture$project, "samples", "sample_2.fcs")
+    file.copy(file.path(fixture$project, fixture$relative_file), second_path)
+    workspace <- api$gui_analysis_default_workspace()
+    workspace$populations <- c(workspace$populations, list(list(
+        id = "first-only", name = "First only", parent_id = "root", type = "range",
+        role = NULL, source_file = fixture$relative_file, x = "FSC-A",
+        geometry = list(min = 1, max = 100)
+    )))
+    api$gui_analysis_write_workspace(fixture$project, workspace)
+
+    result <- api$gui_analysis_export(fixture$project, list(
+        files = c(fixture$relative_file, "samples/sample_2.fcs"),
+        populationId = "first-only", format = "both", maxEvents = 0L, seed = 45L,
+        outputFolder = "spectreasy_outputs/analysis/exports"
+    ))
+
+    expect_length(result$files, 2L)
+    expect_length(result$skipped_files, 1L)
+    expect_identical(result$skipped_files[[1]]$source_file, "samples/sample_2.fcs")
+    expect_match(result$skipped_files[[1]]$reason, "no events")
+})
+
+test_that("analysis v2 marks a stopped worker as failed instead of polling forever", {
+    api <- analysis_v2_api_env()
+    project <- tempfile("analysis_dead_worker_")
+    dir.create(project)
+    on.exit(unlink(project, recursive = TRUE, force = TRUE), add = TRUE)
+    job_id <- "20260724-deadbeef"
+    directory <- api$gui_analysis_job_directory(project, job_id, create = TRUE)
+    dir.create(directory)
+    jsonlite::write_json(
+        list(state = "queued", message = "Queued", updated_at = as.character(Sys.time()), error = NULL),
+        file.path(directory, "status.json"), auto_unbox = TRUE, null = "null"
+    )
+    writeLines("worker bootstrap failed", file.path(directory, "stderr.log"))
+    fake_process <- list(
+        is_alive = function() FALSE,
+        get_exit_status = function() 42L
+    )
+    assign(job_id, list(process = fake_process, root = project, directory = directory), envir = api$.gui_analysis_jobs)
+    on.exit(if (exists(job_id, envir = api$.gui_analysis_jobs, inherits = FALSE)) {
+        rm(list = job_id, envir = api$.gui_analysis_jobs)
+    }, add = TRUE)
+
+    status <- api$gui_analysis_job_status(project, job_id)
+
+    expect_identical(status$state, "failed")
+    expect_match(status$error, "worker bootstrap failed")
 })
 
 test_that("analysis v2 advertises maintained executable adapters and method settings", {

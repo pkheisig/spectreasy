@@ -172,34 +172,48 @@ export function PlotCard({
   onSelectGate,
   onUpdateGate,
 }: PlotCardProps) {
-  const [payload, setPayload] = useState<AnalysisEventPayload | null>(null)
-  const [overlay, setOverlay] = useState<AnalysisEventPayload | null>(null)
-  const [error, setError] = useState('')
+  const eventRequestUrl = file ? eventUrl(file, plot, seed) : ''
+  const overlayRequestUrl = file && plot.overlay_population_id
+    ? eventUrl(file, plot, seed, plot.overlay_population_id)
+    : ''
+  const [payloadResponse, setPayloadResponse] = useState<{ url: string; value: AnalysisEventPayload } | null>(null)
+  const [overlayResponse, setOverlayResponse] = useState<{ url: string; value: AnalysisEventPayload } | null>(null)
+  const [errorResponse, setErrorResponse] = useState<{ url: string; message: string } | null>(null)
+  const payload = payloadResponse?.url === eventRequestUrl ? payloadResponse.value : null
+  const overlay = overlayResponse?.url === overlayRequestUrl ? overlayResponse.value : null
+  const error = errorResponse?.url === eventRequestUrl ? errorResponse.message : ''
 
   useEffect(() => {
-    if (!file) return
+    if (!eventRequestUrl) return
     const controller = new AbortController()
-    void analysisRequest<AnalysisEventPayload>(eventUrl(file, plot, seed), projectPath, { signal: controller.signal })
-      .then((result) => { setPayload(result); setError('') })
+    void analysisRequest<AnalysisEventPayload>(eventRequestUrl, projectPath, { signal: controller.signal })
+      .then((result) => {
+        setPayloadResponse({ url: eventRequestUrl, value: result })
+        setErrorResponse(null)
+      })
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason))
+        if (!controller.signal.aborted) {
+          setErrorResponse({ url: eventRequestUrl, message: reason instanceof Error ? reason.message : String(reason) })
+        }
       })
     return () => controller.abort()
-  }, [file, plot, projectPath, seed])
+  }, [eventRequestUrl, projectPath])
 
   useEffect(() => {
-    const overlayId = plot.overlay_population_id
-    if (!file || !overlayId) return
+    if (!overlayRequestUrl) return
     const controller = new AbortController()
-    void analysisRequest<AnalysisEventPayload>(eventUrl(file, plot, seed, overlayId), projectPath, { signal: controller.signal })
-      .then(setOverlay)
-      .catch(() => { if (!controller.signal.aborted) setOverlay(null) })
+    void analysisRequest<AnalysisEventPayload>(overlayRequestUrl, projectPath, { signal: controller.signal })
+      .then((result) => setOverlayResponse({ url: overlayRequestUrl, value: result }))
+      .catch(() => undefined)
     return () => controller.abort()
-  }, [file, plot, plot.overlay_population_id, projectPath, seed])
+  }, [overlayRequestUrl, projectPath])
 
   const children = useMemo(
-    () => populations.filter((population) => population.parent_id === plot.population_id),
-    [plot.population_id, populations],
+    () => populations.filter((population) => (
+      population.parent_id === plot.population_id
+      && (!population.source_file || population.source_file === file)
+    )),
+    [file, plot.population_id, populations],
   )
   const population = populations.find((candidate) => candidate.id === plot.population_id)
   const overlayPopulation = populations.find((candidate) => candidate.id === plot.overlay_population_id)
