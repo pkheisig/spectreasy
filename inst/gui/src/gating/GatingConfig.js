@@ -4,6 +4,7 @@ import {
   fileUsesNegativeHistogramGate,
 } from '../gatingEligibility.js'
 import {
+  HISTOGRAM_TRANSFORM_VERSION,
   MIN_CONFIRM_EVENTS,
   REQUIRED_GATE_CSV_COLUMNS,
   fileControlType,
@@ -356,6 +357,17 @@ function buildRows(gates, files, settings = {}) {
       x: normalizeHistogramTransform(settings.histogramTransform),
       y: '',
     },
+    {
+      gate_type: 'setting',
+      scope: 'global',
+      filename: '',
+      x_channel: 'histogram_transform_version',
+      y_channel: '',
+      plot_mode: 'setting',
+      vertex_index: 0,
+      x: HISTOGRAM_TRANSFORM_VERSION,
+      y: '',
+    },
   ]
   rows.push(...buildViewSettingRows(settings.viewSettings, files))
   const negativeDisabledFiles = new Set(
@@ -417,6 +429,7 @@ function parseConfigRows(rows) {
   let maxPoints = null
   let histogramBins = null
   let histogramTransform = null
+  let histogramTransformVersion = null
   rows.forEach((row) => {
     if (row.gate_type === 'setting') {
       if (row.x_channel === 'point_size') {
@@ -427,6 +440,8 @@ function parseConfigRows(rows) {
         histogramBins = normalizeHistogramBins(row.x)
       } else if (row.x_channel === 'histogram_transform') {
         histogramTransform = normalizeHistogramTransform(row.x)
+      } else if (row.x_channel === 'histogram_transform_version') {
+        histogramTransformVersion = Number(row.x)
       }
       return
     }
@@ -465,12 +480,13 @@ function parseConfigRows(rows) {
     maxPoints: maxPoints === null ? null : normalizeEventCount(maxPoints),
     histogramBins,
     histogramTransform,
+    histogramTransformVersion,
     viewSettings,
   }
 }
 
 function hasViewSettings(value) {
-  return ['cell', 'singlet', 'histogram'].some((plot) => Object.keys(value?.[plot] || {}).length > 0)
+  return ['cell', 'singlet'].some((plot) => Object.keys(value?.[plot] || {}).length > 0)
 }
 
 export {

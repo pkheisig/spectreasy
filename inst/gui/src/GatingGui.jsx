@@ -11,7 +11,12 @@ import { normalizePlotView } from './gatingViewSettings.js'
 import { decodeSpectrumData } from './spectrumData.js'
 import GatingWorkspace from './gating/GatingWorkspace.jsx'
 import { useGatingConfigIO } from './gating/useGatingConfigIO.js'
-import { autogateHistogramsAction, beginGatingSidebarResize } from './gating/GatingActions.js'
+import {
+  GATING_SIDEBAR_MIN_WIDTH,
+  autogateHistogramsAction,
+  beginGatingSidebarResize,
+} from './gating/GatingActions.js'
+import { appletCacheKey, loadCachedAppletData } from './appletDataCache.ts'
 import {
   AXIS_SETTINGS_VERSION,
   CONFIG_NAME,
@@ -23,6 +28,7 @@ import {
   GUI_MODULE,
   HISTOGRAM_BIN_MAX,
   HISTOGRAM_BIN_MIN,
+  HISTOGRAM_TRANSFORM_VERSION,
   HistogramSparkleIcon,
   MIN_CONFIRM_EVENTS,
   REQUIRED_GATE_CSV_COLUMNS,
@@ -57,7 +63,10 @@ import {
   validateGateCsvRows,
 } from './gating/GatingCore.jsx'
 
-function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
+const DEFAULT_SIDEBAR_WIDTH = 252
+const SIDEBAR_WIDTH_VERSION = 2
+
+function App({ embedded = false, cockpitTheme = null, projectPath = '', projectRevision = 'empty', initialFiles = null, initialMetadata = {}, onRequestExit = null, onRequestClose = null }) {
   const [status, setStatus] = useState('Loading controls')
   const [files, setFiles] = useState([])
   const [metadata, setMetadata] = useState({})
@@ -86,11 +95,12 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches || false
   })
   const [guiStateLoaded, setGuiStateLoaded] = useState(false)
-  const [sidebarWidth, setSidebarWidth] = useState(192)
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [preloadComplete, setPreloadComplete] = useState(false)
   const [gatesLoaded, setGatesLoaded] = useState(false)
   const [histogramAutogating, setHistogramAutogating] = useState(false)
+  const [histogramAutogateNotice, setHistogramAutogateNotice] = useState(null)
   const [axisSettings, setAxisSettings] = useState({ cell: {}, singlet: {} })
   const [viewSettings, setViewSettings] = useState({ cell: {}, singlet: {}, histogram: {} })
   const [spectrum, setSpectrum] = useState(null)
@@ -99,6 +109,9 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
   const loadInputRef = useRef(null)
   const payloadCacheRef = useRef({})
   const spectrumBatchRef = useRef('')
+  const bootPromiseRef = useRef(null)
+  const activeProjectPath = projectPath || window.sessionStorage.getItem('spectreasy-project-path') || ''
+  const fileInventoryKey = files.map((file) => file.filename).join('\u0000')
 
   useEffect(() => {
     if (embedded) return
@@ -128,13 +141,18 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
 
   // Initial load config, files, persisted GUI settings, and backend cache
   useEffect(() => {
-    Promise.all([
-      gatingApiRequest('/gate_files'),
+    if (bootPromiseRef.current) return
+    const fileInventory = Array.isArray(initialFiles)
+      ? Promise.resolve({ files: initialFiles, metadata: initialMetadata })
+      : gatingApiRequest('/gate_files')
+    bootPromiseRef.current = Promise.all([
+      fileInventory,
       gatingApiRequest('/gate_configs'),
       gatingApiRequest('/gate_cache'),
       gatingApiRequest(`/gui_state?module=${encodeURIComponent(GUI_MODULE)}`),
       gatingApiRequest('/gate_config')
     ])
+    bootPromiseRef.current
       .then(([fileData, configData, cacheData, guiState, gateConfig]) => {
         const clean = fileData.files.filter((f) => f.file_exists)
         setFiles(clean)
@@ -152,7 +170,9 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
         if (typeof csvGates.pointSize === 'number') setPointSize(csvGates.pointSize)
         if (typeof csvGates.maxPoints === 'number') setMaxPoints(normalizeEventCount(csvGates.maxPoints))
         if (typeof csvGates.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(csvGates.histogramBins))
-        if (typeof csvGates.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(csvGates.histogramTransform))
+        if (typeof csvGates.histogramTransform === 'string' && csvGates.histogramTransformVersion === HISTOGRAM_TRANSFORM_VERSION) {
+          setHistogramTransform(normalizeHistogramTransform(csvGates.histogramTransform))
+        }
         if (hasViewSettings(csvGates.viewSettings)) {
           setViewSettings(csvGates.viewSettings)
         } else if (hasViewSettings(cacheData?.viewSettings)) {
@@ -167,7 +187,7 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
         if (typeof cacheData?.histogramBins === 'number') {
           setHistogramBins(normalizeHistogramBins(cacheData.histogramBins))
         }
-        if (typeof cacheData?.histogramTransform === 'string') {
+        if (typeof cacheData?.histogramTransform === 'string' && cacheData?.histogramTransformVersion === HISTOGRAM_TRANSFORM_VERSION) {
           setHistogramTransform(normalizeHistogramTransform(cacheData.histogramTransform))
         }
         const persisted = unboxGuiState(guiState?.config || {})
@@ -175,9 +195,17 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
         if (typeof persisted.maxPoints === 'number' && persisted.eventCountVersion === EVENT_COUNT_VERSION) setMaxPoints(normalizeEventCount(persisted.maxPoints))
         if (!embedded && typeof persisted.darkMode === 'boolean') setDarkMode(persisted.darkMode)
         if (typeof persisted.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(persisted.histogramBins))
-        if (typeof persisted.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(persisted.histogramTransform))
-        if (typeof persisted.sidebarWidth === 'number' && Number.isFinite(persisted.sidebarWidth)) {
-          setSidebarWidth(Math.min(380, Math.max(160, persisted.sidebarWidth)))
+        if (typeof persisted.histogramTransform === 'string' && persisted.histogramTransformVersion === HISTOGRAM_TRANSFORM_VERSION) {
+          setHistogramTransform(normalizeHistogramTransform(persisted.histogramTransform))
+        }
+        if (
+          persisted.sidebarWidthVersion === SIDEBAR_WIDTH_VERSION &&
+          typeof persisted.sidebarWidth === 'number' &&
+          Number.isFinite(persisted.sidebarWidth)
+        ) {
+          setSidebarWidth(Math.min(380, Math.max(GATING_SIDEBAR_MIN_WIDTH, persisted.sidebarWidth)))
+        } else {
+          setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)
         }
         if (typeof persisted.sidebarCollapsed === 'boolean') setSidebarCollapsed(persisted.sidebarCollapsed)
         if (persisted.axisSettings && typeof persisted.axisSettings === 'object' && persisted.axisSettingsVersion === AXIS_SETTINGS_VERSION) {
@@ -198,7 +226,7 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           module: GUI_MODULE,
-          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, ...(!embedded ? { darkMode } : {}), axisSettings, axisSettingsVersion: AXIS_SETTINGS_VERSION, sidebarWidth, sidebarCollapsed }
+          config_json: { pointSize, maxPoints: normalizeEventCount(maxPoints), eventCountVersion: EVENT_COUNT_VERSION, histogramBins, histogramTransform, histogramTransformVersion: HISTOGRAM_TRANSFORM_VERSION, ...(!embedded ? { darkMode } : {}), axisSettings, axisSettingsVersion: AXIS_SETTINGS_VERSION, sidebarWidth, sidebarWidthVersion: SIDEBAR_WIDTH_VERSION, sidebarCollapsed }
         })
       }).catch(() => {})
     }, 350)
@@ -212,7 +240,7 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
       gatingApiRequest('/gate_cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gates, pointSize, maxPoints: normalizeEventCount(maxPoints), histogramBins, histogramTransform, viewSettings, eventCountVersion: EVENT_COUNT_VERSION })
+        body: JSON.stringify({ gates, pointSize, maxPoints: normalizeEventCount(maxPoints), histogramBins, histogramTransform, histogramTransformVersion: HISTOGRAM_TRANSFORM_VERSION, viewSettings, eventCountVersion: EVENT_COUNT_VERSION })
       }).catch(() => {})
     }, 400)
     return () => clearTimeout(timer)
@@ -335,9 +363,13 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
   }, [allSpectraEligible, missingSpectrumFiles, spectrumBatchKey, gates])
 
   useEffect(() => {
-    if (!files.length) return undefined
+    // Wait for persisted gate settings before choosing the cache key or loading
+    // events. Otherwise the default event count starts one preload and the saved
+    // event count immediately starts a second, much more expensive preload.
+    if (!guiStateLoaded || !files.length) return undefined
     const requestedPoints = normalizeEventCount(maxPoints)
-    const controller = new AbortController()
+    const preloadKey = appletCacheKey('gating-events', activeProjectPath, projectRevision, requestedPoints)
+    const preloadGroup = appletCacheKey('gating-events')
     let disposed = false
     setPayload(null)
     setPayloadCache({})
@@ -345,17 +377,21 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
     setPreloadComplete(false)
     setStatus('Preloading controls')
 
-    gatingApiRequest(`/gate_preload_compact?max_points=${requestedPoints}`, {
-      signal: controller.signal,
-    })
-      .then((data) => {
+    loadCachedAppletData(preloadKey, async () => {
+      // The cache owns this request. An effect instance may stop consuming the
+      // result, but it must not abort a promise shared with the StrictMode
+      // remount (or another consumer of the same project revision).
+      const data = await gatingApiRequest(`/gate_preload_compact?max_points=${requestedPoints}`)
+      const next = {}
+      ;(data?.payloads || []).forEach((item) => {
+        const decoded = decodeCompactPayload(item)
+        const filename = decoded?.file?.filename || decoded?.filename
+        if (filename && !decoded?.error) next[filename] = decoded
+      })
+      return next
+    }, preloadGroup)
+      .then((next) => {
         if (disposed) return
-        const next = {}
-        ;(data?.payloads || []).forEach((item) => {
-          const decoded = decodeCompactPayload(item)
-          const filename = decoded?.file?.filename || decoded?.filename
-          if (filename && !decoded?.error) next[filename] = decoded
-        })
         payloadCacheRef.current = next
         setPayloadCache(next)
         setPreloadComplete(true)
@@ -369,9 +405,8 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
 
     return () => {
       disposed = true
-      controller.abort()
     }
-  }, [files, maxPoints])
+  }, [fileInventoryKey, maxPoints, activeProjectPath, projectRevision, guiStateLoaded])
 
   useEffect(() => {
     if (!preloadComplete || !selected) return
@@ -697,6 +732,7 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
     gates,
     files,
     setHistogramAutogating,
+    setHistogramAutogateNotice,
     setStatus,
     setGates,
     setSpectrumCache,
@@ -710,6 +746,8 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
     darkMode,
     initialLoading,
     histogramAutogating,
+    histogramAutogateNotice,
+    setHistogramAutogateNotice,
     sidebarCollapsed,
     sidebarWidth,
     setSidebarCollapsed,
@@ -727,6 +765,7 @@ function App({ embedded = false, cockpitTheme = null, onRequestExit = null }) {
     histogramAutogateMissing,
     setShowAutogateConfirmModal,
     embedded,
+    onRequestClose,
     showSettingsModal,
     setShowSettingsModal,
     setDarkMode,

@@ -44,14 +44,14 @@
 #' @param gate_contour_beads Contour probability for bead gating ellipse/hull.
 #' @param gate_contour_cells Contour probability for cell gating ellipse/hull.
 #' @param subsample_n Maximum number of events used for GMM fitting per file.
-#' @param unmixing_method SCC processing method. `"AutoSpectral"` (default) and
-#'   `"Spectreasy"` first apply the saved positive histogram gate or the same
-#'   automatic histogram fallback used by legacy methods, then enable spectral
-#'   SCC selection, resolved-negative background subtraction, and
-#'   spectral-variant learning. Legacy methods stop after calculating the
-#'   conventional histogram-gated reference spectrum.
-#' @param scc_background_method Background subtraction method for Spectreasy/
-#'   AutoSpectral SCC cleanup (`"scatter_knn"` or `"none"`).
+#' @param unmixing_method SCC processing method. `"AutoSpectral"` (default)
+#'   first applies the saved positive histogram gate or the same automatic
+#'   histogram fallback used by the other methods, then enables spectral SCC
+#'   selection, resolved-negative background subtraction, and spectral-variant
+#'   learning. Other methods stop after calculating the conventional
+#'   histogram-gated reference spectrum.
+#' @param scc_background_method Background subtraction method for AutoSpectral
+#'   SCC cleanup (`"scatter_knn"` or `"none"`).
 #' @param scc_background_k Number of nearest unstained/negative events averaged
 #'   for scatter-matched SCC background subtraction.
 #' @param autospectral_n_candidates Number of peak-bright SCC candidate events
@@ -144,7 +144,7 @@ build_reference_matrix <- function(
     bead_gate_scale <- .normalize_positive_number(bead_gate_scale, "bead_gate_scale")
     max_clusters <- .normalize_positive_integer(max_clusters, "max_clusters")
     subsample_n <- .normalize_positive_integer(subsample_n, "subsample_n")
-    use_autospectral <- .is_autospectral_style_method(unmixing_method)
+    use_autospectral <- .is_autospectral_method(unmixing_method)
     refine <- .validate_reference_refine_arg(refine)
     if (isTRUE(refine) && !identical(unmixing_method, "AutoSpectral")) {
         stop("refine = TRUE is only supported with unmixing_method = \"AutoSpectral\".", call. = FALSE)

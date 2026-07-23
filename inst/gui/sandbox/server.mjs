@@ -385,7 +385,7 @@ const server = createServer(async (request, response) => {
         gui_mode: 'Onboarding sandbox',
         project_name: 'Sandbox project',
         panel_cytometer: 'aurora',
-        unmixing_method: 'Spectreasy',
+        unmixing_method: 'AutoSpectral',
       })
     }
     if (request.method === 'GET' && ['/matrices', '/samples'].includes(url.pathname)) return sendJson(response, 200, [])

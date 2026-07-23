@@ -114,8 +114,7 @@
                                          residual_chunks,
                                          method,
                                          M,
-                                         variant_infos = list(),
-                                         spectreasy_decoder_weights = NULL) {
+                                         variant_infos = list()) {
     data_chunks <- data_chunks[!vapply(data_chunks, is.null, logical(1))]
     residual_chunks <- residual_chunks[!vapply(residual_chunks, is.null, logical(1))]
     out <- list(
@@ -125,9 +124,6 @@
     variant_info <- .merge_unmix_variant_info(variant_infos)
     if (!is.null(variant_info)) {
         out$spectral_variant_info <- variant_info
-    }
-    if (!is.null(spectreasy_decoder_weights)) {
-        out$spectreasy_decoder_weights <- spectreasy_decoder_weights
     }
     attr(out, "method") <- method
     attr(out, "reference_matrix") <- M

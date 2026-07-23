@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Info, Moon, RefreshCw, Save, Settings, Sun } from 'lucide-react';
+import { Info, LoaderCircle, Moon, Save, Settings, Sun, X } from 'lucide-react';
 import axios from 'axios';
+import { ModuleLoadingState } from './ModuleLoadingState';
 import ResidualPlot from './ResidualPlot';
+import { DetectorSpectrumAxis } from './DetectorSpectrumAxis';
+import { DETECTOR_AXIS_FOOTER_HEIGHT, detectorAxisChartWidth } from './detectorAxis';
+import { appletCacheKey, loadCachedAppletData, setCachedAppletData } from './appletDataCache';
 import {
     API_BASE,
     SIGNATURE_COLORS,
@@ -23,13 +27,26 @@ import type {
     ViewConfig,
 } from './matrixAdjustmentShared';
 
-const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; cockpitTheme?: 'light' | 'dark' | null }) => {
-    const [matrices, setMatrices] = useState<string[]>([]);
+type MatrixAdjustmentProps = {
+    embedded?: boolean;
+    cockpitTheme?: 'light' | 'dark' | null;
+    projectPath?: string;
+    projectRevision?: string;
+    initialMatrixFiles?: string[];
+    initialSampleFiles?: string[];
+    initialUnmixingMethod?: string;
+    onRequestExit?: () => void;
+};
+
+const App = ({ embedded = false, cockpitTheme = null, projectPath = '', projectRevision = 'empty', initialMatrixFiles, initialSampleFiles, initialUnmixingMethod, onRequestExit }: MatrixAdjustmentProps) => {
+    const initialMethod = asUnmixingMethod(initialUnmixingMethod);
+    const [matrices, setMatrices] = useState<string[]>(() => initialMatrixFiles ?? []);
     const [currentFile, setCurrentFile] = useState('');
-    const [sampleFiles, setSampleFiles] = useState<string[]>([]);
+    const [sampleFiles, setSampleFiles] = useState<string[]>(() => initialSampleFiles ?? []);
     const [currentSample, setCurrentSample] = useState('');
     const [matrix, setMatrix] = useState<MatrixRow[]>([]);
     const [loading, setLoading] = useState(true);
+    const [previewLoading, setPreviewLoading] = useState(false);
     const [detectors, setDetectors] = useState<string[]>([]);
     const [detectorLabels, setDetectorLabels] = useState<string[]>([]);
     const [unmixedData, setUnmixedData] = useState<DataRow[]>([]);
@@ -38,7 +55,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
     const [guiStateLoaded, setGuiStateLoaded] = useState(false);
-    const [unmixingMethod, setUnmixingMethod] = useState<UnmixingMethod>('AutoSpectral');
+    const [unmixingMethod, setUnmixingMethod] = useState<UnmixingMethod>(initialMethod);
 
     const [residualCellSize, setResidualCellSize] = useState(130);
     const [pointSize, setPointSize] = useState(1.5);
@@ -53,7 +70,9 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     });
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [hoveredSignature, setHoveredSignature] = useState<string | null>(null);
-    const unmixingMethodRef = useRef<UnmixingMethod>('AutoSpectral');
+    const unmixingMethodRef = useRef<UnmixingMethod>(initialMethod);
+    const bootPromiseRef = useRef<Promise<void> | null>(null);
+    const unmixRequestIdRef = useRef(0);
 
     useEffect(() => {
         const previousTitle = document.title;
@@ -61,7 +80,11 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         return () => { document.title = previousTitle; };
     }, []);
 
-    const fetchMatrices = async () => {
+    const fetchMatrices = async (force = false) => {
+        if (!force && initialMatrixFiles !== undefined) {
+            setMatrices(initialMatrixFiles);
+            return initialMatrixFiles;
+        }
         const res = await axios.get(projectUrl('/matrices'));
         const list = Array.isArray(res.data) ? res.data : [];
         setMatrices(list);
@@ -69,6 +92,10 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     };
 
     const fetchSamples = async () => {
+        if (initialSampleFiles !== undefined) {
+            setSampleFiles(initialSampleFiles);
+            return initialSampleFiles;
+        }
         const res = await axios.get(projectUrl('/samples'));
         const list = Array.isArray(res.data) ? res.data : [];
         setSampleFiles(list);
@@ -76,6 +103,12 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     };
 
     const fetchStatus = async () => {
+        if (initialUnmixingMethod) {
+            const method = asUnmixingMethod(initialUnmixingMethod);
+            unmixingMethodRef.current = method;
+            setUnmixingMethod(method);
+            return method;
+        }
         const result = await axios.get(`${API_BASE}/status`).catch(() => null);
         const method = asUnmixingMethod(result?.data?.unmixing_method);
         unmixingMethodRef.current = method;
@@ -95,17 +128,21 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         const q = sampleName && sampleName.length > 0
             ? `?sample_name=${encodeURIComponent(sampleName)}`
             : '';
-        const resData = await axios.get(projectUrl(`/data${q}`));
-        if (resData.data.error) {
+        const sampleKey = appletCacheKey('matrix-sample', projectPath, projectRevision, sampleName || '(default)');
+        const sampleData = await loadCachedAppletData(sampleKey, async () => {
+            const response = await axios.get(projectUrl(`/data${q}`));
+            return response.data as Record<string, unknown>;
+        });
+        if (sampleData.error) {
             setRawData([]);
             setUnmixedData([]);
             return;
         }
-        const raw = Array.isArray(resData.data.raw_data) ? resData.data.raw_data as DataRow[] : [];
+        const raw = Array.isArray(sampleData.raw_data) ? sampleData.raw_data as DataRow[] : [];
         setRawData(raw);
-        setDetectorLabels(alignDetectorLabels(detNames, resData.data || {}));
-        if (resData.data.sample_name) setCurrentSample(asScalarString(resData.data.sample_name));
-        await runUnmix(matrixData, raw, filenameForType);
+        setDetectorLabels(alignDetectorLabels(detNames, sampleData));
+        if (sampleData.sample_name) setCurrentSample(asScalarString(sampleData.sample_name));
+        void runUnmix(matrixData, raw, filenameForType);
     };
 
     const fetchData = async (filename = currentFile, sampleName = currentSample) => {
@@ -116,9 +153,12 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         setLoading(true);
         setErrorMessage('');
         try {
-            const resMatrix = await axios.get(projectUrl(`/load_matrix?filename=${encodeURIComponent(filename)}`));
-            if (resMatrix.data?.error) throw new Error(asScalarString(resMatrix.data.error));
-            const matrixData = Array.isArray(resMatrix.data) ? resMatrix.data as MatrixRow[] : [];
+            const matrixKey = appletCacheKey('matrix-file', projectPath, projectRevision, filename);
+            const matrixData = await loadCachedAppletData(matrixKey, async () => {
+                const response = await axios.get(projectUrl(`/load_matrix?filename=${encodeURIComponent(filename)}`));
+                if (response.data?.error) throw new Error(asScalarString(response.data.error));
+                return Array.isArray(response.data) ? response.data as MatrixRow[] : [];
+            });
             if (matrixData.length === 0) {
                 throw new Error(`Matrix ${filename} contains no rows.`);
             }
@@ -144,9 +184,12 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     useEffect(() => {
         const init = async () => {
             try {
-                await fetchStatus();
-                const [mats, samples] = await Promise.all([fetchMatrices(), fetchSamples()]);
-                await fetchUserGuiState();
+                const [, mats, samples] = await Promise.all([
+                    fetchStatus(),
+                    fetchMatrices(),
+                    fetchSamples(),
+                    fetchUserGuiState(),
+                ]);
                 const firstMatrix = pickPreferredMatrix(mats, currentFile);
                 const firstSample = samples[0] || '';
                 if (firstSample) setCurrentSample(firstSample);
@@ -157,16 +200,20 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                 setLoading(false);
             }
         };
-        init();
+        if (!bootPromiseRef.current) bootPromiseRef.current = init();
+        void bootPromiseRef.current;
         // Initial boot should run once; the called helpers intentionally read their current defaults.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     async function runUnmix(currentM: MatrixRow[], currentRaw: DataRow[], filename: string | boolean = currentFile) {
+        const requestId = ++unmixRequestIdRef.current;
         if (!Array.isArray(currentM) || currentM.length === 0 || !Array.isArray(currentRaw) || currentRaw.length === 0) {
             setUnmixedData([]);
+            setPreviewLoading(false);
             return false;
         }
+        setPreviewLoading(true);
         const M_obj: MatrixPayload = {};
         currentM.forEach(row => {
             M_obj[row.Marker] = { ...row };
@@ -186,14 +233,19 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                 matrix_filename: typeof filename === 'string' ? filename : currentFile,
                 method: unmixingMethodRef.current
             }));
+            if (requestId !== unmixRequestIdRef.current) return false;
             if (Array.isArray(res.data)) {
                 setUnmixedData(res.data as DataRow[]);
                 return true;
             }
             throw new Error(asScalarString(res.data?.error, 'The R backend returned no unmixed data.'));
         } catch (error) {
-            setUnmixedData([]);
-            setErrorMessage(error instanceof Error ? error.message : 'Sample unmixing failed.');
+            if (requestId === unmixRequestIdRef.current) {
+                setUnmixedData([]);
+                setErrorMessage(error instanceof Error ? error.message : 'Sample unmixing failed.');
+            }
+        } finally {
+            if (requestId === unmixRequestIdRef.current) setPreviewLoading(false);
         }
         return false;
     }
@@ -248,7 +300,9 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
             }));
             if (result.data?.error) throw new Error(asScalarString(result.data.error));
             setSaveStatus('saved');
-            await fetchMatrices();
+            const savedMatrixKey = appletCacheKey('matrix-file', projectPath, projectRevision, newName);
+            setCachedAppletData(savedMatrixKey, matrix);
+            await fetchMatrices(true);
             window.setTimeout(() => setSaveStatus('idle'), 2000);
         } catch (error) {
             setErrorMessage(error instanceof Error ? error.message : 'The adjusted matrix could not be saved.');
@@ -307,7 +361,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
     const markerNames = matrix.map(m => m.Marker);
     const selectedMarkers = markerNames;
     const signatureDetectorLabels = detectorLabels.length === detectors.length ? detectorLabels : detectors;
-    const chartWidth = Math.max(1040, detectors.length * 22);
+    const chartWidth = detectorAxisChartWidth(detectors.length);
     const chartHeight = 230;
     const spectrumLeft = 42;
     const spectrumRight = chartWidth - 8;
@@ -321,6 +375,11 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         const y = chartHeight - Number(row[det]) * (chartHeight - 32) - 24;
         return `${idx === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
+    const detectorAxisEntries = detectors.map((detector, index) => ({
+        detector,
+        label: signatureDetectorLabels[index] || detector,
+    }));
+    const detectorGradientId = 'matrix-detector-spectrum';
     const renderedTheme = embedded && cockpitTheme ? cockpitTheme : theme;
     const residualRenderKey = [
         residualCellSize,
@@ -393,26 +452,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
         borderRadius: '7px',
     };
 
-    if (loading) return (
-        <div style={{
-            height: '100vh',
-            width: '100%',
-            maxWidth: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: g.bgGradient,
-            backgroundImage: renderedTheme === 'dark'
-                ? 'linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px), linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px)'
-                : 'linear-gradient(90deg, rgba(38,63,115,.035) 1px, transparent 1px), linear-gradient(rgba(38,63,115,.035) 1px, transparent 1px)',
-            backgroundSize: '22px 22px',
-            color: g.accent,
-            fontFamily: 'Avenir Next, "Segoe UI", sans-serif',
-            fontWeight: 500
-        }}>
-            <RefreshCw className="animate-spin" style={{ marginRight: 12 }} size={24} /> Initializing Workspace...
-        </div>
-    );
+    if (loading) return <ModuleLoadingState label="Loading Matrix Adjustment" theme={renderedTheme} />;
 
     const lowerTriangleCells = selectedMarkers.length * (selectedMarkers.length - 1) / 2;
 
@@ -505,6 +545,15 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                     }}>
                         <Save size={17} />
                     </button>
+                    {embedded && onRequestExit && <button
+                        type="button"
+                        onClick={onRequestExit}
+                        aria-label="Close matrix adjustment and return to cockpit"
+                        autoFocus
+                        style={{ ...glassButton, minWidth: 78, height: 38, padding: '0 11px', color: g.text, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 700 }}
+                    >
+                        <X size={16} /> Close
+                    </button>}
                     {settingsOpen && (
                         <div role="dialog" aria-label="Settings" style={{
                             position: 'absolute',
@@ -556,13 +605,15 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                 <div style={{ flex: 1, minWidth: 0, maxWidth: '100%', display: 'flex', flexDirection: 'column', padding: 16, gap: 16, overflowX: 'hidden', overflowY: 'visible' }}>
                     <div style={{ flexShrink: 0 }}>
                         <div style={{ ...glassCard, overflow: 'hidden', maxWidth: '100%' }}>
-                            <div style={{ width: '100%', minWidth: 0 }}>
+                            <div style={{ width: '100%', minWidth: 0, overflowX: 'auto' }}>
                                 <svg
                                     ref={svgRef}
-                                    style={{ display: 'block', width: '100%', maxWidth: '100%' }}
-                                    width="100%"
-                                    height={chartHeight + 56}
-                                    viewBox={`0 0 ${chartWidth} ${chartHeight + 56}`}
+                                    style={{ display: 'block', width: chartWidth, minWidth: chartWidth, maxWidth: 'none' }}
+                                    width={chartWidth}
+                                    height={chartHeight + DETECTOR_AXIS_FOOTER_HEIGHT}
+                                    viewBox={`0 0 ${chartWidth} ${chartHeight + DETECTOR_AXIS_FOOTER_HEIGHT}`}
+                                    role="img"
+                                    aria-label="Reference signatures across detector channels grouped by laser"
                                 >
                                     {[0, 25, 50, 75, 100].map(tick => {
                                         const y = chartHeight - (tick / 100) * (chartHeight - 32) - 24;
@@ -572,18 +623,18 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                                             </g>
                                         );
                                     })}
-                                    {signatureDetectorLabels.map((label, idx) => {
-                                        const x = detectorX(idx);
-                                        return (
-                                            <g key={`${label}-${idx}`}>
-                                                <line x1={x} y1={6} x2={x} y2={chartHeight - 24} stroke={g.gridLine} strokeWidth={1} />
-                                                <text x={x} y={chartHeight + 4} fontSize={11} textAnchor="end" transform={`rotate(-90 ${x} ${chartHeight + 4})`} fill={g.textMuted}>
-                                                    {label}
-                                                </text>
-                                            </g>
-                                        );
-                                    })}
-                                    <line x1={spectrumLeft} y1={chartHeight - 24} x2={spectrumRight} y2={chartHeight - 24} stroke={g.glassBorder} strokeWidth={3} />
+                                    <DetectorSpectrumAxis
+                                        entries={detectorAxisEntries}
+                                        xForIndex={detectorX}
+                                        left={spectrumLeft}
+                                        right={spectrumRight}
+                                        plotTop={6}
+                                        baselineY={chartHeight - 24}
+                                        gridColor={g.gridLine}
+                                        axisColor={g.glassBorder}
+                                        textColor={g.textMuted}
+                                        gradientId={detectorGradientId}
+                                    />
                                     {selectedMarkers.map((m, mIdx) => {
                                         const row = matrix.find(r => r.Marker === m);
                                         if (!row) return null;
@@ -627,7 +678,19 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                     </div>
 
                     <div style={{ flex: 'none', minHeight: 0 }}>
-                        <div style={{ ...glassCard, padding: 12, overflow: 'auto', maxHeight: 'none' }}>
+                        <div style={{ ...glassCard, padding: 12, overflow: 'auto', maxHeight: 'none', position: 'relative' }}>
+                            {previewLoading && unmixedData.length === 0 ? (
+                                <div role="status" aria-live="polite" style={{ minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 11, color: g.accent, fontSize: 13, fontWeight: 700 }}>
+                                    <LoaderCircle className="module-loading-spinner" size={25} aria-hidden="true" />
+                                    Calculating residual preview
+                                </div>
+                            ) : <>
+                            {previewLoading && (
+                                <div role="status" aria-live="polite" style={{ position: 'sticky', left: 12, top: 0, zIndex: 5, width: 'fit-content', display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8, padding: '7px 10px', border: `1px solid ${g.glassBorder}`, borderRadius: 7, color: g.accent, background: g.glassBg, fontSize: 11, fontWeight: 700 }}>
+                                    <LoaderCircle className="module-loading-spinner" size={16} aria-hidden="true" />
+                                    Updating residual preview
+                                </div>
+                            )}
                             <div style={{ display: 'inline-block' }}>
                                 {/* Header row for first x-axis label */}
                                 <div style={{ display: selectedMarkers.includes(markerNames[0]) ? 'flex' : 'none', alignItems: 'center' }}>
@@ -711,6 +774,7 @@ const App = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; co
                                     );
                                 })}
                             </div>
+                            </>}
                         </div>
                     </div>
                 </div>

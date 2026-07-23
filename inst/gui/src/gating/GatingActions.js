@@ -6,12 +6,16 @@ import {
   gatingApiRequest,
 } from './GatingCore.jsx'
 
+export const GATING_SIDEBAR_MIN_WIDTH = 244
+
 export async function autogateHistogramsAction(options) {
   const {
-    enabled, gates, files, setHistogramAutogating, setStatus, setGates, setSpectrumCache,
+    enabled, gates, files, setHistogramAutogating, setHistogramAutogateNotice,
+    setStatus, setGates, setSpectrumCache,
   } = options
   if (!enabled) return
   setHistogramAutogating(true)
+  setHistogramAutogateNotice?.(null)
   setStatus('Auto-generating histogram gates')
   try {
     const result = await gatingApiRequest('/gate_histogram_autogate', {
@@ -35,11 +39,29 @@ export async function autogateHistogramsAction(options) {
     })
     const generated = Number(result.gates_generated ?? Object.keys(generatedGates).length)
     const preserved = Number(result.gates_preserved ?? 0)
+    const decodedFailures = unboxGuiState(result.failures || [])
+    const failures = Array.isArray(decodedFailures)
+      ? decodedFailures
+      : decodedFailures && typeof decodedFailures === 'object'
+        ? [decodedFailures]
+        : []
+    if (failures.length > 0) {
+      setHistogramAutogateNotice?.({
+        generated,
+        processed: Number(result.files_processed ?? files.length),
+        failures: failures.map((failure) => ({
+          filename: String(failure?.filename || 'Unknown control'),
+          error: String(failure?.error || 'Histogram gates could not be generated.'),
+        })),
+      })
+    }
     setStatus(
       `Auto-generated ${generated} missing histogram gate${generated === 1 ? '' : 's'} ` +
-      `for ${result.files_processed} controls; preserved ${preserved} existing gate${preserved === 1 ? '' : 's'}.`,
+      `for ${Number(result.files_succeeded ?? result.files_processed)} controls; ` +
+      `preserved ${preserved} existing gate${preserved === 1 ? '' : 's'}.`,
     )
   } catch (error) {
+    setHistogramAutogateNotice?.(null)
     setStatus(`Could not auto-generate histogram gates: ${error.message}`)
   } finally {
     setHistogramAutogating(false)
@@ -54,7 +76,7 @@ export function beginGatingSidebarResize(event, collapsed, width, setWidth) {
   const previousUserSelect = document.body.style.userSelect
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
-  const move = (moveEvent) => setWidth(Math.min(380, Math.max(160, width + moveEvent.clientX - startX)))
+  const move = (moveEvent) => setWidth(Math.min(380, Math.max(GATING_SIDEBAR_MIN_WIDTH, width + moveEvent.clientX - startX)))
   const finish = () => {
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', finish)

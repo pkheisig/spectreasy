@@ -1,6 +1,24 @@
-import type { WorkflowSettings } from "./types";
+import type { ProjectState, WorkflowSettings } from "./types";
 
 export type WorkflowAction = "control" | "sample" | "af";
+
+export function workflowHasExistingResults(
+  action: Exclude<WorkflowAction, "af">,
+  project: Pick<ProjectState, "artifacts" | "matrixFiles">,
+): boolean {
+  const stagePattern = action === "control"
+    ? /(^|\/)unmix_controls(?:_(?:[2-9]|[1-9][0-9]+))?(\/|$)/i
+    : /(^|\/)unmix_samples(?:_(?:[2-9]|[1-9][0-9]+))?(\/|$)/i;
+  const reportType = action === "control" ? "Control QC report" : "Sample QC report";
+  if (project.artifacts.some((artifact) => {
+    const path = String(artifact.relativePath ?? artifact.path ?? "").replace(/\\/g, "/");
+    return artifact.type === reportType || stagePattern.test(path);
+  })) return true;
+  if (action === "control") {
+    return (project.matrixFiles ?? []).some((file) => stagePattern.test(String(file).replace(/\\/g, "/")));
+  }
+  return false;
+}
 
 function rValue(value: unknown): string {
   if (value == null) return "NULL";
@@ -55,6 +73,7 @@ export function createWorkflowPayload(action: WorkflowAction, settings: Workflow
       scc_dir: control.sccDir,
       control_file: control.controlFile,
       output_dir: normalizeCockpitOutputRoot(control.outputDir),
+      output_collision: "version",
       method: control.method,
       cytometer: control.cytometer,
       auto_create_mapping: control.autoCreateMapping,
@@ -90,7 +109,6 @@ export function createWorkflowPayload(action: WorkflowAction, settings: Workflow
       spectral_variant_cosine_threshold: control.spectralVariantCosineThreshold,
       spectral_variant_max_variants: control.spectralVariantMaxVariants,
       spectral_variant_min_events: control.spectralVariantMinEvents,
-      spectreasy_weight_quantile: control.spectreasyWeightQuantile,
       autospectral_n_candidates: control.autospectralNCandidates,
       autospectral_n_spectral: control.autospectralNSpectral,
       autospectral_min_events: control.autospectralMinEvents,
@@ -112,7 +130,6 @@ export function createWorkflowPayload(action: WorkflowAction, settings: Workflow
       spectral_variant_positive_fraction: sample.spectralVariantPositiveFraction,
       spectral_variant_min_improvement: sample.spectralVariantMinImprovement,
       spectral_variant_library_file: sample.spectralVariantLibraryFile,
-      spectreasy_weight_quantile: sample.spectreasyWeightQuantile,
       estimate_af: sample.estimateAf,
       write_fcs: sample.writeFcs,
       save_report: sample.saveReport,

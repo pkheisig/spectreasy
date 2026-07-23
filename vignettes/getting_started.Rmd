@@ -451,3 +451,13 @@ plot_nps(calculate_nps(sample_results), output_file = NULL)
 ```{r}
 sessionInfo()
 ```
+## Local AI-ready QC
+
+Control and sample workflows write one local numerical QC prompt with
+`save_ai_qc = TRUE`. Spectreasy sends nothing, includes no raw events, assigns
+no scientific quality labels, and does not create a parallel bundle directory.
+
+QC reports generate their prompt companion from the existing numerical CSV
+tables automatically. Open a control or sample report in the cockpit and use
+the highlighted **AI-ready prompt** header menu to copy or download the saved
+text.

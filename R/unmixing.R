@@ -22,21 +22,18 @@
 #'   returned from [unmix_controls()] or the `fcs_mapping_used.csv` saved beside
 #'   `unmixing_matrix_file` is used.
 #' @param unmixing_method Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`,
-#'   `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses
+#'   `"NNLS"`, or `"AutoSpectral"`). `AutoSpectral` uses
 #'   per-event AF assignment with marker + selected-AF OLS, plus SCC-derived
-#'   spectral-variant optimization when available. `Spectreasy` uses the same
-#'   AutoSpectral-style OLS fit, then blends marker abundances with a marker-only
-#'   OLS anchor using decoder-projected AF impact weights.
+#'   spectral-variant optimization when available.
 #' @param rwls_max_iter Positive integer; number of robust reweighting
 #'   iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 #'   historical behavior.
 #' @param n_threads Positive integer; number of threads for event-wise
-#'   AutoSpectral/Spectreasy AF assignment and NNLS/WLS/RWLS fitting. OLS uses
+#'   AutoSpectral AF assignment and NNLS/WLS/RWLS fitting. OLS uses
 #'   vectorized matrix operations. The default, 1, keeps explicit event loops
 #'   single-threaded.
 #' @param spectral_variant_library Optional in-memory AutoSpectral
-#'   spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`
-#'   or `"Spectreasy"`.
+#'   spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`.
 #' @param spectral_variant_library_file Optional RDS path to an AutoSpectral
 #'   spectral-variant library. When omitted, `unmix_samples()` looks for
 #'   `scc_spectral_variants.rds` beside `unmixing_matrix_file`.
@@ -50,10 +47,6 @@
 #' @param spectral_variant_min_improvement Minimum fractional residual
 #'   improvement required before accepting a cell-specific AutoSpectral
 #'   variant refit.
-#' @param spectreasy_weight_quantile Numeric in `[0, 1]`; only accepted when
-#'   `unmixing_method = "Spectreasy"`. Controls the quantile of
-#'   decoder-projected AF impacts used as the soft-saturation scale for
-#'   marker-specific AutoSpectral mixing. The default is `0.65`.
 #' @param estimate_af Logical; if `TRUE`, estimate AF signatures directly from
 #'   stained sample event-wise WLS residuals, select the best candidate model by
 #'   held-out WLS residual score, and append the selected AF rows to the
@@ -68,6 +61,14 @@
 #' @param save_report Logical; if `TRUE`, write a sample QC report and
 #'   sample QC metric CSVs from the in-memory unmixing results without rerunning
 #'   unmixing. Defaults to `TRUE`.
+#' @param save_ai_qc Logical; when a QC report is written, also write its local
+#'   paste-ready numerical interpretation prompt. Defaults to `save_report`.
+#' @param ai_qc_detail Retained for development-branch call compatibility; the
+#'   report prompt is automatically context-bounded.
+#' @param ai_qc_privacy Retained for call compatibility. Prompts contain local
+#'   report measurements, project basename, and no raw events.
+#' @param ai_qc_reference Retained for call compatibility; no reference-derived
+#'   labels are assigned.
 #' @param report_format Report format, either `"html"` (default) or `"pdf"`.
 #'   Only the selected format is written. Matching is case-insensitive.
 #' @param report_per_sample Logical; if `TRUE`, PDF output writes one report
@@ -150,11 +151,14 @@ unmix_samples <- function(sample_dir = "samples",
                           spectral_variant_min_abundance = 1,
                           spectral_variant_positive_fraction = 0.02,
                           spectral_variant_min_improvement = 0.01,
-                          spectreasy_weight_quantile = 0.65,
                           estimate_af = FALSE,
                           output_dir = "spectreasy_outputs",
                           write_fcs = TRUE,
                           save_report = TRUE,
+                          save_ai_qc = save_report,
+                          ai_qc_detail = "standard",
+                          ai_qc_privacy = "standard",
+                          ai_qc_reference = "auto",
                           report_format = "html",
                           report_per_sample = FALSE,
                           save_qc_plots = FALSE,
@@ -165,7 +169,6 @@ unmix_samples <- function(sample_dir = "samples",
                           return_type = c("list", "flowSet", "SingleCellExperiment"),
                           verbose = TRUE,
                           project_path = getwd()) {
-    spectreasy_weight_quantile_missing <- missing(spectreasy_weight_quantile)
     unmixing_matrix_file_missing <- missing(unmixing_matrix_file)
     return_type <- .match_arg_ci(
         return_type,
@@ -175,6 +178,9 @@ unmix_samples <- function(sample_dir = "samples",
     report_format <- .match_arg_ci(report_format, c("html", "pdf"), "report_format")
     write_fcs <- .normalize_scalar_logical(write_fcs, "write_fcs")
     save_report <- .normalize_scalar_logical(save_report, "save_report")
+    save_ai_qc <- .normalize_scalar_logical(save_ai_qc, "save_ai_qc")
+    ai_qc_detail <- .match_arg_ci(ai_qc_detail, c("compact", "standard", "full"), "ai_qc_detail")
+    ai_qc_privacy <- .match_arg_ci(ai_qc_privacy, c("standard", "strict", "none"), "ai_qc_privacy")
     report_per_sample <- .normalize_scalar_logical(report_per_sample, "report_per_sample")
     save_qc_plots <- .normalize_scalar_logical(save_qc_plots, "save_qc_plots")
     verbose <- .normalize_scalar_logical(verbose, "verbose")
@@ -221,12 +227,6 @@ unmix_samples <- function(sample_dir = "samples",
     method <- .normalize_unmix_method(unmixing_method)
     rwls_max_iter <- .normalize_rwls_max_iter(rwls_max_iter)
     n_threads <- .normalize_n_threads(n_threads)
-    if (!identical(method, "Spectreasy") && !spectreasy_weight_quantile_missing) {
-        stop("spectreasy_weight_quantile is only accepted when unmixing_method = \"Spectreasy\".", call. = FALSE)
-    }
-    if (identical(method, "Spectreasy")) {
-        spectreasy_weight_quantile <- .normalize_spectreasy_weight_quantile(spectreasy_weight_quantile)
-    }
     estimate_af <- .normalize_scalar_logical(estimate_af, "estimate_af")
     chunk_size <- .normalize_unmix_chunk_size(chunk_size)
     plot_n_events <- .normalize_unmix_plot_n_events(plot_n_events)
@@ -265,7 +265,7 @@ unmix_samples <- function(sample_dir = "samples",
         )
     }
 
-    spectral_variant_library_resolved <- if (.is_autospectral_style_method(method)) {
+    spectral_variant_library_resolved <- if (.is_autospectral_method(method)) {
         .resolve_spectral_variant_library_for_unmixing(
             M = M,
             spectral_variant_library = spectral_variant_library,
@@ -294,7 +294,6 @@ unmix_samples <- function(sample_dir = "samples",
         spectral_variant_min_abundance = spectral_variant_min_abundance,
         spectral_variant_positive_fraction = spectral_variant_positive_fraction,
         spectral_variant_min_improvement = spectral_variant_min_improvement,
-        spectreasy_weight_quantile = spectreasy_weight_quantile,
         chunk_size = chunk_size,
         plot_n_events = plot_n_events,
         write_fcs = write_fcs,
@@ -337,17 +336,33 @@ unmix_samples <- function(sample_dir = "samples",
                 spectral_variant_min_abundance = spectral_variant_min_abundance,
                 spectral_variant_positive_fraction = spectral_variant_positive_fraction,
                 spectral_variant_min_improvement = spectral_variant_min_improvement,
-                spectreasy_weight_quantile = spectreasy_weight_quantile,
                 estimate_af = estimate_af,
                 write_fcs = write_fcs,
                 save_qc_plots = save_qc_plots,
                 report_per_sample = report_per_sample,
                 plot_n_events = plot_n_events,
                 chunk_size = chunk_size,
+                save_ai_qc = save_ai_qc,
                 seed = seed
             ),
             project_path = project_path
         )
+    }
+
+    if (isTRUE(save_ai_qc)) {
+        report_file <- attr(results, "qc_report_file")
+        report_data <- attr(results, "qc_report_data")
+        if (!is.null(report_data) && !is.null(report_file) &&
+            length(report_file) == 1L && file.exists(report_file)) {
+            prompt_export <- .export_report_ai_qc(
+                report_data,
+                report_file,
+                numeric_paths = report_data$qc_metric_paths %||% character()
+            )
+            attr(results, "ai_qc_prompt_path") <- prompt_export$prompt
+            attr(results, "ai_qc_data_paths") <- prompt_export$numeric_sources
+            attr(results, "ai_qc_paths") <- c(prompt = prompt_export$prompt)
+        }
     }
 
     if (identical(return_type, "flowSet")) {

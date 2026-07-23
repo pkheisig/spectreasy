@@ -1,7 +1,7 @@
-#' Calculate Negative Population Spread (NPS)
+#' Calculate the negative-tail MAD proxy (historically NPS)
 #' 
-#' Quantifies the spreading of negative populations after unmixing. 
-#' High spread indicates poor unmixing or high spillover noise.
+#' Quantifies an ungated lower-tail spread proxy after unmixing. Explicitly
+#' gated negative populations should be preferred when available.
 #' 
 #' @param data Unmixed data frame
 #' @param markers Vector of marker names to analyze
@@ -86,9 +86,9 @@ plot_nps <- function(nps_results, output_file = NULL, width = 200) {
     
     p <- p +
         ggplot2::labs(
-            title = "Negative Population Spread (Unmixing Noise Floor)",
-            subtitle = "Lower is better. High spread can worsen separation between pos. and neg. populations.\nCell-based control colors will show higher MAD.\nUse colors with high spread on abundant markers whenever possible.",
-            y = "Spread (MAD)",
+            title = "Negative-tail MAD proxy (Unmixing Noise Floor)",
+            subtitle = "Ungated lower-tail proxy; explicitly gated negatives are preferred when available. Lower is better.",
+            y = "Negative-tail MAD proxy",
             x = "Unmixed Marker"
         ) +
         ggplot2::theme_minimal(base_size = 13.75) +
@@ -300,7 +300,7 @@ plot_similarity_matrix <- function(similarity_matrix, output_file = NULL, width 
     if (is.null(method)) {
         return("OLS")
     }
-    .normalize_unmix_method(method, choices = c("AutoSpectral", "Spectreasy", "OLS", "NNLS", "WLS", "RWLS"))
+    .normalize_unmix_method(method, choices = c("AutoSpectral", "OLS", "NNLS", "WLS", "RWLS"))
 }
 
 .uses_wls_residual_metric <- function(method) {

@@ -199,37 +199,23 @@ unmixed_pdf <- unmix_samples(report_format = "pdf")
 
 ### Local AI-ready QC
 
-The same workflow calculations can be exported as a deterministic,
-schema-versioned machine review bundle. Spectreasy sends nothing: it has no
-embedded AI model, provider integration, API key, or upload step. The JSON is
-canonical; text, Markdown, the paste-ready prompt, report summaries, and the
-cockpit view derive from it. No raw event-level matrices are included.
+Each control or sample report writes one local, paste-ready prompt beside the
+report. Spectreasy sends nothing and includes no raw events. The prompt combines
+the important measured QC tables while summarizing large spectral matrices to
+protect the model context window. Spectreasy does not assign scientific quality
+labels or invent thresholds before the prompt is created.
 
 ```r
-ai <- export_ai_qc(
-  controls = ctrl,
-  samples = unmixed,
-  M = ctrl$M,
-  scope = "combined",
-  privacy = "standard",
-  detail = "standard",
-  output_dir = "spectreasy_outputs/ai_qc"
-)
-
-cat(readLines(ai$paths[["prompt"]]), sep = "\n")
+cat(readLines(ctrl$ai_qc_prompt_path), sep = "\n")
 ```
 
 `unmix_controls()` and `unmix_samples()` set `save_ai_qc = save_report` by
-default; set `save_ai_qc = TRUE, save_report = FALSE` to create the machine
-bundle without a visual report. Standard privacy aliases samples and removes
-absolute paths. Strict privacy also aliases controls and removes
-project/operator/date/free-text metadata. `privacy = "none"` is explicit.
+default. The prompt is stored in the existing `qc_controls` or `qc_samples`
+directory; no parallel QC bundle directory is created.
 
-Grades are `good`, `review`, `poor`, or `not_graded`. Every grade records its
-basis and thresholds/profile provenance. There is no global detector RMS, NPS,
-fluorophore, instrument, or method threshold table. AI interpretation is
-advisory and must be checked against the measurements, assumptions, and
-experimental design.
+The prompt defines the added measurements and asks the AI to separate measured
+observations from interpretation. Any interpretation must still be checked
+against the experimental design, gating, instrument settings, and plots.
 
 ### Single-Color Control (SCC) Report
 
@@ -268,7 +254,7 @@ The sections below are for understanding, tuning, or reusing pieces of the workf
 
 By default, `spectreasy` uses `unmixing_method = "AutoSpectral"`. This method performs per-event AF matching based on minimizing overall marker leakage, as well as per-event SCC spectral variant matching. For more information, visit [AutoSpectral](https://github.com/DrCytometer/AutoSpectral). The SCC event-selection and variant-detection design is inspired by [Spectracle](https://github.com/nlaniewski/spectracle)
 
-For both `Spectreasy` and `AutoSpectral`, SCC processing starts with the positive histogram population selected in the gating GUI. When no saved positive gate is available, the same automatic histogram fallback is applied. Bright-candidate selection, negative-source resolution, scatter-KNN subtraction, and spectral-shape selection then operate only within that positive population.
+For `AutoSpectral`, SCC processing starts with the positive histogram population selected in the gating GUI. When no saved positive gate is available, the same automatic histogram fallback is applied. Bright-candidate selection, negative-source resolution, scatter-KNN subtraction, and spectral-shape selection then operate only within that positive population.
 
 ## Other unmixing methods
 
@@ -278,7 +264,7 @@ The regular `OLS` and `NNLS` methods remain available as separate methods. They 
 
 ## Per-cell Autofluorescence (AF) Extraction
 
-`Spectreasy` constructs an AF bank using k-means controlled by `af_n_bands`. By default, `unmix_controls()` uses `af_n_bands = 100` to build a broad AF bank from pooled unstained/AF control events. With one AF band, the AF row is the median normalized AF shape; with multiple AF bands, k-means-derived AF rows represent common AF shapes seen in the unstained cells. During unmixing, each event chooses one AF profile before the final fit.
+`unmix_controls()` constructs an AF bank using k-means controlled by `af_n_bands`. By default, it uses `af_n_bands = 100` to build a broad AF bank from pooled unstained/AF control events. With one AF band, the AF row is the median normalized AF shape; with multiple AF bands, k-means-derived AF rows represent common AF shapes seen in the unstained cells. During unmixing, each event chooses one AF profile before the final fit.
 
 To use multiple unstained sources, put each unstained cell `.fcs` file in `scc/`. The automapper will identify them as separate AF controls and use one AF row per file in `fcs_mapping.csv`. The events from those files are pooled before AF extraction; `af_n_bands` controls how many AF basis spectra are learned from the pooled events. When using several unstained cell control files (with many events in total) and encountering unmixing issues, one might consider trying a higher value for `af_n_bands`. Note, this can strongly increase the computation time of the unmixing algorithm.
 

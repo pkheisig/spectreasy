@@ -36,7 +36,9 @@
     invisible(list(
         output_file = sample_files,
         qc_plot_dir = lapply(sample_results, `[[`, "qc_plot_dir"),
-        qc_metrics_dir = lapply(sample_results, `[[`, "qc_metrics_dir")
+        qc_metrics_dir = lapply(sample_results, `[[`, "qc_metrics_dir"),
+        ai_qc_prompt_path = lapply(sample_results, `[[`, "ai_qc_prompt_path"),
+        ai_qc_data_paths = lapply(sample_results, `[[`, "ai_qc_data_paths")
     ))
 }
 

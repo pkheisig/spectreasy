@@ -2,6 +2,8 @@ import { reconcileGateCsvRows } from '../gatingCsvCompatibility.js'
 import { pruneUnavailableNegativeGates } from '../gatingEligibility.js'
 import {
   CONFIG_NAME,
+  DEFAULT_HISTOGRAM_TRANSFORM,
+  HISTOGRAM_TRANSFORM_VERSION,
   REQUIRED_GATE_CSV_COLUMNS,
   buildRows,
   gateRowsToCsv,
@@ -91,7 +93,11 @@ export function useGatingConfigIO(options) {
     if (typeof parsed.pointSize === 'number') setPointSize(parsed.pointSize)
     if (typeof parsed.maxPoints === 'number') setMaxPoints(normalizeEventCount(parsed.maxPoints))
     if (typeof parsed.histogramBins === 'number') setHistogramBins(normalizeHistogramBins(parsed.histogramBins))
-    if (typeof parsed.histogramTransform === 'string') setHistogramTransform(normalizeHistogramTransform(parsed.histogramTransform))
+    setHistogramTransform(
+      typeof parsed.histogramTransform === 'string' && parsed.histogramTransformVersion === HISTOGRAM_TRANSFORM_VERSION
+        ? normalizeHistogramTransform(parsed.histogramTransform)
+        : DEFAULT_HISTOGRAM_TRANSFORM,
+    )
     setViewSettings(parsed.viewSettings)
     setDraft([])
     await gatingApiRequest('/gate_config', {

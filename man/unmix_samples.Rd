@@ -21,11 +21,14 @@ unmix_samples(
   spectral_variant_min_abundance = 1,
   spectral_variant_positive_fraction = 0.02,
   spectral_variant_min_improvement = 0.01,
-  spectreasy_weight_quantile = 0.65,
   estimate_af = FALSE,
   output_dir = "spectreasy_outputs",
   write_fcs = TRUE,
   save_report = TRUE,
+  save_ai_qc = save_report,
+  ai_qc_detail = "standard",
+  ai_qc_privacy = "standard",
+  ai_qc_reference = "auto",
   report_format = "html",
   report_per_sample = FALSE,
   save_qc_plots = FALSE,
@@ -67,24 +70,21 @@ returned from [unmix_controls()] or the `fcs_mapping_used.csv` saved beside
 `unmixing_matrix_file` is used.}
 
 \item{unmixing_method}{Unmixing method (`"WLS"`, `"RWLS"`, `"OLS"`,
-`"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`). `AutoSpectral` uses
+`"NNLS"`, or `"AutoSpectral"`). `AutoSpectral` uses
 per-event AF assignment with marker + selected-AF OLS, plus SCC-derived
-spectral-variant optimization when available. `Spectreasy` uses the same
-AutoSpectral-style OLS fit, then blends marker abundances with a marker-only
-OLS anchor using decoder-projected AF impact weights.}
+spectral-variant optimization when available.}
 
 \item{rwls_max_iter}{Positive integer; number of robust reweighting
 iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
 \item{n_threads}{Positive integer; number of threads for event-wise
-AutoSpectral/Spectreasy AF assignment and NNLS/WLS/RWLS fitting. OLS uses
+AutoSpectral AF assignment and NNLS/WLS/RWLS fitting. OLS uses
 vectorized matrix operations. The default, 1, keeps explicit event loops
 single-threaded.}
 
 \item{spectral_variant_library}{Optional in-memory AutoSpectral
-spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`
-or `"Spectreasy"`.}
+spectral-variant library. Used only when `unmixing_method = "AutoSpectral"`.}
 
 \item{spectral_variant_library_file}{Optional RDS path to an AutoSpectral
 spectral-variant library. When omitted, `unmix_samples()` looks for
@@ -104,11 +104,6 @@ AutoSpectral variant testing.}
 improvement required before accepting a cell-specific AutoSpectral
 variant refit.}
 
-\item{spectreasy_weight_quantile}{Numeric in `[0, 1]`; only accepted when
-`unmixing_method = "Spectreasy"`. Controls the quantile of
-decoder-projected AF impacts used as the soft-saturation scale for
-marker-specific AutoSpectral mixing. The default is `0.65`.}
-
 \item{estimate_af}{Logical; if `TRUE`, estimate AF signatures directly from
 stained sample event-wise WLS residuals, select the best candidate model by
 held-out WLS residual score, and append the selected AF rows to the
@@ -126,6 +121,18 @@ Defaults to `TRUE` so unmixed FCS files are written unless disabled explicitly.}
 \item{save_report}{Logical; if `TRUE`, write a sample QC report and
 sample QC metric CSVs from the in-memory unmixing results without rerunning
 unmixing. Defaults to `TRUE`.}
+
+\item{save_ai_qc}{Logical; when a QC report is written, also write its local
+paste-ready numerical interpretation prompt. Defaults to `save_report`.}
+
+\item{ai_qc_detail}{Retained for development-branch call compatibility; the
+report prompt is automatically context-bounded.}
+
+\item{ai_qc_privacy}{Retained for call compatibility. Prompts contain local
+report measurements, project basename, and no raw events.}
+
+\item{ai_qc_reference}{Retained for call compatibility; no reference-derived
+labels are assigned.}
 
 \item{report_format}{Report format, either `"html"` (default) or `"pdf"`.
 Only the selected format is written. Matching is case-insensitive.}

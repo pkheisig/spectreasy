@@ -5,7 +5,7 @@
   `unmix_threads` argument in favor of `n_threads`. The old names are no longer
   accepted by `unmix_controls()`.
 
-- `n_threads` now covers event-wise AutoSpectral/Spectreasy AF assignment,
+- `n_threads` now covers event-wise AutoSpectral AF assignment,
   NNLS, WLS, and RWLS fitting, including multi-AF OLS/NNLS candidate fitting.
   Dense fixed-reference OLS remains a vectorized matrix operation.
 
@@ -23,6 +23,11 @@
 
 ## New
 
+- Added a local-only AI prompt companion to control QC reports. Report
+  generation writes a context-bounded text prompt alongside the deterministic
+  numerical QC CSV tables, and the report toolbar can copy or download that
+  prompt. Spectreasy sends nothing and includes no AI model, provider
+  integration, API key, or upload path.
 - Added the hosted Spectreasy cockpit with native project selection, schema-aligned control mapping, embedded analysis applets, and automatically persisted GUI settings.
 - Added `unmix_controls()` as the main SCC workflow entry point.
 - Added `unmix_samples()` support for loading a saved unmixing matrix file.
@@ -30,7 +35,8 @@
 
 ## Changes
 
-- Changed the default `spectreasy_weight_quantile` from `0.9` to `0.65`.
+- Removed the retired Spectreasy unmixing method and its method-specific
+  parameters from the R API, cockpit, reports, and documentation.
 - WLS now uses event-wise detector-error weights with detector-specific noise floors estimated from SCC low-signal tails by default.
 - Increased the default WLS maximum detector weight ratio from 100 to 1600 based on cross-dataset benchmark results.
 - `unmix_controls()` writes `scc_detector_noise.csv`; `unmix_samples(method = "WLS")` loads it beside `scc_reference_matrix.csv`, estimates from `scc_dir` when available, or falls back to a scalar noise floor of 125.

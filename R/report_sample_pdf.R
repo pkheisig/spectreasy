@@ -20,7 +20,7 @@
     invisible(NULL)
 }
 
-.sample_pdf_reference_pages <- function(M, pd, qc_metrics_dir, plot_dir, matrix_markers_per_page, state) {
+.sample_pdf_reference_pages <- function(M, pd, qc_metrics_dir, plot_dir, matrix_markers_per_page, state, ai_caption = NULL) {
     keep <- !grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
     fluor <- M[keep, , drop = FALSE]
     af <- M[!keep, , drop = FALSE]
@@ -39,6 +39,7 @@
     .spectreasy_console_step("Spectra overlay")
     if (nrow(fluor) > 0) {
         spectra <- plot_spectra(fluor, pd = pd, output_file = NULL)
+        if (!is.null(ai_caption)) spectra <- spectra + ggplot2::labs(caption = ai_caption)
         .save_qc_report_png(spectra, plot_dir, "spectra_overlay.png")
         .sample_pdf_draw_spectra(state, spectra)
     }
@@ -65,10 +66,10 @@
 
 .sample_pdf_nps_pages <- function(results_df, method, qc_metrics_dir, plot_dir, max_files, state) {
     if (identical(method, "NNLS")) {
-        .spectreasy_console_step("NPS diagnostics", "skipped for NNLS")
+        .spectreasy_console_step("Negative-tail MAD proxy", "skipped for NNLS")
         return(invisible(NULL))
     }
-    .spectreasy_console_step("NPS diagnostics")
+    .spectreasy_console_step("Negative-tail MAD proxy")
     scores <- calculate_nps(results_df)
     scores <- scores[!grepl("^AF($|_)", scores$Marker, ignore.case = TRUE), , drop = FALSE]
     if (nrow(scores) == 0) return(invisible(NULL))
@@ -153,17 +154,29 @@
     }
     plot_dir <- .prepare_qc_report_png_dir(options$qc_plot_dir, options$save_qc_pngs, output_file)
     metrics_dir <- .prepare_qc_report_metrics_dir(options$qc_metrics_dir)
+    if (!is.null(metrics_dir)) {
+        af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
+        af_numeric <- .af_qc_summary_table(M, attr(results, "blind_af_info") %||% attr(M, "af_bank_info"))
+        af_usage <- .af_band_usage_table(prepared$data, af_band_names = rownames(M)[af_rows])
+        if (.report_has_rows(af_numeric)) .write_qc_report_csv(af_numeric, file.path(metrics_dir, "af_bank_summary.csv"))
+        if (.report_has_rows(af_usage)) .write_qc_report_csv(af_usage, file.path(metrics_dir, "af_band_usage.csv"))
+    }
     grDevices::pdf(output_file, width = 11, height = 8.5)
     on.exit(try(grDevices::dev.off(), silent = TRUE), add = TRUE)
     state <- new.env(parent = emptyenv())
     state$page_started <- FALSE
+
+    ai_caption <- NULL
 
     file_counts <- .qc_report_file_counts(results)
     if (!is.null(options$max_events_per_sample) &&
         any(as.numeric(file_counts) > as.numeric(options$max_events_per_sample)[1], na.rm = TRUE)) {
         .spectreasy_console_step("Event cap", paste0(as.integer(options$max_events_per_sample[1]), " events per sample"))
     }
-    .sample_pdf_reference_pages(M, pd, metrics_dir, plot_dir, options$matrix_markers_per_page, state)
+    .sample_pdf_reference_pages(
+        M, pd, metrics_dir, plot_dir, options$matrix_markers_per_page, state,
+        ai_caption = ai_caption
+    )
     .sample_pdf_nps_pages(prepared$data, method, metrics_dir, plot_dir, options$overview_files_per_page, state)
     .sample_pdf_scatter_pages(prepared$data, options, plot_dir, state)
     .sample_pdf_residual_pages(
@@ -172,5 +185,30 @@
     )
     .spectreasy_console_field("Saved", .spectreasy_console_path(output_file))
     .spectreasy_console_footer(blank = FALSE)
-    invisible(list(output_file = output_file, qc_plot_dir = plot_dir, qc_metrics_dir = metrics_dir))
+    af_rows <- grepl("^AF($|_)", rownames(M), ignore.case = TRUE)
+    prompt_data <- list(
+        report_type = "Sample QC",
+        project_path = normalizePath(options$project_path, mustWork = FALSE),
+        created_at = Sys.time(),
+        version = as.character(utils::packageVersion("spectreasy")),
+        unmixing_method = method,
+        cytometer = "not recorded",
+        counts = list(
+            samples = length(unique(as.character(prepared$data$File))),
+            markers = sum(!af_rows), detectors = ncol(M), af_bands = sum(af_rows)
+        ),
+        warnings = character(),
+        qc_metric_paths = if (!is.null(metrics_dir) && dir.exists(metrics_dir)) list.files(metrics_dir, pattern = "\\.csv$", full.names = TRUE, ignore.case = TRUE) else character()
+    )
+    class(prompt_data) <- c("spectreasy_sample_report_data", "spectreasy_report_data", "list")
+    ai_artifacts <- NULL
+    if (isTRUE(options$report_run_settings$save_ai_qc %||% TRUE)) {
+        ai_artifacts <- .export_report_ai_qc(
+            prompt_data, output_file, numeric_paths = prompt_data$qc_metric_paths
+        )
+    }
+    invisible(list(
+        output_file = output_file, qc_plot_dir = plot_dir, qc_metrics_dir = metrics_dir,
+        ai_qc_prompt_path = ai_artifacts$prompt, ai_qc_data_paths = ai_artifacts$numeric_sources
+    ))
 }

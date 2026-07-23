@@ -28,3 +28,36 @@ test_that("automatic control report defaults inside the qc_controls directory", 
         file.path(output_dir, "fcs_mapping_used.csv")
     )
 })
+
+test_that("control-stage collision policy versions the complete stage directory", {
+    output_root <- tempfile("spectreasy_control_stage_")
+    canonical <- file.path(output_root, "unmix_controls")
+
+    expect_identical(
+        spectreasy:::.resolve_unmix_controls_stage_dir(output_root, "version"),
+        canonical
+    )
+    dir.create(canonical, recursive = TRUE)
+    versioned <- spectreasy:::.resolve_unmix_controls_stage_dir(output_root, "version")
+    expect_identical(
+        versioned,
+        paste0(canonical, "_2")
+    )
+    expect_true(all(startsWith(
+        unlist(spectreasy:::.unmix_output_paths(versioned), use.names = FALSE),
+        paste0(versioned, .Platform$file.sep)
+    )))
+    dir.create(paste0(canonical, "_2"))
+    expect_identical(
+        spectreasy:::.resolve_unmix_controls_stage_dir(output_root, "version"),
+        paste0(canonical, "_3")
+    )
+    expect_identical(
+        spectreasy:::.resolve_unmix_controls_stage_dir(output_root, "overwrite"),
+        canonical
+    )
+    expect_error(
+        spectreasy:::.resolve_unmix_controls_stage_dir(output_root, "error"),
+        "Control-stage output already exists"
+    )
+})

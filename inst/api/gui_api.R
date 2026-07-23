@@ -23,7 +23,8 @@
     "gating_io.R",
     "gating_selection.R",
     "gating_spectrum.R",
-    "workflow_project.R"
+    "workflow_project.R",
+    "ai_qc.R"
 )
 .gui_api_module_dir <- .gui_api_module_directory()
 for (.gui_api_module in .gui_api_modules) {
@@ -269,8 +270,11 @@ function(req) {
             gates = result$gates,
             spectra = result$spectra,
             files_processed = result$files_processed,
+            files_succeeded = result$files_succeeded,
+            files_failed = result$files_failed,
             gates_generated = result$gates_generated,
-            gates_preserved = result$gates_preserved
+            gates_preserved = result$gates_preserved,
+            failures = result$failures
         )
     }, error = function(e) {
         list(success = FALSE, error = conditionMessage(e))
@@ -389,7 +393,7 @@ function(project_path = "") {
     gui_with_project_context(project_path, {
     cache <- getOption("spectreasy.gating_state_cache")
     if (is.null(cache)) {
-        return(list(gates = list(), pointSize = 1.5, maxPoints = 50000, histogramBins = 100, histogramTransform = "asinh", viewSettings = list(), eventCountVersion = 2))
+        return(list(gates = list(), pointSize = 1.5, maxPoints = 50000, histogramBins = 100, histogramTransform = "auto", histogramTransformVersion = 2, viewSettings = list(), eventCountVersion = 2))
     }
     cache
     })
@@ -405,6 +409,7 @@ function(req) {
         maxPoints = body$maxPoints,
         histogramBins = body$histogramBins,
         histogramTransform = body$histogramTransform,
+        histogramTransformVersion = body$histogramTransformVersion,
         viewSettings = body$viewSettings,
         eventCountVersion = body$eventCountVersion
     )))
@@ -1024,21 +1029,27 @@ gui_project_report_files <- function(root, files = NULL, output_root = "", repor
         if (!identical(output_base, root) && !startsWith(output_base, root_prefix)) {
             stop("Report output folder is outside the active project.", call. = FALSE)
         }
-        stage_dir <- file.path(output_base, if (identical(report_type, "sample")) "unmix_samples" else "unmix_controls")
+        stage_name <- if (identical(report_type, "sample")) "unmix_samples" else "unmix_controls"
+        stage_pattern <- paste0("^", stage_name, "(?:_(?:[2-9]|[1-9][0-9]+))?$")
+        stage_dirs <- if (dir.exists(output_base)) {
+            candidates <- list.dirs(output_base, recursive = FALSE, full.names = TRUE)
+            candidates[grepl(stage_pattern, basename(candidates), perl = TRUE)]
+        } else character()
         report_dir_name <- if (identical(report_type, "sample")) "qc_samples" else "qc_controls"
-        report_dirs <- if (dir.exists(stage_dir)) {
+        report_dirs <- unique(unlist(lapply(stage_dirs, function(stage_dir) {
             candidates <- list.dirs(stage_dir, recursive = FALSE, full.names = TRUE)
             candidates[grepl(paste0("^", report_dir_name, "(?:_(?:[2-9]|[1-9][0-9]+))?$"), basename(candidates), perl = TRUE)]
-        } else character()
+        }), use.names = FALSE))
         report_name <- if (identical(report_type, "sample")) "qc_samples_report" else "qc_controls_report"
-        return(unique(unlist(lapply(report_dirs, function(report_dir) {
+        legacy_reports <- unlist(lapply(report_dirs, function(report_dir) {
             list.files(
                 report_dir,
                 pattern = paste0("^", report_name, "\\.(html?|pdf)$"),
                 full.names = TRUE,
                 ignore.case = TRUE
             )
-        }), use.names = FALSE)))
+        }), use.names = FALSE)
+        return(unique(legacy_reports))
     }
     if (is.null(files)) {
         top_level <- if (dir.exists(root)) list.dirs(root, recursive = FALSE, full.names = TRUE) else character()
@@ -1088,10 +1099,21 @@ gui_project_report_source_files <- function(root, sample = FALSE, output_root = 
 gui_project_report_type <- function(relative_path) {
     relative_path <- gsub("\\\\", "/", as.character(relative_path)[1])
     if (grepl("panel", relative_path, ignore.case = TRUE)) return("Panel overview")
-    if (grepl("(^|/)(unmix_samples|qc_samples)(/|$)|qc_samples_report", relative_path, ignore.case = TRUE, perl = TRUE)) {
+    if (grepl("(^|/)(unmix_samples(?:_(?:[2-9]|[1-9][0-9]+))?|qc_samples)(/|$)|qc_samples_report", relative_path, ignore.case = TRUE, perl = TRUE)) {
         return("Sample QC")
     }
     "Control QC"
+}
+
+gui_project_report_prompt_file <- function(report) {
+    report <- normalizePath(report, mustWork = FALSE)
+    candidate <- file.path(
+        dirname(report),
+        paste0(tools::file_path_sans_ext(basename(report)), "_ai_qc_prompt.txt")
+    )
+    if (file.exists(candidate) && !dir.exists(candidate)) return(normalizePath(candidate, mustWork = TRUE))
+
+    ""
 }
 
 gui_resolve_project_report <- function(path, root = get_matrix_dir()) {
@@ -1185,6 +1207,7 @@ function(project_path = "", output_root = "", report_type = "") {
         source_files <- source_files[grepl(source_pattern, relative(source_files), ignore.case = TRUE, perl = TRUE)]
         source_files <- setdiff(source_files, report)
         stale <- length(source_files) > 0L && any(file.info(source_files)$mtime > file.info(report)$mtime)
+        prompt_file <- gui_project_report_prompt_file(report)
         data.frame(
             path = relative_report,
             report_type = report_type,
@@ -1192,6 +1215,8 @@ function(project_path = "", output_root = "", report_type = "") {
             created = format(file.info(report)$mtime, "%Y-%m-%dT%H:%M:%S%z"),
             created_epoch = as.numeric(file.info(report)$mtime),
             status = if (stale) "stale" else "current",
+            prompt_path = if (nzchar(prompt_file)) relative(prompt_file) else "",
+            prompt_bytes = if (nzchar(prompt_file)) as.numeric(file.info(prompt_file)$size) else 0,
             stringsAsFactors = FALSE
         )
     })
@@ -1233,6 +1258,8 @@ function(path = "", project_path = "", req, res) {
         pdf = "application/pdf",
         csv = "text/csv; charset=utf-8",
         json = "application/json; charset=utf-8",
+        md = "text/markdown; charset=utf-8",
+        txt = "text/plain; charset=utf-8",
         "application/octet-stream"
     )
     res$setHeader("Content-Type", content_type)
@@ -1265,7 +1292,12 @@ function(req) {
     project_path <- gui_workflow_path(body, "projectPath", "", allow_empty = FALSE)
     tryCatch({
         project_path <- gui_request_project_root(project_path, fallback = FALSE)
-        list(success = TRUE, project = gui_project_scan(project_path))
+        project_path <- gui_set_project_context(project_path)
+        list(
+            success = TRUE,
+            project_path = jsonlite::unbox(project_path),
+            project = list(project_path = jsonlite::unbox(project_path))
+        )
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
 
@@ -1281,25 +1313,35 @@ function(req) {
     }, error = function(e) list(success = FALSE, error = conditionMessage(e)))
 }
 
-#* Open the native folder picker and activate the selected project
+#* Open the native folder picker and return the selected project path
 #* @post /project/select
 function(req) {
     tryCatch({
         selected <- gui_pick_project_directory(get_matrix_dir(), allow_create = FALSE)
         if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
         selected <- gui_request_project_root(selected, fallback = FALSE)
-        list(success = TRUE, cancelled = FALSE, project = gui_project_scan(selected))
+        list(
+            success = TRUE,
+            cancelled = FALSE,
+            project_path = jsonlite::unbox(selected),
+            project = list(project_path = jsonlite::unbox(selected))
+        )
     }, error = function(e) list(success = FALSE, cancelled = FALSE, error = conditionMessage(e)))
 }
 
-#* Create and activate a project folder with the native folder picker
+#* Create a project folder with the native folder picker and return its path
 #* @post /project/create
 function(req) {
     tryCatch({
         selected <- gui_pick_project_directory(get_matrix_dir(), allow_create = TRUE)
         if (is.null(selected) || !nzchar(selected)) return(list(success = FALSE, cancelled = TRUE))
         selected <- gui_request_project_root(selected, fallback = FALSE)
-        list(success = TRUE, cancelled = FALSE, project = gui_project_scan(selected))
+        list(
+            success = TRUE,
+            cancelled = FALSE,
+            project_path = jsonlite::unbox(selected),
+            project = list(project_path = jsonlite::unbox(selected))
+        )
     }, error = function(e) list(success = FALSE, cancelled = FALSE, error = conditionMessage(e)))
 }
 
@@ -1478,6 +1520,7 @@ function(req) {
             cytometer = cytometer,
             auto_unknown_fluor_policy = gui_workflow_value(body, "auto_unknown_fluor_policy", "by_channel"),
             output_dir = output_dir,
+            output_collision = gui_workflow_value(body, "output_collision", "version"),
             unmixing_method = method,
             unmix_scatter_panel_size_mm = gui_workflow_number(body, "unmix_scatter_panel_size_mm", 30, minimum = 1),
             seed = gui_workflow_number(body, "seed", 1, integer = TRUE, minimum = 1),
@@ -1500,6 +1543,10 @@ function(req) {
             n_threads = gui_workflow_number(body, "n_threads", 1, integer = TRUE, minimum = 1),
             save_qc_png = gui_workflow_bool(body, "save_qc_png", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
+            save_ai_qc = gui_workflow_bool(body, "save_ai_qc", gui_workflow_bool(body, "save_report", TRUE)),
+            ai_qc_detail = gui_workflow_value(body, "ai_qc_detail", "standard"),
+            ai_qc_privacy = gui_workflow_value(body, "ai_qc_privacy", "standard"),
+            ai_qc_reference = gui_workflow_value(body, "ai_qc_reference", "auto"),
             report_format = gui_workflow_value(body, "report_format", "html"),
             gating_mode = gui_workflow_value(
                 body,
@@ -1520,8 +1567,7 @@ function(req) {
             autospectral_refine = gui_workflow_bool(body, "autospectral_refine", FALSE),
             project_path = root
         ),
-        if (nzchar(active_af_profile)) list(af_profile = active_af_profile) else list(),
-        gui_method_optional_args(method, body)
+        if (nzchar(active_af_profile)) list(af_profile = active_af_profile) else list()
     )
     run <- gui_workflow_run(
         body,
@@ -1537,7 +1583,10 @@ function(req) {
         spectral_variant_library_file = result$spectral_variant_library_file,
         qc_report_file = result$qc_report_file,
         spectra_file = result$spectra_file,
-        unmixing_scatter_file = result$unmixing_scatter_file
+        unmixing_scatter_file = result$unmixing_scatter_file,
+        ai_qc_paths = result$ai_qc_paths,
+        ai_qc_prompt_path = result$ai_qc_prompt_path,
+        ai_qc_data_paths = result$ai_qc_data_paths
     )
     run
 }
@@ -1576,6 +1625,10 @@ function(req) {
             output_dir = output_dir,
             write_fcs = gui_workflow_bool(body, "write_fcs", TRUE),
             save_report = gui_workflow_bool(body, "save_report", TRUE),
+            save_ai_qc = gui_workflow_bool(body, "save_ai_qc", gui_workflow_bool(body, "save_report", TRUE)),
+            ai_qc_detail = gui_workflow_value(body, "ai_qc_detail", "standard"),
+            ai_qc_privacy = gui_workflow_value(body, "ai_qc_privacy", "standard"),
+            ai_qc_reference = gui_workflow_value(body, "ai_qc_reference", "auto"),
             report_format = gui_workflow_value(body, "report_format", "html"),
             report_per_sample = gui_workflow_bool(body, "report_per_sample", FALSE),
             save_qc_plots = gui_workflow_bool(body, "save_qc_plots", TRUE),
@@ -1585,8 +1638,7 @@ function(req) {
             return_type = gui_workflow_value(body, "return_type", "list"),
             verbose = FALSE,
             project_path = root
-        ),
-        gui_method_optional_args(method, body)
+        )
     )
     run <- gui_workflow_run(
         body,
@@ -1599,9 +1651,40 @@ function(req) {
         qc_report_file = attr(result, "qc_report_file"),
         qc_samples_dir = attr(result, "qc_samples_dir"),
         qc_metrics_dir = attr(result, "qc_metrics_dir"),
-        output_dir = output_dir
+        output_dir = output_dir,
+        ai_qc_paths = attr(result, "ai_qc_paths"),
+        ai_qc_prompt_path = attr(result, "ai_qc_prompt_path"),
+        ai_qc_data_paths = attr(result, "ai_qc_data_paths")
     )
     run
+}
+
+#* Inspect AI-ready QC readiness and stale state
+#* @get /ai-qc/readiness
+function(project_path = "", output_root = "spectreasy_outputs") {
+    root <- gui_request_project_root(project_path)
+    gui_ai_qc_readiness(root, output_root = output_root)
+}
+
+#* Preview the canonical AI-ready QC summary and paste-ready prompt
+#* @get /ai-qc/preview
+function(project_path = "", output_root = "spectreasy_outputs", detail = "standard") {
+    root <- gui_request_project_root(project_path)
+    tryCatch(gui_ai_qc_preview(root, output_root = output_root, detail = detail), error = function(e) list(status = "failed", error = conditionMessage(e)))
+}
+
+#* List compatible local AI-ready QC reference profiles
+#* @get /ai-qc/profiles
+function(project_path = "") {
+    root <- gui_request_project_root(project_path)
+    gui_ai_qc_profiles(root)
+}
+
+#* Generate or refresh local AI-ready QC artifacts
+#* @post /ai-qc/generate
+function(req) {
+    body <- gui_workflow_body(req)
+    tryCatch(gui_ai_qc_generate(body), error = function(e) list(status = "failed", error = conditionMessage(e)))
 }
 
 #* CORS preflight for workflow_report
@@ -1618,7 +1701,7 @@ function(req) {
     raw_methods <- body$methods
     methods <- unique(as.character(unlist(raw_methods, recursive = TRUE, use.names = FALSE)))
     methods <- methods[nzchar(methods)]
-    if (length(methods) == 0) methods <- c("AutoSpectral", "Spectreasy", "OLS", "WLS", "NNLS")
+    if (length(methods) == 0) methods <- c("AutoSpectral", "OLS", "WLS", "NNLS")
     matrix_input <- gui_workflow_value(body, "matrix_file", "")
     sample_dir_input <- gui_workflow_value(body, "sample_dir", gui_project_layout(root)$sample_input_dir)
     matrix_file <- gui_workflow_file_or_null(matrix_input, root = root)

@@ -11,6 +11,7 @@ unmix_controls(
   cytometer = "auto",
   auto_unknown_fluor_policy = c("by_channel", "empty", "filename"),
   output_dir = "spectreasy_outputs",
+  output_collision = c("version", "overwrite", "error"),
   unmixing_method = "AutoSpectral",
   unmix_scatter_panel_size_mm = 30,
   seed = NULL,
@@ -20,6 +21,10 @@ unmix_controls(
   n_threads = 1L,
   save_qc_png = FALSE,
   save_report = TRUE,
+  save_ai_qc = save_report,
+  ai_qc_detail = "standard",
+  ai_qc_privacy = "standard",
+  ai_qc_reference = "auto",
   report_format = "html",
   gating_mode = "interactive",
   manual_gate_file = "ssc_gate_config.csv",
@@ -30,7 +35,6 @@ unmix_controls(
   spectral_variant_cosine_threshold = 0.98,
   spectral_variant_max_variants = 8L,
   spectral_variant_min_events = 50L,
-  spectreasy_weight_quantile = 0.65,
   autospectral_n_candidates = 1000L,
   autospectral_n_spectral = 200L,
   autospectral_min_events = 10L,
@@ -57,15 +61,17 @@ when creating controls (`"by_channel"`, `"empty"`, `"filename"`).}
 under `output_dir/unmix_controls`, including the automatic QC report and
 its HTML NxN companion.}
 
+\item{output_collision}{Collision policy for an existing control-stage
+directory. `"version"` (default) writes the complete rerun to
+`unmix_controls_2`, `unmix_controls_3`, and so on; `"overwrite"` reuses
+the canonical stage directory; `"error"` stops before writing anything.}
+
 \item{unmixing_method}{SCC unmixing method (`"WLS"`, `"RWLS"`,
-`"OLS"`, `"NNLS"`, `"AutoSpectral"`, or `"Spectreasy"`).
+`"OLS"`, `"NNLS"`, or `"AutoSpectral"`).
 `AutoSpectral` keeps the k-means AF bank controlled by `af_n_bands`,
 then uses OLS after AF matching plus AutoSpectral-style SCC cleanup and
-spectral variants. Both spectral methods first restrict stained SCC events
-with the saved positive histogram gate or the automatic histogram fallback.
-`Spectreasy` uses the same cleanup and variant
-machinery, then blends the AutoSpectral-style OLS marker fit with a
-marker-only OLS anchor using decoder-projected AF impact weights.}
+spectral variants. AutoSpectral first restricts stained SCC events
+with the saved positive histogram gate or the automatic histogram fallback.}
 
 \item{unmix_scatter_panel_size_mm}{Panel size for SCC unmixing scatter matrix plot.}
 
@@ -84,7 +90,7 @@ iterations used when `unmixing_method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
 \item{n_threads}{Positive integer; number of threads for event-wise
-AutoSpectral/Spectreasy AF assignment and NNLS/WLS/RWLS SCC fitting. OLS
+AutoSpectral AF assignment and NNLS/WLS/RWLS SCC fitting. OLS
 uses vectorized matrix operations. The default, 1, keeps explicit event
 loops single-threaded.}
 
@@ -95,6 +101,18 @@ intensity-gate, and spectrum PNGs under `output_dir/unmix_controls`.}
 companion, and supporting QC metrics under
 `output_dir/unmix_controls/qc_controls` after controls are unmixed.
 Defaults to `TRUE`.}
+
+\item{save_ai_qc}{Logical; when a QC report is written, also write its local
+paste-ready numerical interpretation prompt. Defaults to `save_report`.}
+
+\item{ai_qc_detail}{Retained for development-branch call compatibility; the
+report prompt is automatically context-bounded.}
+
+\item{ai_qc_privacy}{Retained for call compatibility. Prompts contain local
+report measurements, project basename, and no raw events.}
+
+\item{ai_qc_reference}{Retained for call compatibility; no reference-derived
+labels are assigned.}
 
 \item{report_format}{Report format, either `"html"` (default) or `"pdf"`.
 Only the selected format is written. Matching is case-insensitive.}
@@ -108,8 +126,8 @@ CSV and uses automatic GMM gating. Matching is case-insensitive.}
 are resolved from the current working directory. In `"interactive"` mode
 the file is preloaded when it exists; `"reuse"` requires it to exist.}
 
-\item{scc_background_method}{Background subtraction method for Spectreasy/
-AutoSpectral SCC cleanup (`"scatter_knn"` or `"none"`). The default enables
+\item{scc_background_method}{Background subtraction method for AutoSpectral
+SCC cleanup (`"scatter_knn"` or `"none"`). The default enables
 scatter-matched subtraction from the resolved external or internal negative
 source; use `"none"` only to opt out explicitly.}
 
@@ -130,11 +148,6 @@ fluorophore.}
 
 \item{spectral_variant_min_events}{Minimum cleaned positive SCC events
 required to learn variants for one fluorophore.}
-
-\item{spectreasy_weight_quantile}{Numeric in `[0, 1]`; only accepted when
-`unmixing_method = "Spectreasy"`. Controls the quantile of
-decoder-projected AF impacts used as the soft-saturation scale for
-marker-specific AutoSpectral mixing. The default is `0.65`.}
 
 \item{autospectral_n_candidates}{Number of peak-bright SCC candidate events
 considered by the AutoSpectral-style selector.}

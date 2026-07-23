@@ -1,7 +1,11 @@
 /// <reference types="node" />
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createRefreshSequence, mergeProjectRefresh } from "./projectRefresh.ts";
+import {
+  createRefreshSequence,
+  mergeProjectRefresh,
+  normalizeProjectPickerPayload,
+} from "./projectRefresh.ts";
 import type { ProjectState } from "./types.ts";
 
 function project(overrides: Partial<ProjectState> = {}): ProjectState {
@@ -19,6 +23,11 @@ function project(overrides: Partial<ProjectState> = {}): ProjectState {
     missingInputDirs: [],
     controlInputDir: "scc",
     sampleInputDir: "samples",
+    dataRevision: "empty",
+    matrixFiles: null,
+    sampleFiles: null,
+    gatingFiles: null,
+    gatingMetadata: {},
     scan: { controls: 0, samples: 0, matrices: 0, reports: 0, qcMetrics: 0, spectralVariants: 0, gates: 0 },
     ...overrides,
   };
@@ -60,4 +69,23 @@ test("refresh sequence accepts only the most recently started request", () => {
   const newer = sequence.begin();
   assert.equal(sequence.isCurrent(older), false);
   assert.equal(sequence.isCurrent(newer), true);
+});
+
+test("project picker payloads accept direct and legacy R scalar wrappers", () => {
+  assert.deepEqual(
+    normalizeProjectPickerPayload({ success: true, cancelled: false, project_path: "/projects/new" }),
+    { success: true, cancelled: false, message: "", projectPath: "/projects/new" },
+  );
+  assert.deepEqual(
+    normalizeProjectPickerPayload({ success: [true], cancelled: [false], project: { project_path: ["/projects/existing"] } }),
+    { success: true, cancelled: false, message: "", projectPath: "/projects/existing" },
+  );
+});
+
+test("project picker payloads reject cancellation and missing paths", () => {
+  assert.equal(normalizeProjectPickerPayload({ success: [false], cancelled: [true] }).cancelled, true);
+  assert.deepEqual(
+    normalizeProjectPickerPayload({ success: [true], cancelled: [false] }),
+    { success: false, cancelled: false, message: "The folder picker returned no project path." },
+  );
 });

@@ -1,4 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
+import { DetectorSpectrumAxis } from './DetectorSpectrumAxis';
+import { DETECTOR_AXIS_FOOTER_HEIGHT, detectorAxisChartWidth } from './detectorAxis';
 import {
     bandColor,
     detectorColumnCenterX,
@@ -12,7 +14,6 @@ import {
     signatureY,
     toNumber,
     toSimilarityValue,
-    wavelengthToColor,
 } from './panelBuilderShared';
 import type { NumericRow, PanelPayload, TabId } from './panelBuilderShared';
 
@@ -60,7 +61,7 @@ export function PanelVisualizations({
     theme,
     error,
 }: PanelVisualizationsProps) {
-    const chartWidth = Math.max(1040, payload.detectors.length * 22);
+    const chartWidth = detectorAxisChartWidth(payload.detectors.length);
     const chartHeight = 230;
     const spectrumLeft = 42;
     const spectrumRight = chartWidth - 8;
@@ -76,21 +77,7 @@ export function PanelVisualizations({
     return (
 <main className="main-panel">
     <div className="top-spectrum">
-        <svg className="spectrum-svg" width={chartWidth} height={chartHeight + 56} viewBox={`0 0 ${chartWidth} ${chartHeight + 56}`} role="img" aria-label="Combined spectral signatures">
-            <defs>
-                <linearGradient id="rainbow-axis-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                    {payload.detectors.map((det, index) => {
-                        const pct = (index / Math.max(1, payload.detectors.length - 1)) * 100;
-                        return (
-                            <stop
-                                key={`stop-${det.detector}`}
-                                offset={`${pct.toFixed(2)}%`}
-                                stopColor={wavelengthToColor(det.emission)}
-                            />
-                        );
-                    })}
-                </linearGradient>
-            </defs>
+        <svg className="spectrum-svg" width={chartWidth} height={chartHeight + DETECTOR_AXIS_FOOTER_HEIGHT} viewBox={`0 0 ${chartWidth} ${chartHeight + DETECTOR_AXIS_FOOTER_HEIGHT}`} role="img" aria-label="Combined spectral signatures">
             {[0, 25, 50, 75, 100].map(tick => {
                 const y = chartHeight - (tick / 100) * (chartHeight - 32) - 24;
                 return (
@@ -100,19 +87,19 @@ export function PanelVisualizations({
                     </g>
                 );
             })}
-            {payload.detectors.map((det, index) => {
-                const x = detectorPointX(index, payload.detectors.length, spectrumLeft, spectrumPlotWidth);
-                return (
-                    <g key={det.detector}>
-                        <line x1={x} y1={6} x2={x} y2={chartHeight - 24} stroke="var(--chart-grid)" strokeWidth={1} />
-                        <text x={x} y={chartHeight + 4} fontSize={11} textAnchor="end" transform={`rotate(-90 ${x} ${chartHeight + 4})`} className="chart-axis-text">
-                            {det.label}
-                        </text>
-                    </g>
-                );
-            })}
-            <rect x={spectrumLeft} y={chartHeight - 14} width={spectrumPlotWidth} height={6} fill="url(#rainbow-axis-gradient)" />
-            <line x1={spectrumLeft} y1={chartHeight - 24} x2={spectrumRight} y2={chartHeight - 24} stroke="var(--chart-axis)" strokeWidth={3} />
+            <DetectorSpectrumAxis
+                entries={payload.detectors}
+                cytometer={payload.cytometer}
+                xForIndex={(index) => detectorPointX(index, payload.detectors.length, spectrumLeft, spectrumPlotWidth)}
+                left={spectrumLeft}
+                right={spectrumRight}
+                plotTop={6}
+                baselineY={chartHeight - 24}
+                gridColor="var(--chart-grid)"
+                axisColor="var(--chart-axis)"
+                textColor="var(--text-muted)"
+                gradientId="panel-detector-spectrum"
+            />
             {selected.map(fluor => {
                 const row = spectraByName.get(fluor);
                 if (!row) return null;

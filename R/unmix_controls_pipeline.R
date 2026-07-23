@@ -176,7 +176,6 @@
                                  n_threads,
                                  spectral_variant_library,
                                  spectral_variant_top_k,
-                                 spectreasy_weight_quantile,
                                  unmixed_controls_dir) {
     args <- list(
         sample_dir = meta_info$fcs_files,
@@ -192,9 +191,6 @@
         save_report = FALSE,
         verbose = FALSE
     )
-    if (identical(unmixing_method, "Spectreasy")) {
-        args$spectreasy_weight_quantile <- spectreasy_weight_quantile
-    }
     .spectreasy_console_field("Unmixing", paste0(length(meta_info$fcs_files), " control file(s)"))
     do.call(unmix_samples, args)
 }

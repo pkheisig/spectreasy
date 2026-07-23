@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import axios from 'axios';
-import { Moon, PanelLeftClose, PanelLeftOpen, Plus, Save, Sun, Trash2, Upload } from 'lucide-react';
+import { Moon, PanelLeftClose, PanelLeftOpen, Plus, Save, Sun, Trash2, Upload, X } from 'lucide-react';
 import './PanelBuilder.css';
+import { ModuleLoadingState } from './ModuleLoadingState';
 import { PanelVisualizations } from './PanelVisualizations';
+import { appletCacheKey, loadCachedAppletData } from './appletDataCache';
 import {
     API_BASE,
     PdfIcon,
@@ -30,7 +32,15 @@ import type {
     TabId,
 } from './panelBuilderShared';
 
-const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: boolean; cockpitTheme?: 'light' | 'dark' | null }) => {
+type PanelBuilderProps = {
+    embedded?: boolean;
+    cockpitTheme?: 'light' | 'dark' | null;
+    projectPath?: string;
+    projectRevision?: string;
+    onRequestExit?: () => void;
+};
+
+const PanelBuilder = ({ embedded = false, cockpitTheme = null, projectPath = '', projectRevision = 'empty', onRequestExit }: PanelBuilderProps) => {
     const [payload, setPayload] = useState<PanelPayload | null>(null);
     const [cytometer, setCytometer] = useState(() => getCytometerName(localStorage.getItem('spectreasy_cytometer') || 'aurora'));
     const [configuration, setConfiguration] = useState(() => getCytometerName(localStorage.getItem('spectreasy_configuration') || '5l_uv_v_b_yg_r'));
@@ -57,6 +67,7 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
         }
     });
     const bootDefaultsRef = useRef({ cytometer, configuration, slots, markers });
+    const bootPromiseRef = useRef<Promise<void> | null>(null);
     const [queries, setQueries] = useState<Record<number, string>>({});
     const [activeSlot, setActiveSlot] = useState<number | null>(null);
     const [tab, setTab] = useState<TabId>('panel');
@@ -75,6 +86,7 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
     const [sidebarWidth, setSidebarWidth] = useState(214);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [showPdfConfirm, setShowPdfConfirm] = useState(false);
+    const [bootAttempt, setBootAttempt] = useState(0);
 
     useEffect(() => {
         localStorage.setItem('spectreasy_cytometer', getCytometerName(cytometer));
@@ -186,13 +198,13 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
                     fluor,
                     slotIndex,
                     marker: markers[slotIndex] || '',
-                    color: info?.peak_color || '#2688e8',
+                    color: colorByFluor.get(fluor) || '#2688e8',
                     peakLaser,
                     peakEmission,
                 };
             })
             .filter(entry => entry.fluor);
-    }, [fluorByName, markers, payload, slots, cytometer]);
+    }, [colorByFluor, fluorByName, markers, payload, slots, cytometer]);
 
     const selectedRows = useMemo(() => slots
         .map((fluor, slotIndex) => ({
@@ -206,15 +218,22 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
         return hit?.label || '';
     }, [configuration, payload]);
 
+    const requestPanel = useCallback((nextCytometer: string, nextConfiguration: string, nextSelected: string[]) => {
+        const cacheKey = appletCacheKey('panel-metrics', projectPath, projectRevision, nextCytometer, nextConfiguration, nextSelected);
+        return loadCachedAppletData(cacheKey, async () => {
+            const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, panelProjectBody({
+                cytometer: nextCytometer,
+                configuration: nextConfiguration,
+                fluorophores: nextSelected,
+            }));
+            if (res.data?.error) throw new Error(String(res.data.error));
+            return res.data as PanelPayload;
+        });
+    }, [projectPath, projectRevision]);
+
     const fetchPanel = async (nextCytometer: string, nextConfiguration: string, nextSelected: string[]) => {
         setError('');
-        const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, panelProjectBody({
-            cytometer: nextCytometer,
-            configuration: nextConfiguration,
-            fluorophores: nextSelected,
-        }));
-        if (res.data?.error) throw new Error(String(res.data.error));
-        const nextPayload = res.data as PanelPayload;
+        const nextPayload = await requestPanel(nextCytometer, nextConfiguration, nextSelected);
         setPayload(nextPayload);
         setCytometer(getCytometerName(nextPayload.cytometer));
         setConfiguration(getCytometerName(nextPayload.configuration));
@@ -240,13 +259,7 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
                 setSlots(savedSlots);
                 slotsRef.current = savedSlots;
                 setMarkers(savedMarkers);
-                const res = await axios.post(`${API_BASE}/spectral_panel_metrics`, panelProjectBody({
-                    cytometer: savedCytometer,
-                    configuration: savedConfiguration,
-                    fluorophores: savedSlots.filter(Boolean),
-                }));
-                if (res.data?.error) throw new Error(String(res.data.error));
-                const initial = res.data as PanelPayload;
+                const initial = await requestPanel(savedCytometer, savedConfiguration, savedSlots.filter(Boolean));
                 setPayload(initial);
                 setCytometer(getCytometerName(initial.cytometer));
                 setConfiguration(getCytometerName(initial.configuration));
@@ -257,8 +270,17 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
                 setLoading(false);
             }
         };
-        void boot();
-    }, [embedded]);
+        if (!bootPromiseRef.current) bootPromiseRef.current = boot();
+        void bootPromiseRef.current;
+    }, [bootAttempt, embedded, requestPanel]);
+
+    const retryBoot = () => {
+        bootPromiseRef.current = null;
+        setPayload(null);
+        setError('');
+        setLoading(true);
+        setBootAttempt(attempt => attempt + 1);
+    };
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -503,14 +525,21 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
     };
 
     if (loading) {
-        return <div className="panel-builder"><div className="empty-state">Loading spectral panel builder...</div></div>;
+        return <ModuleLoadingState label="Loading Spectral Panel Builder" theme={embedded && cockpitTheme ? cockpitTheme : theme} />;
     }
 
-    if (error && !payload) {
-        return <div className="panel-builder"><div className="error-state">{error}</div></div>;
+    if (!payload) {
+        return (
+            <div className={`panel-builder panel-boot-failure ${embedded && cockpitTheme ? cockpitTheme : theme}`}>
+                <div className="panel-boot-error" role="alert">
+                    <strong>Spectral Panel Builder could not load</strong>
+                    <span>{error || 'The local backend returned no panel data.'}</span>
+                    <button type="button" onClick={retryBoot}>Try again</button>
+                    {embedded && onRequestExit && <button type="button" className="secondary" onClick={onRequestExit}>Return to cockpit</button>}
+                </div>
+            </div>
+        );
     }
-
-    if (!payload) return null;
 
     return (
         <div className={`panel-builder ${embedded && cockpitTheme ? cockpitTheme : theme}`}>
@@ -562,6 +591,15 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
                     }} disabled={exporting} aria-label={exporting ? 'Exporting overview PDF' : 'Export overview PDF'} title={exporting ? 'Exporting…' : 'Export overview PDF'}>
                         <PdfIcon size={20} />
                     </button>
+                    {embedded && onRequestExit && <button
+                        type="button"
+                        className="export-button applet-close-button"
+                        onClick={onRequestExit}
+                        aria-label="Close panel builder and return to cockpit"
+                        autoFocus
+                    >
+                        <X size={16} /> Close
+                    </button>}
                 </div>
             </header>
             <div className="panel-shell">
@@ -605,21 +643,16 @@ const PanelBuilder = ({ embedded = false, cockpitTheme = null }: { embedded?: bo
                     </div>
                     <div className="selector-list">
                         {slots.map((fluor, index) => {
-                            const info = fluorByName.get(fluor);
                             const display = activeSlot === index ? (queries[index] ?? fluor) : fluor;
-                            const color = info?.peak_color || '#d1d5db';
+                            const color = colorByFluor.get(fluor) || '#d1d5db';
                             const isHovered = hoveredFluor === fluor;
                             return (
                                 <div
-                                    className="selector-row"
+                                    className={`selector-row${fluor ? ' has-fluor' : ''}${isHovered ? ' is-fluor-hovered' : ''}`}
                                     key={`slot-${index}`}
                                     onMouseEnter={() => fluor && setHoveredFluor(fluor)}
                                     onMouseLeave={() => fluor && setHoveredFluor(null)}
-                                    style={fluor && isHovered ? {
-                                        borderColor: 'rgba(59, 130, 246, 0.5)',
-                                        background: 'rgba(30, 41, 59, 0.35)',
-                                        boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)'
-                                    } : {}}
+                                    style={fluor ? ({ '--fluor-color': color } as CSSProperties) : undefined}
                                 >
                                     <div className="selector-swatch" style={{ background: color }} />
                                     <div>

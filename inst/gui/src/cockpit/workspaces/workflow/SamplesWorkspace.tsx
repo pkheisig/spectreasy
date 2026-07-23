@@ -42,6 +42,8 @@ function ConfigurableSamplesWorkspace({
 }) {
   const defaults = defaultWorkflowSettings("").sample;
   const [advanced, setAdvanced] = useState(false);
+  const hasReference = project.artifacts.some((artifact) => artifact.type === "Matrix" && /reference_matrix/i.test(artifact.name));
+  const disabledReason = project.scan.samples < 1 ? "Add sample FCS files before unmixing." : !hasReference ? "Build or add a reference matrix before unmixing samples." : "";
   return (
     <>
       <section className="surface-card run-card streamlined-run-card">
@@ -53,7 +55,6 @@ function ConfigurableSamplesWorkspace({
           <label>
             <span>Unmixing method</span>
             <GuiSelect value={settings.method} onChange={(event) => onSettingsChange({ method: event.target.value })}>
-              <option>Spectreasy</option>
               <option>AutoSpectral</option>
               <option>OLS</option>
               <option>WLS</option>
@@ -98,12 +99,11 @@ function ConfigurableSamplesWorkspace({
             <label>Chunk size<input type="number" min="1" value={settings.chunkSize} onChange={(event) => onSettingsChange({ chunkSize: Number(event.target.value) })} /></label>
             <label>Plot events<input type="number" min="1" value={settings.plotNEvents} onChange={(event) => onSettingsChange({ plotNEvents: Number(event.target.value) })} /></label>
             {settings.method === "RWLS" && <label>RWLS max iterations<input type="number" min="1" value={settings.rwlsMaxIter} onChange={(event) => onSettingsChange({ rwlsMaxIter: Number(event.target.value) })} /></label>}
-            {(settings.method === "Spectreasy" || settings.method === "AutoSpectral") && <label>Variant top-k<input type="number" min="1" value={settings.spectralVariantTopK} onChange={(event) => onSettingsChange({ spectralVariantTopK: Number(event.target.value) })} /></label>}
-            {(settings.method === "Spectreasy" || settings.method === "AutoSpectral") && <label>Variant min abundance<input type="number" min="0" step="0.01" value={settings.spectralVariantMinAbundance} onChange={(event) => onSettingsChange({ spectralVariantMinAbundance: Number(event.target.value) })} /></label>}
-            {(settings.method === "Spectreasy" || settings.method === "AutoSpectral") && <label>Variant positive fraction<input type="number" min="0" max="1" step="0.01" value={settings.spectralVariantPositiveFraction} onChange={(event) => onSettingsChange({ spectralVariantPositiveFraction: Number(event.target.value) })} /></label>}
-            {(settings.method === "Spectreasy" || settings.method === "AutoSpectral") && <label>Variant min improvement<input type="number" min="0" step="0.01" value={settings.spectralVariantMinImprovement} onChange={(event) => onSettingsChange({ spectralVariantMinImprovement: Number(event.target.value) })} /></label>}
-            {(settings.method === "Spectreasy" || settings.method === "AutoSpectral") && <label>Spectral variant library<input value={settings.spectralVariantLibraryFile} onChange={(event) => onSettingsChange({ spectralVariantLibraryFile: event.target.value })} placeholder="Optional .rds file" /></label>}
-            {settings.method === "Spectreasy" && <label>Spectreasy weight quantile<input type="number" min="0" max="1" step="0.01" value={settings.spectreasyWeightQuantile} onChange={(event) => onSettingsChange({ spectreasyWeightQuantile: Number(event.target.value) })} /></label>}
+            {settings.method === "AutoSpectral" && <label>Variant top-k<input type="number" min="1" value={settings.spectralVariantTopK} onChange={(event) => onSettingsChange({ spectralVariantTopK: Number(event.target.value) })} /></label>}
+            {settings.method === "AutoSpectral" && <label>Variant min abundance<input type="number" min="0" step="0.01" value={settings.spectralVariantMinAbundance} onChange={(event) => onSettingsChange({ spectralVariantMinAbundance: Number(event.target.value) })} /></label>}
+            {settings.method === "AutoSpectral" && <label>Variant positive fraction<input type="number" min="0" max="1" step="0.01" value={settings.spectralVariantPositiveFraction} onChange={(event) => onSettingsChange({ spectralVariantPositiveFraction: Number(event.target.value) })} /></label>}
+            {settings.method === "AutoSpectral" && <label>Variant min improvement<input type="number" min="0" step="0.01" value={settings.spectralVariantMinImprovement} onChange={(event) => onSettingsChange({ spectralVariantMinImprovement: Number(event.target.value) })} /></label>}
+            {settings.method === "AutoSpectral" && <label>Spectral variant library<input value={settings.spectralVariantLibraryFile} onChange={(event) => onSettingsChange({ spectralVariantLibraryFile: event.target.value })} placeholder="Optional .rds file" /></label>}
             <label>Seed<input type="number" min="1" value={settings.seed} onChange={(event) => onSettingsChange({ seed: Number(event.target.value) })} /></label>
             <label>
               Return type
@@ -130,11 +130,14 @@ function ConfigurableSamplesWorkspace({
         <div className="run-footer run-footer-actions-only">
           <button
             className="button button-primary large-button"
+            disabled={Boolean(disabledReason)}
+            title={disabledReason || undefined}
             onClick={() => onRun("sample", "Unmix sample workflow")}
           >
             <Play size={15} fill="currentColor" /> Unmix samples{" "}
             <ArrowRight size={15} />
           </button>
+          {disabledReason ? <p className="workflow-prerequisite-note" role="status">{disabledReason}</p> : null}
         </div>
       </section>
       <InlineProjectFiles

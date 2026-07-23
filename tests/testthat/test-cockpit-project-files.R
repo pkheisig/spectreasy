@@ -58,6 +58,33 @@ test_that("project scans do not initialize or mutate an untouched folder", {
     expect_false(dir.exists(file.path(project, "samples")))
 })
 
+test_that("project data revisions change when applet inputs change", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    skip_if_not(file.exists(api_path))
+
+    api_env <- new.env(parent = globalenv())
+    source(api_path, local = api_env)
+    project <- tempfile("cockpit_data_revision_")
+    dir.create(file.path(project, "scc"), recursive = TRUE)
+    dir.create(file.path(project, "samples"), recursive = TRUE)
+    on.exit(unlink(project, recursive = TRUE, force = TRUE), add = TRUE)
+
+    control <- file.path(project, "scc", "control.fcs")
+    writeBin(charToRaw("FCS3.1-one"), control)
+    first <- api_env$gui_project_scan(project)$data_revision
+    dir.create(file.path(project, "derived"))
+    writeBin(charToRaw("unmixed-output"), file.path(project, "derived", "output.fcs"))
+    unchanged <- api_env$gui_project_scan(project)$data_revision
+    writeBin(charToRaw("FCS3.1-a-longer-payload"), control)
+    second <- api_env$gui_project_scan(project)$data_revision
+
+    expect_type(first, "character")
+    expect_lt(nchar(first), 64)
+    expect_identical(first, unchanged)
+    expect_false(identical(first, second))
+})
+
 test_that("project picker routes distinguish opening from creating", {
     api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
     if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
@@ -76,6 +103,66 @@ test_that("project picker routes distinguish opening from creating", {
     create_body <- paste(deparse(body(create_route)), collapse = "\n")
     expect_match(select_body, "allow_create = FALSE", fixed = TRUE)
     expect_match(create_body, "allow_create = TRUE", fixed = TRUE)
+
+    project <- tempfile("cockpit_picker_project_")
+    dir.create(project)
+    on.exit(unlink(project, recursive = TRUE, force = TRUE), add = TRUE)
+    select_env <- environment(select_route)
+    create_env <- environment(create_route)
+    original_select_picker <- get("gui_pick_project_directory", envir = select_env)
+    original_create_picker <- get("gui_pick_project_directory", envir = create_env)
+    on.exit(assign("gui_pick_project_directory", original_select_picker, envir = select_env), add = TRUE)
+    on.exit(assign("gui_pick_project_directory", original_create_picker, envir = create_env), add = TRUE)
+    picker_modes <- logical()
+    fake_picker <- function(initial_dir, allow_create = FALSE) {
+        picker_modes <<- c(picker_modes, allow_create)
+        project
+    }
+    assign("gui_pick_project_directory", fake_picker, envir = select_env)
+    assign("gui_pick_project_directory", fake_picker, envir = create_env)
+
+    opened <- select_route(NULL)
+    created <- create_route(NULL)
+
+    expect_identical(picker_modes, c(FALSE, TRUE))
+    expect_true(opened$success)
+    expect_true(created$success)
+    expect_identical(as.character(opened$project_path), normalizePath(project))
+    expect_identical(as.character(created$project_path), normalizePath(project))
+    expect_named(opened$project, "project_path")
+    expect_null(opened$project$files)
+})
+
+test_that("project context route activates the selected folder", {
+    api_path <- file.path(testthat::test_path("../.."), "inst", "api", "gui_api.R")
+    if (!file.exists(api_path)) api_path <- system.file("api/gui_api.R", package = "spectreasy")
+    skip_if_not(file.exists(api_path))
+
+    endpoints <- unname(unlist(plumber::plumb(api_path)$endpoints, recursive = FALSE))
+    matches <- which(vapply(endpoints, function(endpoint) {
+        identical(endpoint$path, "/project/context") && "POST" %in% endpoint$verbs
+    }, logical(1)))
+    context_route <- endpoints[[matches[1]]]$getFunc()
+    project <- tempfile("cockpit_context_project_")
+    dir.create(project)
+    on.exit(unlink(project, recursive = TRUE, force = TRUE), add = TRUE)
+    context_options <- c(
+        "spectreasy.project_dir", "spectreasy.matrix_dir", "spectreasy.samples_dir",
+        "spectreasy.gating_scc_dir", "spectreasy.gating_control_file",
+        "spectreasy.gating_gate_file", "spectreasy.project_selected"
+    )
+    old_options <- options()[context_options]
+    on.exit(options(old_options), add = TRUE)
+    req <- new.env(parent = emptyenv())
+    req$postBody <- jsonlite::toJSON(list(projectPath = project), auto_unbox = TRUE)
+
+    response <- context_route(req)
+
+    expect_true(response$success)
+    expect_identical(as.character(response$project$project_path), normalizePath(project))
+    expect_identical(getOption("spectreasy.project_dir"), normalizePath(project))
+    expect_identical(getOption("spectreasy.matrix_dir"), normalizePath(project))
+    expect_true(isTRUE(getOption("spectreasy.project_selected")))
 })
 
 test_that("project input layout persists GUI renames and follows manual filesystem renames", {

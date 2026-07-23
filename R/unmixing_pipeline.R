@@ -146,9 +146,6 @@
         spectral_variant_min_improvement = context$spectral_variant_min_improvement,
         return_residuals = TRUE
     )
-    if (identical(context$method, "Spectreasy")) {
-        args$spectreasy_weight_quantile <- context$spectreasy_weight_quantile
-    }
     args
 }
 
@@ -156,7 +153,7 @@
     data <- .aggregate_af_columns_for_output(result$data, fluorophore_source = fluorophore_source)
     fluorophores <- fluorophore_source[!grepl("^AF_", fluorophore_source, ignore.case = TRUE)]
     fluorophores <- intersect(colnames(data), fluorophores)
-    autospectral <- if (.is_autospectral_style_method(method) && "AF Index" %in% colnames(data)) "AF Index" else character()
+    autospectral <- if (.is_autospectral_method(method) && "AF Index" %in% colnames(data)) "AF Index" else character()
     passthrough <- .get_passthrough_parameter_names(colnames(data))
     list(
         matrix = as.matrix(data[, unique(c(fluorophores, autospectral, passthrough)), drop = FALSE]),
@@ -219,7 +216,6 @@
     data_chunks <- list()
     residual_chunks <- list()
     variant_infos <- list()
-    decoder_weights <- NULL
 
     for (chunk_i in seq_along(chunk_indices)) {
         event_idx <- chunk_indices[[chunk_i]]
@@ -243,9 +239,6 @@
         if (!is.null(result$spectral_variant_info)) {
             variant_infos[[length(variant_infos) + 1L]] <- result$spectral_variant_info
         }
-        if (is.null(decoder_weights) && !is.null(result$spectreasy_decoder_weights)) {
-            decoder_weights <- result$spectreasy_decoder_weights
-        }
         if (chunk_i %% 5L == 0L) gc(verbose = FALSE)
     }
 
@@ -266,8 +259,7 @@
         residual_chunks = residual_chunks,
         method = context$method,
         M = M,
-        variant_infos = variant_infos,
-        spectreasy_decoder_weights = decoder_weights
+        variant_infos = variant_infos
     )
     if (!is.null(entry$cell_ids)) {
         attr(result, "source_cell_ids") <- entry$cell_ids[keep_global]

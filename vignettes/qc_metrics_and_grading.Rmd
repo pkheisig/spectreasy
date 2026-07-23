@@ -1,0 +1,22 @@
+---
+title: "QC metrics for interpretation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{QC metrics for interpretation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Spectreasy persists measured values and their units without assigning
+scientific quality labels. Existing report tables include control gating and
+stain-index summaries, spectral similarity, negative-population spread,
+detector residuals, sample reconstruction error, reference spectra, and AF
+spectra.
+
+Additional compact tables provide robust positive/negative separation and
+spectral consistency per control, control-spectrum quantiles, AF-bank rank and
+pairwise similarity, and sample AF-band usage when those measurements are
+available. Large matrices remain CSV files and are represented in the
+paste-ready prompt by derived summaries. WLS/RWLS weighted residuals are never
+described as directly comparable with raw residuals, and spectral similarity is
+treated as panel-complexity evidence rather than an automatic defect.

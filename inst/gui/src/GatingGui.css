@@ -21,8 +21,8 @@
   --negative-gate-fill: rgba(75, 145, 207, 0.2);
   --negative-gate-preview: rgba(75, 145, 207, 0.14);
   --negative-gate-on-ink: #ffffff;
-  --bead-gate: #8052c7;
-  --bead-gate-fill: rgba(128, 82, 199, 0.16);
+  --bead-gate: #7b2e86;
+  --bead-gate-fill: rgba(123, 46, 134, 0.19);
 }
 
 .app-shell.dark {
@@ -38,7 +38,7 @@
   --line: #3b4541;
   --wash: #121816;
   --selected-bg: #1c2b26;
-  --plot-bg: #0b1110;
+  --plot-bg: #2c3734;
   --plot-line: #52615b;
   --axis-color: #a9b7b1;
   --histogram-fill: rgba(120, 156, 255, 0.34);
@@ -47,8 +47,8 @@
   --negative-gate-fill: rgba(120, 201, 255, 0.26);
   --negative-gate-preview: rgba(120, 201, 255, 0.2);
   --negative-gate-on-ink: #07171f;
-  --bead-gate: #b794ff;
-  --bead-gate-fill: rgba(183, 148, 255, 0.2);
+  --bead-gate: #e0a4ea;
+  --bead-gate-fill: rgba(224, 164, 234, 0.25);
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
     linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
@@ -188,8 +188,8 @@
 }
 
 .gating-sidebar {
-  flex: 0 0 var(--gating-sidebar-width, 192px);
-  width: var(--gating-sidebar-width, 192px);
+  flex: 0 0 var(--gating-sidebar-width, 252px);
+  width: var(--gating-sidebar-width, 252px);
   border-right: 1px solid var(--line);
   background: var(--panel);
   padding: 18px 14px;
@@ -273,9 +273,10 @@
 
 .brand h1 {
   font-size: 19px;
-  font-weight: 750;
+  font-weight: 400;
   color: var(--ink);
   letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .brand p {
@@ -288,53 +289,76 @@
   gap: 7px;
 }
 
-.file-row {
+.app-shell .file-row {
   width: 100%;
-  align-items: flex-start;
-  justify-content: flex-start;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 11px;
-  min-height: 70px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "fluorophore channel"
+    "marker control-type";
+  align-items: baseline;
+  justify-content: stretch;
+  column-gap: 12px;
+  row-gap: 10px;
+  padding: 10px 12px 11px;
+  min-height: 78px;
   text-align: left;
   border: 1px solid var(--line);
   border-left: 4px solid var(--blueprint);
 }
 
-.file-row-top {
-  width: 100%;
+.file-row-fluorophore,
+.file-row-channel,
+.file-row-marker,
+.file-row-control-type {
   min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+  line-height: 1.2;
 }
 
-.file-row-top span {
-  min-width: 0;
+.file-row-fluorophore,
+.file-row-marker {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.file-row-top small {
-  flex: 0 0 auto;
-  margin-left: auto;
+.file-row-fluorophore {
+  grid-area: fluorophore;
+  justify-self: start;
+  color: var(--blueprint);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.file-row-channel {
+  grid-area: channel;
+  justify-self: end;
   text-align: right;
   white-space: nowrap;
-}
-
-.file-row span {
-  font-size: 13px;
-  color: var(--blueprint);
-  font-weight: 800;
-}
-
-.file-row strong {
-  font-size: 14px;
-}
-
-.file-row small {
   color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.file-row-marker {
+  grid-area: marker;
+  justify-self: start;
+  max-width: 100%;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.file-row-control-type {
+  grid-area: control-type;
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
 }
 
 .file-row.selected {
@@ -384,6 +408,30 @@
 .gating-status-banner span {
   font-size: 12px;
   line-height: 1.45;
+}
+
+.gating-autogate-notice {
+  position: relative;
+}
+
+.gating-autogate-notice ul {
+  margin: 2px 0 0;
+  padding-left: 19px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.gating-status-dismiss {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  min-width: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  color: currentColor;
+  background: transparent;
 }
 
 .app-shell.dark .gating-status-banner {
@@ -672,6 +720,16 @@
   flex: 0 0 auto;
 }
 
+.gating-topbar .applet-close-button {
+  width: auto;
+  min-width: 76px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 11px;
+}
+
 .actions,
 .gate-toolbar {
   display: flex;
@@ -855,6 +913,7 @@
 }
 
 .plot-panel {
+  position: relative;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -870,6 +929,13 @@
   align-items: flex-start;
   gap: 12px;
   min-height: 58px;
+}
+
+.plot-head-summary {
+  display: grid;
+  justify-items: end;
+  min-width: max-content;
+  text-align: right;
 }
 
 .plot-head h2 {
@@ -1063,7 +1129,6 @@
 }
 
 .gate-path.is-draft {
-  fill: none;
   stroke-dasharray: 6 5;
 }
 
@@ -1196,51 +1261,42 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
+.plot-stage {
+  position: relative;
+  min-width: 0;
+}
+
 .plot-toolbar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 16px;
-  background: var(--wash);
-  border-bottom: 1px solid var(--line);
-  min-height: 48px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 7px;
+  min-height: 34px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: 0 5px 16px rgba(28, 34, 31, .12);
+  backdrop-filter: blur(7px);
 }
 
 .plot-toolbar button {
   min-height: 28px;
+  height: 28px;
   font-size: 12px;
+  font-weight: 750;
   padding: 0 8px;
   border-radius: 5px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
-.histogram-bin-control {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: var(--panel);
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--muted);
-}
-
-.histogram-bin-control input {
-  width: 86px;
-}
-
-.histogram-bin-control strong {
-  min-width: 28px;
-  color: var(--ink);
-  text-align: right;
-}
-
-.histogram-transform-control {
-  flex-basis: 100%;
+.plot-toolbar button:hover {
+  border-color: var(--line);
+  background: var(--selected-bg);
 }
 
 .transform-dropdown-control {
@@ -1414,7 +1470,7 @@
 .gate-path-bead {
   fill: var(--bead-gate-fill);
   stroke: var(--bead-gate);
-  stroke-width: 2.2;
+  stroke-width: 3.2;
 }
 
 .gate-handle-bead {

@@ -12,14 +12,16 @@ export function BuildReferencePanel({
   onSettingsChange,
   onInputDirectoryChange,
   onRun,
+  disabledReason = "",
 }: {
   settings: ControlSettings;
   onSettingsChange: (patch: Partial<ControlSettings>) => void;
   onInputDirectoryChange: WorkflowWorkspaceProps["onInputDirectoryChange"];
   onRun: WorkflowWorkspaceProps["onRun"];
+  disabledReason?: string;
 }) {
   const method = settings.method;
-  const useSpectralPipeline = method === "Spectreasy" || method === "AutoSpectral";
+  const useSpectralPipeline = method === "AutoSpectral";
   const [advanced, setAdvanced] = useState(false);
   const defaults = defaultWorkflowSettings("").control;
   return (
@@ -37,7 +39,6 @@ export function BuildReferencePanel({
               onSettingsChange({ method: event.target.value })
             }
           >
-            <option>Spectreasy</option>
             <option>AutoSpectral</option>
             <option>OLS</option>
             <option>WLS</option>
@@ -175,21 +176,6 @@ export function BuildReferencePanel({
               }
             />
           </label>}
-          {method === "Spectreasy" && <label>
-            Spectreasy weight quantile
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.01"
-              value={settings.spectreasyWeightQuantile}
-              onChange={(event) =>
-                onSettingsChange({
-                  spectreasyWeightQuantile: Number(event.target.value),
-                })
-              }
-            />
-          </label>}
           {useSpectralPipeline && <label>
             Variant SOM nodes
             <input
@@ -320,11 +306,14 @@ export function BuildReferencePanel({
       <div className="run-footer run-footer-actions-only">
         <button
           className="button button-primary large-button"
+          disabled={Boolean(disabledReason)}
+          title={disabledReason || undefined}
           onClick={() => onRun("control", "Build reference & unmix controls")}
         >
           <Play size={15} fill="currentColor" /> Run control workflow{" "}
           <ArrowRight size={15} />
         </button>
+        {disabledReason ? <p className="workflow-prerequisite-note" role="status">{disabledReason}</p> : null}
       </div>
     </section>
   );

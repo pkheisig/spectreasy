@@ -111,6 +111,11 @@
   gap: 10px;
 }
 
+.panel-actions .applet-close-button {
+  color: var(--text-primary);
+  background: var(--button-bg);
+}
+
 .hidden-file-input {
   display: none;
 }
@@ -328,7 +333,7 @@
   border: 1px solid var(--border-color-soft);
   border-radius: 8px;
   background: var(--bg-card);
-  transition: background-color 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.2s;
+  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s, color 0.2s, opacity 0.2s, transform 0.2s;
 }
 
 .selector-row:hover, .selector-row:focus-within {
@@ -337,13 +342,47 @@
   box-shadow: var(--shadow);
 }
 
+.selector-row.has-fluor {
+  border-color: color-mix(in srgb, var(--fluor-color) 42%, var(--border-color-soft));
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--fluor-color) 15%, var(--bg-card)) 0%,
+      color-mix(in srgb, var(--fluor-color) 5%, var(--bg-card)) 54%,
+      var(--bg-card) 100%
+    );
+  box-shadow: inset 3px 0 0 var(--fluor-color);
+}
+
+.selector-row.has-fluor:hover,
+.selector-row.has-fluor:focus-within,
+.selector-row.has-fluor.is-fluor-hovered {
+  border-color: color-mix(in srgb, var(--fluor-color) 68%, var(--border-color));
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--fluor-color) 22%, var(--bg-card)) 0%,
+      color-mix(in srgb, var(--fluor-color) 8%, var(--bg-card)) 60%,
+      var(--bg-card) 100%
+    );
+  box-shadow:
+    inset 3px 0 0 var(--fluor-color),
+    0 4px 12px color-mix(in srgb, var(--fluor-color) 18%, transparent);
+}
+
 .selector-swatch {
   width: 14px;
   height: 14px;
   border-radius: 50%;
   justify-self: center;
-  box-shadow: 0 0 6px currentColor;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--fluor-color, currentColor) 55%, transparent);
   border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.selector-row.has-fluor .selector-swatch {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--fluor-color) 18%, transparent),
+    0 0 8px color-mix(in srgb, var(--fluor-color) 60%, transparent);
 }
 
 .selector-input {
@@ -361,6 +400,13 @@
 
 .selector-input:focus {
   border-bottom-color: var(--accent);
+}
+
+.panel-builder.dark .selector-input,
+.panel-builder.dark .selector-input:hover,
+.panel-builder.dark .selector-input:focus {
+  background: transparent;
+  box-shadow: none;
 }
 
 .selector-input::placeholder {
@@ -733,6 +779,31 @@
   background: rgba(239, 68, 68, 0.1);
   border-color: rgba(239, 68, 68, 0.2);
 }
+
+.panel-boot-error {
+  width: min(520px, calc(100vw - 48px));
+  min-height: 0;
+  margin: auto;
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 11px 8px;
+  padding: 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  background: var(--bg-card);
+  box-shadow: 0 14px 38px rgba(23, 32, 29, 0.1);
+}
+
+.panel-boot-error strong,
+.panel-boot-error span {
+  grid-column: 1 / -1;
+}
+
+.panel-boot-error strong { font-size: 17px; }
+.panel-boot-error span { color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+.panel-boot-error button { min-height: 36px; padding: 0 13px; border: 1px solid var(--accent); border-radius: 7px; color: white; background: var(--accent); font-weight: 700; cursor: pointer; }
+.panel-builder.panel-boot-failure { display: grid; place-items: center; padding: 24px; }
+.panel-boot-error button.secondary { color: var(--text-primary); border-color: var(--border-color); background: var(--bg-app); }
 
 .panel-confirm-overlay {
   position: fixed;

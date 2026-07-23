@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import {
   CheckCircle2,
   ChevronLeft,
@@ -14,6 +15,7 @@ import {
   Settings,
   Sun,
   Upload,
+  X,
 } from 'lucide-react'
 import { fileUsesHistogramGates } from '../gatingEligibility.js'
 import SpectrumCanvas from '../SpectrumCanvas.jsx'
@@ -27,17 +29,59 @@ import {
   channelTitle,
   eventStepIndex,
   eventStepLabel,
+  fileControlType,
   gateKey,
   histogramGateKey,
   normalizeHistogramBins,
   normalizeHistogramTransform,
 } from './GatingCore.jsx'
 
+function CommitRange({ value, onCommit, formatValue, ...inputProps }) {
+  const [draftValue, setDraftValue] = useState(Number(value))
+  const interactingRef = useRef(false)
+
+  useEffect(() => {
+    if (!interactingRef.current) setDraftValue(Number(value))
+  }, [value])
+
+  const commit = (nextValue) => {
+    const numericValue = Number(nextValue)
+    interactingRef.current = false
+    setDraftValue(numericValue)
+    if (numericValue !== Number(value)) onCommit(numericValue)
+  }
+
+  return <>
+    <input
+      {...inputProps}
+      type="range"
+      value={draftValue}
+      onPointerDown={(event) => {
+        interactingRef.current = true
+        event.currentTarget.setPointerCapture?.(event.pointerId)
+      }}
+      onChange={(event) => setDraftValue(Number(event.currentTarget.value))}
+      onPointerUp={(event) => {
+        commit(event.currentTarget.value)
+        if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId)
+        }
+      }}
+      onPointerCancel={(event) => commit(event.currentTarget.value)}
+      onKeyUp={(event) => commit(event.currentTarget.value)}
+      onBlur={(event) => commit(event.currentTarget.value)}
+    />
+    <strong>{formatValue(draftValue)}</strong>
+  </>
+}
+
 export default function GatingWorkspace({ view }) {
   const {
     darkMode,
     initialLoading,
     histogramAutogating,
+    histogramAutogateNotice,
+    setHistogramAutogateNotice,
     sidebarCollapsed,
     sidebarWidth,
     setSidebarCollapsed,
@@ -55,6 +99,7 @@ export default function GatingWorkspace({ view }) {
     histogramAutogateMissing,
     setShowAutogateConfirmModal,
     embedded,
+    onRequestClose,
     showSettingsModal,
     setShowSettingsModal,
     setDarkMode,
@@ -167,11 +212,12 @@ export default function GatingWorkspace({ view }) {
               className={`file-row ${selected === file.filename ? 'selected' : ''} ${fileUsesHistogramGates(file) ? '' : 'is-af'}`}
               onClick={() => setSelected(file.filename)}
             >
-              <div className="file-row-top">
-                <span>{file.fluorophore}</span>
-                <small>{file.channel}{fileUsesHistogramGates(file) ? '' : ' · AF'}</small>
-              </div>
-              <strong>{file.marker}</strong>
+              <span className="file-row-fluorophore" title={file.fluorophore}>{file.fluorophore}</span>
+              <small className="file-row-channel" title={file.channel}>{file.channel}</small>
+              <strong className="file-row-marker" title={file.marker}>{file.marker}</strong>
+              <small className="file-row-control-type">
+                {fileControlType(file) === 'beads' ? 'Beads' : 'Cells'}
+              </small>
             </button>
           ))}
         </div>
@@ -262,40 +308,36 @@ export default function GatingWorkspace({ view }) {
                   </div>}
                   <label className="gating-settings-row">
                     <span>Point size</span>
-                    <input
-                      type="range"
+                    <CommitRange
                       min="0.5"
                       max="4.0"
                       step="0.25"
                       value={pointSize}
-                      onChange={(e) => setPointSize(Number(e.target.value))}
+                      onCommit={setPointSize}
+                      formatValue={(value) => value.toFixed(2)}
                     />
-                    <strong>{pointSize.toFixed(2)}</strong>
                   </label>
                   <label className="gating-settings-row">
                     <span>Events</span>
-                    <input
-                      type="range"
+                    <CommitRange
                       min="0"
                       max={EVENT_COUNT_STEPS.length - 1}
                       step="1"
                       value={eventStepIndex(maxPoints)}
-                      onChange={(e) => setMaxPoints(EVENT_COUNT_STEPS[Number(e.target.value)])}
+                      onCommit={(index) => setMaxPoints(EVENT_COUNT_STEPS[index])}
+                      formatValue={(index) => eventStepLabel(EVENT_COUNT_STEPS[index], payload?.total_events)}
                     />
-                    <strong>{eventStepLabel(maxPoints, payload?.total_events)}</strong>
                   </label>
                   <label className="gating-settings-row">
                     <span>Histogram bins</span>
-                    <input
-                      type="range"
+                    <CommitRange
                       min={HISTOGRAM_BIN_MIN}
                       max={HISTOGRAM_BIN_MAX}
                       step="5"
                       value={histogramBins}
-                      onChange={(e) => setHistogramBins(normalizeHistogramBins(e.target.value))}
-                      onInput={(e) => setHistogramBins(normalizeHistogramBins(e.currentTarget.value))}
+                      onCommit={(value) => setHistogramBins(normalizeHistogramBins(value))}
+                      formatValue={normalizeHistogramBins}
                     />
-                    <strong>{histogramBins}</strong>
                   </label>
                   <div className="gating-settings-transform">
                     <TransformDropdown
@@ -339,6 +381,17 @@ export default function GatingWorkspace({ view }) {
                 </div>
               )}
             </span>
+            {embedded && onRequestClose && (
+              <button
+                type="button"
+                className="icon-button applet-close-button"
+                onClick={onRequestClose}
+                aria-label="Close control gating and return to cockpit"
+                autoFocus
+              >
+                <X size={16} /> Close
+              </button>
+            )}
           </div>
         </header>
 
@@ -360,8 +413,35 @@ export default function GatingWorkspace({ view }) {
           </div>
         )}
 
+        {histogramAutogateNotice && (
+          <div className="gating-status-banner gating-autogate-notice" role="alert">
+            <button
+              type="button"
+              className="gating-status-dismiss"
+              aria-label="Dismiss histogram autogating warning"
+              onClick={() => setHistogramAutogateNotice(null)}
+            >
+              <X size={15} />
+            </button>
+            <strong>
+              Generated {histogramAutogateNotice.generated} gates for{' '}
+              {histogramAutogateNotice.processed - histogramAutogateNotice.failures.length} of{' '}
+              {histogramAutogateNotice.processed} controls; {histogramAutogateNotice.failures.length} still need attention
+            </strong>
+            <span>
+              Valid gates were kept. Adjust the FSC/SSC or singlet gate for the controls below, then run histogram autogating again.
+            </span>
+            <ul>
+              {histogramAutogateNotice.failures.map((failure) => (
+                <li key={failure.filename}><b>{failure.filename}</b>: {failure.error}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="plot-grid">
           <GatePlot
+            key={`cell:${controlType}`}
             title={isBead ? 'Beads' : 'Cells'}
             subtitle={`${channelTitle(cellAxes.x)} / ${channelTitle(cellAxes.y)} population gate`}
             events={events}
@@ -407,8 +487,8 @@ export default function GatingWorkspace({ view }) {
             onDragEnd={handleDragEnd}
             xDomain={domainForChannel(cellAxes.x, domains.fsc_a)}
             yDomain={domainForChannel(cellAxes.y, domains.ssc_a)}
-            viewDomain={viewSettings.cell?.global || null}
-            onViewDomainChange={(view) => updateViewSetting('cell', 'global', view)}
+            viewDomain={viewSettings.cell?.[controlType] || viewSettings.cell?.global || null}
+            onViewDomainChange={(view) => updateViewSetting('cell', controlType, view)}
             statsText={cellGate ? `${cellSummary.count.toLocaleString()} (${cellSummary.pct.toFixed(1)}%)` : null}
             drawActive={drawActive}
             pointSize={pointSize}
@@ -434,6 +514,7 @@ export default function GatingWorkspace({ view }) {
             }}
           />
           <GatePlot
+            key={`singlet:${controlType}`}
             title="Singlets"
             subtitle={`${channelTitle(singletAxes.x)} / ${channelTitle(singletAxes.y)} doublet filter`}
             events={cellsFilteredEvents}
@@ -479,8 +560,8 @@ export default function GatingWorkspace({ view }) {
             onDragEnd={handleDragEnd}
             xDomain={domainForChannel(singletAxes.x, domains.fsc_h)}
             yDomain={domainForChannel(singletAxes.y, domains.fsc_a)}
-            viewDomain={viewSettings.singlet?.global || null}
-            onViewDomainChange={(view) => updateViewSetting('singlet', 'global', view)}
+            viewDomain={viewSettings.singlet?.[controlType] || viewSettings.singlet?.global || null}
+            onViewDomainChange={(view) => updateViewSetting('singlet', controlType, view)}
             statsText={singletGate ? `${singletSummary.count.toLocaleString()} (${singletSummary.pct.toFixed(1)}%)` : null}
             warningText={singletWarningText}
             drawActive={drawActive}
@@ -508,6 +589,7 @@ export default function GatingWorkspace({ view }) {
           />
           {fileUsesHistogramGates(currentFile) ? (
             <GatePlot
+              key={`histogram:${selected}`}
               title="Histogram"
               subtitle=""
               events={singletsFilteredEvents}
@@ -560,8 +642,6 @@ export default function GatingWorkspace({ view }) {
               }}
               onDragEnd={handleDragEnd}
               xDomain={domains.peak}
-              viewDomain={viewSettings.histogram?.[selected] || null}
-              onViewDomainChange={(view) => updateViewSetting('histogram', selected, view)}
               statsText={[
                 positiveGate ? `Pos ${positiveSummary.count.toLocaleString()} (${positiveSummary.pct.toFixed(1)}%)` : null,
                 negativeGate ? `Neg ${negativeSummary.count.toLocaleString()} (${negativeSummary.pct.toFixed(1)}%)` : null,
@@ -576,8 +656,6 @@ export default function GatingWorkspace({ view }) {
               negativeGateEnabled={usesNegativeHistogramGate}
               histogramBins={histogramBins}
               histogramTransform={histogramTransform}
-              onHistogramTransformChange={(value) => setHistogramTransform(normalizeHistogramTransform(value))}
-              onHistogramBinsChange={(value) => setHistogramBins(normalizeHistogramBins(value))}
               secondaryGates={secondaryHistogramGates}
               onSelectHistogramGate={(type) => {
                 setActiveGate('positive')

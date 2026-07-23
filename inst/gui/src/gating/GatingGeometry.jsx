@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { Check } from 'lucide-react'
+import { adaptiveHistogramTransform } from '../histogramGates.js'
 const CONFIG_NAME = 'ssc_gate_config.csv'
 const GUI_MODULE = 'control_gating'
 
@@ -20,8 +22,10 @@ const EVENT_COUNT_STEPS = [1000, 2000, 3000, 5000, 10000, 20000, 50000, 100000]
 const DEFAULT_HISTOGRAM_BINS = 100
 const HISTOGRAM_BIN_MIN = 5
 const HISTOGRAM_BIN_MAX = 500
-const DEFAULT_HISTOGRAM_TRANSFORM = 'asinh'
+const DEFAULT_HISTOGRAM_TRANSFORM = 'auto'
+const HISTOGRAM_TRANSFORM_VERSION = 2
 const HISTOGRAM_TRANSFORMS = [
+  { value: 'auto', label: 'Auto (per file)' },
   { value: 'asinh', label: 'Asinh' },
   { value: 'linear', label: 'Linear' },
   { value: 'log10', label: 'Log10' },
@@ -80,8 +84,9 @@ function normalizeHistogramTransform(value) {
   return HISTOGRAM_TRANSFORMS.some((item) => item.value === clean) ? clean : DEFAULT_HISTOGRAM_TRANSFORM
 }
 
-function histogramTransformFns(name) {
+function histogramTransformFns(name, values = []) {
   const transform = normalizeHistogramTransform(name)
+  if (transform === 'auto') return adaptiveHistogramTransform(values)
   if (transform === 'log10') {
     return {
       forward: (value) => Math.log10(Math.max(Number(value), 1)),
@@ -133,6 +138,8 @@ function TransformDropdown({ value, onChange }) {
         <button
           type="button"
           className="transform-select"
+          aria-haspopup="listbox"
+          aria-expanded={open}
           onClick={(event) => {
             event.stopPropagation()
             setOpen((current) => !current)
@@ -343,6 +350,7 @@ export {
   DEFAULT_EVENT_COUNT,
   DEFAULT_HISTOGRAM_BINS,
   DEFAULT_HISTOGRAM_TRANSFORM,
+  HISTOGRAM_TRANSFORM_VERSION,
   EVENT_COUNT_STEPS,
   EVENT_COUNT_VERSION,
   GUI_MODULE,

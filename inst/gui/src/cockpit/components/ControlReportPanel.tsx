@@ -18,8 +18,8 @@ export function QcReportPanel({ project, kind, onView }: Props) {
   if (!reports.length) {
     return (
       <section className="surface-card report-history-empty">
-        <h2>No {label} QC report yet</h2>
-        <p>Run {label} unmixing with report generation enabled.</p>
+          <h2>No {label} QC report yet</h2>
+          <p>Run {label} unmixing with report generation enabled.</p>
       </section>
     )
   }

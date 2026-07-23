@@ -14,5 +14,10 @@ export const emptyProject: ProjectState = {
   missingInputDirs: [],
   controlInputDir: 'scc',
   sampleInputDir: 'samples',
+  dataRevision: 'empty',
+  matrixFiles: null,
+  sampleFiles: null,
+  gatingFiles: null,
+  gatingMetadata: {},
   scan: { controls: 0, samples: 0, matrices: 0, reports: 0, qcMetrics: 0, spectralVariants: 0, gates: 0 },
 }

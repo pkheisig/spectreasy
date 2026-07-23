@@ -19,7 +19,7 @@ interface MatrixRow {
 
 type DataRow = Record<string, string | number | null | undefined>;
 type MatrixPayload = Record<string, Record<string, string | number | null | undefined>>;
-const UNMIXING_METHODS = ['Spectreasy', 'AutoSpectral', 'OLS', 'WLS', 'RWLS', 'NNLS'] as const;
+const UNMIXING_METHODS = ['AutoSpectral', 'OLS', 'WLS', 'RWLS', 'NNLS'] as const;
 type UnmixingMethod = typeof UNMIXING_METHODS[number];
 type ViewConfig = {
     residualCellSize?: number;
@@ -69,8 +69,8 @@ const asScalarString = (value: unknown, fallback = '') => {
 };
 
 const asUnmixingMethod = (value: unknown): UnmixingMethod => {
-    const text = asScalarString(value, 'Spectreasy');
-    return UNMIXING_METHODS.includes(text as UnmixingMethod) ? text as UnmixingMethod : 'Spectreasy';
+    const text = asScalarString(value, 'AutoSpectral');
+    return UNMIXING_METHODS.includes(text as UnmixingMethod) ? text as UnmixingMethod : 'AutoSpectral';
 };
 
 type DropdownTheme = {

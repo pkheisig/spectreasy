@@ -54,14 +54,6 @@ gui_workflow_path <- function(body, key, fallback = "", allow_empty = TRUE) {
     value
 }
 
-gui_method_optional_args <- function(method, body) {
-    resolved <- tryCatch(spectreasy:::.normalize_unmix_method(method), error = function(e) "")
-    if (identical(resolved, "Spectreasy")) {
-        return(list(spectreasy_weight_quantile = gui_workflow_number(body, "spectreasy_weight_quantile", 0.65, minimum = 0, maximum = 1)))
-    }
-    list()
-}
-
 gui_workflow_root <- function(body) {
     root <- gui_workflow_value(body, "projectPath", get_matrix_dir())
     if (!dir.exists(root)) stop("Project folder not found: ", root, call. = FALSE)
@@ -296,6 +288,29 @@ gui_project_scan <- function(root) {
     sample_files <- if (dir.exists(file.path(root, layout$sample_input_dir))) {
         list.files(file.path(root, layout$sample_input_dir), pattern = "\\.fcs$", full.names = TRUE, ignore.case = TRUE)
     } else character()
+    input_fcs <- files %in% normalizePath(c(control_files, sample_files), mustWork = FALSE)
+    matrix_csv <- grepl("\\.csv$", relative, ignore.case = TRUE) &
+        grepl("matrix", tolower(gsub("[^[:alnum:]]+", "", basename(relative))), fixed = TRUE)
+    tracked <- input_fcs | relative == "fcs_mapping.csv" | matrix_csv
+    tracked_files <- files[tracked]
+    tracked_relative <- relative[tracked]
+    tracked_info <- if (length(tracked_files)) file.info(tracked_files) else data.frame()
+    data_revision <- if (!length(tracked_files)) {
+        "empty"
+    } else {
+        signature <- paste(
+            tracked_relative,
+            as.numeric(tracked_info$size),
+            as.numeric(tracked_info$mtime),
+            sep = ":",
+            collapse = "|"
+        )
+        hash <- 0
+        for (code in utf8ToInt(enc2utf8(signature))) {
+            hash <- (hash * 131 + code) %% 2147483647
+        }
+        paste0(length(tracked_files), "-", sprintf("%08x", as.integer(hash)))
+    }
     controls <- length(control_files)
     samples <- length(sample_files)
     matrices <- count_matches("matrix.*\\.csv$|unmixing.*\\.csv$|detector_noise.*\\.csv$")
@@ -319,6 +334,7 @@ gui_project_scan <- function(root) {
         layout = layout,
         missing_input_dirs = gui_project_relative_path(gui_missing_project_input_dirs(root), root),
         files = relative,
+        data_revision = data_revision,
         scan = list(
             controls = controls,
             samples = samples,

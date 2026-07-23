@@ -288,8 +288,8 @@ test_that("adjust_matrix dev-server helper manages only its own ready process", 
         kill_tree = function() invisible(TRUE),
         read_all_output_lines = function() character()
     )
-    spawn <- function(gui_path, api_port, frontend_port, npm_bin) {
-        calls$spawn <<- list(gui_path, api_port, frontend_port, npm_bin)
+    spawn <- function(gui_path, api_port, frontend_port, npm_bin, api_token) {
+        calls$spawn <<- list(gui_path, api_port, frontend_port, npm_bin, api_token)
         process
     }
     wait_until_ready <- function(started_process, frontend_port) {
@@ -302,11 +302,12 @@ test_that("adjust_matrix dev-server helper manages only its own ready process", 
         api_port = 8123,
         frontend_port = 5190,
         npm_bin = "npm",
+        api_token = "session-token",
         spawn = spawn,
         wait_until_ready = wait_until_ready
     )
     expect_identical(started, process)
-    expect_equal(calls$spawn, list(tmp_gui_path, 8123, 5190, "npm"))
+    expect_equal(calls$spawn, list(tmp_gui_path, 8123, 5190, "npm", "session-token"))
     expect_identical(calls$ready, list(process, 5190))
 })
 

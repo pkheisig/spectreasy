@@ -99,15 +99,15 @@ For example, `0.08` excludes events below 8\% of the per-file high FSC scale.}
 
 \item{subsample_n}{Maximum number of events used for GMM fitting per file.}
 
-\item{unmixing_method}{SCC processing method. `"AutoSpectral"` (default) and
-`"Spectreasy"` first apply the saved positive histogram gate or the same
-automatic histogram fallback used by legacy methods, then enable spectral
-SCC selection, resolved-negative background subtraction, and
-spectral-variant learning. Legacy methods stop after calculating the
-conventional histogram-gated reference spectrum.}
+\item{unmixing_method}{SCC processing method. `"AutoSpectral"` (default)
+first applies the saved positive histogram gate or the same automatic
+histogram fallback used by the other methods, then enables spectral SCC
+selection, resolved-negative background subtraction, and spectral-variant
+learning. Other methods stop after calculating the conventional
+histogram-gated reference spectrum.}
 
-\item{scc_background_method}{Background subtraction method for Spectreasy/
-AutoSpectral SCC cleanup (`"scatter_knn"` or `"none"`).}
+\item{scc_background_method}{Background subtraction method for AutoSpectral
+SCC cleanup (`"scatter_knn"` or `"none"`).}
 
 \item{scc_background_k}{Number of nearest unstained/negative events averaged
 for scatter-matched SCC background subtraction.}

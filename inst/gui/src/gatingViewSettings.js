@@ -1,5 +1,5 @@
 const SCATTER_VIEW_PLOTS = ['cell', 'singlet']
-const LEGACY_CONTROL_SCOPES = ['cells', 'beads']
+const CONTROL_SCOPES = ['cells', 'beads']
 
 export function normalizeViewDomain(value) {
   if (!Array.isArray(value) || value.length < 2) return null
@@ -15,7 +15,7 @@ export function normalizePlotView(value, includeY = true) {
   return { x, y }
 }
 
-export function buildViewSettingRows(viewSettings = {}, files = []) {
+export function buildViewSettingRows(viewSettings = {}) {
   const rows = []
   const addDomain = (plot, scope, filename, axis, domain) => {
     const clean = normalizeViewDomain(domain)
@@ -34,42 +34,63 @@ export function buildViewSettingRows(viewSettings = {}, files = []) {
   }
 
   SCATTER_VIEW_PLOTS.forEach((plot) => {
-    const view = normalizePlotView(viewSettings?.[plot]?.global)
-    if (!view) return
-    addDomain(plot, 'global', '', 'x', view.x)
-    addDomain(plot, 'global', '', 'y', view.y)
+    CONTROL_SCOPES.forEach((scope) => {
+      const view = normalizePlotView(viewSettings?.[plot]?.[scope] || viewSettings?.[plot]?.global)
+      if (!view) return
+      addDomain(plot, scope, '', 'x', view.x)
+      addDomain(plot, scope, '', 'y', view.y)
+    })
   })
 
-  const knownFiles = new Set(files.map((file) => String(file?.filename || '')).filter(Boolean))
-  Object.entries(viewSettings?.histogram || {}).forEach(([filename, rawView]) => {
-    if (!knownFiles.has(filename)) return
-    const view = normalizePlotView(rawView, false)
-    if (view?.x) addDomain('histogram', 'file', filename, 'x', view.x)
-  })
   return rows
 }
 
 export function parseViewSettings(rows = []) {
   const views = { cell: {}, singlet: {}, histogram: {} }
-  rows.forEach((row) => {
+  const legacyViews = { cell: null, singlet: null }
+
+  const parseRow = (row) => {
     if (String(row?.gate_type || '') !== 'setting') return
-    const match = /^view_(cell|singlet|histogram)$/.exec(String(row?.x_channel || ''))
+    const match = /^view_(cell|singlet)$/.exec(String(row?.x_channel || ''))
     const axisMatch = /^(x|y)_domain$/.exec(String(row?.y_channel || ''))
     if (!match || !axisMatch) return
     const plot = match[1]
     const axis = axisMatch[1]
-    if (plot === 'histogram' && axis !== 'x') return
-    const rawTarget = plot === 'histogram' ? String(row?.filename || '') : String(row?.scope || '')
-    if (!rawTarget) return
-    if (plot !== 'histogram' && rawTarget !== 'global' && !LEGACY_CONTROL_SCOPES.includes(rawTarget)) return
-    const target = plot === 'histogram' ? rawTarget : 'global'
+    const scope = String(row?.scope || '')
+    if (scope !== 'global' && !CONTROL_SCOPES.includes(scope)) return
     const domain = normalizeViewDomain([row.x, row.y])
     if (!domain) return
-    if (!views[plot][target]) views[plot][target] = { x: null, y: null }
-    const previous = views[plot][target][axis]
-    views[plot][target][axis] = previous
+    return { plot, axis, scope, domain }
+  }
+
+  const assignDomain = (target, axis, domain) => {
+    const previous = target[axis]
+    target[axis] = previous
       ? [Math.min(previous[0], domain[0]), Math.max(previous[1], domain[1])]
       : domain
+  }
+
+  rows.forEach((row) => {
+    const parsed = parseRow(row)
+    if (!parsed) return
+    const { plot, axis, scope, domain } = parsed
+    if (scope === 'global') {
+      if (!legacyViews[plot]) legacyViews[plot] = { x: null, y: null }
+      assignDomain(legacyViews[plot], axis, domain)
+      return
+    }
+    if (!views[plot][scope]) views[plot][scope] = { x: null, y: null }
+    assignDomain(views[plot][scope], axis, domain)
+  })
+
+  SCATTER_VIEW_PLOTS.forEach((plot) => {
+    const legacy = legacyViews[plot]
+    if (!legacy) return
+    CONTROL_SCOPES.forEach((scope) => {
+      if (!views[plot][scope]) views[plot][scope] = { x: null, y: null }
+      if (!views[plot][scope].x && legacy.x) views[plot][scope].x = [...legacy.x]
+      if (!views[plot][scope].y && legacy.y) views[plot][scope].y = [...legacy.y]
+    })
   })
   return views
 }

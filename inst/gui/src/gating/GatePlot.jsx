@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { histogramDomainIncludingGates } from '../histogramGates.js'
+import {
+  dragHistogramGateInDisplaySpace,
+  histogramDomainIncludingGates,
+  padHistogramDomain,
+  panHistogramDomain,
+} from '../histogramGates.js'
 import { normalizePlotView } from '../gatingViewSettings.js'
 import GatePlotView from './GatePlotView.jsx'
 import {
-  DARK_DENSITY_PALETTE,
   DEFAULT_HISTOGRAM_BINS,
   DEFAULT_HISTOGRAM_TRANSFORM,
+  DARK_PLOT_BACKGROUND,
   DENSITY_PALETTE,
   HISTOGRAM_BIN_MAX,
   HISTOGRAM_BIN_MIN,
@@ -58,8 +63,6 @@ export default function GatePlot({
   histogramGateType,
   histogramBins = DEFAULT_HISTOGRAM_BINS,
   histogramTransform = DEFAULT_HISTOGRAM_TRANSFORM,
-  onHistogramTransformChange,
-  onHistogramBinsChange,
   secondaryGates = [],
   onSelectHistogramGate,
   onUpdateAnyGateVertices,
@@ -90,7 +93,14 @@ export default function GatePlot({
   const panMovedRef = useRef(false)
   const pendingViewRef = useRef(null)
 
-  const transformFns = useMemo(() => histogramTransformFns(histogramTransform), [histogramTransform])
+  const histogramValues = useMemo(
+    () => mode === 'histogram' ? events.map((event) => event[xField]) : [],
+    [events, mode, xField],
+  )
+  const transformFns = useMemo(
+    () => histogramTransformFns(histogramTransform, histogramValues),
+    [histogramTransform, histogramValues],
+  )
   const toPlotX = (value) => {
     const out = mode === 'histogram' ? transformFns.forward(value) : Number(value)
     return Number.isFinite(out) ? out : 0
@@ -101,7 +111,7 @@ export default function GatePlot({
   }
 
   const baseXDomain = useMemo(() => {
-    const eventValues = events.map((e) => e[xField])
+    const eventValues = histogramValues
     const rawDomain = xDomainProp || extent(eventValues)
     if (mode !== 'histogram') return rawDomain
     const visibleDomain = histogramDomainIncludingGates(
@@ -111,8 +121,8 @@ export default function GatePlot({
     )
     const transformed = visibleDomain.map((value) => transformFns.forward(value)).filter(Number.isFinite)
     if (transformed.length < 2 || transformed[0] === transformed[1]) return [0, 1]
-    return [Math.min(...transformed), Math.max(...transformed)]
-  }, [events, xField, xDomainProp, mode, transformFns, gate, secondaryGates])
+    return padHistogramDomain([Math.min(...transformed), Math.max(...transformed)])
+  }, [histogramValues, xDomainProp, mode, transformFns, gate, secondaryGates])
   const xDomain = zoomXDomain || baseXDomain
 
   const densityCurve = useMemo(() => {
@@ -317,7 +327,7 @@ export default function GatePlot({
     ctx.rect(PAD.left, PAD.top, PLOT_WIDTH - PAD.left - PAD.right, PLOT_HEIGHT - PAD.top - PAD.bottom)
     ctx.clip()
 
-    ctx.fillStyle = darkMode ? '#0b1110' : '#f8f7f3'
+    ctx.fillStyle = darkMode ? DARK_PLOT_BACKGROUND : '#f8f7f3'
     ctx.fillRect(PAD.left, PAD.top, PLOT_WIDTH - PAD.left - PAD.right, PLOT_HEIGHT - PAD.top - PAD.bottom)
     ctx.strokeStyle = darkMode ? '#52615b' : '#c7c3ba'
     ctx.strokeRect(PAD.left, PAD.top, PLOT_WIDTH - PAD.left - PAD.right, PLOT_HEIGHT - PAD.top - PAD.bottom)
@@ -331,8 +341,7 @@ export default function GatePlot({
     const half = side / 2
     densityBuckets.forEach((bucket, colorIndex) => {
       if (!bucket.length) return
-      const palette = darkMode ? DARK_DENSITY_PALETTE : DENSITY_PALETTE
-      ctx.fillStyle = palette[colorIndex] || (darkMode ? 'rgba(90, 190, 255, 0.9)' : 'rgba(0, 0, 255, 0.6)')
+      ctx.fillStyle = DENSITY_PALETTE[colorIndex] || 'rgba(0, 0, 255, 0.7)'
       ctx.beginPath()
       bucket.forEach((eventIndex) => {
         const p = events[eventIndex]
@@ -435,6 +444,7 @@ export default function GatePlot({
       clientX: evt.clientX,
       clientY: evt.clientY,
       xDomain: [...xDomain],
+      rawXDomain: mode === 'histogram' ? xDomain.map((value) => fromPlotX(value)) : null,
       yDomain: [...yDomain],
     })
   }
@@ -451,15 +461,25 @@ export default function GatePlot({
       const dyPixels = evt.clientY - panTarget.clientY
       if (Math.abs(dxPixels) > 2 || Math.abs(dyPixels) > 2) panMovedRef.current = true
 
-      const startXSpan = panTarget.xDomain[1] - panTarget.xDomain[0]
-      const xShift = -(dxPixels / plotWidth) * startXSpan
       if (mode === 'histogram') {
-        const baseSpan = baseXDomain[1] - baseXDomain[0]
-        const extendedLimits = [baseXDomain[0] - baseSpan * 4, baseXDomain[1] + baseSpan * 4]
-        const nextX = shiftDomain(panTarget.xDomain, xShift, extendedLimits)
+        const baseRawDomain = baseXDomain.map((value) => fromPlotX(value))
+        const baseRawSpan = baseRawDomain[1] - baseRawDomain[0]
+        const extendedRawLimits = [
+          baseRawDomain[0] - baseRawSpan * 4,
+          baseRawDomain[1] + baseRawSpan * 4,
+        ]
+        const nextRawX = panHistogramDomain(
+          panTarget.rawXDomain,
+          dxPixels,
+          plotWidth,
+          extendedRawLimits,
+        )
+        const nextX = nextRawX.map((value) => toPlotX(value))
         setZoomXDomain(nextX)
         pendingViewRef.current = { x: nextX, y: null }
       } else {
+        const startXSpan = panTarget.xDomain[1] - panTarget.xDomain[0]
+        const xShift = -(dxPixels / plotWidth) * startXSpan
         const startYSpan = panTarget.yDomain[1] - panTarget.yDomain[0]
         const yShift = (dyPixels / plotHeight) * startYSpan
         const nextX = shiftDomain(panTarget.xDomain, xShift, baseXDomain)
@@ -474,7 +494,7 @@ export default function GatePlot({
     if (dragTarget === null || lastMousePos === null || !dragTarget.gate?.vertices?.length) return
     const dx = currentPt.x - lastMousePos.x
     const dy = currentPt.y - lastMousePos.y
-    const dPlotX = currentPt.plotX - (lastMousePos.plotX ?? toPlotX(lastMousePos.x))
+    const displayDx = currentPt.plotX - (lastMousePos.plotX ?? toPlotX(lastMousePos.x))
     setLastMousePos(currentPt)
 
     const dragMode = dragTarget.gate.mode
@@ -483,11 +503,13 @@ export default function GatePlot({
     const sourceVertices = dragPreviewVertices || dragTarget.gate.vertices
 
     if (dragKind === 'gate' || dragKind === 'separator') {
+      if (is1D) {
+        setDragPreviewVertices(
+          dragHistogramGateInDisplaySpace(sourceVertices, displayDx, transformFns),
+        )
+        return
+      }
       const newVertices = sourceVertices.map((v) => {
-        if (is1D) {
-          const newPlotX = toPlotX(v.x) + dPlotX
-          return { x: fromPlotX(newPlotX), y: 0 }
-        }
         return {
           x: v.x + dx,
           y: v.y + dy,
@@ -495,16 +517,16 @@ export default function GatePlot({
       })
       setDragPreviewVertices(newVertices)
     } else if (typeof dragKind === 'number') {
-      const newVertices = sourceVertices.map((v) => ({ ...v }))
-      let newPt
       if (is1D) {
-        const newPlotX = toPlotX(sourceVertices[dragKind].x) + dPlotX
-        newPt = { x: fromPlotX(newPlotX), y: 0 }
-      } else {
-        newPt = {
-          x: sourceVertices[dragKind].x + dx,
-          y: sourceVertices[dragKind].y + dy,
-        }
+        setDragPreviewVertices(
+          dragHistogramGateInDisplaySpace(sourceVertices, displayDx, transformFns, dragKind),
+        )
+        return
+      }
+      const newVertices = sourceVertices.map((v) => ({ ...v }))
+      const newPt = {
+        x: sourceVertices[dragKind].x + dx,
+        y: sourceVertices[dragKind].y + dy,
       }
       newVertices[dragKind] = newPt
       setDragPreviewVertices(newVertices)
@@ -648,10 +670,6 @@ export default function GatePlot({
     negativeGateEnabled,
     onToggleHistogramGate,
     onClear,
-    histogramBins,
-    onHistogramBinsChange,
-    histogramTransform,
-    onHistogramTransformChange,
     plotRef,
     mode,
     canvasRef,

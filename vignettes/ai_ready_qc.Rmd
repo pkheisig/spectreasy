@@ -1,0 +1,32 @@
+---
+title: "AI-ready QC"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{AI-ready QC}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Spectreasy writes one local, paste-ready interpretation prompt beside each QC
+report. It does not call an AI service, store a provider key, upload data, or
+include raw events. The existing HTML/PDF report remains the visual scientific
+record, and its existing numerical CSV files remain the machine-readable
+record.
+
+```r
+ctrl <- unmix_controls(save_report = TRUE, save_ai_qc = TRUE)
+# qc_controls_report_ai_qc_prompt.txt is written beside the report.
+```
+
+When `qc_controls()` or `qc_samples()` writes a report, Spectreasy writes the
+prompt beside that report. In the cockpit,
+open the report and use **AI-ready prompt** in the header to **Copy** or
+**Download prompt**. The button reads the saved text file; it does not calculate
+or regenerate QC data on demand.
+
+The prompt embeds the compact numerical tables needed for interpretation. Large
+reference-spectrum, AF-bank, and event-variability tables remain as CSV files
+and are represented by derived summaries so they do not overwhelm the model's
+context window. Spectreasy does not assign scientific quality labels or invent
+thresholds before the prompt is produced; interpretation remains the analyst's
+and the AI assistant's task.

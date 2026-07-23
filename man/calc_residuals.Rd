@@ -19,8 +19,7 @@ calc_residuals(
   spectral_variant_top_k = 3L,
   spectral_variant_min_abundance = 1,
   spectral_variant_positive_fraction = 0.02,
-  spectral_variant_min_improvement = 0.01,
-  spectreasy_weight_quantile = 0.65
+  spectral_variant_min_improvement = 0.01
 )
 }
 \arguments{
@@ -30,14 +29,11 @@ calc_residuals(
 
 \item{file_name}{Optional file name to add to output}
 
-\item{method}{Unmixing method: `"AutoSpectral"` (default), `"Spectreasy"`,
-`"WLS"`, `"RWLS"`, `"OLS"`, or `"NNLS"`. `AutoSpectral` assigns the best AF
+\item{method}{Unmixing method: `"AutoSpectral"` (default), `"WLS"`,
+`"RWLS"`, `"OLS"`, or `"NNLS"`. `AutoSpectral` assigns the best AF
 spectrum per event with the AutoSpectral fluorophore-leakage score, refits
 marker + selected-AF rows with OLS, and applies spectral-variant
-optimization when a variant library is supplied. `Spectreasy` uses the same
-AutoSpectral-style OLS fit, then blends marker abundances with a marker-only
-OLS anchor using decoder-projected AF-impact weights derived from the
-reference matrix.}
+optimization when a variant library is supplied.}
 
 \item{return_residuals}{Logical. If TRUE, returns a list containing the unmixed
 data and the detector residual matrix.}
@@ -56,13 +52,13 @@ iterations used when `method = "RWLS"`. The default, 1, preserves the
 historical behavior.}
 
 \item{n_threads}{Positive integer; number of threads for event-wise
-AutoSpectral/Spectreasy AF assignment and NNLS/WLS/RWLS fitting. OLS uses
+AutoSpectral AF assignment and NNLS/WLS/RWLS fitting. OLS uses
 vectorized matrix operations. The default, 1, keeps explicit event loops
 single-threaded.}
 
 \item{spectral_variant_library}{Optional per-fluorophore spectral-variant
 library learned from single-color controls. Used only with
-`method = "AutoSpectral"` or `"Spectreasy"`.}
+`method = "AutoSpectral"`.}
 
 \item{spectral_variant_top_k}{Number of best variant candidates to test per
 positive fluorophore.}
@@ -75,11 +71,6 @@ as a fraction of the event's strongest fluorophore abundance.}
 
 \item{spectral_variant_min_improvement}{Minimum fractional residual
 improvement required before accepting a cell-specific variant refit.}
-
-\item{spectreasy_weight_quantile}{Numeric in `[0, 1]`; only accepted when
-`method = "Spectreasy"`. Controls the quantile of decoder-projected AF
-impacts used as the soft-saturation scale for marker-specific AutoSpectral
-mixing. The default, `0.65`, uses the 65th percentile of marker AF impacts.}
 }
 \value{
 Data frame with unmixed abundances and retained acquisition parameters

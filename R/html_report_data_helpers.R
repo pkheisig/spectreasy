@@ -33,7 +33,6 @@
             spectral_variant_cosine_threshold = 0.98,
             spectral_variant_max_variants = 8L,
             spectral_variant_min_events = 50L,
-            spectreasy_weight_quantile = 0.65,
             autospectral_n_candidates = 1000L,
             autospectral_n_spectral = 200L,
             autospectral_min_events = 10L,
@@ -50,7 +49,7 @@
             scc_background_k = "SCC background neighbours", spectral_variant_som_nodes = "Spectral variant SOM nodes",
             spectral_variant_top_k = "Spectral variant top K", spectral_variant_cosine_threshold = "Variant cosine threshold",
             spectral_variant_max_variants = "Maximum spectral variants", spectral_variant_min_events = "Minimum variant events",
-            spectreasy_weight_quantile = "Spectreasy weight quantile", autospectral_n_candidates = "AutoSpectral candidates",
+            autospectral_n_candidates = "AutoSpectral candidates",
             autospectral_n_spectral = "AutoSpectral spectra", autospectral_min_events = "AutoSpectral minimum events",
             autospectral_refine = "AutoSpectral refinement", unmix_scatter_max_points = "Control NxN events",
             unmix_scatter_axis_limit = "Control NxN axis limit", save_qc_pngs = "Save report PNGs"
@@ -63,7 +62,6 @@
             spectral_variant_min_abundance = 1,
             spectral_variant_positive_fraction = 0.02,
             spectral_variant_min_improvement = 0.01,
-            spectreasy_weight_quantile = 0.65,
             estimate_af = FALSE,
             write_fcs = TRUE,
             save_qc_plots = FALSE,
@@ -85,7 +83,7 @@
         labels <- c(
             rwls_max_iter = "RWLS iterations", n_threads = "Threads", spectral_variant_top_k = "Spectral variant top K",
             spectral_variant_min_abundance = "Minimum variant abundance", spectral_variant_positive_fraction = "Variant positive fraction",
-            spectral_variant_min_improvement = "Minimum variant improvement", spectreasy_weight_quantile = "Spectreasy weight quantile",
+            spectral_variant_min_improvement = "Minimum variant improvement",
             estimate_af = "Estimate sample AF", write_fcs = "Write FCS", save_qc_plots = "Save QC plots",
             plot_n_events = "Plot events per sample", chunk_size = "Chunk size", seed = "Seed",
             max_events_per_sample = "Report events per sample", overview_files_per_page = "Overview samples per page",

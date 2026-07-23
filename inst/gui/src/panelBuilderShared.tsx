@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- shared panel primitives intentionally colocate the PDF glyph with pure helpers */
 import { resolveApiBase } from './apiBase';
+import { mapDetectorToEmission, wavelengthToColor } from './detectorAxis';
 
 const API_BASE = resolveApiBase();
 const panelProjectPath = () => window.sessionStorage.getItem('spectreasy-project-path') || '';
@@ -141,42 +142,6 @@ const linePath = (row: NumericRow, detectors: DetectorInfo[], width: number, hei
         const y = height - toNumber(row[det.detector]) * (height - 32) - 24;
         return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
-};
-
-const wavelengthToColor = (wavelength: number) => {
-    let r = 0, g = 0, b = 0;
-    if (wavelength >= 350 && wavelength < 440) {
-        r = -(wavelength - 440) / (440 - 350);
-        b = 1.0;
-    } else if (wavelength >= 440 && wavelength < 490) {
-        g = (wavelength - 440) / (490 - 440);
-        b = 1.0;
-    } else if (wavelength >= 490 && wavelength < 510) {
-        g = 1.0;
-        b = -(wavelength - 510) / (510 - 490);
-    } else if (wavelength >= 510 && wavelength < 580) {
-        r = (wavelength - 510) / (580 - 510);
-        g = 1.0;
-    } else if (wavelength >= 580 && wavelength < 645) {
-        r = 1.0;
-        g = -(wavelength - 645) / (645 - 580);
-    } else if (wavelength >= 645 && wavelength <= 780) {
-        r = 1.0;
-    } else if (wavelength > 780) {
-        r = 0.5;
-        b = 0.2;
-    }
-
-    let factor = 1.0;
-    if (wavelength >= 350 && wavelength < 420) {
-        factor = 0.3 + 0.7 * (wavelength - 350) / (420 - 350);
-    } else if (wavelength > 700 && wavelength <= 780) {
-        factor = 0.3 + 0.7 * (780 - wavelength) / (780 - 700);
-    } else if (wavelength > 780) {
-        factor = 0.3;
-    }
-
-    return `rgb(${Math.round(r * factor * 255)}, ${Math.round(g * factor * 255)}, ${Math.round(b * factor * 255)})`;
 };
 
 const laserWavelength = (laser: string) => {
@@ -435,105 +400,6 @@ const binEmission = (val: number, cyt: string): number => {
         return Math.round(val / 15) * 15;
     }
     return val;
-};
-
-const mapDetectorToEmission = (detectorName: string): number => {
-    const clean = detectorName.replace(/-A$/, '').toUpperCase();
-    if (clean.startsWith('UV')) {
-        const idx = parseInt(clean.slice(2), 10);
-        const uvMap: Record<number, number> = {
-            1: 370,
-            2: 395,
-            3: 420,
-            4: 440,
-            5: 450,
-            6: 480,
-            7: 480,
-            8: 500,
-            9: 520,
-            10: 550,
-            11: 570,
-            12: 580,
-            13: 600,
-            14: 660,
-            15: 750,
-            16: 800
-        };
-        return uvMap[idx] || 370;
-    }
-    if (clean.startsWith('V')) {
-        const idx = parseInt(clean.slice(1), 10);
-        const vMap: Record<number, number> = {
-            1: 420,
-            2: 440,
-            3: 450,
-            4: 480,
-            5: 480,
-            6: 500,
-            7: 550,
-            8: 570,
-            9: 580,
-            10: 600,
-            11: 660,
-            12: 680,
-            13: 690,
-            14: 700,
-            15: 730,
-            16: 780
-        };
-        return vMap[idx] || 420;
-    }
-    if (clean.startsWith('B')) {
-        const idx = parseInt(clean.slice(1), 10);
-        const bMap: Record<number, number> = {
-            1: 500,
-            2: 520,
-            3: 550,
-            4: 550,
-            5: 570,
-            6: 580,
-            7: 600,
-            8: 600,
-            9: 660,
-            10: 680,
-            11: 690,
-            12: 700,
-            13: 750,
-            14: 780
-        };
-        return bMap[idx] || 500;
-    }
-    if (clean.startsWith('YG')) {
-        const idx = parseInt(clean.slice(2), 10);
-        const ygMap: Record<number, number> = {
-            1: 570,
-            2: 580,
-            3: 600,
-            4: 600,
-            5: 660,
-            6: 680,
-            7: 700,
-            8: 730,
-            9: 750,
-            10: 780
-        };
-        return ygMap[idx] || 570;
-    }
-    if (clean.startsWith('R')) {
-        const idx = parseInt(clean.slice(1), 10);
-        const rMap: Record<number, number> = {
-            1: 660,
-            2: 680,
-            3: 700,
-            4: 730,
-            5: 730,
-            6: 750,
-            7: 780,
-            8: 800
-        };
-        return rMap[idx] || 660;
-    }
-    return 0;
 };
 
 export {
