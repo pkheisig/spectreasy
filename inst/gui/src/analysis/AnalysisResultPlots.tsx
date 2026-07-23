@@ -29,11 +29,17 @@ export function AnalysisResultPlots({ result }: { result: AnalysisRunResult }) {
           <section key={plotId} className="analysis-result-plot-card">
             <AnalysisResultPlot
               result={result}
-              canRemove={plots.length > 1}
+              canRemove
               onRemove={() => setPlots((current) => current.filter((id) => id !== plotId))}
             />
           </section>
         ))}
+        {plots.length === 0 ? (
+          <div className="analysis-empty-result-plots">
+            <strong>No result plots</strong>
+            <span>The analysis object is still available. Add a plot to visualize it again.</span>
+          </div>
+        ) : null}
       </div>
     </div>
   )

@@ -111,8 +111,8 @@ export function resultPlotHtml({
     plot_bgcolor: '#f8f7f3',
     margin: { l: 55, r: 20, t: 20, b: 50 },
     ...(mode === '3d'
-      ? { scene: { aspectmode: 'cube', xaxis: { title: coordinateLabel(result, xKey) }, yaxis: { title: coordinateLabel(result, yKey) }, zaxis: { title: coordinateLabel(result, zKey) } } }
-      : { xaxis: { title: coordinateLabel(result, xKey) }, yaxis: { title: coordinateLabel(result, yKey) } }),
+      ? { scene: { aspectmode: 'cube', xaxis: { title: coordinateLabel(result, xKey), showgrid: false, zeroline: false }, yaxis: { title: coordinateLabel(result, yKey), showgrid: false, zeroline: false }, zaxis: { title: coordinateLabel(result, zKey), showgrid: false, zeroline: false } } }
+      : { xaxis: { title: coordinateLabel(result, xKey), showgrid: false, zeroline: false }, yaxis: { title: coordinateLabel(result, yKey), showgrid: false, zeroline: false } }),
   }
   return `<!doctype html><html><head><meta charset="utf-8"><title>${result.metadata.display_name ?? result.metadata.method.name}</title><script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script></head><body style="margin:0;background:#f8f7f3"><div id="plot" style="width:100vw;height:100vh"></div><script>Plotly.newPlot("plot",[${safeJson(trace)}],${safeJson(layout)},{responsive:true,displaylogo:false});</script></body></html>`
 }

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, Copy, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowLeft, ArrowRight, ChevronDown, Copy, Trash2 } from 'lucide-react'
 import { analysisRequest } from './api'
 import { AnalysisPlot } from './AnalysisPlot'
 import type { PlotTool } from './AnalysisPlot'
@@ -22,6 +22,7 @@ type PlotCardProps = {
   rootEventId: number | null
   selected: boolean
   onSelect: () => void
+  onChange: (patch: Partial<AnalysisPlotState>) => void
   onRemove: () => void
   onDuplicate: () => void
   onMove: (direction: -1 | 1) => void
@@ -53,6 +54,70 @@ function eventUrl(file: string, plot: AnalysisPlotState, seed: number, populatio
   return `/analysis/events?${params}`
 }
 
+function AxisSelector({
+  axis,
+  value,
+  otherValue,
+  channels,
+  onChange,
+}: {
+  axis: 'x' | 'y'
+  value: string
+  otherValue?: string
+  channels: ChannelLabel[]
+  onChange: (channel: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const hostRef = useRef<HTMLDivElement>(null)
+  const selected = channels.find((channel) => channel.channel === value) ?? { channel: value, marker: '' }
+
+  useEffect(() => {
+    if (!open) return
+    const close = (event: PointerEvent) => {
+      if (!hostRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [open])
+
+  return (
+    <div ref={hostRef} className={`analysis-axis-selector analysis-axis-selector-${axis}`}>
+      <button
+        type="button"
+        aria-label={`${axis.toUpperCase()} axis ${channelLabel(selected)}`}
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation()
+          setOpen((current) => !current)
+        }}
+      >
+        <span>{channelLabel(selected)}</span><ChevronDown size={11} />
+      </button>
+      {open ? (
+        <div className="analysis-axis-menu" role="listbox" aria-label={`Choose ${axis.toUpperCase()} axis`}>
+          {channels.map((channel) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={channel.channel === value}
+              disabled={channel.channel === otherValue}
+              className={channel.channel === value ? 'is-active' : ''}
+              key={channel.channel}
+              onClick={(event) => {
+                event.stopPropagation()
+                onChange(channel.channel)
+                setOpen(false)
+              }}
+            >
+              {channelLabel(channel)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function PlotCard({
   projectPath,
   file,
@@ -64,6 +129,7 @@ export function PlotCard({
   rootEventId,
   selected,
   onSelect,
+  onChange,
   onRemove,
   onDuplicate,
   onMove,
@@ -121,29 +187,34 @@ export function PlotCard({
           <button type="button" className="analysis-icon-button" aria-label="Move plot left" disabled={!canMoveLeft} onClick={() => onMove(-1)}><ArrowLeft size={13} /></button>
           <button type="button" className="analysis-icon-button" aria-label="Move plot right" disabled={!canMoveRight} onClick={() => onMove(1)}><ArrowRight size={13} /></button>
           <button type="button" className="analysis-icon-button" aria-label="Duplicate plot" onClick={onDuplicate}><Copy size={13} /></button>
-          <button type="button" className="analysis-icon-button" aria-label="Remove plot" onClick={onRemove}><X size={14} /></button>
+          <button type="button" className="analysis-icon-button" aria-label="Delete plot" title="Delete plot" onClick={onRemove}><Trash2 size={13} /></button>
         </div>
       </header>
-      <div className="analysis-plot-meta">
-        {plot.type !== 'histogram' ? <span>{channelLabel(channels.find((channel) => channel.channel === plot.y) ?? { channel: plot.y, marker: '' })}</span> : <span>Histogram</span>}
-        <span className="analysis-plot-versus">{plot.type === 'histogram' ? '·' : '×'}</span>
-        <span>{channelLabel(channels.find((channel) => channel.channel === plot.x) ?? { channel: plot.x, marker: '' })}</span>
-        {overlayPopulation ? <em>Backgate · {overlayPopulation.name}</em> : null}
+      {overlayPopulation ? <div className="analysis-plot-meta"><em>Backgate · {overlayPopulation.name}</em></div> : null}
+      <div className="analysis-plot-frame">
+        {plot.type === 'histogram' ? (
+          <div className="analysis-axis-static analysis-axis-static-y">Count</div>
+        ) : (
+          <AxisSelector axis="y" value={plot.y} otherValue={plot.x} channels={channels} onChange={(y) => onChange({ y })} />
+        )}
+        <div className="analysis-plot-frame-surface">
+          {error ? <div className="analysis-plot-error" role="alert">{error}</div> : (
+            <AnalysisPlot
+              plot={plot}
+              payload={payload}
+              overlayPayload={plot.overlay_population_id ? overlay : null}
+              childGates={children}
+              tool={tool}
+              rootEventId={rootEventId}
+              onGateDraft={onGateDraft}
+              onRootEvent={onRootEvent}
+              onSelectGate={onSelectGate}
+              onUpdateGate={onUpdateGate}
+            />
+          )}
+        </div>
+        <AxisSelector axis="x" value={plot.x} otherValue={plot.type === 'histogram' ? undefined : plot.y} channels={channels} onChange={(x) => onChange({ x })} />
       </div>
-      {error ? <div className="analysis-plot-error" role="alert">{error}</div> : (
-        <AnalysisPlot
-          plot={plot}
-          payload={payload}
-          overlayPayload={plot.overlay_population_id ? overlay : null}
-          childGates={children}
-          tool={tool}
-          rootEventId={rootEventId}
-          onGateDraft={onGateDraft}
-          onRootEvent={onRootEvent}
-          onSelectGate={onSelectGate}
-          onUpdateGate={onUpdateGate}
-        />
-      )}
       <footer className="analysis-plot-footer">
         <span>{plot.type === 'histogram' ? 'Histogram' : plot.type === 'contour' ? 'Density contours' : plot.color_by === 'marker' ? `Continuous · ${plot.color_marker || plot.x}` : 'Density scatter'}</span>
         <span>{plot.type === 'histogram' ? plot.x_transform : `${plot.x_transform} / ${plot.y_transform}`}</span>

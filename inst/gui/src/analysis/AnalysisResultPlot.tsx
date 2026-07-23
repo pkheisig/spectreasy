@@ -163,9 +163,9 @@ function Result3D({
         scene: {
           bgcolor: '#f8f7f3',
           aspectmode: 'cube',
-          xaxis: { title: { text: coordinateLabel(result, xKey), font: { size: 10 } }, tickfont: { size: 8 }, gridcolor: '#ddd9d1', zerolinecolor: '#c7c3ba' },
-          yaxis: { title: { text: coordinateLabel(result, yKey), font: { size: 10 } }, tickfont: { size: 8 }, gridcolor: '#ddd9d1', zerolinecolor: '#c7c3ba' },
-          zaxis: { title: { text: coordinateLabel(result, zKey), font: { size: 10 } }, tickfont: { size: 8 }, gridcolor: '#ddd9d1', zerolinecolor: '#c7c3ba' },
+          xaxis: { title: { text: coordinateLabel(result, xKey), font: { size: 10 } }, tickfont: { size: 8 }, showgrid: false, zeroline: false },
+          yaxis: { title: { text: coordinateLabel(result, yKey), font: { size: 10 } }, tickfont: { size: 8 }, showgrid: false, zeroline: false },
+          zaxis: { title: { text: coordinateLabel(result, zKey), font: { size: 10 } }, tickfont: { size: 8 }, showgrid: false, zeroline: false },
         },
         showlegend: false,
       }, {
@@ -373,7 +373,7 @@ export function AnalysisResultPlot({
             </div>
           ) : null}
         </div>
-        {canRemove ? <button type="button" className="analysis-result-remove" aria-label="Remove result plot" onClick={onRemove}><Trash2 size={12} /></button> : null}
+        {canRemove ? <button type="button" className="analysis-result-remove" aria-label="Delete result plot" title="Delete result plot" onClick={onRemove}><Trash2 size={12} /></button> : null}
       </div>
       <div className="analysis-result-plot">
         {mode === '3d' && canRender3D

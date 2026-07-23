@@ -38,7 +38,8 @@ export function AnalysisGuideDialog({
             <li>Use a density or continuously marker-colored scatter, density contours, hexbin, or a one-marker histogram.</li>
             <li>Draw rectangle, ellipse, or polygon gates on a 2D plot, or a range gate on a histogram, then name the child population.</li>
           </ol>
-          <p>Filter or collapse the population hierarchy when it grows. Exact gate coordinates can be edited in the Population inspector; histogram range boundaries can also be dragged directly.</p>
+          <p>Click the underlined X or Y dimension outside the plot canvas to choose another channel, matching the control-gating interaction. Scatter plots use a clean, gridless canvas; numeric ticks remain available around the data region.</p>
+          <p>Delete any gating or result plot with its trash button. Deleting every plot does not delete the gates or analysis object; use Add plot to create another view. Filter or collapse the population hierarchy when it grows. Exact gate coordinates can be edited in the Population inspector; histogram range boundaries can also be dragged directly.</p>
           <p><strong>Backgating</strong> overlays another population without changing the events used by the active plot. Gates can apply to every compatible file or only the current file. Plots can be duplicated and reordered without changing their data.</p>
           <p className="analysis-guide-callout">The highlighted plot is the one edited by Plot settings. Its border replaces a separate “active plot” title.</p>
         </>,

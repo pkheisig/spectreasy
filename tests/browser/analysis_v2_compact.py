@@ -31,6 +31,7 @@ with sync_playwright() as playwright:
     assert page.get_by_role("button", name="Analyze samples").count() == 0
     page.get_by_role("button", name="Other tools").click()
     page.locator(".rail-subitem", has_text="Population analysis").click()
+    page.get_by_role("button", name="Analyze population", exact=True).wait_for(timeout=60000)
     workspace = page.locator(".analysis-shell")
     workspace.wait_for()
     workspace_box = workspace.bounding_box()

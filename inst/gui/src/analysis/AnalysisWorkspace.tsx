@@ -421,11 +421,11 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
         ...loaded,
         source_path: preferredSource?.path ?? '',
         selected_file: selected?.path ?? '',
-        plots: loaded.plots.length ? loaded.plots.map((plot) => ({
+        plots: loaded.plots.map((plot) => ({
           ...plot,
           x: selected?.channels.includes(plot.x) ? plot.x : x,
           y: selected?.channels.includes(plot.y) ? plot.y : y,
-        })) : [{ id: 'plot-1', type: 'scatter', population_id: 'root', x, y, color_by: 'density', x_transform: 'linear', y_transform: 'linear' }],
+        })),
       }
       setSources(loadedSources)
       setMethods(loadedMethods)
@@ -928,8 +928,11 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
                 rootEventId={workspace.root_event_id}
                 selected={selectedPlot?.id === plot.id}
                 onSelect={() => { setSelectedPlotId(plot.id); setTab('plot') }}
+                onChange={(patch) => updateWorkspace((current) => ({
+                  ...current,
+                  plots: current.plots.map((candidate) => candidate.id === plot.id ? { ...candidate, ...patch } : candidate),
+                }))}
                 onRemove={() => {
-                  if (workspace.plots.length <= 1) return
                   const remaining = workspace.plots.filter((candidate) => candidate.id !== plot.id)
                   updateWorkspace((current) => ({ ...current, plots: remaining }))
                   if (selectedPlot?.id === plot.id) setSelectedPlotId(remaining[0]?.id ?? '')
@@ -955,6 +958,13 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
                 onUpdateGate={(populationId, geometry) => updatePopulation(populationId, { geometry })}
               />
             ))}
+            {workspace.plots.length === 0 ? (
+              <div className="analysis-empty-plots">
+                <strong>No plots</strong>
+                <span>Add a plot when you are ready to inspect or gate this population.</span>
+                <button type="button" className="analysis-primary" onClick={addPlot}><Plus size={14} /> Add plot</button>
+              </div>
+            ) : null}
           </section>
         </main>
 
@@ -989,8 +999,6 @@ export default function AnalysisWorkspace({ projectPath = '', cockpitTheme = 'li
                     <option value="hexbin">Hexbin</option>
                   </select>
                 </label>
-                {selectedPlot.type !== 'histogram' ? <label>Y axis<select aria-label="Y axis" value={selectedPlot.y} onChange={(event) => updateSelectedPlot({ y: event.target.value })}>{channels.map((channel) => <option key={channel.channel} value={channel.channel}>{channelLabel(channel)}</option>)}</select></label> : null}
-                <label>X axis<select aria-label="X axis" value={selectedPlot.x} onChange={(event) => updateSelectedPlot({ x: event.target.value })}>{channels.map((channel) => <option key={channel.channel} value={channel.channel}>{channelLabel(channel)}</option>)}</select></label>
               </section>
               {selectedPlot.type === 'scatter' ? <section className="analysis-inspector-section">
                 <h3>Display</h3>

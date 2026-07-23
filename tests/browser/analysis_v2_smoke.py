@@ -39,6 +39,22 @@ with sync_playwright() as playwright:
 
     analyze_button = page.get_by_role("button", name="Analyze population", exact=True)
     analyze_button.wait_for(timeout=60000)
+    plot_card = page.locator(".analysis-plot-card").first
+    x_axis = plot_card.get_by_role("button", name="X axis", exact=False)
+    y_axis = plot_card.get_by_role("button", name="Y axis", exact=False)
+    assert "FSC" in x_axis.get_attribute("aria-label")
+    assert "SSC" in y_axis.get_attribute("aria-label")
+    x_axis.click()
+    axis_menu = plot_card.get_by_role("listbox", name="Choose X axis")
+    axis_menu.wait_for()
+    capture(page, 9)
+    axis_menu.get_by_role("option", name="CD3 · CD3-A", exact=True).click()
+    assert "CD3" in x_axis.get_attribute("aria-label")
+    plot_card.get_by_role("button", name="Delete plot", exact=True).click()
+    page.get_by_text("No plots", exact=True).wait_for()
+    assert page.locator(".analysis-plot-card").count() == 0
+    page.get_by_role("button", name="Add plot", exact=True).first.click()
+    assert page.locator(".analysis-plot-card").count() == 1
     analyze_button.click()
     dialog = page.locator(".analysis-method-dialog")
     dialog.wait_for()
@@ -121,6 +137,10 @@ with sync_playwright() as playwright:
 
     dialog.get_by_role("button", name="Add plot", exact=True).click()
     plot_cards = dialog.locator(".analysis-result-plot-card")
+    assert plot_cards.count() == 2
+    plot_cards.nth(1).get_by_role("button", name="Delete result plot", exact=True).click()
+    assert plot_cards.count() == 1
+    dialog.get_by_role("button", name="Add plot", exact=True).click()
     assert plot_cards.count() == 2
     for card in plot_cards.all():
         box = card.locator(".analysis-result-plot").bounding_box()

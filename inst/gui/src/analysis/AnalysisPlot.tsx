@@ -128,7 +128,7 @@ export function AnalysisPlot({
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    const update = () => setSize({ width: Math.max(360, host.clientWidth), height: Math.max(300, host.clientHeight) })
+    const update = () => setSize({ width: Math.max(240, host.clientWidth), height: Math.max(240, host.clientHeight) })
     update()
     const observer = new ResizeObserver(update)
     observer.observe(host)
@@ -184,20 +184,30 @@ export function AnalysisPlot({
       const fraction = index / 4
       const x = PLOT_MARGIN.left + fraction * (size.width - PLOT_MARGIN.left - PLOT_MARGIN.right)
       const y = size.height - PLOT_MARGIN.bottom - fraction * (size.height - PLOT_MARGIN.top - PLOT_MARGIN.bottom)
-      context.beginPath()
-      context.moveTo(x, PLOT_MARGIN.top)
-      context.lineTo(x, size.height - PLOT_MARGIN.bottom)
-      context.stroke()
-      context.beginPath()
-      context.moveTo(PLOT_MARGIN.left, y)
-      context.lineTo(size.width - PLOT_MARGIN.right, y)
-      context.stroke()
+      if (plot.type !== 'scatter') {
+        context.beginPath()
+        context.moveTo(x, PLOT_MARGIN.top)
+        context.lineTo(x, size.height - PLOT_MARGIN.bottom)
+        context.stroke()
+        context.beginPath()
+        context.moveTo(PLOT_MARGIN.left, y)
+        context.lineTo(size.width - PLOT_MARGIN.right, y)
+        context.stroke()
+      }
       const rawX = inverseTransformValue(xDomain[0] + fraction * (xDomain[1] - xDomain[0]), plot.x_transform)
       const rawY = plot.type === 'histogram'
         ? yDomain[0] + fraction * (yDomain[1] - yDomain[0])
         : inverseTransformValue(yDomain[0] + fraction * (yDomain[1] - yDomain[0]), plot.y_transform)
       context.fillText(formatAxisValue(rawX), x - 12, size.height - 18)
       context.fillText(formatAxisValue(rawY), 6, y + 3)
+    }
+    if (plot.type === 'scatter') {
+      context.strokeRect(
+        PLOT_MARGIN.left,
+        PLOT_MARGIN.top,
+        size.width - PLOT_MARGIN.left - PLOT_MARGIN.right,
+        size.height - PLOT_MARGIN.top - PLOT_MARGIN.bottom,
+      )
     }
 
     if (transformed.length && plot.type === 'scatter') {
@@ -637,8 +647,6 @@ export function AnalysisPlot({
       </svg>
       {!payload ? <div className="analysis-plot-loading">Loading events…</div> : null}
       {payload?.events.length === 0 ? <div className="analysis-plot-loading">No events in this population</div> : null}
-      <span className="analysis-axis-label analysis-axis-x">{plot.x}</span>
-      <span className="analysis-axis-label analysis-axis-y">{plot.type === 'histogram' ? 'Count' : plot.y}</span>
     </div>
   )
 }
