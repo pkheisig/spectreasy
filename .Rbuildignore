@@ -20,8 +20,8 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
 ^.*\.Rcheck$
-^\.Rcheck$
-^\.\.?Rcheck$
+^\.Rcheck($|/)
+^\.\.?Rcheck($|/)
 ^spectreasy\.Rcheck$
 ^test\.R$
 ^Rplots\.pdf$
@@ -55,6 +55,7 @@
 ^doc$
 ^Meta$
 ^scratch$
-^check$
+^check($|/)
+^check-release($|/)
 ^unmixing\.qmd$
 ^spectreasy_outputs$

@@ -122,8 +122,8 @@ passed a Spectreasy adapter test.
 | t-SNE | `Rtsne` | enabled | van der Maaten and Hinton 2008, JMLR |
 | UMAP | `uwot` | enabled | McInnes et al. 2018, arXiv:1802.03426 |
 | Diffusion map | `destiny` | enabled | Angerer et al. 2016, Bioinformatics, doi:10.1093/bioinformatics/btv715 |
-| PHATE | `phate` Python | capability-gated | Moon et al. 2019, Nature Biotechnology, doi:10.1038/s41587-019-0336-3 |
-| HSNE | maintained, validated adapter required | research-gated | Pezzotti et al. 2016, Computer Graphics Forum, doi:10.1111/cgf.12878 |
+| PHATE | `phate` Python | enabled when managed runtime is present | Moon et al. 2019, Nature Biotechnology, doi:10.1038/s41587-019-0336-3 |
+| HSNE | `nptsne` Python | enabled when managed runtime is present | Pezzotti et al. 2016, Computer Graphics Forum, doi:10.1111/cgf.12878 |
 
 ### Clustering
 
@@ -137,18 +137,18 @@ passed a Spectreasy adapter test.
 | Method | Backend | Initial status | Reference |
 | --- | --- | --- | --- |
 | DPT | `destiny` | enabled | Haghverdi et al. 2016, Nature Methods, doi:10.1038/nmeth.3971 |
-| Slingshot | `slingshot` | capability-gated | Street et al. 2018, BMC Genomics, doi:10.1186/s12864-018-4772-0 |
-| TSCAN | `TSCAN` | capability-gated | Ji and Ji 2016, Nucleic Acids Research, doi:10.1093/nar/gkw430 |
-| Palantir | `palantir` Python | capability-gated | Setty et al. 2019, Nature Biotechnology, doi:10.1038/s41587-019-0068-4 |
-| PAGA + DPT | `scanpy` Python | capability-gated | Wolf et al. 2019, Genome Biology, doi:10.1186/s13059-019-1663-x |
-| Wanderlust | validated adapter required | research-gated | Bendall et al. 2014, Cell, doi:10.1016/j.cell.2014.04.005 |
-| Wishbone | validated adapter required | research-gated | Setty et al. 2016, Nature Biotechnology, doi:10.1038/nbt.3569 |
+| Slingshot | `slingshot` | enabled when installed | Street et al. 2018, BMC Genomics, doi:10.1186/s12864-018-4772-0 |
+| TSCAN | `TSCAN` | enabled when installed | Ji and Ji 2016, Nucleic Acids Research, doi:10.1093/nar/gkw430 |
+| Palantir | `palantir` Python | enabled when managed runtime is present | Setty et al. 2019, Nature Biotechnology, doi:10.1038/s41587-019-0068-4 |
+| PAGA + DPT | `scanpy` Python | enabled when managed runtime is present | Wolf et al. 2019, Genome Biology, doi:10.1186/s13059-019-1663-x |
+| Wanderlust | maintained Spectreasy Python implementation | enabled when managed runtime is present | Bendall et al. 2014, Cell, doi:10.1016/j.cell.2014.04.005 |
+| Wishbone | maintained Spectreasy Python implementation | enabled when managed runtime is present | Setty et al. 2016, Nature Biotechnology, doi:10.1038/nbt.3569 |
 
-Wanderlust is scientifically appropriate for cytometry but its official
-distribution is MATLAB/CYT-oriented. Wishbone is scientifically appropriate and
-has a Python implementation, but its current official release is old. Neither is
-advertised as executable until an isolated adapter reproduces the published
-reference results on the authors' data.
+The maintained Wanderlust and Wishbone module is an independent implementation
+of the published algorithms. It does not copy the historical GPL Wishbone
+repository into the MIT package. Synthetic linear and bifurcating trajectory
+contracts, noisy-seed stability tests, event alignment, determinism, and
+20,000-cell performance benchmarks gate the adapters.
 
 ## API and storage architecture
 
@@ -156,11 +156,62 @@ reference results on the authors' data.
 
 - `inst/api/modules/analysis_workspace.R`: source discovery, state persistence,
   FCS access, gate evaluation, statistics, export, and method execution.
+- `R/population_analysis.R`: exported R interface and the shared request
+  boundary used by both code and GUI callers.
 - `inst/gui/src/analysis/`: analysis workspace components, plot rendering,
   geometry tools, method registry display, and API client.
+- `inst/python/`: maintained Python adapters and the independent
+  Wanderlust/Wishbone trajectory implementation.
 - `spectreasy_outputs/analysis/`: user exports and method results.
 - `.spectreasy/analysis-v2/workspace.json`: editable gate tree, plots,
   annotations, and analysis settings.
+
+### R code interface
+
+The browser is an orchestration layer, not an independent scientific
+implementation. The method, run, and annotation endpoints call the same package
+backend used in R sessions:
+
+```r
+methods <- analysis_methods()
+
+fit <- analyze_population(
+  project_path = project,
+  file = "samples/sample.fcs",
+  markers = c("CD3-A", "CD19-A", "CD56-A"),
+  clustering = "flowsom",
+  reduction = "umap",
+  cluster_settings = list(clusters = 12, xdim = 10, ydim = 10),
+  reduction_settings = list(
+    neighbors = 20,
+    min_dist = 0.05,
+    metric = "cosine"
+  ),
+  max_events = 20000,
+  seed = 20260723
+)
+
+plot_population_analysis(
+  fit,
+  x = "UMAP 1",
+  y = "UMAP 2",
+  color_by = "CD3",
+  palette = "sunset"
+)
+
+export_population_analysis(fit, "analysis.svg", color_by = "cluster")
+export_population_analysis(fit, "analysis.csv")
+```
+
+`analysis_methods()` exposes the complete validated parameter schema, including
+defaults, ranges, choices, prerequisites, and runtime availability.
+`analyze_population()` accepts method-specific named setting lists, applies the
+same validation as the GUI, and records resolved values in provenance and cache
+keys. `load_population_analysis()`, `annotate_population()`,
+`plot_population_analysis()`, `population_analysis_palettes()`, and
+`export_population_analysis()` provide programmatic access to saved objects,
+marker identities, square 2D plots, conditional Plotly 3D plots, and
+CSV/RDS/PNG/SVG/PDF/HTML output.
 
 ### Endpoint families
 
@@ -234,8 +285,8 @@ median/mean, and robust SD.
 - DPT: reproduce ordering on a documented hematopoietic/reference fixture.
 - Slingshot/TSCAN: reproduce a seeded bifurcating synthetic trajectory before
   enabling.
-- Wanderlust/Wishbone: reproduce author-provided cytometry results before
-  enabling.
+- Wanderlust/Wishbone: recover seeded linear and bifurcating trajectories,
+  remain stable across noisy seeds, and preserve event alignment.
 - Record package versions and tolerate only documented numerical variation.
 
 ### UI and system tests
@@ -245,7 +296,12 @@ median/mean, and robust SD.
 - Backgate a descendant onto an ancestor plot.
 - Persist/reload the workspace.
 - Export selected population and inspect the resulting files.
-- Run an available method; unavailable methods show citation and requirement.
+- Run every available method; unavailable methods are disabled with a concrete
+  setup action. Paper citations remain in provenance metadata, not the GUI.
+- Tune method-specific advanced settings and verify parameter-dependent cache
+  keys, cross-parameter validation, reset behavior, and disabled Run states.
+- Add independent result plots, use 2D and 3D coordinate controls, and export
+  PNG, SVG, interactive HTML, and the complete plotting table.
 - Frontend lint, tests, production build; R focused tests and package check;
   headless Chromium smoke at desktop and compact widths.
 
@@ -256,5 +312,5 @@ median/mean, and robust SD.
 3. OMIQ-style hierarchy plus configurable multi-plot canvas.
 4. Statistics, staining index, reproducible downsampling, and exports.
 5. Available reduction/clustering/DPT adapters.
-6. Citation/provenance panel and capability-gated future methods.
+6. Provenance metadata, dynamic method settings, and capability-gated runtimes.
 7. Focused, full, and browser validation.

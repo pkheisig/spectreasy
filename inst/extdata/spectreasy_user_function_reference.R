@@ -249,6 +249,78 @@
     )
 
     # -------------------------------------------------------------------------
+    # Post-unmixing population analysis
+    # -------------------------------------------------------------------------
+
+    available_analysis_methods <- analysis_methods(
+        refresh = FALSE
+    )
+
+    analysis_palettes <- population_analysis_palettes()
+
+    population_analysis <- analyze_population(
+        project_path = getwd(),
+        file = "samples/sample.fcs",
+        markers = c("CD3-A", "CD19-A", "CD56-A"),
+        population_id = "root",
+        clustering = "flowsom",
+        reduction = "umap",
+        trajectory = NULL,
+        max_events = 20000L,
+        cofactor = 150,
+        seed = 20260723L,
+        root_event_id = NULL,
+        cluster_settings = list(clusters = 10L),
+        reduction_settings = list(neighbors = 15L, min_dist = 0.01),
+        trajectory_settings = list(),
+        advanced_settings = list(),
+        neighbors = 15L,
+        clusters = 10L,
+        perplexity = 30
+    )
+
+    saved_population_analysis <- load_population_analysis(
+        project_path = getwd(),
+        analysis_id = population_analysis$metadata$analysis_id,
+        identity_id = NULL
+    )
+
+    identity_templates <- population_identity_templates(
+        markers = c("CD3-A", "CD4-A", "CD8-A", "CD19-A", "CD56-A", "CD14-A")
+    )
+
+    population_annotation <- annotate_population(
+        analysis = population_analysis,
+        project_path = getwd(),
+        signatures = identity_templates,
+        min_score = 0.55,
+        min_margin = 0.08,
+        evidence_sensitivity = 1
+    )
+
+    population_plot <- plot_population_analysis(
+        analysis = population_analysis,
+        x = 1L,
+        y = 2L,
+        z = NULL,
+        color_by = "CD3",
+        palette = "viridis",
+        point_size = 0.7,
+        alpha = 0.82,
+        title = NULL,
+        background = "#f8f7f3"
+    )
+
+    population_export <- export_population_analysis(
+        analysis = population_analysis,
+        file = "spectreasy_outputs/analysis/plot.svg",
+        format = "svg",
+        width = 6,
+        height = 6,
+        dpi = 300
+    )
+
+    # -------------------------------------------------------------------------
     # Interactive tools
     # -------------------------------------------------------------------------
 
@@ -281,6 +353,80 @@
         open_browser = TRUE,
         dev_mode = FALSE,
         dev_frontend_port = NULL
+    )
+
+    # -------------------------------------------------------------------------
+    # Population analysis workspace and gated exports
+    # -------------------------------------------------------------------------
+
+    workspace <- analysis_workspace(
+        project_path = "."
+    )
+
+    save_analysis_workspace(
+        project_path = ".",
+        workspace = workspace
+    )
+
+    add_population_gate(
+        project_path = ".",
+        name = "CD3 positive",
+        parent_id = "root",
+        type = "rectangle",
+        x = "CD3-A",
+        y = "CD4-A",
+        geometry = list(x_min = 0, x_max = 1, y_min = 0, y_max = 1),
+        role = NULL,
+        source_file = NULL,
+        id = NULL
+    )
+
+    update_population_gate(
+        project_path = ".",
+        population_id = "population-1"
+    )
+
+    delete_population_gate(
+        project_path = ".",
+        population_id = "population-1"
+    )
+
+    statistics <- population_statistics(
+        project_path = ".",
+        file = "unmixed_fcs/sample.fcs",
+        population_id = "root",
+        markers = NULL
+    )
+
+    index <- staining_index(
+        project_path = ".",
+        file = "unmixed_fcs/sample.fcs",
+        marker = "CD3-A"
+    )
+
+    exported_population <- export_gated_population(
+        project_path = ".",
+        files = "unmixed_fcs/sample.fcs",
+        population_id = "root",
+        format = "fcs",
+        max_events = 0,
+        seed = 1L,
+        output_folder = "spectreasy_outputs/analysis/exports"
+    )
+
+    markers <- find_population_markers(
+        analysis = analysis,
+        project_path = ".",
+        top_n = 10L,
+        minimum_auc = 0.6
+    )
+
+    runtime <- analysis_runtime_status()
+
+    install_analysis_runtime(
+        python = NULL,
+        path = NULL,
+        rebuild = FALSE
     )
 
     # -------------------------------------------------------------------------

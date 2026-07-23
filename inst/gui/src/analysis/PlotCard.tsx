@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Copy, X } from 'lucide-react'
 import { analysisRequest } from './api'
 import { AnalysisPlot } from './AnalysisPlot'
 import type { PlotTool } from './AnalysisPlot'
@@ -20,10 +20,17 @@ type PlotCardProps = {
   seed: number
   tool: PlotTool
   rootEventId: number | null
-  onChange: (patch: Partial<AnalysisPlotState>) => void
+  selected: boolean
+  onSelect: () => void
   onRemove: () => void
+  onDuplicate: () => void
+  onMove: (direction: -1 | 1) => void
+  canMoveLeft: boolean
+  canMoveRight: boolean
   onGateDraft: (draft: GateDraft) => void
   onRootEvent: (eventId: number) => void
+  onSelectGate: (populationId: string) => void
+  onUpdateGate: (populationId: string, geometry: NonNullable<AnalysisPopulation['geometry']>) => void
 }
 
 function channelLabel(channel: ChannelLabel) {
@@ -55,10 +62,17 @@ export function PlotCard({
   seed,
   tool,
   rootEventId,
-  onChange,
+  selected,
+  onSelect,
   onRemove,
+  onDuplicate,
+  onMove,
+  canMoveLeft,
+  canMoveRight,
   onGateDraft,
   onRootEvent,
+  onSelectGate,
+  onUpdateGate,
 }: PlotCardProps) {
   const [payload, setPayload] = useState<AnalysisEventPayload | null>(null)
   const [overlay, setOverlay] = useState<AnalysisEventPayload | null>(null)
@@ -89,38 +103,32 @@ export function PlotCard({
     () => populations.filter((population) => population.parent_id === plot.population_id),
     [plot.population_id, populations],
   )
+  const population = populations.find((candidate) => candidate.id === plot.population_id)
+  const overlayPopulation = populations.find((candidate) => candidate.id === plot.overlay_population_id)
 
   return (
-    <article className="analysis-plot-card">
+    <article
+      className={`analysis-plot-card ${selected ? 'is-selected' : ''}`}
+      aria-label={`${population?.name ?? 'Population'} plot`}
+      onPointerDownCapture={onSelect}
+    >
       <header className="analysis-plot-header">
-        <select aria-label="X axis" value={plot.x} onChange={(event) => onChange({ x: event.target.value })}>
-          {channels.map((channel) => <option key={channel.channel} value={channel.channel}>{channelLabel(channel)}</option>)}
-        </select>
-        <span className="analysis-plot-versus">×</span>
-        <select aria-label="Y axis" value={plot.y} onChange={(event) => onChange({ y: event.target.value })}>
-          {channels.map((channel) => <option key={channel.channel} value={channel.channel}>{channelLabel(channel)}</option>)}
-        </select>
-        <select aria-label="Plot color" value={plot.color_by} onChange={(event) => onChange({ color_by: event.target.value as AnalysisPlotState['color_by'] })}>
-          <option value="density">Density</option>
-          <option value="marker">Marker</option>
-        </select>
-        {plot.color_by === 'marker' ? (
-          <select aria-label="Color marker" value={plot.color_marker || plot.x} onChange={(event) => onChange({ color_marker: event.target.value })}>
-            {channels.map((channel) => <option key={channel.channel} value={channel.channel}>{channelLabel(channel)}</option>)}
-          </select>
-        ) : null}
-        <select aria-label="Backgate population" value={plot.overlay_population_id ?? ''} onChange={(event) => onChange({ overlay_population_id: event.target.value })}>
-          <option value="">No backgate</option>
-          {populations.filter((population) => population.id !== plot.population_id).map((population) => (
-            <option key={population.id} value={population.id}>{population.name}</option>
-          ))}
-        </select>
-        <button type="button" className="analysis-icon-button" aria-label="Remove plot" onClick={onRemove}><X size={14} /></button>
+        <div>
+          <strong>{population?.name ?? 'All events'}</strong>
+          <span>{payload ? `${payload.population_count.toLocaleString()} events` : 'Loading events'}</span>
+        </div>
+        <div className="analysis-plot-header-actions">
+          <button type="button" className="analysis-icon-button" aria-label="Move plot left" disabled={!canMoveLeft} onClick={() => onMove(-1)}><ArrowLeft size={13} /></button>
+          <button type="button" className="analysis-icon-button" aria-label="Move plot right" disabled={!canMoveRight} onClick={() => onMove(1)}><ArrowRight size={13} /></button>
+          <button type="button" className="analysis-icon-button" aria-label="Duplicate plot" onClick={onDuplicate}><Copy size={13} /></button>
+          <button type="button" className="analysis-icon-button" aria-label="Remove plot" onClick={onRemove}><X size={14} /></button>
+        </div>
       </header>
       <div className="analysis-plot-meta">
-        <span>{payload ? `${payload.population_count.toLocaleString()} events` : 'Loading'}</span>
-        <label> X <select value={plot.x_transform} onChange={(event) => onChange({ x_transform: event.target.value as AnalysisPlotState['x_transform'] })}><option value="linear">linear</option><option value="asinh">asinh</option></select></label>
-        <label> Y <select value={plot.y_transform} onChange={(event) => onChange({ y_transform: event.target.value as AnalysisPlotState['y_transform'] })}><option value="linear">linear</option><option value="asinh">asinh</option></select></label>
+        {plot.type !== 'histogram' ? <span>{channelLabel(channels.find((channel) => channel.channel === plot.y) ?? { channel: plot.y, marker: '' })}</span> : <span>Histogram</span>}
+        <span className="analysis-plot-versus">{plot.type === 'histogram' ? '·' : '×'}</span>
+        <span>{channelLabel(channels.find((channel) => channel.channel === plot.x) ?? { channel: plot.x, marker: '' })}</span>
+        {overlayPopulation ? <em>Backgate · {overlayPopulation.name}</em> : null}
       </div>
       {error ? <div className="analysis-plot-error" role="alert">{error}</div> : (
         <AnalysisPlot
@@ -132,8 +140,14 @@ export function PlotCard({
           rootEventId={rootEventId}
           onGateDraft={onGateDraft}
           onRootEvent={onRootEvent}
+          onSelectGate={onSelectGate}
+          onUpdateGate={onUpdateGate}
         />
       )}
+      <footer className="analysis-plot-footer">
+        <span>{plot.type === 'histogram' ? 'Histogram' : plot.type === 'contour' ? 'Density contours' : plot.color_by === 'marker' ? `Continuous · ${plot.color_marker || plot.x}` : 'Density scatter'}</span>
+        <span>{plot.type === 'histogram' ? plot.x_transform : `${plot.x_transform} / ${plot.y_transform}`}</span>
+      </footer>
     </article>
   )
 }

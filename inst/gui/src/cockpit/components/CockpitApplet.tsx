@@ -24,7 +24,7 @@ const appletLabels: Record<CockpitAppletId, string> = {
   'control-gating': 'control gating',
   'panel-builder': 'panel builder',
   'matrix-adjustment': 'matrix adjustment',
-  'sample-analysis': 'sample analysis',
+  'sample-analysis': 'population analysis',
   'control-qc-report': 'controls QC report',
   'sample-qc-report': 'samples QC report',
 }
@@ -33,7 +33,7 @@ const appletLoadingLabels: Record<CockpitAppletId, string> = {
   'control-gating': 'Loading Control Gating',
   'panel-builder': 'Loading Spectral Panel Builder',
   'matrix-adjustment': 'Loading Matrix Adjustment',
-  'sample-analysis': 'Loading Sample Analysis',
+  'sample-analysis': 'Loading Population Analysis',
   'control-qc-report': 'Loading Controls QC Report',
   'sample-qc-report': 'Loading Samples QC Report',
 }

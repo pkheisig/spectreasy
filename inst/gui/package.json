@@ -17,6 +17,7 @@
     "axios": "^1.13.2",
     "clsx": "^2.1.1",
     "lucide-react": "^0.562.0",
+    "plotly.js-gl3d-dist-min": "^3.7.0",
     "postcss": "^8.5.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/node": "^24.10.1",
+    "@types/plotly.js": "^3.0.10",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, FlaskConical, Play, Settings2 } from "lucide-react";
+import { ArrowRight, Play, Settings2 } from "lucide-react";
 import type { ProjectState, SampleSettings, SectionId } from "../../types";
 import { defaultWorkflowSettings } from "../../types";
 import { GuiSelect } from "../../components/GuiSelect";
@@ -32,7 +32,6 @@ function ConfigurableSamplesWorkspace({
   onRun,
   onRefresh,
   onInputDirectoryChange,
-  onOpenApplet,
 }: {
   project: ProjectState;
   settings: SampleSettings;
@@ -40,7 +39,6 @@ function ConfigurableSamplesWorkspace({
   onRun: WorkflowWorkspaceProps["onRun"];
   onRefresh: WorkflowWorkspaceProps["onRefresh"];
   onInputDirectoryChange: WorkflowWorkspaceProps["onInputDirectoryChange"];
-  onOpenApplet: WorkflowWorkspaceProps["onOpenApplet"];
 }) {
   const defaults = defaultWorkflowSettings("").sample;
   const [advanced, setAdvanced] = useState(false);
@@ -131,14 +129,6 @@ function ConfigurableSamplesWorkspace({
         )}
         <div className="run-footer run-footer-actions-only">
           <button
-            className="button large-button"
-            disabled={project.scan.samples < 1}
-            title={project.scan.samples < 1 ? "Add sample FCS files before analysis." : "Open the post-unmixing gating and discovery workspace."}
-            onClick={() => onOpenApplet("sample-analysis")}
-          >
-            <FlaskConical size={15} /> Analyze samples
-          </button>
-          <button
             className="button button-primary large-button"
             disabled={Boolean(disabledReason)}
             title={disabledReason || undefined}
@@ -187,7 +177,6 @@ export function SamplesWorkspace(props: WorkflowWorkspaceProps) {
           onRun={props.onRun}
           onRefresh={props.onRefresh}
           onInputDirectoryChange={props.onInputDirectoryChange}
-          onOpenApplet={props.onOpenApplet}
         />
       ) : (
         <QcReportPanel

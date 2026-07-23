@@ -1754,7 +1754,7 @@ function(req) {
 #* @get /analysis/methods
 #* @serializer unboxedJSON
 function() {
-    list(success = TRUE, methods = gui_analysis_method_registry())
+    list(success = TRUE, methods = spectreasy::analysis_methods())
 }
 
 #* Run one installed and adapter-verified analysis method
@@ -1764,7 +1764,65 @@ function(req) {
     body <- gui_workflow_body(req)
     root <- gui_project_value(body)
     tryCatch(
-        list(success = TRUE, result = gui_analysis_run_method(root, body)),
+        list(success = TRUE, result = spectreasy:::.spectreasy_analysis_run_request(root, body)),
+        error = function(e) list(success = FALSE, error = conditionMessage(e))
+    )
+}
+
+#* Start a cancellable background population-analysis job
+#* @post /analysis/jobs
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch(
+        list(success = TRUE, job = gui_analysis_start_job(root, body)),
+        error = function(e) list(success = FALSE, error = conditionMessage(e))
+    )
+}
+
+#* Poll a background population-analysis job
+#* @get /analysis/jobs
+#* @serializer unboxedJSON
+function(req, job_id = "") {
+    root <- gui_request_project_root(req$HTTP_X_SPECTREASY_PROJECT %||% getOption("spectreasy.project_dir", ""))
+    tryCatch(
+        list(success = TRUE, job = gui_analysis_job_status(root, job_id)),
+        error = function(e) list(success = FALSE, error = conditionMessage(e))
+    )
+}
+
+#* Cancel a background population-analysis job
+#* @delete /analysis/jobs
+#* @serializer unboxedJSON
+function(req, job_id = "") {
+    root <- gui_request_project_root(req$HTTP_X_SPECTREASY_PROJECT %||% getOption("spectreasy.project_dir", ""))
+    tryCatch(
+        list(success = TRUE, job = gui_analysis_cancel_job(root, job_id)),
+        error = function(e) list(success = FALSE, error = conditionMessage(e))
+    )
+}
+
+#* Score flow-cytometry marker signatures on a completed analysis result
+#* @post /analysis/annotate
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch(
+        list(success = TRUE, result = spectreasy:::.spectreasy_analysis_annotate_request(root, body)),
+        error = function(e) list(success = FALSE, error = conditionMessage(e))
+    )
+}
+
+#* Discover cluster-vs-rest flow marker signatures
+#* @post /analysis/markers
+#* @serializer unboxedJSON
+function(req) {
+    body <- gui_workflow_body(req)
+    root <- gui_project_value(body)
+    tryCatch(
+        list(success = TRUE, result = spectreasy:::.spectreasy_analysis_marker_request(root, body)),
         error = function(e) list(success = FALSE, error = conditionMessage(e))
     )
 }

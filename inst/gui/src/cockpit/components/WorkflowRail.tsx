@@ -35,6 +35,7 @@ const groups: NavigationGroup[] = [
     icon: Wrench,
     items: [
       { id: 'af', title: 'AF profiles', detail: 'Extract and manage AF' },
+      { id: 'analysis', title: 'Population analysis', detail: 'Gate and explore samples' },
       { id: 'panel', title: 'Panel builder', detail: 'Explore fluorophores' },
       { id: 'matrix', title: 'Adjust matrix', detail: 'Inspect residual crosstalk' },
     ],

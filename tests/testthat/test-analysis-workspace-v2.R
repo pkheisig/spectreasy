@@ -26,6 +26,75 @@ analysis_v2_fixture <- function() {
     list(project = project, relative_file = "samples/sample.fcs", data = data)
 }
 
+analysis_v2_lineage_fixture <- function() {
+    project <- tempfile("analysis_v2_lineage_")
+    sample_dir <- file.path(project, "samples")
+    dir.create(sample_dir, recursive = TRUE)
+    set.seed(918)
+    events <- 180L
+    truth <- seq(0, 1, length.out = events)
+    noise <- function(sd = 0.04) stats::rnorm(events, 0, sd)
+    data <- cbind(
+        `FSC-A` = 80 + 35 * truth + noise(0.8),
+        `SSC-A` = 45 + 22 * truth + noise(0.7),
+        `M1-A` = 9 * truth + noise(),
+        `M2-A` = 4 * sin(pi * truth) + noise(),
+        `M3-A` = 6 * truth^2 + noise()
+    )
+    frame <- flowCore::flowFrame(data)
+    parameters <- flowCore::parameters(frame)@data
+    parameters$desc <- c("FSC", "SSC", "M1", "M2", "M3")
+    flowCore::parameters(frame)@data <- parameters
+    path <- file.path(sample_dir, "lineage.fcs")
+    flowCore::write.FCS(frame, path)
+    list(
+        project = project,
+        relative_file = "samples/lineage.fcs",
+        truth = truth,
+        markers = colnames(data)
+    )
+}
+
+analysis_v2_cluster_fixture <- function() {
+    project <- tempfile("analysis_v2_clusters_")
+    sample_dir <- file.path(project, "samples")
+    dir.create(sample_dir, recursive = TRUE)
+    set.seed(921)
+    group <- rep(seq_len(3L), each = 60L)
+    centers <- rbind(
+        c(-5, -4, 1, 0, 2),
+        c(0, 5, 5, -3, 0),
+        c(6, -1, -2, 5, 4)
+    )
+    data <- centers[group, , drop = FALSE] + matrix(stats::rnorm(180L * 5L, sd = 0.35), 180L, 5L)
+    colnames(data) <- c("FSC-A", "SSC-A", "M1-A", "M2-A", "M3-A")
+    frame <- flowCore::flowFrame(data)
+    parameters <- flowCore::parameters(frame)@data
+    parameters$desc <- c("FSC", "SSC", "M1", "M2", "M3")
+    flowCore::parameters(frame)@data <- parameters
+    path <- file.path(sample_dir, "clusters.fcs")
+    flowCore::write.FCS(frame, path)
+    list(
+        project = project,
+        relative_file = "samples/clusters.fcs",
+        truth = group,
+        markers = colnames(data)
+    )
+}
+
+analysis_v2_adjusted_rand <- function(truth, predicted) {
+    table <- table(truth, predicted)
+    choose2 <- function(value) value * (value - 1) / 2
+    sum_cells <- sum(choose2(table))
+    sum_rows <- sum(choose2(rowSums(table)))
+    sum_columns <- sum(choose2(colSums(table)))
+    pairs <- choose2(sum(table))
+    expected <- sum_rows * sum_columns / pairs
+    maximum <- (sum_rows + sum_columns) / 2
+    if (maximum == expected) return(1)
+    (sum_cells - expected) / (maximum - expected)
+}
+
 test_that("analysis v2 samples deterministically without replacement", {
     api <- analysis_v2_api_env()
     indices <- seq_len(1000)
@@ -37,6 +106,118 @@ test_that("analysis v2 samples deterministically without replacement", {
     expect_length(first, 75L)
     expect_length(unique(first), 75L)
     expect_false(identical(first, changed))
+})
+
+test_that("analysis v2 event payload includes marker labels", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    payload <- api$gui_analysis_event_payload(
+        fixture$project, fixture$relative_file,
+        x = "FSC-A", y = "SSC-A", max_points = 25L
+    )
+
+    expect_equal(nrow(payload$events), 25L)
+    expect_identical(payload$channels$channel, c("FSC-A", "SSC-A", "CD3-A"))
+    expect_identical(payload$channels$marker, c("FSC", "SSC", "CD3"))
+})
+
+test_that("analysis v2 pools files while retaining source event identity", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    second_file <- file.path(fixture$project, "samples", "sample_2.fcs")
+    second <- flowCore::flowFrame(fixture$data + matrix(c(0, 0, 2), nrow(fixture$data), 3L, byrow = TRUE))
+    parameters <- flowCore::parameters(second)@data
+    parameters$desc <- c("FSC", "SSC", "CD3")
+    flowCore::parameters(second)@data <- parameters
+    flowCore::write.FCS(second, second_file)
+
+    result <- api$gui_analysis_run_method(fixture$project, list(
+        files = c(fixture$relative_file, "samples/sample_2.fcs"),
+        populationId = "root",
+        reductionMethod = "pca",
+        clusterMethod = "none",
+        markers = c("FSC-A", "SSC-A", "CD3-A"),
+        maxEvents = 160L,
+        seed = 17L
+    ))
+
+    expect_identical(result$metadata$source_files, c(fixture$relative_file, "samples/sample_2.fcs"))
+    expect_equal(nrow(result$events), 160L)
+    expect_setequal(unique(result$events$source_file), c(fixture$relative_file, "samples/sample_2.fcs"))
+    expect_true(all(result$events$source_event_id >= 1L & result$events$source_event_id <= 120L))
+    expect_identical(result$events$sample_id, match(result$events$source_file, result$metadata$source_files))
+})
+
+test_that("analysis v2 discovers cluster markers without inventing identities", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    directory <- file.path(fixture$project, "spectreasy_outputs", "analysis", "marker-test")
+    dir.create(directory, recursive = TRUE)
+    events <- data.frame(
+        event_id = seq_len(80),
+        marker_1 = c(seq(-2, -1, length.out = 40), seq(2, 3, length.out = 40)),
+        marker_2 = c(seq(3, 2, length.out = 40), seq(-1, -2, length.out = 40)),
+        cluster_id = rep(c(1L, 2L), each = 40L)
+    )
+    data.table::fwrite(events, file.path(directory, "events.csv"))
+    jsonlite::write_json(list(
+        analysis_id = "marker-test",
+        marker_columns = list(
+            list(marker = "CD3", channel = "CD3-A", column = "marker_1"),
+            list(marker = "CD19", channel = "CD19-A", column = "marker_2")
+        )
+    ), file.path(directory, "metadata.json"), auto_unbox = TRUE)
+
+    result <- api$gui_analysis_find_cluster_markers(fixture$project, list(
+        analysisId = "marker-test", topN = 1L, minimumAuc = 0.55
+    ))
+
+    expect_equal(nrow(result$markers), 2L)
+    expect_identical(result$markers$marker, c("CD19", "CD3"))
+    expect_true(all(result$markers$auc > 0.99))
+    expect_true(file.exists(file.path(fixture$project, result$metadata$full_table$path)))
+    expect_identical(result$metadata$method, "cluster-vs-rest-rank-auc")
+})
+
+test_that("analysis v2 background jobs expose progress and a completed result", {
+    skip_if_not_installed("processx")
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    started <- api$gui_analysis_start_job(fixture$project, list(
+        file = fixture$relative_file,
+        files = fixture$relative_file,
+        populationId = "root",
+        reductionMethod = "pca",
+        clusterMethod = "none",
+        markers = c("FSC-A", "SSC-A", "CD3-A"),
+        maxEvents = 100L,
+        seed = 23L
+    ))
+    on.exit(try(api$gui_analysis_cancel_job(fixture$project, started$job_id), silent = TRUE), add = TRUE)
+
+    deadline <- Sys.time() + 30
+    repeat {
+        status <- api$gui_analysis_job_status(fixture$project, started$job_id)
+        if (status$state %in% c("completed", "failed", "cancelled")) break
+        if (Sys.time() > deadline) fail("Background analysis did not finish in 30 seconds.")
+        Sys.sleep(0.1)
+    }
+    expect_identical(status$state, "completed", info = if (!is.null(status$error)) status$error else status$message)
+    expect_equal(nrow(status$result$events), 100L)
+    expect_identical(status$result$metadata$reduction_method$id, "pca")
+})
+
+test_that("analysis v2 workspace records where a trajectory root was selected", {
+    api <- analysis_v2_api_env()
+    workspace <- api$gui_analysis_default_workspace()
+    expect_identical(workspace$schema_version, 2L)
+    expect_null(workspace$root_event_id)
+    expect_null(workspace$root_population_id)
+    expect_null(workspace$root_source_file)
 })
 
 test_that("analysis v2 persists hierarchical gates and calculates robust staining index", {
@@ -60,6 +241,27 @@ test_that("analysis v2 persists hierarchical gates and calculates robust stainin
     expect_equal(result$negative_count, 60L)
     expect_equal(result$positive_count, 60L)
     expect_equal(result$staining_index, expected, tolerance = 1e-6)
+})
+
+test_that("analysis v2 evaluates ellipse gates in raw channel coordinates", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    workspace <- api$gui_analysis_default_workspace()
+    workspace$populations <- c(workspace$populations, list(list(
+        id = "ellipse", name = "Ellipse", parent_id = "root", type = "ellipse",
+        role = NULL, source_file = NULL, x = "FSC-A", y = "SSC-A",
+        geometry = list(center_x = 60, center_y = 10, radius_x = 30, radius_y = 6)
+    )))
+    api$gui_analysis_write_workspace(fixture$project, workspace)
+    frame <- api$gui_analysis_flow_frame(fixture$project, fixture$relative_file)
+    data <- flowCore::exprs(frame)
+    observed <- api$gui_analysis_gate_mask(data, workspace, "ellipse", fixture$relative_file)
+    expected <- ((data[, "FSC-A"] - 60) / 30)^2 + ((data[, "SSC-A"] - 10) / 6)^2 <= 1
+
+    expect_identical(observed, unname(expected))
+    expect_gt(sum(observed), 0L)
+    expect_lt(sum(observed), nrow(data))
 })
 
 test_that("analysis v2 exports a reproducible population with provenance", {
@@ -98,17 +300,42 @@ test_that("analysis v2 exports a reproducible population with provenance", {
     expect_setequal(stats_table$marker, c("FSC-A", "CD3-A"))
 })
 
-test_that("analysis v2 advertises only execution-verified method adapters", {
+test_that("analysis v2 advertises maintained executable adapters and method settings", {
     api <- analysis_v2_api_env()
     methods <- api$gui_analysis_method_registry()
     by_id <- setNames(methods, vapply(methods, `[[`, character(1), "id"))
     expect_true(by_id$pca$available)
     expect_true(by_id$pca$adapter_verified)
-    expect_false(by_id$slingshot$available)
-    expect_false(by_id$slingshot$adapter_verified)
-    expect_false(by_id$tscan$available)
-    expect_false(by_id$wishbone$available)
+    expect_identical(by_id$pca$availability_state, "ready")
+    expect_true(by_id$pca$supports_3d)
+    expect_true(by_id$slingshot$adapter_verified)
+    expect_identical(by_id$slingshot$available, requireNamespace("slingshot", quietly = TRUE))
+    expect_true(by_id$tscan$adapter_verified)
+    expect_identical(by_id$tscan$available, requireNamespace("TSCAN", quietly = TRUE))
+    expect_true(by_id$phate$adapter_verified)
+    expect_true(by_id$hsne$adapter_verified)
+    expect_true(by_id$palantir$adapter_verified)
+    expect_true(by_id$`paga-dpt`$adapter_verified)
+    expect_true(by_id$wanderlust$visible)
+    expect_true(by_id$wanderlust$available)
+    expect_identical(by_id$wanderlust$package, "spectreasy_builtin")
+    expect_true(by_id$wishbone$visible)
+    expect_true(by_id$wishbone$available)
+    expect_identical(by_id$wishbone$package, "spectreasy_builtin")
+    expect_true(all(vapply(methods, function(method) is.list(method$parameters), logical(1))))
+    expect_setequal(
+        vapply(by_id$umap$parameters, `[[`, character(1), "id"),
+        c("neighbors", "min_dist", "spread", "metric", "epochs", "learning_rate", "repulsion", "negative_samples")
+    )
+    expect_identical(by_id$flowsom$outputs, "cluster_labels")
+    expect_identical(by_id$flowsom$pipeline, "flowsom")
+    expect_false(by_id$flowsom$supports_3d)
+    expect_identical(by_id$phenograph$outputs, "cluster_labels")
+    expect_false(any(grepl("pca", c(by_id$flowsom$pipeline, by_id$phenograph$pipeline), ignore.case = TRUE)))
     expect_match(by_id$dpt$citation, "Haghverdi")
+    expect_identical(by_id$dpt$prerequisites, "diffusion-map")
+    expect_identical(by_id$dpt$pipeline, c("diffusion-map", "dpt"))
+    expect_setequal(by_id$dpt$outputs, c("embedding", "pseudotime"))
 })
 
 test_that("analysis v2 writes cited PCA coordinates and publication plot formats", {
@@ -130,4 +357,392 @@ test_that("analysis v2 writes cited PCA coordinates and publication plot formats
     expect_true(all(file.exists(file.path(fixture$project, paths))))
     expect_true(file.exists(file.path(fixture$project, result$metadata$events_file)))
     expect_true(file.exists(file.path(fixture$project, result$metadata_file)))
+    expect_identical(
+        vapply(result$metadata$marker_columns, `[[`, character(1), "marker"),
+        c("FSC", "SSC", "CD3")
+    )
+    expect_identical(
+        vapply(result$metadata$marker_columns, `[[`, character(1), "channel"),
+        c("FSC-A", "SSC-A", "CD3-A")
+    )
+    expect_identical(
+        vapply(result$metadata$marker_columns, `[[`, character(1), "column"),
+        c("marker_1", "marker_2", "marker_3")
+    )
+    expect_true(all(c("marker_1", "marker_2", "marker_3") %in% names(result$events)))
+})
+
+test_that("flow-specific cell identities use signed marker evidence and preserve uncertainty", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    result <- api$gui_analysis_run_method(fixture$project, list(
+        file = fixture$relative_file, populationId = "root", method = "pca",
+        markers = c("FSC-A", "SSC-A", "CD3-A"), maxEvents = 120, seed = 123, cofactor = 1
+    ))
+    signatures <- list(
+        list(name = "CD3 low", color = "#197783", positive_markers = character(), negative_markers = "CD3"),
+        list(name = "CD3 high", color = "#d06d32", positive_markers = "CD3", negative_markers = character())
+    )
+    annotated <- api$gui_analysis_annotate_result(fixture$project, list(
+        analysisId = result$metadata$analysis_id,
+        signatures = signatures,
+        minScore = 0.55,
+        minMargin = 0.05
+    ))
+
+    expect_equal(nrow(annotated$events), 120L)
+    expect_setequal(unique(annotated$events$predicted_identity), c("CD3 low", "CD3 high"))
+    expect_true(all(annotated$events$identity_score >= 0.55))
+    expect_true(all(annotated$events$identity_margin >= 0.05))
+    expect_equal(annotated$metadata$assigned_count, 120L)
+    expect_equal(annotated$metadata$unassigned_count, 0L)
+    expect_true(file.exists(file.path(fixture$project, annotated$metadata$model$path)))
+    expect_true(file.exists(file.path(fixture$project, annotated$metadata$scores$path)))
+    expect_true(file.exists(file.path(fixture$project, annotated$metadata$metadata$path)))
+
+    conservative <- api$gui_analysis_score_identities(
+        cbind(CD3 = c(-1, 0, 9, 10)),
+        signatures,
+        min_score = 0.99,
+        min_margin = 0.9
+    )
+    expect_true(all(conservative$labels == "Unassigned"))
+})
+
+test_that("cell identity signatures reject ambiguous or unavailable marker rules", {
+    api <- analysis_v2_api_env()
+    matrix <- cbind(`CD3-A` = c(-1, 1), `CD19-A` = c(1, -1))
+    expect_error(api$gui_analysis_score_identities(matrix, list(
+        list(name = "A", positive_markers = "CD3-A", negative_markers = "CD3-A"),
+        list(name = "B", positive_markers = "CD19-A")
+    )), "both positive and negative")
+    expect_error(api$gui_analysis_score_identities(matrix, list(
+        list(name = "A", positive_markers = "CD4-A"),
+        list(name = "B", positive_markers = "CD19-A")
+    )), "unavailable marker")
+})
+
+test_that("analysis v2 only emits a third coordinate when the fitted input supports it", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    result <- api$gui_analysis_run_method(fixture$project, list(
+        file = fixture$relative_file, populationId = "root", method = "pca",
+        markers = c("FSC-A", "SSC-A"), maxEvents = 100, seed = 123, cofactor = 150
+    ))
+
+    expect_identical(result$metadata$coordinate_count, 2L)
+    expect_identical(result$metadata$coordinate_labels, c("PC 1", "PC 2"))
+    expect_false("dimension_3" %in% names(result$events))
+})
+
+test_that("every executable reduction and trajectory adapter satisfies the small-population contract", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    methods <- api$gui_analysis_method_registry()
+    executable <- Filter(function(method) isTRUE(method$available), methods)
+    expect_true(all(vapply(executable, `[[`, logical(1), "adapter_verified")))
+
+    for (method in Filter(function(method) !identical(method$family, "clustering"), executable)) {
+        body <- list(
+            file = fixture$relative_file,
+            populationId = "root",
+            method = method$id,
+            markers = c("FSC-A", "SSC-A", "CD3-A"),
+            maxEvents = 100,
+            seed = 731,
+            rootEventId = 1L,
+            cofactor = 150,
+            neighbors = 8L,
+            clusters = 4L,
+            perplexity = 10
+        )
+        if (identical(method$family, "trajectory")) {
+            if ("clustering" %in% method$prerequisites) body$clusterMethod <- "flowsom"
+            if ("reduction" %in% method$prerequisites) body$reductionMethod <- "pca"
+        }
+        result <- api$gui_analysis_run_method(fixture$project, body)
+        expect_identical(result$metadata$method$id, method$id, info = method$id)
+        expect_equal(nrow(result$events), 100L, info = method$id)
+        expect_true(all(is.finite(result$events$dimension_1)), info = method$id)
+        expect_true(all(is.finite(result$events$dimension_2)), info = method$id)
+        expected_dimensions <- if (identical(method$id, "hsne")) 2L else 3L
+        if (expected_dimensions == 3L) expect_true(all(is.finite(result$events$dimension_3)), info = method$id)
+        expect_identical(result$metadata$coordinate_count, expected_dimensions, info = method$id)
+        expect_length(result$metadata$coordinate_labels, expected_dimensions)
+        expect_true(length(result$metadata$pipeline) >= 2L, info = method$id)
+        if (identical(method$family, "trajectory")) {
+            expect_true("pseudotime" %in% names(result$events), info = method$id)
+            expect_true(all(is.finite(result$events$pseudotime)), info = method$id)
+            expect_true(min(result$events$pseudotime) >= 0, info = method$id)
+            expect_true(max(result$events$pseudotime) <= 1, info = method$id)
+        }
+        if (identical(method$id, "dpt")) {
+            expect_true("pseudotime" %in% names(result$events))
+            expect_true(all(is.finite(result$events$pseudotime)))
+            expect_identical(
+                vapply(result$metadata$pipeline, `[[`, character(1), "id"),
+                c("input", "diffusion-map", "dpt")
+            )
+            expect_length(result$metadata$intermediate_files, 1L)
+            intermediate <- result$metadata$intermediate_files[[1]]
+            expect_identical(intermediate$id, "diffusion_map")
+            expect_true(file.exists(file.path(fixture$project, intermediate$path)))
+            diffusion <- data.table::fread(file.path(fixture$project, intermediate$path))
+            expect_identical(names(diffusion), c("event_id", "diffusion_1", "diffusion_2", "diffusion_3"))
+            expect_equal(nrow(diffusion), 100L)
+        }
+        repeated <- api$gui_analysis_run_method(fixture$project, body)
+        comparable <- intersect(
+            c("event_id", "dimension_1", "dimension_2", "dimension_3", "cluster_id", "pseudotime"),
+            names(result$events)
+        )
+        expect_equal(
+            repeated$events[, comparable, drop = FALSE],
+            result$events[, comparable, drop = FALSE],
+            tolerance = 1e-8,
+            info = paste(method$id, "same-seed reproducibility")
+        )
+        if (identical(method$family, "trajectory") && !identical(method$id, "dpt")) {
+            expect_true(repeated$metadata$artifacts$trajectory$reused, info = method$id)
+        }
+    }
+})
+
+test_that("every executable reduction preserves a small synthetic continuum", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_lineage_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    reductions <- Filter(
+        function(method) identical(method$family, "reduction") && isTRUE(method$available),
+        api$gui_analysis_method_registry()
+    )
+    expect_gte(length(reductions), 6L)
+
+    set.seed(919)
+    pairs <- cbind(sample.int(180L, 1200L, replace = TRUE), sample.int(180L, 1200L, replace = TRUE))
+    pairs <- pairs[pairs[, 1] != pairs[, 2], , drop = FALSE]
+    for (method in reductions) {
+        result <- api$gui_analysis_run_method(fixture$project, list(
+            file = fixture$relative_file,
+            populationId = "root",
+            reductionMethod = method$id,
+            clusterMethod = "none",
+            markers = fixture$markers,
+            maxEvents = 180L,
+            seed = 919L,
+            neighbors = 12L,
+            perplexity = 18
+        ))
+        dimensions <- grep("^dimension_", names(result$events), value = TRUE)
+        embedding <- as.matrix(result$events[, dimensions, drop = FALSE])
+        truth <- fixture$truth[result$events$source_event_id]
+        truth_distance <- abs(truth[pairs[, 1]] - truth[pairs[, 2]])
+        map_distance <- sqrt(rowSums(
+            (embedding[pairs[, 1], , drop = FALSE] - embedding[pairs[, 2], , drop = FALSE])^2
+        ))
+        preservation <- suppressWarnings(stats::cor(truth_distance, map_distance, method = "spearman"))
+        minimum_preservation <- if (identical(method$id, "hsne")) 0.20 else 0.35
+        expect_true(
+            is.finite(preservation) && preservation > minimum_preservation,
+            info = paste(method$id, "continuum distance preservation:", round(preservation, 3))
+        )
+    }
+})
+
+test_that("every executable clustering method recovers separated populations", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_cluster_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    clustering <- Filter(
+        function(method) identical(method$family, "clustering") && isTRUE(method$available),
+        api$gui_analysis_method_registry()
+    )
+    expect_gte(length(clustering), 2L)
+
+    for (method in clustering) {
+        result <- api$gui_analysis_run_method(fixture$project, list(
+            file = fixture$relative_file,
+            populationId = "root",
+            clusterMethod = method$id,
+            reductionMethod = "pca",
+            markers = fixture$markers,
+            maxEvents = 180L,
+            seed = 922L,
+            neighbors = 15L,
+            clusters = 3L
+        ))
+        truth <- fixture$truth[result$events$source_event_id]
+        recovery <- analysis_v2_adjusted_rand(truth, result$events$cluster_id)
+        expect_true(
+            is.finite(recovery) && recovery > 0.80,
+            info = paste(method$id, "adjusted Rand recovery:", round(recovery, 3))
+        )
+    }
+})
+
+test_that("every executable trajectory orders a small seeded lineage from its root", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_lineage_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    trajectories <- Filter(
+        function(method) identical(method$family, "trajectory") && isTRUE(method$available),
+        api$gui_analysis_method_registry()
+    )
+    expect_gte(length(trajectories), 7L)
+
+    for (method in trajectories) {
+        body <- list(
+            file = fixture$relative_file,
+            populationId = "root",
+            method = method$id,
+            markers = fixture$markers,
+            maxEvents = 180L,
+            seed = 920L,
+            rootEventId = 1L,
+            neighbors = 12L,
+            clusters = 5L,
+            perplexity = 18
+        )
+        if ("clustering" %in% method$prerequisites) body$clusterMethod <- "flowsom"
+        if ("reduction" %in% method$prerequisites) body$reductionMethod <- "pca"
+        result <- api$gui_analysis_run_method(fixture$project, body)
+        truth <- fixture$truth[result$events$source_event_id]
+        ordering <- suppressWarnings(stats::cor(truth, result$events$pseudotime, method = "spearman"))
+        expect_true(
+            is.finite(ordering) && ordering > 0.60,
+            info = paste(method$id, "rooted lineage ordering:", round(ordering, 3))
+        )
+        root_pseudotime <- result$events$pseudotime[[which.min(truth)]]
+        expect_true(
+            is.finite(root_pseudotime) && root_pseudotime <= 0.12,
+            info = paste(method$id, "root pseudotime:", round(root_pseudotime, 3))
+        )
+    }
+})
+
+test_that("clustering and dimensional reduction are separate reusable artifacts", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+    base <- list(
+        file = fixture$relative_file,
+        populationId = "root",
+        clusterMethod = "flowsom",
+        markers = c("FSC-A", "SSC-A", "CD3-A"),
+        maxEvents = 100,
+        seed = 731,
+        cofactor = 150,
+        neighbors = 8L,
+        clusters = 4L,
+        perplexity = 10
+    )
+
+    pca <- api$gui_analysis_run_method(fixture$project, c(base, list(reductionMethod = "pca")))
+    umap <- api$gui_analysis_run_method(fixture$project, c(base, list(reductionMethod = "umap")))
+
+    expect_identical(pca$metadata$display_name, "FlowSOM → PCA")
+    expect_identical(umap$metadata$display_name, "FlowSOM → UMAP")
+    expect_identical(pca$metadata$cluster_method$id, "flowsom")
+    expect_identical(pca$metadata$reduction_method$id, "pca")
+    expect_identical(umap$metadata$reduction_method$id, "umap")
+    expect_identical(
+        pca$metadata$artifacts$clustering$id,
+        umap$metadata$artifacts$clustering$id
+    )
+    expect_false(pca$metadata$artifacts$clustering$reused)
+    expect_true(umap$metadata$artifacts$clustering$reused)
+    expect_false(identical(
+        pca$metadata$artifacts$embedding$id,
+        umap$metadata$artifacts$embedding$id
+    ))
+    expect_identical(pca$events$event_id, umap$events$event_id)
+    expect_identical(pca$events$cluster_id, umap$events$cluster_id)
+    expect_true(length(unique(pca$events$cluster_id)) >= 2L)
+    expect_identical(
+        vapply(pca$metadata$pipeline, `[[`, character(1), "id"),
+        c("input", "flowsom", "pca")
+    )
+    expect_false(any(grepl("pca-visualization", vapply(pca$metadata$pipeline, `[[`, character(1), "id"), fixed = TRUE)))
+
+    artifacts <- c(
+        pca$metadata$artifacts$clustering[c("object", "values")],
+        pca$metadata$artifacts$embedding[c("object", "values")],
+        umap$metadata$artifacts$embedding[c("object", "values")]
+    )
+    artifact_paths <- vapply(artifacts, function(artifact) artifact$path, character(1))
+    expect_true(all(file.exists(file.path(fixture$project, artifact_paths))))
+    skipped <- api$gui_analysis_run_method(fixture$project, c(
+        base[c("file", "populationId", "markers", "maxEvents", "seed", "cofactor")],
+        list(clusterMethod = "none", reductionMethod = "pca")
+    ))
+    expect_null(skipped$metadata$artifacts$clustering)
+    expect_false("cluster_id" %in% names(skipped$events))
+    expect_error(
+        api$gui_analysis_run_method(fixture$project, list(method = "flowsom")),
+        "Choose a dimensional-reduction method"
+    )
+})
+
+test_that("each clustering adapter can be paired with an independent map", {
+    api <- analysis_v2_api_env()
+    fixture <- analysis_v2_fixture()
+    on.exit(unlink(fixture$project, recursive = TRUE, force = TRUE), add = TRUE)
+
+    for (cluster_method in c("flowsom", "phenograph")) {
+        result <- api$gui_analysis_run_method(fixture$project, list(
+            file = fixture$relative_file,
+            populationId = "root",
+            clusterMethod = cluster_method,
+            reductionMethod = "pca",
+            markers = c("FSC-A", "SSC-A", "CD3-A"),
+            maxEvents = 100,
+            seed = 947,
+            cofactor = 150,
+            neighbors = 8L,
+            clusters = 4L
+        ))
+        expect_identical(result$metadata$cluster_method$id, cluster_method)
+        expect_identical(result$metadata$reduction_method$id, "pca")
+        expect_true("cluster_id" %in% names(result$events))
+        expect_true(length(unique(result$events$cluster_id)) >= 2L)
+        expect_true(all(is.finite(result$events$dimension_1)))
+        expect_identical(
+            vapply(result$metadata$pipeline, `[[`, character(1), "id"),
+            c("input", cluster_method, "pca")
+        )
+    }
+})
+
+test_that("advanced method settings are validated and affect artifact identity", {
+    api <- analysis_v2_api_env()
+    umap <- api$gui_analysis_method("umap")
+    expect_error(
+        api$gui_analysis_method_parameters(umap, list(neighbors = 1L)),
+        "below its minimum"
+    )
+    expect_error(
+        api$gui_analysis_method_parameters(umap, list(metric = "not-a-distance")),
+        "unsupported value"
+    )
+    expect_error(
+        api$gui_analysis_method_parameters(umap, list(unknown = 4)),
+        "no advanced setting"
+    )
+    expect_error(
+        api$gui_analysis_method_parameters(
+            api$gui_analysis_method("wishbone"),
+            list(neighbors = 20L, candidate_neighbors = 20L)
+        ),
+        "must exceed retained"
+    )
+    defaults <- api$gui_analysis_method_parameters(umap)
+    changed <- defaults
+    changed$neighbors <- defaults$neighbors + 1L
+    expect_false(identical(
+        api$gui_analysis_manifest_id("embedding", list(method = "umap", parameters = defaults)),
+        api$gui_analysis_manifest_id("embedding", list(method = "umap", parameters = changed))
+    ))
 })

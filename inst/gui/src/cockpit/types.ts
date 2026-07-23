@@ -3,6 +3,7 @@ export type SectionId =
   | 'samples'
   | 'matrix'
   | 'panel'
+  | 'analysis'
   | 'af'
   | 'settings'
 

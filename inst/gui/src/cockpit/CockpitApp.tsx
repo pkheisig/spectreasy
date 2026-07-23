@@ -433,6 +433,10 @@ export default function CockpitApp() {
   }
 
   function navigateToSection(section: SectionId) {
+    if (section === "analysis") {
+      openApplet("sample-analysis", section);
+      return;
+    }
     if (section === "panel") {
       openApplet("panel-builder", section);
       return;
@@ -651,6 +655,7 @@ export default function CockpitApp() {
       ({
         controls: "Controls",
         samples: "Samples",
+        analysis: "Population analysis",
         matrix: "Matrix review",
         panel: "Panel builder",
         af: "AF library",

@@ -46,7 +46,10 @@ if (getRversion() >= "2.15.1") {
         "y_bin",
         "y_high",
         "y_low",
-        "y_orig"
+        "y_orig",
+        ".analysis_color",
+        ".analysis_x",
+        ".analysis_y"
     ))
 }
 
