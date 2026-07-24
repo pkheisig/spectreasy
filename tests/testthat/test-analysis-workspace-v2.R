@@ -165,6 +165,9 @@ test_that("population gate CSV round-trips every geometry and repairs workspace 
     expect_equal(sum(rows$population_id == "polygon"), 3L)
     expect_equal(sum(rows$population_id == "range"), 2L)
     expect_false(any(rows$population_id == "root"))
+    ellipse_rows <- rows[rows$population_id == "ellipse", , drop = FALSE]
+    expect_identical(unique(ellipse_rows$source_file), basename(fixture$relative_file))
+    expect_false(any(grepl("[/\\\\]", rows$source_file[nzchar(rows$source_file)])))
 
     current <- api$gui_analysis_default_workspace()
     current$source_path <- "samples"
@@ -201,6 +204,7 @@ test_that("population gate CSV round-trips every geometry and repairs workspace 
     expect_silent(api$gui_analysis_normalize_workspace(imported))
 
     ellipse <- imported$populations[[3]]
+    expect_identical(ellipse$source_file, fixture$relative_file)
     expect_equal(ellipse$geometry$center_x, 40)
     expect_equal(ellipse$geometry$radius_y, 5)
     polygon <- imported$populations[[4]]
@@ -260,20 +264,41 @@ test_that("population gate CSV rejects incompatible schemas, hierarchies, channe
 
     traversal <- base_rows
     traversal$source_file[traversal$population_id == "a"] <- "../outside.fcs"
-    expect_error(prepare(traversal), "project-relative path")
+    expect_error(prepare(traversal), "only an FCS filename")
 
     missing_file <- base_rows
-    missing_file$source_file[missing_file$population_id == "a"] <- "samples/missing.fcs"
-    expect_error(prepare(missing_file), "unavailable source file")
+    missing_file$source_file[missing_file$population_id == "a"] <- "missing.fcs"
+    expect_error(prepare(missing_file), "unavailable filename")
 
     layout <- api$gui_project_layout(fixture$project, persist = FALSE)
     outside_source <- file.path(fixture$project, layout$control_input_dir, "reference.fcs")
     dir.create(dirname(outside_source), recursive = TRUE, showWarnings = FALSE)
     file.copy(file.path(fixture$project, fixture$relative_file), outside_source)
     file_specific <- base_rows
-    file_specific$source_file[file_specific$population_id == "a"] <- api$gui_analysis_relative_path(outside_source, fixture$project)
+    file_specific$source_file[file_specific$population_id == "a"] <- basename(outside_source)
     prepared <- prepare(file_specific)
     expect_match(paste(prepared$warnings, collapse = " "), "outside the selected source")
+    imported_a <- prepared$workspace$populations[[2]]
+    expect_identical(
+        imported_a$source_file,
+        api$gui_analysis_relative_path(outside_source, fixture$project)
+    )
+
+    selected_duplicate <- file.path(fixture$project, layout$control_input_dir, basename(fixture$relative_file))
+    file.copy(file.path(fixture$project, fixture$relative_file), selected_duplicate)
+    selected_filename <- base_rows
+    selected_filename$source_file[selected_filename$population_id == "a"] <- basename(fixture$relative_file)
+    prepared <- prepare(selected_filename)
+    expect_identical(prepared$workspace$populations[[2]]$source_file, fixture$relative_file)
+
+    first_ambiguous <- file.path(fixture$project, layout$control_input_dir, "ambiguous.fcs")
+    second_ambiguous <- file.path(fixture$project, "spectreasy_outputs-test", "unmixed_fcs", "ambiguous.fcs")
+    dir.create(dirname(second_ambiguous), recursive = TRUE, showWarnings = FALSE)
+    file.copy(file.path(fixture$project, fixture$relative_file), first_ambiguous)
+    file.copy(file.path(fixture$project, fixture$relative_file), second_ambiguous)
+    ambiguous <- base_rows
+    ambiguous$source_file[ambiguous$population_id == "a"] <- "ambiguous.fcs"
+    expect_error(prepare(ambiguous), "ambiguous filename")
 })
 
 test_that("analysis v2 pools files while retaining source event identity", {

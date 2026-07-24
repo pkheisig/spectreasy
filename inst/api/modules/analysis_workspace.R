@@ -397,7 +397,7 @@ gui_analysis_gate_set_rows <- function(workspace) {
                 population_name = as.character(node$name)[1],
                 gate_type = type,
                 semantic_role = as.character(node$role %||% "")[1],
-                source_file = as.character(node$source_file %||% "")[1],
+                source_file = if (nzchar(as.character(node$source_file %||% "")[1])) basename(as.character(node$source_file)[1]) else "",
                 x_channel = as.character(node$x %||% "")[1],
                 y_channel = as.character(node$y %||% "")[1],
                 vertex_index = coordinate$index,
@@ -596,6 +596,8 @@ gui_analysis_gate_set_validate_compatibility <- function(root, workspace, popula
         lapply(selected_source$files, function(file) unique(as.character(file$channels %||% character()))),
         selected_paths
     )
+    project_files <- unlist(lapply(inventory, function(source) source$files), recursive = FALSE)
+    project_paths <- vapply(project_files, function(file) as.character(file$path)[1], character(1))
     warnings <- character()
     normalized <- lapply(populations, function(population) {
         source_file <- trimws(as.character(population$source_file %||% "")[1])
@@ -616,21 +618,45 @@ gui_analysis_gate_set_validate_compatibility <- function(root, workspace, popula
             }
             return(population)
         }
-        if (grepl("^(/|[A-Za-z]:[/\\\\])", source_file) || any(strsplit(gsub("\\\\", "/", source_file), "/", fixed = TRUE)[[1]] == "..")) {
+        if (!identical(source_file, basename(source_file)) || grepl("[/\\\\]", source_file)) {
             stop(
                 "Gate CSV compatibility error: population '", population$name,
-                "' source_file must be a project-relative path without '..'.", call. = FALSE
+                "' source_file must contain only an FCS filename, not a directory path.", call. = FALSE
             )
         }
-        source_path <- tryCatch(
-            gui_analysis_resolve_fcs(root, source_file),
-            error = function(e) stop(
+        selected_matches <- selected_paths[basename(selected_paths) == source_file]
+        project_matches <- project_paths[basename(project_paths) == source_file]
+        if (length(selected_matches) > 1L) {
+            stop(
                 "Gate CSV compatibility error: population '", population$name,
-                "' references unavailable source file '", source_file,
-                "'. Add that FCS file to this project or clear source_file to make the gate global.", call. = FALSE
+                "' references ambiguous filename '", source_file,
+                "' more than once in the selected source: ",
+                paste(selected_matches, collapse = ", "),
+                ". Rename the files so the assignment is unique.", call. = FALSE
             )
-        )
-        normalized_source <- gui_analysis_relative_path(source_path, root)
+        }
+        normalized_source <- if (length(selected_matches) == 1L) {
+            selected_matches[[1]]
+        } else if (!length(project_matches)) {
+            stop(
+                "Gate CSV compatibility error: population '", population$name,
+                "' references unavailable filename '", source_file,
+                "'. Add that FCS file to this project or clear source_file to make the gate global.",
+                call. = FALSE
+            )
+        } else if (length(project_matches) > 1L) {
+            stop(
+                "Gate CSV compatibility error: population '", population$name,
+                "' references ambiguous filename '", source_file,
+                "' at multiple project locations: ",
+                paste(project_matches, collapse = ", "),
+                ". Select the source containing the intended file or rename the files so the assignment is unique.",
+                call. = FALSE
+            )
+        } else {
+            project_matches[[1]]
+        }
+        source_path <- gui_analysis_resolve_fcs(root, normalized_source)
         header <- gui_analysis_header(source_path)
         missing <- setdiff(needed, as.character(header$channels))
         if (length(missing)) {

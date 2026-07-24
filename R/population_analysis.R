@@ -214,8 +214,10 @@ save_analysis_workspace <- function(project_path, workspace) {
 #' `population_id`, `parent_id`, `population_name`, `gate_type`,
 #' `semantic_role`, `source_file`, `x_channel`, `y_channel`, `vertex_index`,
 #' `x`, and `y`. Polygon vertices use one row each; rectangles and ellipses use
-#' two bounding-box corners; range gates use two X coordinates. The root
-#' population is recreated automatically.
+#' two bounding-box corners; range gates use two X coordinates. `source_file`
+#' stores only the FCS filename; Spectreasy resolves it to the selected source
+#' or a unique file in the active project. The root population is recreated
+#' automatically.
 #'
 #' @param project_path Spectreasy project directory.
 #' @param path CSV file to write or read.
